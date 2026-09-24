@@ -1,8 +1,11 @@
+import { EventEmitter } from 'node:events';
 import { db, kv } from './db.ts';
 import { config } from './config.ts';
 import { isConnected } from './tesla/auth.ts';
 import { tesla, rfc3339, localMidnight, type EnergyBucket } from './tesla/client.ts';
 
+export const events = new EventEmitter();
+events.setMaxListeners(50);
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const log = (...a: unknown[]) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const n = (v: unknown) => (typeof v === 'number' ? v : 0);
@@ -28,6 +31,8 @@ export async function pollLive(siteId: string) {
     ts, n(s.solar_power), n(s.battery_power), n(s.grid_power), n(s.load_power), n(s.percentage_charged),
     orNull(s.energy_left), orNull(s.total_pack_energy), String(s.grid_status ?? ''), String(s.island_status ?? ''), s.storm_mode_active ? 1 : 0, JSON.stringify(s));
   kv.set('poll.lastLive', Date.now());
+  events.emit('live', { ts, solarKw: n(s.solar_power) / 1000, homeKw: n(s.load_power) / 1000, batteryKw: n(s.battery_power) / 1000, gridKw: n(s.grid_power) / 1000,
+    soc: n(s.percentage_charged), gridStatus: s.grid_status, islandStatus: s.island_status, stormActive: !!s.storm_mode_active });
   return s;
 }
 
@@ -50,7 +55,17 @@ export async function fetchDay(siteId: string, day: string) {
   return res.time_series?.length ?? 0;
 }
 
+/** Fetch one local day of battery state-of-energy (15-min). */
+export async function fetchSoe(siteId: string, day: string) {
+  const start = localMidnight(day), end = new Date(Math.min(Date.now(), start.getTime() + 864e5 - 1000));
+  const res = await tesla.calendar(siteId, { kind: 'soe', period: 'day', start_date: rfc3339(start), end_date: rfc3339(end) }) as { time_series?: Array<{ timestamp: string; soe: number }> };
+  const stmt = db.prepare('INSERT OR REPLACE INTO soe VALUES (?,?,?)');
+  for (const p of res.time_series ?? []) stmt.run(p.timestamp, Date.parse(p.timestamp), p.soe);
+  return res.time_series?.length ?? 0;
+}
+
 export async function pollToday(siteId: string) {
+  await fetchSoe(siteId, localDay(new Date())).catch(e => log('soe today failed:', (e as Error).message));
   const count = await fetchDay(siteId, localDay(new Date()));
   kv.set('poll.lastHistory', Date.now());
   return count;
@@ -116,6 +131,23 @@ export async function backfill(siteId: string, from: string) {
   } finally {
     backfilling = false;
   }
+}
+
+/** Battery % history for every stored day (separate pass so energy backfill stays resumable on its own). */
+let soeRunning = false;
+export async function backfillSoe(siteId: string) {
+  if (soeRunning) return;
+  soeRunning = true;
+  try {
+    const have = new Set(kv.get<string[]>('soe.days') ?? []);
+    const days = (db.prepare('SELECT DISTINCT substr(ts,1,10) d FROM energy ORDER BY d DESC').all() as Array<{ d: string }>).map(r => r.d)
+      .filter(d => d < localDay(new Date()) && !have.has(d));
+    for (const day of days) {
+      try { await fetchSoe(siteId, day); have.add(day); kv.set('soe.days', [...have]); } catch (e) { log(`soe ${day} failed:`, (e as Error).message); await sleep(10_000); }
+      await sleep(1200);
+    }
+    if (days.length) log(`soe backfill complete: ${have.size} days`);
+  } finally { soeRunning = false; }
 }
 
 let timers: NodeJS.Timeout[] = [];

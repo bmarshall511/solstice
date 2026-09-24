@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#05060a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Solstice">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<title>Solstice</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+<canvas id="aurora"></canvas>
+<div class="stage">
+  <aside class="side">
+    <div class="k">Solstice · Home</div>
+    <h2 id="sideTitle">Your home's energy, live.</h2>
+    <p id="sideText">Connecting to your Powerwalls…</p>
+    <div class="demo">
+      <h4>This session</h4>
+      <div class="kv" style="margin-top:0">
+        <span>Tesla live data</span><b id="sideSync">—</b>
+        <span>History stored</span><b id="sideDays">—</b>
+        <span>PEC bills</span><b id="sideBills">—</b>
+      </div>
+      <p>Everything is stored on this Mac. Press <b>D</b> for raw data.</p>
+    </div>
+  </aside>
+
+  <div class="phone" id="phone">
+    <div class="island"><span class="il"><i></i>BACKUP</span><span class="ir" id="islandT">0m</span></div>
+    <div class="toast" id="toast"><div class="ti" id="toastI"></div><div><b id="toastT"></b><span id="toastS"></span></div></div>
+
+    <div class="screen" id="screen">
+      <!-- ================= NOW ================= -->
+      <section class="view on" id="v-now">
+        <div class="hello">
+          <div><h3 id="greet">Hello</h3><p><span class="sync" id="syncDot"></span><span id="siteLine">Home</span> · <span id="synced">connecting…</span></p></div>
+          <div class="wx" id="wxtop"><b>--°</b>…</div>
+        </div>
+        <div class="chips" id="chips">
+          <div class="chipx" id="chipGw"><i></i>Powerwalls</div>
+          <div class="chipx" id="chipNws"><i style="--c:var(--mute)"></i>Weather alerts…</div>
+          <div class="chipx" id="chipErcot"><i style="--c:var(--mute)"></i>ERCOT…</div>
+          <div class="chipx" id="chipStorm"><i style="--c:rgba(242,244,248,.4);box-shadow:none"></i>Storm Watch</div>
+        </div>
+
+        <div class="banner">
+          <div class="bi"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ff8a80" stroke-width="2"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/><path d="M3 3l18 18" stroke="#ff5a4e"/></svg></div>
+          <div><b>Grid outage</b><span>Running on sunlight + Powerwall</span></div>
+          <div class="bt"><span id="outDur">0m</span><small>elapsed</small></div>
+        </div>
+
+        <div class="orbwrap"><canvas id="orb"></canvas>
+          <div class="orbtxt"><div class="pct"><span id="soc">--</span><small>%</small></div><p id="battline">—</p></div>
+        </div>
+        <div class="story" id="story">—</div>
+
+        <div class="card">
+          <div class="h"><b>Energy flow</b><span id="flowNote">live</span></div>
+          <svg id="flow" viewBox="0 -14 330 290"></svg>
+        </div>
+
+        <div class="card">
+          <div class="h"><b>Next 48 hours</b><span>forecast · your usage + Open-Meteo</span></div>
+          <svg class="mini" id="fc48" viewBox="0 0 310 150"></svg>
+          <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--home)"></i>Home</span><span><i style="background:var(--batt)"></i>Battery %</span></div>
+          <p id="fcTxt" style="margin-top:10px">Waiting for the forecast…</p>
+        </div>
+
+        <div class="card" id="pwCard">
+          <div class="h"><b>Powerwall</b><span id="pwModel">—</span></div>
+          <div class="pwtop"><div class="pwpct" id="pwPct">--%</div><div><div class="pwstate" id="pwState">—</div><div class="pwsub" id="pwStored">—</div></div></div>
+          <div class="pwunits" id="pwUnits"></div>
+          <div class="kv">
+            <span id="pwTTl">Time to full</span><b id="pwTT">—</b>
+            <span>Backup at current usage</span><b id="pwBackup">—</b>
+            <span>Charged today</span><b id="pwIn">—</b>
+            <span>Discharged today</span><b id="pwOut">—</b>
+            <span>Backup reserve</span><b id="pwRes">—</b>
+            <span>Mode</span><b id="pwMode">—</b>
+            <span>Storm Watch</span><b id="pwStorm">—</b>
+            <span>Today's range</span><b id="pwRange">—</b>
+          </div>
+        </div>
+
+        <div class="sect">Today</div>
+        <div class="stats">
+          <div class="stat"><span>Solar produced</span><b id="tSol">—</b><em id="tSolE">—</em></div>
+          <div class="stat"><span>Home used</span><b id="tHome">—</b><em id="tSelf">—</em></div>
+          <div class="stat"><span>Bought from PEC</span><b id="tImp">—</b><em id="tImpE">—</em></div>
+          <div class="stat"><span>Sent to PEC</span><b id="tExp">—</b><em id="tExpE">—</em></div>
+        </div>
+
+        <div class="card">
+          <div class="h"><b>Next 12 hours</b><span id="wx12s">Open-Meteo</span></div>
+          <div class="hours" id="wx12"></div>
+          <p id="wxSum" style="margin-top:12px"></p>
+        </div>
+      </section>
+
+      <!-- ================= HISTORY ================= -->
+      <section class="view" id="v-hist">
+        <div class="hello"><div><h3>History</h3><p id="hdate">—</p></div></div>
+        <div class="seg" id="hseg"><button class="on" data-r="day">Day</button><button data-r="week">Week</button><button data-r="month">Month</button><button data-r="year">Year</button></div>
+        <div class="daynav" id="dayNav"><button id="dayPrev" aria-label="Previous day">‹</button><span id="dayLabel">Today</span><button id="dayNext" aria-label="Next day">›</button></div>
+        <svg id="hchart" width="330" height="310" viewBox="-165 -165 330 330"></svg>
+        <div class="legend" id="hleg"></div>
+        <div class="stats" id="hstats"></div>
+
+        <div class="sect" id="landSect">Production landscape</div>
+        <div class="card">
+          <div class="h"><b>Last 30 days × 24 hours</b><span>drag to rotate · tap a bar</span></div>
+          <div class="land" id="land"></div>
+          <div class="legend" style="justify-content:flex-start;margin-top:6px"><span>kWh/hr<span class="ramp"></span></span><span style="color:var(--warn)">▌ below the weather model</span></div>
+          <div class="landtip" id="landTip">Each bar is one hour of solar production. Red rows are days that came in more than 10% below what the sunlight should have produced.</div>
+        </div>
+
+        <div class="sect">Powerwall patterns</div>
+        <div class="card">
+          <div class="h"><b>Charge level · 30 days</b><span>each row is a day</span></div>
+          <svg class="mini" id="socHeat" viewBox="0 0 310 190"></svg>
+          <div class="legend" style="justify-content:flex-start">0%<span class="ramp" style="background:linear-gradient(90deg,#10151f,#1d5c4a,#4ef0a6,#d9fff0)"></span>100% · <span style="color:var(--warn)">▌ at reserve</span></div>
+          <div class="rec2" id="socStats"></div>
+        </div>
+
+        <div class="card">
+          <div class="h"><b>Records</b><span id="recSince">—</span></div>
+          <div class="rec2" id="records"></div>
+        </div>
+
+        <div class="sect">Outages</div>
+        <div class="card">
+          <div class="h"><b id="outTitle">Grid outages</b><span class="badge g" id="outBadge">—</span></div>
+          <p id="outText">—</p>
+          <svg class="mini" id="outStrip" viewBox="0 0 310 64"></svg>
+          <div id="outList" style="margin-top:6px"></div>
+        </div>
+
+        <div class="sect" id="billSect">Electric bills · PEC</div>
+        <div id="billChecks"></div>
+        <div class="card">
+          <div class="h"><b>PEC meter vs Tesla</b><span>kWh bought per bill</span></div>
+          <svg class="mini" id="meterChart" viewBox="0 0 310 150"></svg>
+          <div class="legend" style="justify-content:flex-start"><span><i style="background:rgba(196,162,255,.35)"></i>PEC billed</span><span><i style="background:var(--grid)"></i>Tesla measured</span><span><i style="background:var(--out)"></i>&gt;5% apart</span></div>
+        </div>
+        <div class="card">
+          <div class="h"><b>Where your last bill went</b><span id="wfNote">vs. no solar</span></div>
+          <svg class="mini" id="waterfall" viewBox="0 0 310 190"></svg>
+        </div>
+        <div class="card">
+          <div class="h"><b>This billing cycle</b><span id="cycNote">—</span></div>
+          <div class="cyc"><i id="cycBar" style="width:0"></i></div><div class="cycl"><span id="cycFrom">—</span><span>today</span><span id="cycTo">—</span></div>
+          <div class="kv" id="cycKv"></div>
+        </div>
+        <div class="card">
+          <div class="h"><b>Monthly cost</b><span>Tesla usage × your PEC rates</span></div>
+          <svg class="mini" id="billChart" viewBox="0 0 310 130"></svg>
+          <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Paid (est.)</span><span><i style="background:rgba(255,255,255,.2)"></i>Without solar + Powerwall</span></div>
+          <button class="link" id="addBill">+ Add a PEC bill</button>
+        </div>
+      </section>
+
+      <!-- ================= PANELS ================= -->
+      <section class="view" id="v-roof">
+        <div class="hello"><div><h3>Panels</h3><p>30 panels · <span id="kwpLine">—</span> · facing 244°</p></div><div class="wx"><b id="rfKw">—</b>kW right now</div></div>
+        <div class="card">
+          <div class="h"><b>Live roof</b><span>drag to rotate</span></div>
+          <div class="roof3d" id="roof"><div class="roofhud" id="roofHud">—</div></div>
+          <div class="legend" style="justify-content:flex-start">Output<span class="ramp"></span><span>0 → peak</span></div>
+        </div>
+        <div class="card">
+          <div class="h"><b>Performance vs sunlight</b><span>last 30 days</span></div>
+          <svg class="mini" id="prChart" viewBox="0 0 310 150"></svg>
+          <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Produced</span><span><i style="background:rgba(255,255,255,.25)"></i>Expected from sunlight</span></div>
+          <p id="prTxt">—</p>
+        </div>
+        <div class="card">
+          <div class="h"><b>Cleaning check</b><span class="badge g" id="cleanBadge">—</span></div>
+          <div class="cleanrow"><svg width="84" height="84" viewBox="0 0 84 84" id="cleanRing"></svg><p id="cleanTxt">—</p></div>
+          <div class="kv">
+            <span>Output vs baseline · last 7 clear days</span><b id="clLoss">—</b>
+            <span>Last real rain (Open-Meteo)</span><b id="clRain">—</b>
+            <span>Next likely rain</span><b id="clNext">—</b>
+            <span>Value of the gap</span><b id="clCost">—</b>
+          </div>
+          <button class="link" id="cleaned">✓ I cleaned the panels</button>
+        </div>
+        <div class="card">
+          <div class="h"><b>About panel-level data</b><span class="chip">system-level</span></div>
+          <p>Your Powerwall 2s don't include a solar inverter, so Tesla only reports the array's total output, not individual strings or panels. Solstice compares that total against the sunlight hitting your roof, which is enough to catch dust, shading changes or a failed section of the array.</p>
+        </div>
+      </section>
+
+      <!-- ================= INSIGHTS ================= -->
+      <section class="view" id="v-ins">
+        <div class="hello"><div><h3>Insights</h3><p>From your real data</p></div></div>
+        <div id="alerts"></div>
+        <div class="card" id="planner">
+          <div class="h"><b>What if you added…</b><span>replays your last 12 months</span></div>
+          <div class="slider"><label>Solar panels <b id="aPv">+0</b></label><input type="range" id="rPv" min="0" max="20" step="2" value="8"><small id="aPvS">—</small></div>
+          <div class="slider"><label>Powerwalls <b id="aPw">+0</b></label><input type="range" id="rPw" min="0" max="2" step="1" value="0"><small id="aPwS">—</small></div>
+          <div class="slider"><label>New daily usage <b id="aUse">+0 kWh</b></label><input type="range" id="rUse" min="0" max="30" step="2" value="0"><small>EV, pool heater, heat pump… (added 5–11 PM)</small></div>
+          <div class="cmp" id="cmp"></div>
+          <div class="rec" id="planRec">Calculating…</div>
+          <p class="fine" id="planFine"></p>
+        </div>
+        <div class="card">
+          <div class="h"><b>Heat &amp; your AC</b><span>every 80°F+ day · real highs</span></div>
+          <svg class="mini" id="acChart" viewBox="0 0 310 170"></svg>
+          <p id="acTxt">—</p>
+        </div>
+        <div class="card">
+          <div class="h"><b>Overnight baseline</b><span>1–5 AM average</span></div>
+          <svg class="mini" id="nightChart" viewBox="0 0 310 110"></svg>
+          <p id="nightTxt">—</p>
+        </div>
+        <div class="card">
+          <div class="h"><b>Data health</b><span class="badge g" id="dhBadge">—</span></div>
+          <div id="dhList" style="margin-top:8px"></div>
+        </div>
+      </section>
+
+      <!-- ================= SETTINGS ================= -->
+      <section class="view" id="v-set">
+        <div class="hello"><div><h3>Settings</h3><p>Solstice · local on your Mac</p></div></div>
+        <div class="sect">Connections</div>
+        <div class="group">
+          <div class="row" style="--c:#e82127"><div class="ri">T</div><div class="rt">Tesla Fleet API<small id="setTesla">—</small></div><div class="rv" id="setTeslaV">—</div></div>
+          <div class="row" style="--c:var(--home)"><div class="ri">☁</div><div class="rt">Open-Meteo weather<small>your ZIP · tilt 27° · facing 244°</small></div><div class="rv" id="setWx">—</div></div>
+          <div class="row tap" style="--c:var(--grid)" id="openData" tabindex="0"><div class="ri">≡</div><div class="rt">All data<small>Raw live status and site info</small></div><div class="chev">›</div></div>
+        </div>
+        <div class="sect">Your system</div>
+        <div class="group" id="sysGroup"></div>
+        <div class="sect">Your data</div>
+        <div class="group">
+          <a class="row tap" style="--c:var(--home);color:inherit;text-decoration:none" href="/api/export.csv"><div class="ri">⇩</div><div class="rt">Export CSV<small>Every 5-minute reading</small></div><div class="chev">›</div></a>
+          <div class="row" style="--c:var(--grid)"><div class="ri">✦</div><div class="rt">Calm mode<small>Less motion; follows your system setting</small></div><div class="sw" id="calmSw"></div></div>
+        </div>
+        <div class="sect">Alerts · in app</div>
+        <div class="group" id="alertPrefs"></div>
+        <div class="sect">Preview</div>
+        <div class="group">
+          <div class="row" style="--c:var(--out)"><div class="ri">⚡</div><div class="rt">Preview outage mode<small>What the app looks like when the grid goes down</small></div><div class="sw red" id="outSw"></div></div>
+        </div>
+      </section>
+    </div>
+
+    <nav class="tabbar">
+      <button class="tab on" data-v="v-now"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Now</button>
+      <button class="tab" data-v="v-hist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>History</button>
+      <button class="tab" data-v="v-roof"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 18 7 6h14l-4 12z"/><path d="M5 12h14M10 6 8 18M15 6l-2 12"/></svg>Panels</button>
+      <button class="tab" data-v="v-ins"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 1.1 1 1.8V16h5v-.3c0-.7.4-1.4 1-1.8A6 6 0 0 0 12 3z"/></svg><span class="dotw" id="insDot" hidden></span>Insights</button>
+      <button class="tab" data-v="v-set"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Settings</button>
+    </nav>
+
+    <div class="scrim" id="scrim"></div>
+    <div class="sheet" id="sheet">
+      <div class="grab"></div>
+      <div id="sheetBody"></div>
+    </div>
+  </div>
+</div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

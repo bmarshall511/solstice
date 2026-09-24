@@ -50,6 +50,26 @@ db.exec(`
     duration_s INTEGER NOT NULL
   );
 
+  -- calendar_history kind=soe (battery %, 15-min) — undocumented but works
+  CREATE TABLE IF NOT EXISTS soe (
+    ts    TEXT PRIMARY KEY,
+    epoch INTEGER NOT NULL,
+    soe   REAL NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS soe_epoch ON soe(epoch);
+
+  -- PEC bills (parsed from PDF or entered by hand)
+  CREATE TABLE IF NOT EXISTS bills (
+    bill_date   TEXT PRIMARY KEY,
+    period_from TEXT NOT NULL,
+    period_to   TEXT NOT NULL,
+    delivered_kwh REAL NOT NULL,
+    received_kwh  REAL NOT NULL,
+    total       REAL NOT NULL,
+    raw         TEXT NOT NULL,
+    created_at  INTEGER NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS site_info (
     fetched_at INTEGER PRIMARY KEY,
     raw        TEXT NOT NULL

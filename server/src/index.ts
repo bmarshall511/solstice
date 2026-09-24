@@ -2,15 +2,18 @@ import express from 'express';
 import { config } from './config.ts';
 import { db, kv } from './db.ts';
 import { loginUrl, handleCallback, isConnected } from './tesla/auth.ts';
-import { ensureSite, startPolling, backfill, fetchRange, pollLive, pollSiteInfo } from './poller.ts';
-import { reconcile } from './reconcile.ts';
+import { ensureSite, startPolling, backfill, backfillSoe, fetchRange, pollLive, pollSiteInfo } from './poller.ts';
+import { api } from './api.ts';
+import { importBillFiles } from './bills.ts';
+import { existsSync } from 'node:fs';
+import { tesla, rfc3339, localMidnight } from './tesla/client.ts';
 
 const app = express();
 const page = (body: string) => `<!doctype html><meta charset="utf-8"><title>Solstice server</title>
 <style>body{font:15px/1.6 system-ui;background:#05060a;color:#e9edf5;max-width:720px;margin:48px auto;padding:0 20px}a{color:#ffc15e}
 code,pre{font:13px ui-monospace,monospace;background:#11141c;padding:2px 6px;border-radius:6px}pre{padding:12px;overflow:auto}.ok{color:#4ef0a6}.bad{color:#ff7a66}</style>${body}`;
 
-app.get('/', (_req, res) => {
+app.get('/server', (_req, res) => {
   if (!isConnected()) return res.send(page(`<h1>Solstice</h1><p>Not connected to Tesla yet.</p><p><a href="/auth/login">Connect Tesla account →</a></p>`));
   const last = db.prepare('SELECT * FROM readings ORDER BY ts DESC LIMIT 1').get() as Record<string, number> | undefined;
   const counts = db.prepare('SELECT (SELECT COUNT(*) FROM readings) readings, (SELECT COUNT(*) FROM energy) buckets, (SELECT COUNT(DISTINCT substr(ts,1,10)) FROM energy) days, (SELECT COUNT(*) FROM backup_events) outages').get();
@@ -42,14 +45,6 @@ app.get('/api/status', (_req, res) => res.json({
   lastLive: kv.get('poll.lastLive') ?? null, lastHistory: kv.get('poll.lastHistory') ?? null,
   backfill: { target: kv.get('backfill.target') ?? null, daysDone: kv.get<string[]>('backfill.days')?.length ?? 0 },
 }));
-app.get('/api/live', (_req, res) => res.json(db.prepare('SELECT ts, solar_w, battery_w, grid_w, load_w, soc, energy_left_wh, total_pack_wh, grid_status, island_status, storm_mode_active FROM readings ORDER BY ts DESC LIMIT 1').get() ?? null));
-app.get('/api/site', (_req, res) => res.json(kv.get('tesla.siteInfo') ?? null));
-app.get('/api/energy', (req, res) => {
-  const from = Date.parse(String(req.query.from ?? '')) || Date.now() - 864e5, to = Date.parse(String(req.query.to ?? '')) || Date.now();
-  res.json(db.prepare('SELECT ts, solar_wh, home_wh, import_wh, export_wh, charge_wh, discharge_wh FROM energy WHERE epoch >= ? AND epoch < ? ORDER BY epoch').all(from, to));
-});
-app.get('/api/outages', (_req, res) => res.json(db.prepare('SELECT ts, duration_s FROM backup_events ORDER BY epoch DESC').all()));
-app.get('/api/reconcile', (_req, res) => res.json(reconcile()));
 app.post('/api/backfill', async (req, res) => {
   const from = String(req.query.from ?? '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return res.status(400).json({ error: 'from=YYYY-MM-DD required' });
@@ -64,10 +59,31 @@ app.post('/api/backfill-range', async (req, res) => {
   res.json({ started: true, from, to });
 });
 
+app.use('/api', api);
+
+// The built web app (npm run build) is served from here; during development Vite serves it on :5173.
+const webDist = new URL('../../web/dist/', import.meta.url).pathname;
+if (existsSync(webDist)) {
+  app.use(express.static(webDist));
+  app.get(/^\/(?!api|auth|server).*/, (_req, res) => res.sendFile(webDist + 'index.html'));
+}
+
+// Debug: probe calendar_history kinds for one local day, e.g. /api/debug/calendar?kind=soe&date=2026-09-23
+app.get('/api/debug/calendar', async (req, res) => {
+  const { kind = 'soe', date, period = 'day' } = req.query as Record<string, string>;
+  const start = localMidnight(date), end = new Date(start.getTime() + 864e5 - 1000);
+  try { res.json(await tesla.calendar(await ensureSite(), { kind, period, start_date: rfc3339(start), end_date: rfc3339(end) })); }
+  catch (e) { res.status(502).json({ error: (e as Error).message }); }
+});
+
 app.listen(config.port, '127.0.0.1', () => {
   console.log(`Solstice server on http://localhost:${config.port}`);
   startPolling();
   // resume an unfinished backfill after a restart
   const target = kv.get<{ from: string }>('backfill.target');
-  if (isConnected() && target && !kv.get('backfill.completedAt')) ensureSite().then(id => backfill(id, target.from)).catch(() => {});
+  importBillFiles();
+  if (isConnected()) ensureSite().then(async id => {
+    if (target && !kv.get('backfill.completedAt')) await backfill(id, target.from);
+    await backfillSoe(id);
+  }).catch(() => {});
 });

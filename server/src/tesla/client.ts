@@ -29,6 +29,8 @@ export const tesla = {
   energyHistory: (siteId: string, start: string, end: string, period = 'day') =>
     get<{ period: string; time_series: EnergyBucket[] }>(`/api/1/energy_sites/${siteId}/calendar_history`,
       { kind: 'energy', period, start_date: start, end_date: end, time_zone: config.timeZone }),
+  calendar: (siteId: string, params: Record<string, string>) =>
+    get<Record<string, unknown>>(`/api/1/energy_sites/${siteId}/calendar_history`, { time_zone: config.timeZone, ...params }),
   backupHistory: (siteId: string, start: string, end: string) =>
     get<{ events?: Array<{ timestamp: string; duration: number }> }>(`/api/1/energy_sites/${siteId}/calendar_history`,
       { kind: 'backup', period: 'lifetime', start_date: start, end_date: end, time_zone: config.timeZone }),
