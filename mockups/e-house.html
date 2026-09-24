@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Solstice · House view</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#05060a;--text:#f2f4f8;--dim:rgba(242,244,248,.62);--mute:rgba(242,244,248,.4);--glass:rgba(255,255,255,.055);--glass-b:rgba(255,255,255,.11);
+  --solar:#ffc15e;--batt:#4ef0a6;--home:#6cc4ff;--grid:#c4a2ff;--out:#ff5a4e}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#0a0c11;color:var(--text);font-family:Manrope,system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
+.stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;gap:64px;background:radial-gradient(ellipse at 50% 30%,#1a2233,#07080c 70%)}
+.side{width:300px;color:var(--dim);font-size:14px;line-height:1.6}
+.side .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.side h2{font-size:30px;line-height:1.12;color:var(--text);font-weight:300;letter-spacing:-.02em;margin-bottom:14px}
+.states{display:grid;gap:6px;margin-top:18px}
+.states button{all:unset;cursor:pointer;padding:10px 14px;border-radius:12px;background:var(--glass);border:1px solid var(--glass-b);font-size:13px;color:var(--dim)}
+.states button.on{background:rgba(255,255,255,.12);color:var(--text);border-color:rgba(255,255,255,.25)}
+.side p.n{font-size:12px;color:var(--mute);margin-top:14px}
+
+.phone{width:393px;height:852px;max-height:calc(100vh - 32px);border-radius:56px;position:relative;overflow:hidden;background:#101218;border:1px solid rgba(255,255,255,.14);box-shadow:0 50px 140px rgba(0,0,0,.65)}
+.island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:124px;height:36px;border-radius:20px;background:#000;z-index:20}
+.screen{position:absolute;inset:0;overflow-y:auto;scrollbar-width:none}
+.screen::-webkit-scrollbar{display:none}
+.hero{position:relative;height:600px}
+#house{position:absolute;inset:0;width:100%;height:100%}
+.hdr{position:absolute;top:58px;left:22px;right:22px;display:flex;justify-content:space-between;align-items:center;z-index:3}
+.hdr h1{font-size:24px;font-weight:600;letter-spacing:-.01em;text-shadow:0 2px 12px rgba(0,0,0,.4)}
+.hdr h1 span{font-size:15px;opacity:.7;margin-left:4px}
+.hdr .wx{font-size:12.5px;text-align:right;color:rgba(255,255,255,.8);text-shadow:0 1px 8px rgba(0,0,0,.5)}
+.hdr .wx b{display:block;font-size:20px;font-weight:400;color:#fff}
+.lbl{position:absolute;text-align:center;pointer-events:none;transform:translate(-50%,-100%);white-space:nowrap;text-shadow:0 1px 10px rgba(0,0,0,.6)}
+.lbl small{display:block;font-size:10.5px;letter-spacing:.14em;color:rgba(255,255,255,.62);font-weight:600}
+.lbl b{display:block;font-size:19px;font-weight:500;letter-spacing:-.01em;color:#fff;margin-top:1px}
+.lbl b i{font-style:normal;font-size:11px;vertical-align:2px;margin:0 3px}
+.lbl.below{transform:translate(-50%,0)}
+.lbl.off b{color:var(--out)}
+.banner{position:absolute;left:18px;right:18px;bottom:62px;z-index:3;display:none;padding:10px 14px;border-radius:16px;background:rgba(255,90,78,.2);border:1px solid rgba(255,90,78,.5);backdrop-filter:blur(10px);font-size:12.5px;color:#ffd6d1}
+.banner b{color:#fff}
+body.out .banner{display:block}
+.story{position:absolute;left:22px;right:22px;bottom:14px;z-index:3;font-size:13.5px;line-height:1.5;color:rgba(255,255,255,.72);text-align:center;text-shadow:0 1px 10px rgba(0,0,0,.6)}
+.story b{color:#fff;font-weight:600}
+.rows{padding:6px 16px 120px}
+.row{display:flex;align-items:center;gap:14px;padding:16px 6px;border-bottom:1px solid rgba(255,255,255,.06)}
+.row .ic{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:color-mix(in srgb,var(--c) 16%,transparent);color:var(--c);font-size:17px;flex:none}
+.row .t{flex:1}
+.row .t b{display:block;font-size:17px;font-weight:600}
+.row .t span{font-size:13.5px;color:var(--dim)}
+.row .chev{color:var(--mute);font-size:20px}
+.tabbar{position:absolute;left:14px;right:14px;bottom:18px;height:64px;border-radius:32px;background:rgba(20,22,30,.8);border:1px solid var(--glass-b);backdrop-filter:blur(20px);display:flex;align-items:center;justify-content:space-around;z-index:10;font-size:10.5px;font-weight:600;color:var(--mute)}
+.tabbar span.on{color:var(--text)}
+@media (max-width:900px){.side{display:none}.stage{display:block}.phone{width:100%;height:100%;max-height:none;border-radius:0;border:none}.island{display:none}.hdr{top:calc(env(safe-area-inset-top) + 14px)}}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="side">
+    <div class="k">Mockup · House view</div>
+    <h2>Your home, live, the way the Tesla app shows it.</h2>
+    A 3D model of your house, with the 30 panels and both Powerwalls. The sky follows the real time and weather. Flow lines light up along the wiring: yellow for solar, green for the Powerwalls, violet for PEC.
+    <div class="states" id="states">
+      <button data-s="noon" class="on">Midday · charging (like now)</button>
+      <button data-s="export">Clear afternoon · batteries full, exporting</button>
+      <button data-s="evening">Evening · Powerwalls running the house</button>
+      <button data-s="night">Night · on PEC at the reserve</button>
+      <button data-s="outage">Storm · grid outage</button>
+    </div>
+    <p class="n">Drag the house to look around. Values here are samples; the app will use your live data.</p>
+  </div>
+
+  <div class="phone">
+    <div class="island"></div>
+    <div class="screen">
+      <div class="hero">
+        <canvas id="house"></canvas>
+        <div class="hdr"><h1>Home <span>⌄</span></h1><div class="wx" id="wx"><b>90°</b>Clear</div></div>
+        <div class="banner"><b>Grid outage · 42m.</b> Solar and your Powerwalls are running the house. About 9 h of backup at this rate.</div>
+        <div class="lbl" id="lSolar"><small>SOLAR</small><b>4.0 kW</b></div>
+        <div class="lbl" id="lHome"><small>HOME</small><b>2.7 kW</b></div>
+        <div class="lbl below" id="lPw"><small>POWERWALL · 2×</small><b>1.3 kW <i style="color:var(--batt)">▲</i>23%</b></div>
+        <div class="lbl below" id="lGrid"><small>GRID</small><b>0 kW</b></div>
+        <div class="story" id="story"></div>
+      </div>
+      <div class="rows">
+        <div class="row" style="--c:var(--solar)"><div class="ic">☀</div><div class="t"><b>Energy</b><span id="r1">8.7 kWh generated today</span></div><div class="chev">›</div></div>
+        <div class="row" style="--c:var(--batt)"><div class="ic">◐</div><div class="t"><b>Impact</b><span id="r2">21% self-powered today</span></div><div class="chev">›</div></div>
+        <div class="row" style="--c:var(--batt)"><div class="ic">▮</div><div class="t"><b>Powerwall</b><span id="r3">23% · charging 1.3 kW · peaks ~33% today</span></div><div class="chev">›</div></div>
+        <div class="row" style="--c:var(--home)"><div class="ic">⛅</div><div class="t"><b>Next 48 hours</b><span id="r4">Expect ~123 kWh from PEC · no storms</span></div><div class="chev">›</div></div>
+        <div class="row" style="--c:var(--grid)"><div class="ic">$</div><div class="t"><b>PEC bill</b><span id="r5">Sep bill matches Tesla · Oct bill ready ~Oct 24</span></div><div class="chev">›</div></div>
+      </div>
+    </div>
+    <div class="tabbar"><span class="on">Now</span><span>History</span><span>Panels</span><span>Insights</span><span>Settings</span></div>
+  </div>
+</div>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ---------- sample states (the app will feed live_status + weather) ---------- */
+const STATES = {
+  noon:    { hour: 12.1, cloud: .35, rain: 0, temp: 90, cond: 'Partly cloudy', solar: 4.0, home: 2.7, batt: -1.3, grid: 0, soc: 23, story: '<b>The sun is running your home.</b> The extra 1.3 kW is filling the Powerwalls.', r: ['8.7 kWh generated today', '21% self-powered today', '23% · charging 1.3 kW · peaks ~33% today'] },
+  export:  { hour: 14.5, cloud: .05, rain: 0, temp: 88, cond: 'Clear', solar: 7.6, home: 3.1, batt: 0, grid: -4.5, soc: 100, story: '<b>Batteries are full.</b> You\'re sending 4.5 kW to PEC for credit.', r: ['38.2 kWh generated today', '92% self-powered today', '100% · full since 1:40 PM'] },
+  evening: { hour: 19.6, cloud: .2, rain: 0, temp: 86, cond: 'Clear', solar: .3, home: 5.8, batt: 4.9, grid: .6, soc: 61, story: '<b>Your Powerwalls have the evening shift.</b> They\'re covering 84% of the house.', r: ['41.0 kWh generated today', '58% self-powered today', '61% · powering home 4.9 kW · ~2h 20m to reserve'] },
+  night:   { hour: 23.3, cloud: .1, rain: 0, temp: 81, cond: 'Clear', solar: 0, home: 4.6, batt: 0, grid: 4.6, soc: 20, story: '<b>Running on PEC</b> at 4.6 kW. The Powerwalls are holding their 20% backup reserve.', r: ['41.0 kWh generated today', '44% self-powered today', '20% · holding the backup reserve'] },
+  outage:  { hour: 15.2, cloud: .95, rain: 1, temp: 79, cond: 'Thunderstorms', solar: 1.1, home: 2.4, batt: 1.3, grid: 0, soc: 64, out: true, story: '<b>The grid is down. Your home isn\'t.</b> Solar covers 46% and the Powerwalls the rest.', r: ['19.4 kWh generated today', '71% self-powered today', '64% · powering home 1.3 kW · ~9 h left'] },
+};
+let S = STATES.noon;
+
+/* ---------- renderer / scene ---------- */
+const canvas = document.getElementById('house'), hero = canvas.parentElement;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, 1, .1, 400);
+camera.position.set(19, 13, 29);
+const controls = new OrbitControls(camera, canvas);
+Object.assign(controls, { enableDamping: true, enablePan: false, enableZoom: false, minPolarAngle: Math.PI * .28, maxPolarAngle: Math.PI * .47, minAzimuthAngle: -.2, maxAzimuthAngle: 1.1 });
+controls.target.set(-1.4, 2.3, 1.2);
+
+// sky dome with sun glow; colours follow sun height + cloud cover
+const sky = { top: { value: new THREE.Color() }, hor: { value: new THREE.Color() }, sunDir: { value: new THREE.Vector3() }, glow: { value: new THREE.Color() }, cloud: { value: 0 }, t: { value: 0 } };
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(150, 32, 16), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, uniforms: sky,
+  vertexShader: `varying vec3 vD;void main(){vD=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+  fragmentShader: `varying vec3 vD;uniform vec3 top,hor,sunDir,glow;uniform float cloud,t;
+  float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+  float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x),f.y);}
+  float fbm(vec2 p){float s=0.,a=.5;for(int i=0;i<5;i++){s+=a*n(p);p*=2.;a*=.5;}return s;}
+  void main(){float y=max(vD.y,0.);vec3 c=mix(hor,top,pow(y,.6));
+    float s=max(dot(vD,normalize(sunDir)),0.);c+=glow*(pow(s,300.)*2.5+pow(s,8.)*.4);
+    vec2 uv=vD.xz/(vD.y+.25)*1.4+vec2(t*.02,0.);float cl=smoothstep(1.-cloud*.95,1.25-cloud*.6,fbm(uv*1.3))*smoothstep(0.,.25,vD.y);
+    c=mix(c,mix(hor,vec3(.85,.88,.92),.35)*(.55+.6*max(0.,dot(normalize(sunDir),vec3(0,1,0)))),cl*.85);
+    gl_FragColor=vec4(c,1.);}` })));
+const hemi = new THREE.HemisphereLight(0xbfd2ff, 0x2a2d34, .9); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff0d8, 2.4); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -.0005;
+Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 90 }); scene.add(sun, sun.target);
+
+// ground: dark, fading into the distance
+const ground = new THREE.Mesh(new THREE.CircleGeometry(60, 64), new THREE.MeshStandardMaterial({ color: 0x15171c, roughness: .95 }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+scene.fog = new THREE.Fog(0x1a2030, 30, 75);
+
+/* ---------- materials & textures ---------- */
+const mat = (c, r = .8, m = .05) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m });
+const wall = mat(0x3b3f47), roofM = mat(0x25272d, .85), trim = mat(0x4a4f58, .6);
+function tex(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; }
+const cellTex = tex(256, 512, (x, w, h) => { x.fillStyle = '#12182b'; x.fillRect(0, 0, w, h); x.strokeStyle = 'rgba(150,170,220,.28)'; x.lineWidth = 3;
+  for (let i = 1; i < 6; i++) { x.beginPath(); x.moveTo(i * w / 6, 0); x.lineTo(i * w / 6, h); x.stroke(); } for (let j = 1; j < 10; j++) { x.beginPath(); x.moveTo(0, j * h / 10); x.lineTo(w, j * h / 10); x.stroke(); }
+  x.strokeStyle = 'rgba(210,220,240,.55)'; x.lineWidth = 8; x.strokeRect(0, 0, w, h); });
+const panelMat = new THREE.MeshStandardMaterial({ map: cellTex, roughness: .25, metalness: .55, emissive: 0x1a2a66, emissiveIntensity: 0 });
+const doorTex = tex(256, 256, (x, w, h) => { x.fillStyle = '#23262c'; x.fillRect(0, 0, w, h); x.fillStyle = 'rgba(0,0,0,.35)'; for (let j = 1; j < 8; j++) x.fillRect(0, j * h / 8 - 2, w, 4); });
+const winMat = new THREE.MeshStandardMaterial({ color: 0x6f7a8e, roughness: .08, metalness: .6, emissive: 0xffc98a, emissiveIntensity: 0 });
+
+/* ---------- the house ---------- */
+function gable(W, D, rise, oh, m) { // roof ridge along x, slopes face ±z
+  const g = new THREE.Group(), half = D / 2 + oh, L = Math.hypot(half, rise), a = Math.atan2(rise, half);
+  [-1, 1].forEach(s => { const slab = new THREE.Mesh(new THREE.BoxGeometry(W + oh * 2, .16, L), m); slab.position.set(0, rise / 2, s * half / 2); slab.rotation.x = s * a; slab.castShadow = slab.receiveShadow = true; g.add(slab); });
+  const tri = new THREE.Shape(); tri.moveTo(-D / 2, 0); tri.lineTo(D / 2, 0); tri.lineTo(0, rise * D / 2 / half); tri.closePath();
+  [-1, 1].forEach(s => { const e = new THREE.Mesh(new THREE.ShapeGeometry(tri), wall); e.rotation.y = s * Math.PI / 2; e.position.x = s * W / 2; g.add(e); });
+  return { g, half, a, L };
+}
+function panels(cols, rows, W, roof, zSign = 1) { // rows up the slope on the +z face
+  const grp = new THREE.Group(), pw = 1.06, pl = 1.72, gap = .05;
+  for (let c = 0; c < cols; c++) for (let r = 0; r < rows; r++) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(pw, .05, pl), panelMat); p.castShadow = true;
+    p.position.set((c - (cols - 1) / 2) * (pw + gap), .12, (r - (rows - 1) / 2) * (pl + gap)); grp.add(p);
+  }
+  grp.rotation.x = zSign * roof.a; grp.position.set(0, 0, 0);
+  const holder = new THREE.Group(); holder.add(grp);
+  holder.position.set(0, (roof.L / 2) * Math.sin(roof.a) + .02, zSign * (roof.half - (roof.L / 2) * Math.cos(roof.a)) * 1);
+  return holder;
+}
+const house = new THREE.Group(); scene.add(house);
+// main block
+const main = new THREE.Mesh(new THREE.BoxGeometry(10, 3.2, 7.4), wall); main.position.set(1.5, 1.6, 0); main.castShadow = main.receiveShadow = true; house.add(main);
+const mainRoof = gable(10, 7.4, 2.4, .45, roofM); mainRoof.g.position.set(1.5, 3.2, 0); house.add(mainRoof.g);
+mainRoof.g.add(panels(6, 3, 10, mainRoof));       // 18 panels
+// garage wing, stepped back on the left
+const gar = new THREE.Mesh(new THREE.BoxGeometry(6, 2.9, 6.8), wall); gar.position.set(-6.5, 1.45, -1.2); gar.castShadow = gar.receiveShadow = true; house.add(gar);
+const garRoof = gable(6, 6.8, 2.1, .45, roofM); garRoof.g.position.set(-6.5, 2.9, -1.2); house.add(garRoof.g);
+garRoof.g.add(panels(4, 3, 6, garRoof));          // 12 panels → 30 total
+// garage door on the left end, windows on the right of the main front
+const door = new THREE.Mesh(new THREE.PlaneGeometry(5, 2.3), new THREE.MeshStandardMaterial({ map: doorTex, roughness: .7 })); door.rotation.y = -Math.PI / 2; door.position.set(-9.52, 1.2, -1.2); house.add(door);
+[[3.6, 1.9], [4.75, 1.9], [3.6, .85], [4.75, .85]].forEach(([x, y]) => { const w = new THREE.Mesh(new THREE.PlaneGeometry(1.05, .95), winMat); w.position.set(x, y, 3.71); house.add(w); });
+const winFrame = new THREE.Mesh(new THREE.PlaneGeometry(2.45, 2.25), trim); winFrame.position.set(4.18, 1.38, 3.705); house.add(winFrame);
+// two Powerwall 2s on the garage front, gateway on the main wall
+const pwMat = new THREE.MeshStandardMaterial({ color: 0xf2f3f5, roughness: .35 });
+const pwLeds = [];
+[-7.6, -6.7].forEach(x => { const u = new THREE.Mesh(new THREE.BoxGeometry(.75, 1.15, .16), pwMat); u.position.set(x, .95, 2.24); u.castShadow = true; house.add(u);
+  const led = new THREE.Mesh(new THREE.PlaneGeometry(.03, .5), new THREE.MeshBasicMaterial({ color: 0x4ef0a6 })); led.position.set(x - .3, .75, 2.33); house.add(led); pwLeds.push(led); });
+const gw = new THREE.Mesh(new THREE.BoxGeometry(.5, .75, .14), mat(0x4a4e57, .5, .2)); gw.position.set(-.6, 1.55, 3.78); house.add(gw);
+
+/* ---------- conduits with animated flow ---------- */
+const FEED = {
+  solar: [[-.6, 3.25, 3.78], [-.6, 1.95, 3.78]],
+  home:  [[-.35, 1.55, 3.79], [2.9, 1.55, 3.79]],
+  batt:  [[-.85, 1.55, 3.79], [-3.5, 1.55, 3.79], [-3.5, 1.55, 2.3], [-6.2, 1.55, 2.3], [-6.2, 1.3, 2.3]],
+  grid:  [[-.6, 1.15, 3.8], [-.6, .05, 3.8], [-.6, .05, 6.2], [7, .05, 7.4]],
+};
+const flows = {};
+for (const [k, pts] of Object.entries(FEED)) {
+  const path = new THREE.CurvePath(); for (let i = 0; i < pts.length - 1; i++) path.add(new THREE.LineCurve3(new THREE.Vector3(...pts[i]), new THREE.Vector3(...pts[i + 1])));
+  const len = path.getLength();
+  const u = { uColor: { value: new THREE.Color(0xffc15e) }, uT: { value: 0 }, uOn: { value: 0 }, uDir: { value: 1 }, uLen: { value: len }, uSpeed: { value: 1 } };
+  const m = new THREE.ShaderMaterial({ uniforms: u, transparent: true,
+    vertexShader: `varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+    fragmentShader: `varying vec2 vUv;uniform vec3 uColor;uniform float uT,uOn,uDir,uLen,uSpeed;
+      void main(){float x=vUv.x*uLen;float d=fract(x/.9-uT*uSpeed*uDir);float dash=smoothstep(.0,.15,d)*smoothstep(.75,.45,d);
+        vec3 base=vec3(.16,.17,.2);vec3 c=mix(base,uColor*1.6,uOn*(.35+.65*dash));gl_FragColor=vec4(c,1.);}` });
+  const tube = new THREE.Mesh(new THREE.TubeGeometry(path, Math.max(12, Math.round(len * 12)), .055, 8, false), m);
+  house.add(tube); flows[k] = u;
+}
+
+/* ---------- labels anchored to 3D points (with leader lines drawn in SVG-free CSS) ---------- */
+const anchors = { lSolar: new THREE.Vector3(1.5, 5.2, 1.4), lHome: new THREE.Vector3(4.2, 3.1, 3.7), lPw: new THREE.Vector3(-7.15, .25, 2.3), lGrid: new THREE.Vector3(5.6, .05, 7.2) };
+const lift = { lSolar: -64, lHome: -70, lPw: 34, lGrid: 30 };
+const leaders = Object.fromEntries(Object.keys(anchors).map(id => { const l = document.createElement('div'); l.style.cssText = 'position:absolute;width:1px;background:rgba(255,255,255,.45);pointer-events:none;z-index:2'; hero.appendChild(l); return [id, l]; }));
+function placeLabels() {
+  const r = canvas.getBoundingClientRect(), v = new THREE.Vector3();
+  for (const [id, p] of Object.entries(anchors)) {
+    v.copy(p).project(camera); const x = (v.x + 1) / 2 * r.width, y = (1 - v.y) / 2 * r.height, dy = lift[id];
+    const el = document.getElementById(id); el.style.left = x + 'px'; el.style.top = (y + dy) + 'px';
+    const L = leaders[id]; L.style.left = x + 'px'; L.style.top = Math.min(y, y + dy + (dy > 0 ? 0 : 4)) + 'px'; L.style.height = Math.abs(dy) - 4 + 'px';
+    if (dy > 0) L.style.top = y + 'px';
+  }
+}
+
+/* ---------- apply a state ---------- */
+const kw = v => `${Math.abs(v) < .05 ? 0 : Math.abs(v).toFixed(1)} kW`;
+function apply(s) {
+  S = s; document.body.classList.toggle('out', !!s.out);
+  document.querySelector('#lSolar b').textContent = kw(s.solar);
+  document.querySelector('#lHome b').textContent = kw(s.home);
+  document.querySelector('#lPw b').innerHTML = `${kw(s.batt)} ${s.batt < -.05 ? '<i style="color:var(--batt)">▲</i>' : s.batt > .05 ? '<i style="color:var(--solar)">▼</i>' : '<i style="color:var(--mute)">·</i>'}${s.soc}%`;
+  const lg = document.getElementById('lGrid'); lg.classList.toggle('off', !!s.out);
+  lg.querySelector('b').textContent = s.out ? 'Offline' : s.grid > .05 ? `↓ ${kw(s.grid)}` : s.grid < -.05 ? `↑ ${kw(s.grid)}` : '0 kW';
+  document.getElementById('story').innerHTML = s.story;
+  document.getElementById('wx').innerHTML = `<b>${s.temp}°</b>${s.cond}`;
+  ['r1', 'r2', 'r3'].forEach((id, i) => document.getElementById(id).textContent = s.r[i]);
+  // flows: which way and how bright
+  const set = (k, on, dir, color, amt) => { const f = flows[k]; f.uOn.value = on ? 1 : 0; f.uDir.value = dir; f.uColor.value.set(color); f.uSpeed.value = .6 + Math.min(1.6, amt / 3); };
+  set('solar', s.solar > .05, 1, 0xffc15e, s.solar);
+  set('batt', Math.abs(s.batt) > .05, s.batt < 0 ? 1 : -1, s.batt < 0 ? 0xffc15e : 0x4ef0a6, Math.abs(s.batt));
+  const homeSrc = s.solar >= s.home ? 0xffc15e : s.batt > .05 && s.batt >= Math.max(0, s.grid) ? 0x4ef0a6 : s.grid > .05 ? 0xc4a2ff : 0xffc15e;
+  set('home', s.home > .05, 1, homeSrc, s.home);
+  set('grid', !s.out && Math.abs(s.grid) > .05, s.grid < 0 ? 1 : -1, s.grid < 0 ? 0xffc15e : 0xc4a2ff, Math.abs(s.grid));
+  if (s.out) { flows.grid.uOn.value = 1; flows.grid.uColor.value.set(0xff5a4e); flows.grid.uSpeed.value = 0; }
+}
+document.querySelectorAll('#states button').forEach(b => b.onclick = () => { document.querySelectorAll('#states button').forEach(x => x.classList.toggle('on', x === b)); apply(STATES[b.dataset.s]); });
+apply(S);
+
+/* ---------- sky + light from the time of day ---------- */
+const C = { nightTop: new THREE.Color(0x05070d), nightHor: new THREE.Color(0x121a2c), duskTop: new THREE.Color(0x2a3560), duskHor: new THREE.Color(0xe79a68),
+  dayTop: new THREE.Color(0x3d6fb0), dayHor: new THREE.Color(0x9fb8d6), grayTop: new THREE.Color(0x4b5360), grayHor: new THREE.Color(0x7d8591) };
+const sd = new THREE.Vector3();
+function skyFor(hour, cloud) {
+  const a = Math.PI * (hour - 6.3) / 13.3, el = Math.sin(a), az = (hour - 12) / 7 * 1.3;
+  sd.set(Math.sin(az) * .9 + .35, el, Math.cos(az) * .75).normalize(); // sun arcs across the front of the house
+  const up = Math.max(0, Math.min(1, (el + .1) / .35)), high = Math.max(0, Math.min(1, el / .55));
+  sky.top.value.copy(C.nightTop).lerp(C.duskTop, up).lerp(C.dayTop, high).lerp(C.grayTop, cloud * .7 * up);
+  sky.hor.value.copy(C.nightHor).lerp(C.duskHor, up).lerp(C.dayHor, high).lerp(C.grayHor, cloud * .7 * up);
+  sky.sunDir.value.copy(sd); sky.glow.value.set(0xffd9a0).multiplyScalar(up * (1 - cloud * .75)); sky.cloud.value = cloud;
+  scene.fog.color.copy(sky.hor.value).multiplyScalar(.6);
+  sun.position.copy(sd).multiplyScalar(40); sun.intensity = 3.2 * Math.max(0, el) * (1 - cloud * .7);
+  hemi.intensity = .25 + .75 * up;
+  return { el, up };
+}
+
+/* ---------- rain for the storm state ---------- */
+const RN = 1400, rp = new Float32Array(RN * 6);
+for (let i = 0; i < RN; i++) { const x = (Math.random() - .5) * 50, y = Math.random() * 22, z = (Math.random() - .5) * 40; rp.set([x, y, z, x - .1, y - .8, z], i * 6); }
+const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.BufferAttribute(rp, 3));
+const rain = new THREE.LineSegments(rg, new THREE.LineBasicMaterial({ color: 0xaecbff, transparent: true, opacity: 0 })); scene.add(rain);
+
+/* ---------- loop ---------- */
+function resize() { const r = canvas.getBoundingClientRect(); renderer.setSize(r.width, r.height, false); camera.aspect = r.width / r.height; camera.updateProjectionMatrix(); }
+new ResizeObserver(resize).observe(canvas); resize();
+const clock = new THREE.Clock(); let t = 0;
+function frame() {
+  const dt = Math.min(.05, clock.getDelta()); t += dt;
+  const { el, up } = skyFor(S.hour, S.cloud); sky.t.value = t;
+  for (const f of Object.values(flows)) f.uT.value = t;
+  const night = 1 - up;
+  winMat.emissiveIntensity = Math.min(1.6, night * (.4 + S.home / 4) + (S.out ? .15 : 0));
+  panelMat.emissiveIntensity = S.solar / 8 * .5;
+  pwLeds.forEach(l => l.material.color.set(S.batt < -.05 ? 0x4ef0a6 : S.batt > .05 ? 0xffc15e : 0x9aa3b0));
+  rain.material.opacity += ((S.rain ? .45 : 0) - rain.material.opacity) * dt * 2; if (S.rain) rain.position.y = -((t * 20) % 22);
+  controls.update(); renderer.render(scene, camera); placeLabels();
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
+</body>
+</html>
