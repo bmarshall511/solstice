@@ -1,6 +1,6 @@
 import './style.css';
-import { $, localDate, localHour, addDays, toast, fmtDur, ago } from './lib/util.js';
-import { api, onLive } from './lib/api.js';
+import { $, localDate, localHour, addDays, toast, fmtDur, ago, niceDate } from './lib/util.js';
+import { api, setUnauthorized } from './lib/api.js';
 import { forecast, archive, nwsAlerts } from './lib/weather.js';
 import { learnYield } from './lib/model.js';
 import { createAurora } from './scenes/aurora.js';
@@ -37,6 +37,7 @@ async function loadHistory() {
   if (isOn('v-hist')) drawHistoryChart(S);
   const ld = landscapeData(S); if (ld) land.setData(ld);
   $('sideDays').textContent = `${daily.length} days`; $('sideBills').textContent = `${reconcile.length} bill${reconcile.length === 1 ? '' : 's'}`;
+  drawBillDue();
 }
 
 async function loadWeather() {
@@ -110,10 +111,11 @@ document.querySelectorAll('.tab[data-v]').forEach(t => t.onclick = () => go(t.da
 document.addEventListener('click', e => { const el = e.target.closest('[data-go]'); if (el) go(el.dataset.go, el.dataset.land ? 'landSect' : el.dataset.bills ? 'billSect' : null); });
 const closeSheet = () => $('phone').classList.remove('open');
 $('scrim').onclick = closeSheet;
-$('addBill').onclick = () => openBillSheet(S, () => loadHistory());
+document.addEventListener('click', e => { if (e.target.closest('[data-addbill]')) openBillSheet(S, () => loadHistory()); });
 $('openData').onclick = openRawData;
 addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); if (e.key === 'd' && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) openRawData(); });
-$('calmSw').classList.toggle('on', S.calm); $('calmSw').onclick = () => { S.calm = !S.calm; $('calmSw').classList.toggle('on', S.calm); };
+$('calmSw').classList.toggle('on', S.calm); $('calmSw').onclick = () => { S.calm = !S.calm; $('calmSw').classList.toggle('on', S.calm); api.saveSettings({ calm: S.calm }).catch(() => {}); };
+$('signOut').onclick = async () => { await api.logout().catch(() => {}); location.reload(); };
 $('outSw').onclick = () => { S.preview = !S.preview; S.previewSince = Date.now(); $('outSw').classList.toggle('on', S.preview); updateOutage(); renderLive(S); };
 
 /* ---------------- scenes + loop ---------------- */
@@ -155,16 +157,65 @@ function sideSummary() {
     (r.gridKw > .05 ? `Buying ${r.gridKw.toFixed(1)} kW from PEC.` : r.gridKw < -.05 ? `Sending ${(-r.gridKw).toFixed(1)} kW to PEC.` : 'Nothing from PEC right now.');
 }
 
-/* ---------------- start ---------------- */
-onLive(reading => { S.live = reading; updateOutage(); });
-const every = (ms, fn) => { const run = () => fn().catch(e => console.warn(e.message)); run(); setInterval(run, ms); };
-every(60_000, loadNow);
-every(5 * 60_000, loadHistory);
-every(15 * 60_000, loadWeather);
-every(5 * 60_000, loadExternal);
-loadArchive().catch(e => console.warn('archive', e.message));
-setInterval(async () => { const s = await api.status().catch(() => null); safe(drawHealth)(S, s); }, 30_000);
-api.status().then(s => safe(drawHealth)(S, s)).catch(() => {});
+/* ---------------- "your bill should be ready" prompt ---------------- */
+function drawBillDue() {
+  const last = S.reconcile?.at(-1); if (!last) return;
+  const nextClose = addDays(last.period.to, 31), ready = addDays(nextClose, 2), today = localDate();
+  const card = ready <= today
+    ? `<div class="card due"><div class="h"><b>Your ${niceDate(nextClose, { month: 'long' })} PEC bill should be ready</b><span>${niceDate(last.period.to)} – ${niceDate(nextClose)}</span></div>
+        <p>Download it from SmartHub or myPEC.com and add it. Solstice checks it against Tesla and updates your rates.</p><button class="link" data-addbill="1">+ Add the bill</button></div>` : '';
+  $('billDue').innerHTML = card; $('billDueNow').innerHTML = card;
+  $('setBills').textContent = ready <= today ? `${niceDate(nextClose, { month: 'long' })} bill ready to add` : `Last: ${niceDate(last.billDate, { month: 'long' })} · next ~${niceDate(ready)}`;
+}
+
+/* ---------------- sign-in gate ---------------- */
+function showAuth(mode, opts = {}) {
+  $('auth').hidden = false; $('authErr').textContent = opts.error ?? '';
+  const form = $('authForm'), connect = $('connectBtn');
+  form.hidden = mode === 'connect'; connect.hidden = mode !== 'connect'; $('authNameRow').hidden = mode !== 'setup';
+  $('authTitle').textContent = mode === 'setup' ? 'Create your Solstice account' : mode === 'connect' ? 'Connect your Tesla account' : 'Sign in to Solstice';
+  $('authSub').textContent = mode === 'setup' ? 'This one-time link sets up the owner account. Your existing history, bills and Tesla connection will be attached to it.'
+    : mode === 'connect' ? "Sign in with Tesla to give Solstice read-only access to your Powerwall and solar data. You'll approve it on Tesla's own page."
+    : 'Your home’s energy, live.';
+  $('authBtn').textContent = mode === 'setup' ? 'Create account' : 'Sign in';
+  $('authPass').autocomplete = mode === 'setup' ? 'new-password' : 'current-password';
+  form.onsubmit = async e => {
+    e.preventDefault(); $('authErr').textContent = ''; $('authBtn').disabled = true;
+    try {
+      if (mode === 'setup') await api.setup(opts.token, $('authEmail').value, $('authPass').value, $('authName').value);
+      else await api.login($('authEmail').value, $('authPass').value);
+      history.replaceState(null, '', '/'); location.reload();
+    } catch (err) { $('authErr').textContent = err.message; $('authBtn').disabled = false; }
+  };
+}
+let started = false;
+setUnauthorized(() => { if (!started) return; showAuth('login'); });
+
+async function boot() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('tesla_error')) toast('!', 'rgba(255,90,78,.25)', 'Tesla connection failed', params.get('tesla_error'));
+  let me;
+  try { me = await api.me(); } catch { $('authErr').textContent = 'Can’t reach the Solstice server.'; return showAuth('login'); }
+  if (!me.user) return me.needsSetup && params.get('setup') ? showAuth('setup', { token: params.get('setup') }) : showAuth('login');
+  $('acctEmail').textContent = me.user.email;
+  if (!me.site) return showAuth('connect');
+  started = true;
+  const prefs = await api.settings().catch(() => ({}));
+  if (typeof prefs.calm === 'boolean') { S.calm = prefs.calm; $('calmSw').classList.toggle('on', S.calm); }
+  const every = (ms, fn) => { const run = () => fn().catch(e => console.warn(e.message)); run(); setInterval(run, ms); };
+  every(30_000, loadNow);                 // live status (the server asks Tesla at most every ~25 s)
+  every(5 * 60_000, loadHistory);
+  every(15 * 60_000, loadWeather);
+  every(5 * 60_000, loadExternal);
+  loadArchive().catch(e => console.warn('archive', e.message));
+  // keep history current: sync now, then every 5 min while open; keep going while there are missing days to backfill
+  const sync = async () => { const r = await api.sync().catch(() => null); if (r?.filled || r?.done?.includes('lastHistory')) loadHistory().catch(() => {}); if (r?.remaining > 0) setTimeout(sync, 1500);
+    S.syncInfo = r; $('sideDays').textContent = r?.remaining ? `loading… ${r.remaining} days left` : $('sideDays').textContent; };
+  sync(); setInterval(sync, 5 * 60_000);
+  setInterval(async () => { const s = await api.status().catch(() => null); safe(drawHealth)(S, s); }, 60_000);
+  api.status().then(s => safe(drawHealth)(S, s)).catch(() => {});
+}
+boot();
 
 // PWA: offline shell + home-screen install
-if ('serviceWorker' in navigator && location.hostname === 'localhost' && !import.meta.env.DEV) navigator.serviceWorker.register('/sw.js').catch(() => {});
+if ('serviceWorker' in navigator && !import.meta.env.DEV) navigator.serviceWorker.register('/sw.js').catch(() => {});

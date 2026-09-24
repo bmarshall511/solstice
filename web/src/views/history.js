@@ -179,10 +179,12 @@ export function drawBills(S) {
 /* ---------- add-a-bill sheet ---------- */
 export function openBillSheet(S, refresh) {
   const body = $('sheetBody');
-  body.innerHTML = `<h4>Add a PEC bill</h4><p class="sub">Download the bill PDF from SmartHub or myPEC.com and drop it here. It's read on this Mac and never uploaded anywhere.</p>
+  body.innerHTML = `<div class="shead"><h4>Add a PEC bill</h4><button class="x" id="sheetX" aria-label="Close">×</button></div>
+    <p class="sub">Download the bill PDF from SmartHub or myPEC.com and drop it here. Solstice reads the numbers from it and keeps only those. The PDF itself isn't stored.</p>
     <label class="drop" id="drop"><b>Drop the bill PDF</b> or tap to choose<input type="file" accept="application/pdf" id="billFile" hidden></label>
     <div id="billPreview"></div>`;
   $('phone').classList.add('open');
+  $('sheetX').onclick = () => $('phone').classList.remove('open');
   const handle = async file => {
     $('billPreview').innerHTML = '<p class="sub">Reading the bill…</p>';
     try {

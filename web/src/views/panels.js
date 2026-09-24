@@ -1,8 +1,18 @@
 import { $, niceDate, localDate, addDays, svgText, toast } from '../lib/util.js';
+import { api } from '../lib/api.js';
 import { WMO, WICON } from '../lib/weather.js';
 
-const CLEAN_KEY = 'solstice.cleanedOn';
-const cleanedOn = () => { try { return localStorage.getItem(CLEAN_KEY); } catch { return null; } };
+let cleanings = [];
+const cleanedOn = () => cleanings[0]?.day ?? null;
+async function loadCleanings(S) { cleanings = (await api.events().catch(() => [])).filter(e => e.type === 'cleaned'); drawCleanLog(S); }
+function drawCleanLog(S) {
+  const last = cleanings[0];
+  $('cleaned').outerHTML = last
+    ? `<div id="cleaned" class="kv" style="margin-top:12px"><span>Last cleaning logged</span><b>${niceDate(last.day, { month: 'short', day: 'numeric' })} <button class="link" id="undoClean" style="margin:0 0 0 8px;padding:4px 10px">Undo</button></b></div>`
+    : `<button class="link" id="cleaned">✓ I cleaned the panels</button>`;
+  if (last) $('undoClean').onclick = async () => { await api.deleteEvent(last.id); toast('↺', 'rgba(255,255,255,.12)', 'Cleaning removed', `The ${niceDate(last.day)} entry is gone.`); await loadCleanings(S); drawPerformance(S); };
+  else $('cleaned').onclick = async () => { await api.addEvent('cleaned', localDate()); toast('✓', 'rgba(78,240,166,.2)', 'Cleaning logged', 'Solstice will compare the next sunny days against last year. Tap Undo if that was a mistake.'); await loadCleanings(S); drawPerformance(S); };
+}
 
 /** Daily solar vs what the day's sunlight should give (baseline yield learned from the same season last year). */
 export function drawPerformance(S) {
@@ -46,9 +56,7 @@ function drawCleaning(S, rows, exp) {
     : `The panels are producing what last year's baseline says they should for this much sunlight. No cleaning needed.`;
 }
 
-export function initPanels(S) {
-  $('cleaned').onclick = () => { try { localStorage.setItem(CLEAN_KEY, localDate()); } catch {} toast('✓', 'rgba(78,240,166,.2)', 'Cleaning logged', 'Solstice will compare the next sunny days against last year'); drawPerformance(S); };
-}
+export function initPanels(S) { loadCleanings(S).then(() => drawPerformance(S)); }
 
 /** Per-frame roof HUD text (the scene itself lives in scenes/roof.js). */
 export function roofHud(S, info, now) {

@@ -1,9 +1,5 @@
-import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { config } from './config.ts';
-import { db } from './db.ts';
+import { pdfToLayoutText } from './pdf.js';
+import { q } from './db.js';
 
 export type Charge = { label: string; kwh: number | null; rate: number | null; amount: number };
 export type Bill = {
@@ -37,7 +33,7 @@ export function parsePecText(text: string): Bill {
 
   const charges: Charge[] = [];
   for (const l of lines) {
-    const m = l.match(/([A-Z][A-Za-z .&-]+?(?:Charge|Credit|Fee))\s+(?:([\d,]+) kWh @ (-?\$[\d.]+)\s+)?(-?\$[\d,]+\.\d\d)\s*$/);
+    const m = l.match(/([A-Z][A-Za-z .&-]+?(?:Charge|Credit|Fee))\s+(?:([\d,]+)\s*kWh\s*@\s*(-?\$[\d.]+)\s+)?(-?\$[\d,]+\.\d\d)\s*$/);
     if (m) charges.push({ label: m[1].trim(), kwh: num(m[2]), rate: money(m[3]), amount: money(m[4])! });
   }
   const total = money(find(/Current Charges\s+(-?\$[\d,]+\.\d\d)/)?.[1]);
@@ -55,7 +51,9 @@ export function parsePecText(text: string): Bill {
   if (i >= 0) {
     const pair = lines.slice(i + 1, i + 10).map(l => l.match(/([\d,]{3,})\s+([\d,]{3,})\s*$/)).find(Boolean);
     const j = lines.findIndex((l, k) => k > i + 3 && /this month last year/.test(l));
-    const ly = j >= 0 ? lines.slice(j + 1, j + 10).map(l => l.match(/([\d,]{3,})\s+(\d{1,3})\s*$/)).find(Boolean) : null;
+    // the "last year" kWh and average daily use sit on the line just above the "kWh/Day" label
+    const unit = j >= 0 ? lines.findIndex((l, k) => k > j && /kWh\/Day/.test(l)) : -1;
+    const ly = unit > 0 ? lines.slice(j + 1, unit).reverse().map(l => l.match(/([\d,]{3,})\s+(\d{1,3})\s*$/)).find(Boolean) : null;
     const lyD = j >= 0 ? lines.slice(j + 1, j + 14).map(l => l.match(/\$([\d,.]+)\s+(\d{1,3})\D?\s*$/)).find(Boolean) : null;
     comparison = { thisMonthKwh: num(pair?.[1]), lastMonthKwh: num(pair?.[2]), lastYearKwh: num(ly?.[1]), avgDailyKwh: ly ? +ly[2] : null, lastYearCost: money(lyD?.[1]), avgTempF: lyD ? +lyD[2] : null };
   }
@@ -76,35 +74,21 @@ export function parsePecText(text: string): Bill {
   };
 }
 
-export function parsePecPdf(pdf: Buffer): Bill {
-  const dir = mkdtempSync(join(tmpdir(), 'solstice-bill-'));
-  try {
-    const file = join(dir, 'bill.pdf');
-    writeFileSync(file, pdf);
-    let text: string;
-    try { text = execFileSync('pdftotext', ['-layout', file, '-'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); }
-    catch { throw new Error("That file doesn't look like a PDF. Download the bill as a PDF from SmartHub or myPEC.com."); }
-    return parsePecText(text);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+/** Read a PEC bill PDF with pure JS (works on Vercel; no poppler needed). */
+export async function parsePecPdf(pdf: Uint8Array): Promise<Bill> {
+  let text: string;
+  try { text = await pdfToLayoutText(pdf); }
+  catch { throw new Error("That file doesn't look like a PDF. Download the bill as a PDF from SmartHub or myPEC.com."); }
+  return parsePecText(text);
 }
 
-export function saveBill(bill: Bill) {
-  db.prepare(`INSERT OR REPLACE INTO bills VALUES (?,?,?,?,?,?,?,?)`).run(
-    bill.billDate, bill.period.from, bill.period.to, bill.deliveredKwh, bill.receivedKwh, bill.total, JSON.stringify(bill), Date.now());
+export async function saveBill(siteId: string, bill: Bill) {
+  await q(`INSERT INTO bills (site_id, bill_date, period_from, period_to, delivered_kwh, received_kwh, total, raw) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+    ON CONFLICT (site_id, bill_date) DO UPDATE SET period_from=excluded.period_from, period_to=excluded.period_to, delivered_kwh=excluded.delivered_kwh,
+      received_kwh=excluded.received_kwh, total=excluded.total, raw=excluded.raw`,
+    [siteId, bill.billDate, bill.period.from, bill.period.to, bill.deliveredKwh, bill.receivedKwh, bill.total, JSON.stringify(bill)]);
 }
 
-export function listBills(): Bill[] {
-  return (db.prepare('SELECT raw FROM bills ORDER BY bill_date').all() as Array<{ raw: string }>).map(r => JSON.parse(r.raw) as Bill);
-}
-
-/** One-time import of bills parsed by scripts/parse-pec-bill.mjs into data/bills/. */
-export function importBillFiles() {
-  if (!existsSync(config.billsDir)) return;
-  const have = new Set(listBills().map(b => b.billDate));
-  for (const f of readdirSync(config.billsDir).filter(f => f.endsWith('.json'))) {
-    const bill = JSON.parse(readFileSync(config.billsDir + f, 'utf8')) as Bill;
-    if (!have.has(bill.billDate)) saveBill(bill);
-  }
+export async function listBills(siteId: string): Promise<Bill[]> {
+  return (await q<{ raw: Bill }>('SELECT raw FROM bills WHERE site_id = $1 ORDER BY bill_date', [siteId])).map(r => r.raw);
 }

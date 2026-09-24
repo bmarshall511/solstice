@@ -1,21 +1,21 @@
-import { db } from './db.ts';
-import { listBills } from './bills.ts';
+import { one } from './db.js';
+import { listBills } from './bills.js';
 
 const addYears = (d: string, n: number) => `${+d.slice(0, 4) + n}${d.slice(4)}`;
 
 /** Tesla-measured totals for a local date window [from, to). */
-export function teslaTotals(from: string, to: string) {
-  const t = db.prepare(`SELECT COUNT(DISTINCT substr(ts,1,10)) days, SUM(solar_wh) solar, SUM(home_wh) home, SUM(import_wh) imp,
-    SUM(export_wh) exp, SUM(charge_wh) chg, SUM(discharge_wh) dis FROM energy WHERE substr(ts,1,10) >= ? AND substr(ts,1,10) < ?`).get(from, to) as Record<string, number | null>;
-  const kwh = (wh: number | null) => (wh == null ? null : Math.round(wh / 100) / 10);
-  return { days: t.days ?? 0, solarKwh: kwh(t.solar), homeKwh: kwh(t.home), importKwh: kwh(t.imp), exportKwh: kwh(t.exp), chargeKwh: kwh(t.chg), dischargeKwh: kwh(t.dis) };
+export async function teslaTotals(siteId: string, from: string, to: string) {
+  const t = await one(`SELECT COUNT(DISTINCT day)::int days, SUM(solar_wh) solar, SUM(home_wh) home, SUM(import_wh) imp, SUM(export_wh) exp, SUM(charge_wh) chg, SUM(discharge_wh) dis
+    FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3`, [siteId, from, to]) ?? {};
+  const kwh = (wh: unknown) => (wh == null ? null : Math.round(Number(wh) / 100) / 10);
+  return { days: Number(t.days ?? 0), solarKwh: kwh(t.solar), homeKwh: kwh(t.home), importKwh: kwh(t.imp), exportKwh: kwh(t.exp), chargeKwh: kwh(t.chg), dischargeKwh: kwh(t.dis) };
 }
 
 /** Compare each bill's meter registers with Tesla's measured energy over the same dates, and with the same dates last year. */
-export function reconcile() {
-  return listBills().map(bill => {
-    const tesla = teslaTotals(bill.period.from, bill.period.to);
-    const lastYear = teslaTotals(addYears(bill.period.from, -1), addYears(bill.period.to, -1));
+export async function reconcile(siteId: string) {
+  return Promise.all((await listBills(siteId)).map(async bill => {
+    const tesla = await teslaTotals(siteId, bill.period.from, bill.period.to);
+    const lastYear = await teslaTotals(siteId, addYears(bill.period.from, -1), addYears(bill.period.to, -1));
     const gap = (billed: number | null, measured: number | null) => (billed && measured != null ? Math.round((measured - billed) / billed * 1000) / 10 : null);
     const importGapPct = gap(bill.deliveredKwh, tesla.importKwh);
     const checks = [
@@ -33,5 +33,5 @@ export function reconcile() {
       withoutSolarCost: tesla.homeKwh != null && bill.tariff.fixedMonthly != null
         ? Math.round((bill.tariff.fixedMonthly + bill.tariff.discounts + tesla.homeKwh * bill.tariff.importRateAllIn) * 100) / 100 : null,
     };
-  });
+  }));
 }

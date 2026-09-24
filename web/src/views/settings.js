@@ -4,7 +4,9 @@ import { api } from '../lib/api.js';
 const PREFS = [['outage', 'var(--out)', '⚡', 'Grid outage started or ended'], ['lowBatt', 'var(--solar)', '↓', 'Battery low during an outage', 'Below 30%'],
   ['solar', 'var(--warn)', '☀', 'Solar underperforming', '≥ 8% below baseline'], ['nws', 'var(--home)', '⛈', 'Severe weather (NWS)'], ['bill', 'var(--grid)', '≈', 'Bill doesn’t match Tesla', 'Gap over 5%'],
   ['baseline', 'var(--grid)', '◐', 'Overnight usage drift'], ['stale', 'var(--mute)', '⏻', 'Tesla stopped reporting', 'After 3 minutes']];
-const load = () => { try { return JSON.parse(localStorage.getItem('solstice.alerts') ?? '{}'); } catch { return {}; } };
+let prefs = {};
+api.settings().then(p => { prefs = p.alerts ?? {}; document.querySelectorAll('[data-pref]').forEach(el => el.classList.toggle('on', prefs[el.dataset.pref] !== false)); }).catch(() => {});
+const load = () => prefs;
 
 export function drawSettings(S) {
   const site = S.now?.site ?? {}, h = S.now?.health ?? {}, t = S.tariff;
@@ -21,7 +23,7 @@ export function drawSettings(S) {
     row('var(--mute)', '⌂', 'Installed', `Gateway firmware ${site.firmware?.split(' ')[0] ?? '—'}`, site.installed ? niceDate(site.installed.slice(0, 10), { month: 'short', year: 'numeric' }) : '—');
   const prefs = load();
   $('alertPrefs').innerHTML = PREFS.map(([k, c, i, title, sub]) => `<div class="row" style="--c:${c}"><div class="ri">${i}</div><div class="rt">${title}${sub ? `<small>${sub}</small>` : ''}</div><div class="sw ${prefs[k] === false ? '' : 'on'}" data-pref="${k}"></div></div>`).join('');
-  document.querySelectorAll('[data-pref]').forEach(el => el.onclick = () => { const p = load(); p[el.dataset.pref] = !el.classList.toggle('on') ? false : true; try { localStorage.setItem('solstice.alerts', JSON.stringify(p)); } catch {} });
+  document.querySelectorAll('[data-pref]').forEach(el => el.onclick = () => { prefs[el.dataset.pref] = el.classList.toggle('on'); api.saveSettings({ alerts: prefs }).catch(() => {}); });
 }
 
 export async function openRawData() {

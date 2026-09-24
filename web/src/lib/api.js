@@ -1,4 +1,15 @@
-const get = async path => { const r = await fetch(`/api/${path}`); if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`); return r.json(); };
+/** Called when the server says we're not signed in (set by main.js). */
+export let onUnauthorized = () => {};
+export const setUnauthorized = fn => { onUnauthorized = fn; };
+async function call(path, opts) {
+  const r = await fetch(`/api/${path}`, { credentials: 'same-origin', ...opts });
+  if (r.status === 401) { onUnauthorized(); throw new Error('Sign in required'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error ?? `${path}: HTTP ${r.status}`);
+  return j;
+}
+const get = path => call(path);
+const send = (method, path, body) => call(path, { method, headers: { 'Content-Type': 'application/json' }, body: body == null ? undefined : JSON.stringify(body) });
 
 export const api = {
   now: () => get('now'),
@@ -16,13 +27,17 @@ export const api = {
   ercot: () => get('ercot'),
   status: () => get('status'),
   whatif: q => get(`whatif?${new URLSearchParams(q)}`),
-  parseBill: async file => { const r = await fetch('/api/bills/parse', { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: file }); const j = await r.json(); if (!r.ok) throw new Error(j.error); return j; },
-  saveBill: async bill => { const r = await fetch('/api/bills', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bill) }); const j = await r.json(); if (!r.ok) throw new Error(j.error); return j; },
+  parseBill: file => call('bills/parse', { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: file }),
+  saveBill: bill => send('POST', 'bills', bill),
+  sync: () => send('POST', 'sync'),
+  me: () => get('auth/me'),
+  login: (email, password) => send('POST', 'auth/login', { email, password }),
+  setup: (token, email, password, name) => send('POST', 'auth/setup', { token, email, password, name }),
+  logout: () => send('POST', 'auth/logout'),
+  events: () => get('events'),
+  addEvent: (type, day, note) => send('POST', 'events', { type, day, note }),
+  deleteEvent: id => call(`events/${id}`, { method: 'DELETE' }),
+  settings: () => get('settings'),
+  saveSettings: patch => send('PUT', 'settings', patch),
 };
 
-/** Live readings pushed by the server every ~30 s (Server-Sent Events), with automatic reconnect. */
-export function onLive(cb) {
-  let es;
-  const connect = () => { es = new EventSource('/api/stream'); es.onmessage = e => cb(JSON.parse(e.data)); es.onerror = () => { es.close(); setTimeout(connect, 5000); }; };
-  connect();
-}

@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Local-first Tesla Powerwall + solar monitor",
   "engines": {
-    "node": ">=22.12"
+    "node": "22.x"
   },
   "scripts": {
     "server": "node --env-file=.env --no-warnings=ExperimentalWarning --import tsx server/src/index.ts",
@@ -16,12 +16,16 @@
     "start": "npm run build && npm run server"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "express": "^5.2.1",
+    "pdfjs-dist": "^6.3.289",
     "three": "^0.186.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@types/express": "^5.0.6",
     "@types/node": "^22.20.4",
+    "@vercel/node": "^15.0.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^6.4.3"

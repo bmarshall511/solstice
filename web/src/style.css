@@ -338,3 +338,21 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .hlbl b i{font-style:normal;font-size:10px;vertical-align:2px;margin:0 3px}
 .hlbl.off b{color:var(--out)}
 .hlead{position:absolute;width:1px;background:rgba(255,255,255,.45);pointer-events:none;z-index:1}
+
+/* sign-in / connect overlay */
+.auth{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:20px;background:rgba(5,6,10,.55);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+.auth[hidden]{display:none}
+.authcard{width:min(380px,100%);padding:28px 24px;border-radius:28px;background:rgba(18,20,28,.92);border:1px solid var(--glass-b);box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.authlogo{width:44px;height:44px;border-radius:50%;background:radial-gradient(circle at 38% 36%,#ffe2a6,#ffb547 45%,#ff6a3d);box-shadow:0 0 26px rgba(255,181,71,.5);margin-bottom:16px}
+.authcard h2{font-size:22px;font-weight:600;letter-spacing:-.01em}
+.authcard p{font-size:13.5px;color:var(--dim);margin-top:6px;line-height:1.5}
+.authcard form{display:grid;gap:12px;margin-top:18px}
+.authcard label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--dim)}
+.authcard label[hidden]{display:none}
+.authcard input{all:unset;font:15px Manrope;color:var(--text);padding:12px 14px;border-radius:14px;background:rgba(0,0,0,.35);border:1px solid var(--glass-b)}
+.authcard input:focus{border-color:rgba(255,193,94,.6)}
+.authcard .primary{margin-top:6px}
+.authcard a.primary{display:block;text-decoration:none}
+.authcard a.primary[hidden]{display:none}
+.addbill{display:inline-flex}
+.due{border-color:rgba(255,193,94,.35)!important;background:rgba(255,193,94,.07)!important}

@@ -16,6 +16,21 @@
 </head>
 <body>
 <canvas id="aurora"></canvas>
+<div class="auth" id="auth" hidden>
+  <div class="authcard">
+    <div class="authlogo"></div>
+    <h2 id="authTitle">Sign in to Solstice</h2>
+    <p id="authSub">Your home's energy, live.</p>
+    <form id="authForm">
+      <label id="authNameRow" hidden>Name<input id="authName" autocomplete="name"></label>
+      <label>Email<input id="authEmail" type="email" autocomplete="username" required></label>
+      <label>Password<input id="authPass" type="password" autocomplete="current-password" required minlength="10"></label>
+      <button class="primary" id="authBtn" type="submit">Sign in</button>
+    </form>
+    <a class="primary" id="connectBtn" href="/auth/login" hidden>Connect your Tesla account</a>
+    <p class="err" id="authErr"></p>
+  </div>
+</div>
 <div class="stage">
   <aside class="side">
     <div class="k">Solstice · Home</div>
@@ -28,7 +43,7 @@
         <span>History stored</span><b id="sideDays">—</b>
         <span>PEC bills</span><b id="sideBills">—</b>
       </div>
-      <p>Everything is stored on this Mac. Press <b>D</b> for raw data.</p>
+      <p>Private to your account. Press <b>D</b> for raw data.</p>
     </div>
   </aside>
 
@@ -89,6 +104,7 @@
           </div>
         </div>
 
+        <div id="billDueNow"></div>
         <div class="sect">Today</div>
         <div class="stats">
           <div class="stat"><span>Solar produced</span><b id="tSol">—</b><em id="tSolE">—</em></div>
@@ -143,6 +159,8 @@
         </div>
 
         <div class="sect" id="billSect">Electric bills · PEC</div>
+        <div id="billDue"></div>
+        <button class="link addbill" data-addbill="1" style="margin:0 0 4px">+ Add a PEC bill</button>
         <div id="billChecks"></div>
         <div class="card">
           <div class="h"><b>PEC meter vs Tesla</b><span>kWh bought per bill</span></div>
@@ -162,7 +180,7 @@
           <div class="h"><b>Monthly cost</b><span>Tesla usage × your PEC rates</span></div>
           <svg class="mini" id="billChart" viewBox="0 0 310 130"></svg>
           <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Paid (est.)</span><span><i style="background:rgba(255,255,255,.2)"></i>Without solar + Powerwall</span></div>
-          <button class="link" id="addBill">+ Add a PEC bill</button>
+          <button class="link" data-addbill="1">+ Add a PEC bill</button>
         </div>
       </section>
 
@@ -233,6 +251,7 @@
         <div class="group">
           <div class="row" style="--c:#e82127"><div class="ri">T</div><div class="rt">Tesla Fleet API<small id="setTesla">—</small></div><div class="rv" id="setTeslaV">—</div></div>
           <div class="row" style="--c:var(--home)"><div class="ri">☁</div><div class="rt">Open-Meteo weather<small>your ZIP · tilt 27° · facing 244°</small></div><div class="rv" id="setWx">—</div></div>
+          <div class="row tap" style="--c:var(--solar)" data-addbill="1" tabindex="0"><div class="ri">$</div><div class="rt">PEC bills<small id="setBills">Add this month's bill</small></div><div class="chev">›</div></div>
           <div class="row tap" style="--c:var(--grid)" id="openData" tabindex="0"><div class="ri">≡</div><div class="rt">All data<small>Raw live status and site info</small></div><div class="chev">›</div></div>
         </div>
         <div class="sect">Your system</div>
@@ -244,6 +263,10 @@
         </div>
         <div class="sect">Alerts · in app</div>
         <div class="group" id="alertPrefs"></div>
+        <div class="sect">Account</div>
+        <div class="group">
+          <div class="row" style="--c:var(--home)"><div class="ri">@</div><div class="rt"><span id="acctEmail">—</span><small>Signed in</small></div><button class="link" id="signOut" style="margin:0">Sign out</button></div>
+        </div>
         <div class="sect">Preview</div>
         <div class="group">
           <div class="row" style="--c:var(--out)"><div class="ri">⚡</div><div class="rt">Preview outage mode<small>What the app looks like when the grid goes down</small></div><div class="sw red" id="outSw"></div></div>
