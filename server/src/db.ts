@@ -68,6 +68,10 @@ const SCHEMA = [
   // User-logged events: panel cleanings, notes. Deletable (undo).
   `CREATE TABLE IF NOT EXISTS events (id serial PRIMARY KEY, site_id text NOT NULL, type text NOT NULL, day text NOT NULL, note text, created_at timestamptz NOT NULL DEFAULT now())`,
   `CREATE TABLE IF NOT EXISTS kv (key text PRIMARY KEY, value jsonb NOT NULL)`,
+  // Pool pump samples from ScreenLogic (taken whenever the app asks for pool data): used to learn the pump's real watts per RPM.
+  `CREATE TABLE IF NOT EXISTS pool_readings (site_id text NOT NULL, ts bigint NOT NULL, day text NOT NULL, hour smallint NOT NULL, running boolean NOT NULL,
+     watts real NOT NULL, rpm real NOT NULL, water_temp real, air_temp real, circuits jsonb NOT NULL DEFAULT '[]', PRIMARY KEY (site_id, ts))`,
+  `CREATE INDEX IF NOT EXISTS pool_readings_site_day ON pool_readings(site_id, day)`,
 ];
 
 let migrated: Promise<void> | null = null;

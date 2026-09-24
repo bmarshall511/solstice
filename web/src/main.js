@@ -12,6 +12,7 @@ import { initHistory, drawHistoryChart, landscapeData, drawSocHeat, drawRecords,
 import { initPanels, drawPerformance, roofHud } from './views/panels.js';
 import { drawAlerts, initPlanner, drawAC, drawOvernight, drawHealth } from './views/insights.js';
 import { drawSettings, openRawData } from './views/settings.js';
+import { initAppliances } from './views/appliances.js';
 
 /** All app state lives here; views read from it. */
 const S = { calm: matchMedia('(prefers-reduced-motion: reduce)').matches, preview: false };
@@ -126,7 +127,7 @@ $('outSw').onclick = () => { S.preview = !S.preview; S.previewSince = Date.now()
 /* ---------------- scenes + loop ---------------- */
 const house = createHomeView($('house'), 'flow');
 const aurora = createAurora($('aurora')), orb = createOrb($('orb')), land = createLandscape($('land'), $('landTip')), roof = createHomeView($('roof'), 'sun');
-buildFlow(); initHistory(S); initPanels(S); initPlanner(S);
+buildFlow(); initHistory(S); initPanels(S); initPlanner(S); initAppliances(S);
 
 let HIDDEN = false; document.addEventListener('visibilitychange', () => HIDDEN = document.hidden);
 let last = performance.now(), T = 0, tick = 0, hudTick = 0;

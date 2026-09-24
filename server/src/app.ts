@@ -9,6 +9,9 @@ import { refreshLive, refreshSiteInfo, syncSite, saveEnergyRows, saveSoe } from 
 import { listBills, parsePecPdf, saveBill, type Bill } from './bills.js';
 import { reconcile } from './reconcile.js';
 import { SOLAR, warrantedDcPct, systemYear } from './system.js';
+import { appliances, comingSoon } from './appliances/index.js';
+import { poolDetail, applyPlan, restorePrevious } from './appliances/pool.js';
+import { readPool } from './appliances/screenlogic.js';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -316,6 +319,22 @@ app.get('/api/whatif', wrap(async (req, res) => {
     actual, baseline, upgraded, noSystem, cost, savesPerYear: saves, paybackYears: saves > 0 && cost ? Math.round(cost / saves * 10) / 10 : null, system,
     backupHoursEvening: { now: Math.round(cap0 * .8 / 4.5), upgraded: Math.round((cap0 + addPw * 13.5) * .8 / 4.5) } });
 }));
+
+/* ---------- appliances: pool pump (ScreenLogic), AC next ---------- */
+const rateFor = async (id: string) => (await listBills(id)).at(-1)?.tariff?.importRateAllIn ?? .1064;
+app.get('/api/appliances', wrap(async (req, res) => {
+  const id = site(req), settings = await settingsFor(req), rate = await rateFor(id);
+  const list = await Promise.all(appliances.filter(a => a.available()).map(a => a.summary(id, settings, rate).catch(e => ({ id: a.id, name: a.name, status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message }))));
+  res.json([...list, ...comingSoon]);
+}));
+app.get('/api/appliances/pool', wrap(async (req, res) => res.json(await poolDetail(site(req), await settingsFor(req), await rateFor(site(req)), { fresh: req.query.fresh === '1' }))));
+/** Writes the smarter schedule to ScreenLogic: replaces the pump programs' schedules and speeds, keeps everything else (lights, spa, freeze protection). */
+app.post('/api/appliances/pool/apply', wrap(async (req, res) => {
+  const id = site(req), d = await poolDetail(id, await settingsFor(req), await rateFor(id), { fresh: true });
+  if (!d.snapshot) return res.status(409).json({ error: d.error ?? 'ScreenLogic is not linked' });
+  res.json(await applyPlan(id, d.plan, d.snapshot, d.settings));
+}));
+app.post('/api/appliances/pool/restore', wrap(async (req, res) => { await restorePrevious(site(req), await readPool()); res.json({ ok: true }); }));
 
 /* ---------- CSV export ---------- */
 app.get('/api/export.csv', wrap(async (req, res) => {

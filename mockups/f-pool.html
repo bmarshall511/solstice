@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Solstice · Pool pump mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* mockup-only: a static stage, no aurora */
+body{overflow:auto;background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.stage{position:static;padding:24px 0 60px;align-items:flex-start}
+.phone{height:auto;max-height:none;overflow:visible}
+.screen{position:static;padding:34px 20px 40px;overflow:visible}
+.view{display:block}
+.note{font-size:12px;color:var(--mute);margin:0 0 8px 4px}
+/* appliance strip: same treatment for every big load */
+.apps{display:flex;gap:8px;margin-top:12px;overflow-x:auto;scrollbar-width:none}
+.app{flex:0 0 auto;padding:8px 12px;border-radius:999px;background:var(--glass);border:1px solid var(--glass-b);font-size:12px;color:var(--dim);display:flex;gap:6px;align-items:center}
+.app.on{background:rgba(108,196,255,.14);border-color:rgba(108,196,255,.4);color:var(--text)}
+.app i{width:7px;height:7px;border-radius:50%;background:var(--mute)}
+.app.on i{background:var(--batt);box-shadow:0 0 8px var(--batt)}
+.app.dim{opacity:.55}
+/* 24-hour schedule bars */
+.tl{position:relative;height:74px;margin-top:12px}
+.tl .sun{position:absolute;inset:0}
+.tl .bar{position:absolute;bottom:14px;border-radius:5px 5px 2px 2px;opacity:.9}
+.tl .lbl{position:absolute;bottom:0;font:10px "JetBrains Mono";color:var(--mute)}
+.tl .tag{position:absolute;top:0;font:600 10px Manrope;color:var(--text);white-space:nowrap}
+.big{display:flex;align-items:baseline;gap:8px;margin-top:10px}
+.big b{font:300 34px Manrope;letter-spacing:-.02em}
+.big span{font-size:12.5px;color:var(--dim)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.stat{padding:10px 12px;border-radius:16px;background:rgba(0,0,0,.22);border:1px solid var(--glass-b)}
+.stat small{display:block;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:600}
+.stat b{display:block;font:500 15px "JetBrains Mono";margin-top:4px}
+.primary{display:block;text-align:center;margin-top:12px;padding:12px;border-radius:14px;background:var(--solar);color:#1a1200;font-weight:700;font-size:13px}
+.season{display:grid;grid-template-columns:auto 1fr auto auto;gap:7px 10px;margin-top:12px;font-size:12.5px;color:var(--dim);align-items:baseline}
+.season .hd{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+.season b{font:500 12px "JetBrains Mono";color:var(--text);text-align:right}
+.season .cur{color:var(--text)}
+</style>
+</head>
+<body>
+<div class="stage">
+  <aside class="side">
+    <div class="k">Mockup · Insights tab</div>
+    <h2>Big loads, one at a time.</h2>
+    <p>A new <b>Appliances</b> section at the top of Insights. Each appliance gets the same three cards: what it's doing now, what its schedule costs, and a smarter schedule for this time of year. Pool pump is first; AC would plug into the same slots.</p>
+    <div class="demo"><h4>What's real vs. mocked</h4>
+      <p>Live pump numbers come from your ScreenLogic (Pentair) system if you link it. Without the link, Solstice estimates from the schedule and the pump's published curve, and can't see when you run the spa or features by hand.</p>
+      <p>Costs use your learned PEC rate ($0.1064/kWh). Water temperature and season come from ScreenLogic and Open-Meteo.</p>
+    </div>
+  </aside>
+
+  <div class="phone">
+    <div class="screen">
+      <section class="view on">
+        <div class="hello"><div><h3>Insights</h3><p>From your real data</p></div></div>
+
+        <div class="sect">Appliances</div>
+        <div class="apps">
+          <div class="app on"><i></i>Pool pump</div>
+          <div class="app dim"><i></i>AC · coming</div>
+          <div class="app dim"><i></i>+ add</div>
+        </div>
+
+        <!-- 1 · live -->
+        <div class="card">
+          <div class="h"><b>Pool pump</b><span class="badge g">Linked · ScreenLogic</span></div>
+          <div class="big"><b>442 W</b><span>Pool · 1,800 RPM · 51 GPM</span></div>
+          <div class="two">
+            <div class="stat"><small>Water</small><b>82°F</b></div>
+            <div class="stat"><small>Today so far</small><b>9.4 kWh · $1.00</b></div>
+            <div class="stat"><small>Share of home today</small><b>31%</b></div>
+            <div class="stat"><small>Filter pressure</small><b>— <span style="color:var(--mute);font-size:10px">(no sensor)</span></b></div>
+          </div>
+          <p>IntelliFlo VSF, 3 HP, Quad D.E. 80 filter. Freeze protection at 2,400 RPM is left alone.</p>
+        </div>
+
+        <!-- 2 · today's schedule -->
+        <div class="card">
+          <div class="h"><b>Your schedule today</b><span class="badge">≈ 28 kWh · $91/mo</span></div>
+          <div class="tl">
+            <svg class="sun" viewBox="0 0 353 74" preserveAspectRatio="none"><path d="M0 60 C 90 60, 100 12, 176 10 S 262 60, 353 60" fill="rgba(255,193,94,.10)" stroke="rgba(255,193,94,.35)" stroke-width="1"/></svg>
+            <div class="bar" style="left:0;width:20.8%;height:52px;background:var(--grid)"></div><div class="tag" style="left:2%">Waterfall 3,400</div>
+            <div class="bar" style="left:33.3%;width:16.7%;height:16px;background:var(--home)"></div>
+            <div class="bar" style="left:50%;width:25%;height:44px;background:var(--warn)"></div><div class="tag" style="left:51%;top:14px">High Speed 3,000</div>
+            <div class="bar" style="left:83.3%;width:8.3%;height:16px;background:var(--home)"></div>
+            <div class="lbl" style="left:0">12a</div><div class="lbl" style="left:25%">6a</div><div class="lbl" style="left:50%">12p</div><div class="lbl" style="left:75%">6p</div><div class="lbl" style="right:0">12a</div>
+          </div>
+          <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--home)"></i>Pool 1,800</span><span><i style="background:var(--warn)"></i>High Speed</span><span><i style="background:var(--grid)"></i>Waterfall</span><span><i style="background:rgba(255,193,94,.5)"></i>Your solar</span></div>
+          <div class="kv">
+            <span>Waterfall, 3,400 RPM, midnight–5 AM</span><b style="color:var(--warn)">13.6 kWh/day</b>
+            <span>High Speed, 3,000 RPM, noon–6 PM</span><b style="color:var(--warn)">12.2 kWh/day</b>
+            <span>Pool, 1,800 RPM, the other 6 h</span><b>2.6 kWh/day</b>
+            <span>Runs while the sun is up</span><b>52%</b>
+          </div>
+          <p>Two programs do almost all the damage: a waterfall running at near-full speed while you sleep, and six hours of High Speed that overrides the efficient Pool program in the middle of the day. Pump power rises with the cube of speed, so 3,400 RPM costs about six times what 1,800 does.</p>
+        </div>
+
+        <!-- 3 · smarter schedule for the season -->
+        <div class="card">
+          <div class="h"><b>Smarter for late September</b><span class="badge g">≈ 6 kWh · $19/mo</span></div>
+          <div class="tl">
+            <svg class="sun" viewBox="0 0 353 74" preserveAspectRatio="none"><path d="M0 60 C 90 60, 100 12, 176 10 S 262 60, 353 60" fill="rgba(255,193,94,.10)" stroke="rgba(255,193,94,.35)" stroke-width="1"/></svg>
+            <div class="bar" style="left:37.5%;width:37.5%;height:14px;background:var(--home)"></div><div class="tag" style="left:38%;top:30px">Filter 1,500 · 9a–6p</div>
+            <div class="bar" style="left:54%;width:4.2%;height:28px;background:var(--warn)"></div>
+            <div class="bar" style="left:75%;width:8.3%;height:52px;background:var(--grid)"></div><div class="tag" style="left:66%">Waterfall 6–8p</div>
+            <div class="lbl" style="left:0">12a</div><div class="lbl" style="left:25%">6a</div><div class="lbl" style="left:50%">12p</div><div class="lbl" style="left:75%">6p</div><div class="lbl" style="right:0">12a</div>
+          </div>
+          <div class="cmp"><span class="hd">Per day</span><span class="hd">Now</span><span class="hd">Smarter</span>
+            <span>Hours running</span><span class="n">17 h</span><b>11 h</b>
+            <span>Water turned over</span><span class="n">3.1×</span><b class="up">1.2×</b>
+            <span>Electricity</span><span class="n">28 kWh</span><b class="up">6 kWh</b>
+            <span>Cost per month</span><span class="n">$91</span><b class="up">$19</b>
+            <span>On solar</span><span class="n">52%</span><b class="up">85%</b>
+          </div>
+          <div class="rec"><b>Water is 82°F and the pool is still in daily use</b>, so one full turnover a day at low speed keeps it clear. Filter at 1,500 RPM from 9 to 6 while the panels are producing, a one-hour skim boost at 2,400 RPM after lunch when leaves and pollen sit on the surface, and the waterfall only when you're outside. Nothing overnight: your Powerwalls stay fuller for the evening. Freeze protection is untouched.</div>
+          <a class="primary">Apply to ScreenLogic</a>
+          <button class="link">Show me the settings instead</button>
+          <p class="fine">Estimates use Pentair's IntelliFlo VSF curve (450–3,450 RPM, up to 3.2 kW) and your PEC rate. Once linked, Solstice measures the pump's real watts and checks the plan against them.</p>
+        </div>
+
+        <!-- 4 · season plan -->
+        <div class="card">
+          <div class="h"><b>Season plan</b><span>adjusts as water temperature changes</span></div>
+          <div class="season">
+            <span class="hd">When</span><span class="hd">Filtration</span><span class="hd">kWh/d</span><span class="hd">$/mo</span>
+            <span>Dec–Feb</span><span>1,200 RPM · 6 h, freeze mode as needed</span><b>2</b><b>$7</b>
+            <span>Mar–May</span><span>1,500 RPM · 8 h + pollen boost</span><b>4</b><b>$13</b>
+            <span>Jun–Aug</span><span>1,500 RPM · 12 h + daily 1 h at 2,400</span><b>7</b><b>$23</b>
+            <span class="cur">Sep–Nov</span><span class="cur">1,500 RPM · 9 h + skim boost</span><b>6</b><b>$19</b>
+          </div>
+          <p>Rule of thumb built in: roughly one hour of filtration per 10°F of water temperature, at least one turnover, more when the pool is used or after storms. Solstice nudges you when the season changes rather than rewriting the schedule on its own.</p>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+</body>
+</html>

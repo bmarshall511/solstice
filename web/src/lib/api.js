@@ -39,6 +39,10 @@ export const api = {
   addEvent: (type, day, note) => send('POST', 'events', { type, day, note }),
   deleteEvent: id => call(`events/${id}`, { method: 'DELETE' }),
   settings: () => get('settings'),
+  appliances: () => get('appliances'),
+  pool: () => get('appliances/pool'),
+  poolApply: () => send('POST', 'appliances/pool/apply'),
+  poolRestore: () => send('POST', 'appliances/pool/restore'),
   saveSettings: patch => send('PUT', 'settings', patch),
 };
 
