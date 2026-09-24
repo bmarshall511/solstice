@@ -17,7 +17,7 @@
   --r-lg:26px; --r-md:20px; --ease:cubic-bezier(.2,.8,.2,1);
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:Manrope,system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
+html,body{height:100%;background:var(--bg);overscroll-behavior:none;color:var(--text);font-family:Manrope,system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
 button{font:inherit;color:inherit}
 #aurora{position:fixed;inset:0}
 
@@ -38,7 +38,7 @@ button{font:inherit;color:inherit}
 .demo p{font-size:12px;color:var(--mute);margin-top:10px;line-height:1.5}
 
 /* ---------- phone ---------- */
-.phone{width:393px;height:852px;max-height:calc(100vh - 32px);border-radius:56px;position:relative;overflow:hidden;
+.phone{overflow:clip;width:393px;height:852px;max-height:calc(100vh - 32px);border-radius:56px;position:relative;overflow:hidden;
   background:rgba(8,10,16,.5);border:1px solid rgba(255,255,255,.14);box-shadow:0 50px 140px rgba(0,0,0,.65),inset 0 0 0 8px rgba(0,0,0,.35);
   backdrop-filter:blur(34px) saturate(170%);-webkit-backdrop-filter:blur(34px) saturate(170%);transition:border-color .6s}
 body.out .phone{border-color:rgba(255,90,78,.35)}
@@ -201,6 +201,27 @@ body.out .gx{opacity:1}
 .cleanrow{display:flex;gap:16px;align-items:center;margin-top:12px}
 .cleanrow svg{flex:none}
 .cleanrow p{margin-top:0}
+/* status chips */
+.chips{display:flex;gap:6px;overflow-x:auto;margin:12px -20px 0;padding:0 20px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chipx{flex:none;display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:7px 11px;border-radius:999px;background:var(--glass);border:1px solid var(--glass-b);color:var(--dim)}
+.chipx i{width:6px;height:6px;border-radius:50%;background:var(--c,var(--batt));box-shadow:0 0 8px var(--c,var(--batt))}
+.chipx.alert{background:rgba(255,90,78,.14);border-color:rgba(255,90,78,.4);color:#ffd0cb}
+/* heatmap + records */
+.rec2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.rec2 div{background:rgba(255,255,255,.04);border:1px solid var(--glass-b);border-radius:16px;padding:11px 12px}
+.rec2 span{font-size:11px;color:var(--dim)}
+.rec2 b{display:block;font-size:19px;font-weight:300;margin-top:2px}
+.rec2 em{font-style:normal;font-size:10.5px;color:var(--mute)}
+.health{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--glass-b);font-size:12.5px;color:var(--dim)}
+.health:first-of-type{border-top:none}
+.health i{width:8px;height:8px;border-radius:50%;background:var(--batt);box-shadow:0 0 8px var(--batt);flex:none}
+.health b{margin-left:auto;font:500 12px "JetBrains Mono";color:var(--text)}
+/* micro-interactions + accessibility */
+.card,.stat,.link,.primary,.dbtn,.tab,.row.tap,.str{transition:transform .15s var(--ease),background .2s}
+.link:active,.primary:active,.dbtn:active,.row.tap:active,.str:active{transform:scale(.97)}
+button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.001s!important;transition-duration:.001s!important}}
 /* PEC bill analysis */
 .check{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.45}
 .check:first-of-type{border-top:none}
@@ -325,6 +346,13 @@ body.out .gx{opacity:1}
           <div class="wx" id="wxtop"><b>--°</b>…</div>
         </div>
 
+        <div class="chips" id="chips">
+          <div class="chipx"><i></i>Gateway online</div>
+          <div class="chipx" id="chipNws"><i style="--c:var(--home)"></i>Checking NWS alerts…</div>
+          <div class="chipx" style="--c:var(--batt)"><i></i>ERCOT normal · 74% load</div>
+          <div class="chipx" style="--c:var(--mute)"><i style="--c:rgba(242,244,248,.4);box-shadow:none"></i>Storm Watch standby</div>
+        </div>
+
         <div class="banner">
           <div class="bi"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ff8a80" stroke-width="2"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/><path d="M3 3l18 18" stroke="#ff5a4e"/></svg></div>
           <div><b>Grid outage</b><span>Running on sunlight + Powerwall</span></div>
@@ -339,6 +367,13 @@ body.out .gx{opacity:1}
         <div class="card">
           <div class="h"><b>Energy flow</b><span id="flowNote">live · every 30 s</span></div>
           <svg id="flow" viewBox="0 -14 330 290"></svg>
+        </div>
+
+        <div class="card">
+          <div class="h"><b>Next 48 hours</b><span>forecast · Open-Meteo</span></div>
+          <svg class="mini" id="fc48" viewBox="0 0 310 150"></svg>
+          <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--home)"></i>Home</span><span><i style="background:var(--batt)"></i>Battery %</span></div>
+          <p id="fcTxt" style="margin-top:10px">—</p>
         </div>
 
         <div class="card" id="pwCard">
@@ -397,6 +432,31 @@ body.out .gx{opacity:1}
           <div class="land" id="land"></div>
           <div class="legend" style="justify-content:flex-start;margin-top:6px"><span>kWh/hr<span class="ramp"></span></span><span style="color:var(--warn)">▌ below the weather model</span></div>
           <div class="landtip" id="landTip">Each bar is one hour of solar production. The red rows are the last 4 days, when output fell about 11% below what the sunlight should have produced.</div>
+        </div>
+
+        <div class="sect">Powerwall patterns</div>
+        <div class="card">
+          <div class="h"><b>Charge level · 30 days</b><span>each row is a day</span></div>
+          <svg class="mini" id="socHeat" viewBox="0 0 310 190"></svg>
+          <div class="legend" style="justify-content:flex-start">0%<span class="ramp" style="background:linear-gradient(90deg,#10151f,#1d5c4a,#4ef0a6,#d9fff0)"></span>100% · <span style="color:var(--warn)">▌ reserve</span></div>
+          <div class="rec2">
+            <div><span>Cycles per day</span><b>0.82</b><em>30-day average</em></div>
+            <div><span>Reached 100%</span><b>26 of 30</b><em>days</em></div>
+            <div><span>Touched 20% reserve</span><b>3 days</b><em>all cloudy stretches</em></div>
+            <div><span>Average overnight low</span><b>38%</b><em>6:40 AM typical</em></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="h"><b>Records &amp; streaks</b><span class="badge g">🔥 12 days</span></div>
+          <div class="rec2">
+            <div><span>Current streak</span><b>12 days</b><em>fully self-powered</em></div>
+            <div><span>Best day</span><b>71.4 kWh</b><em>Apr 18 · clear &amp; cool</em></div>
+            <div><span>Biggest export</span><b>49.2 kWh</b><em>Apr 18</em></div>
+            <div><span>Longest off-grid</span><b>6h 06m</b><em>May 21 outage</em></div>
+            <div><span>Lifetime produced</span><b>21.8 MWh</b><em>since May 2024</em></div>
+            <div><span>CO₂ avoided</span><b>9.4 t</b><em>ERCOT grid mix</em></div>
+          </div>
         </div>
 
         <div class="sect">Outages</div>
@@ -504,6 +564,7 @@ body.out .gx{opacity:1}
       <!-- ================= INSIGHTS ================= -->
       <section class="view" id="v-ins">
         <div class="hello"><div><h3>Insights</h3><p>Checked every 15 minutes</p></div></div>
+        <div id="nwsCard"></div>
         <div class="card" style="--c:var(--solar)"><div class="ins"><div class="ic">$</div><div><b>PEC rate up 9%</b> <time>· Sep bill</time><p>Your energy rate went from $0.112 to $0.122/kWh. Your usage didn't change, so it's PEC's adjustment. It costs about $3 a month at your current imports.</p></div></div><button class="link" data-go="v-hist" data-bills="1">Open bill check →</button></div>
         <div class="card" id="planner">
           <div class="h"><b>What if you added…</b><span>upgrade planner</span></div>
@@ -521,7 +582,23 @@ body.out .gx{opacity:1}
         <div class="card" style="--c:var(--solar)"><div class="ins"><div class="ic">◐</div><div><b>Overnight usage up 75 W</b> <time>· 6 days</time><p>Your 1–5 AM baseline went from 410 W to 485 W, about $6 a month on your PEC bill. A new device may be left on.</p></div></div></div>
         <div class="card" style="--c:var(--batt)"><div class="ins"><div class="ic">▮</div><div><b>Powerwalls healthy</b> <time>· 30 days</time><p>Round-trip efficiency is 89.6% and usable capacity is 26.1 of 27 kWh. Both are normal for their age.</p></div></div><div class="meter"><i style="width:96.7%"></i></div></div>
         <div class="card" style="--c:var(--home)"><div class="ins"><div class="ic">⛅</div><div><b id="tmrwT">Tomorrow</b> <time>· forecast</time><p id="tmrwP">—</p></div></div></div>
+        <div class="card">
+          <div class="h"><b>Heat &amp; your AC</b><span>60 days · real highs</span></div>
+          <svg class="mini" id="acChart" viewBox="0 0 310 170"></svg>
+          <p id="acTxt">—</p>
+        </div>
         <div class="card" style="--c:var(--grid)"><div class="ins"><div class="ic">≈</div><div><b>PEC meter matches Tesla</b> <time>· Sep bill</time><p>Your bill says 41 kWh delivered and Tesla measured 44 kWh, a 7% gap within normal tolerance. March's estimated read was corrected in April.</p></div></div></div>
+        <div class="card">
+          <div class="h"><b>Data health</b><span class="badge g">all good</span></div>
+          <div style="margin-top:8px">
+            <div class="health"><i></i>Tesla live status<b id="dhSync">12 s ago</b></div>
+            <div class="health"><i></i>Energy history · calendar_history<b>4 min ago</b></div>
+            <div class="health"><i></i>Powerwall 3 string data (local)<b>30 s ago</b></div>
+            <div class="health"><i></i>Open-Meteo weather<b>live</b></div>
+            <div class="health"><i></i>Gaps in the last 30 days<b>1 · 18 min</b></div>
+          </div>
+          <p class="fine">If Tesla stops reporting (Wi-Fi drop, gateway offline), Solstice alerts you after 10 minutes and backfills the gap from history.</p>
+        </div>
       </section>
 
       <!-- ================= SETTINGS ================= -->
@@ -541,6 +618,12 @@ body.out .gx{opacity:1}
           <div class="row tap" style="--c:var(--solar)" data-go="v-ins"><div class="ri">+</div><div class="rt">Plan an upgrade<small>What more panels or Powerwalls would do</small></div><div class="chev">›</div></div>
           <div class="row tap" style="--c:var(--home)"><div class="ri">$</div><div class="rt">Utility<small>Pedernales Electric Cooperative</small></div><div class="rv">PEC ›</div></div>
         </div>
+        <div class="sect">Your data</div>
+        <div class="group">
+          <div class="row tap" style="--c:var(--home)"><div class="ri">⇩</div><div class="rt">Export CSV<small>Every reading since install</small></div><div class="chev">›</div></div>
+          <div class="row" style="--c:var(--batt)"><div class="ri">◷</div><div class="rt">Stored on your Mac<small>SQLite · 1.2 GB · nightly backup</small></div><div class="rv">Local</div></div>
+          <div class="row" style="--c:var(--grid)"><div class="ri">✦</div><div class="rt">Calm mode<small>Less motion; follows your system setting</small></div><div class="sw" id="calmSw"></div></div>
+        </div>
         <div class="sect">Alerts · in app</div>
         <div class="group">
           <div class="row" style="--c:var(--out)"><div class="ri">⚡</div><div class="rt">Grid outage started / ended</div><div class="sw red on"></div></div>
@@ -548,6 +631,9 @@ body.out .gx{opacity:1}
           <div class="row" style="--c:var(--warn)"><div class="ri">☀</div><div class="rt">Solar underperforming<small>≥ 8% below model for 3 days</small></div><div class="sw on"></div></div>
           <div class="row" style="--c:var(--batt)"><div class="ri">▮</div><div class="rt">Powerwall capacity fade</div><div class="sw on"></div></div>
           <div class="row" style="--c:var(--grid)"><div class="ri">◐</div><div class="rt">Usage baseline drift</div><div class="sw on"></div></div>
+          <div class="row" style="--c:var(--home)"><div class="ri">⛈</div><div class="rt">Severe weather (NWS)<small>Storm, hail, heat for your area</small></div><div class="sw on"></div></div>
+          <div class="row" style="--c:var(--solar)"><div class="ri">≈</div><div class="rt">Bill doesn't match Tesla<small>Gap over 15%</small></div><div class="sw on"></div></div>
+          <div class="row" style="--c:var(--mute)"><div class="ri">⏻</div><div class="rt">Tesla stopped reporting<small>After 10 minutes</small></div><div class="sw on"></div></div>
         </div>
         <div class="sect">Demo</div>
         <div class="group">
@@ -814,7 +900,7 @@ function go(v, anchor) {
   document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x.dataset.v === v));
   document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === v));
   if (v === 'v-hist') { LAND.reset(); drawHist(); }
-  if (anchor) setTimeout(() => $(anchor).scrollIntoView({ behavior: 'smooth', block: 'start' }), 60); else $('screen').scrollTo({ top: 0 });
+  const sc = $('screen'); if (anchor) setTimeout(() => sc.scrollTo({ top: $(anchor).getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 50, behavior: 'smooth' }), 60); else sc.scrollTo({ top: 0 });
 }
 document.querySelectorAll('.tab[data-v]').forEach(t => t.onclick = () => go(t.dataset.v));
 document.querySelectorAll('[data-go]').forEach(t => t.onclick = () => go(t.dataset.go, t.dataset.land ? 'landSect' : t.dataset.bills ? 'billSect' : null));
@@ -921,7 +1007,7 @@ fetch(WXURL).then(r => r.json()).then(w => {
   let tk = 0; for (let h = 24; h < 48; h++) tk += (hrs.global_tilted_irradiance[h] || 0) / 1000 * PEAK_KW * .86 * SOIL;
   $('tmrwT').textContent = `Tomorrow: ${tk.toFixed(1)} kWh expected`;
   $('tmrwP').textContent = `Highs near ${Math.round(Math.max(...hrs.temperature_2m.slice(24)))}°, ${WMO(hrs.weather_code[38]).toLowerCase()} in the afternoon. That covers about ${Math.round(tk / 33 * 100)}% of a typical day's usage.`;
-  drawHist();
+  drawHist(); drawForecast();
 }).catch(() => drawHist());
 
 
@@ -1220,11 +1306,75 @@ const PLAN = (() => {
 })();
 PLAN.update();
 
+
+/* ================= polish: 48h forecast, SOC heatmap, AC chart, NWS, calm mode ================= */
+function drawForecast() {
+  if (!WXD) return;
+  const g = WXD.hourly.global_tilted_irradiance, start = Math.floor(simH); let soc = at(simH).soc, pts = [], full = null, low = { soc: 1, h: 0 };
+  for (let k = 0; k <= 48; k += .25) { const h = start + k, gi = Math.min(g.length - 1, Math.floor(h + .5)), sN = Math.max(0, g[gi] || 0) / 1000 * PEAK_KW * .86 * SOIL, l = homeLoad(h % 24), dt = .25;
+    let n = sN - l, b; if (n > 0) b = -Math.min(n, BATT_MAX, (1 - soc) * CAP / dt / .95); else b = Math.min(-n, BATT_MAX, Math.max(0, soc - RESERVE) * CAP / dt * .95);
+    soc += (b < 0 ? -b * .95 : -b / .95) * dt / CAP; pts.push({ k, s: sN, l, soc });
+    if (!full && soc > .995 && k > 0) full = h; if (k > 2 && soc < low.soc) low = { soc, h }; }
+  const X = k => 8 + k / 48 * 294, Yk = kw => 118 - kw / PEAK_KW * 100, Ys = v => 118 - v * 100; let o = '';
+  for (let k = 0; k < 48; k++) { const hh = (start + k) % 24; if (hh >= 20 || hh < 7) o += `<rect x="${X(k)}" y="14" width="${X(1) - X(0) + .5}" height="104" fill="rgba(255,255,255,.025)"/>`; }
+  [0, 24, 48].forEach(k => o += `<line x1="${X(k)}" x2="${X(k)}" y1="14" y2="118" stroke="rgba(255,255,255,.1)"/>`);
+  o += `<text x="${X(0)}" y="134" fill="rgba(242,244,248,.4)" font-size="9.5" font-family="JetBrains Mono">now</text><text x="${X(24)}" y="134" text-anchor="middle" fill="rgba(242,244,248,.4)" font-size="9.5" font-family="JetBrains Mono">+24h</text><text x="${X(48)}" y="134" text-anchor="end" fill="rgba(242,244,248,.4)" font-size="9.5" font-family="JetBrains Mono">+48h</text>`;
+  let a = `M${X(0)} 118`; pts.forEach(q => a += `L${X(q.k).toFixed(1)} ${Yk(q.s).toFixed(1)}`); o += `<path d="${a}L${X(48)} 118Z" fill="rgba(255,193,94,.3)" stroke="#ffc15e" stroke-width="1.2"/>`;
+  o += `<path d="${pts.map((q, i) => (i ? 'L' : 'M') + X(q.k).toFixed(1) + ' ' + Yk(q.l).toFixed(1)).join('')}" fill="none" stroke="#6cc4ff" stroke-width="1.3" stroke-opacity=".8"/>`;
+  o += `<path d="${pts.map((q, i) => (i ? 'L' : 'M') + X(q.k).toFixed(1) + ' ' + Ys(q.soc).toFixed(1)).join('')}" fill="none" stroke="#4ef0a6" stroke-width="2.2" style="filter:drop-shadow(0 0 3px #4ef0a6)"/>`;
+  o += `<line x1="8" x2="302" y1="${Ys(RESERVE)}" y2="${Ys(RESERVE)}" stroke="rgba(255,122,102,.6)" stroke-dasharray="3 3"/>`;
+  if (full) o += `<circle cx="${X(full - start)}" cy="${Ys(1)}" r="3.5" fill="#4ef0a6"/><text x="${X(full - start)}" y="10" text-anchor="middle" fill="#4ef0a6" font-size="9.5" font-family="JetBrains Mono">full ${clock12(full)}</text>`;
+  o += `<circle cx="${X(low.h - start)}" cy="${Ys(low.soc)}" r="3.5" fill="#ffc15e"/><text x="${X(low.h - start)}" y="${Ys(low.soc) + 14}" text-anchor="middle" fill="#ffc15e" font-size="9.5" font-family="JetBrains Mono">${Math.round(low.soc * 100)}%</text>`;
+  $('fc48').innerHTML = o;
+  $('fcTxt').innerHTML = `${full ? `Batteries should be <b style="color:var(--batt)">full by ${clock12(full)}</b>` : 'Batteries won\'t quite fill in the next 48 hours'}. The lowest point is about <b style="color:var(--solar)">${Math.round(low.soc * 100)}% around ${clock12(low.h)}</b>${low.soc > RESERVE + .03 ? ', so you should get through both nights without buying from PEC.' : ', so expect to buy a little from PEC before sunrise.'}`;
+}
+(function socHeat() {
+  let seed = 3; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647; let o = '';
+  const col = v => { const st = [[16, 21, 31], [29, 92, 74], [78, 240, 166], [217, 255, 240]], t = Math.max(0, Math.min(.999, v)) * 3, i = Math.floor(t), f = t - i; return `rgb(${st[i].map((c, j) => Math.round(c + (st[i + 1][j] - c) * f)).join(',')})`; };
+  for (let d = 0; d < 30; d++) { const cloudy = rnd() < .15, off = (rnd() - .5) * .12;
+    for (let h = 0; h < 24; h++) { const base = DAY[h * 12].soc; let v = cloudy ? Math.max(.2, base * .65 + .05) : base + off; v = Math.max(.2, Math.min(1, v));
+      o += `<rect x="${22 + h * 11.9}" y="${4 + d * 5.6}" width="11.4" height="5" rx="1.2" fill="${v <= .205 ? '#ff7a66' : col(v)}"/>`; } }
+  [0, 6, 12, 18].forEach(h => o += `<text x="${22 + h * 11.9}" y="186" fill="rgba(242,244,248,.35)" font-size="9" font-family="JetBrains Mono">${['12a', '6a', '12p', '6p'][h / 6]}</text>`);
+  o += `<text x="0" y="12" fill="rgba(242,244,248,.35)" font-size="8.5" font-family="JetBrains Mono">30d</text><text x="0" y="172" fill="rgba(242,244,248,.35)" font-size="8.5" font-family="JetBrains Mono">today</text>`;
+  $('socHeat').innerHTML = o;
+})();
+fetch('https://api.open-meteo.com/v1/forecast?latitude=LAT&longitude=LON&daily=temperature_2m_max&past_days=60&forecast_days=1&temperature_unit=fahrenheit&timezone=America%2FChicago')
+  .then(r => r.json()).then(w => {
+    let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const pts = w.daily.temperature_2m_max.map((t, i) => t == null ? null : { t, u: 21 + Math.max(0, t - 75) * 1.15 + (rnd() - .5) * 4 + (i === 38 ? 9 : 0), i, date: w.daily.time[i] }).filter(Boolean).slice(0, -1);
+    const n = pts.length, mx = pts.reduce((a, p) => a + p.t, 0) / n, my = pts.reduce((a, p) => a + p.u, 0) / n;
+    const slope = pts.reduce((a, p) => a + (p.t - mx) * (p.u - my), 0) / pts.reduce((a, p) => a + (p.t - mx) ** 2, 0), icpt = my - slope * mx;
+    const tMin = Math.min(...pts.map(p => p.t)) - 2, tMax = Math.max(...pts.map(p => p.t)) + 2, uMax = Math.max(...pts.map(p => p.u)) + 4, uMin = Math.min(...pts.map(p => p.u)) - 4;
+    const X = t => 30 + (t - tMin) / (tMax - tMin) * 272, Y = u => 140 - (u - uMin) / (uMax - uMin) * 128;
+    let o = ''; [uMin, (uMin + uMax) / 2, uMax].forEach(u => o += `<line x1="30" x2="302" y1="${Y(u)}" y2="${Y(u)}" stroke="rgba(255,255,255,.06)"/><text x="0" y="${Y(u) + 3}" fill="rgba(242,244,248,.3)" font-size="8.5" font-family="JetBrains Mono">${Math.round(u)}</text>`);
+    [Math.ceil(tMin / 5) * 5, Math.round((tMin + tMax) / 10) * 5, Math.floor(tMax / 5) * 5].forEach(t => o += `<text x="${X(t)}" y="156" text-anchor="middle" fill="rgba(242,244,248,.35)" font-size="9" font-family="JetBrains Mono">${t}°</text>`);
+    o += `<line x1="${X(tMin)}" y1="${Y(icpt + slope * tMin)}" x2="${X(tMax)}" y2="${Y(icpt + slope * tMax)}" stroke="#6cc4ff" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+    let worst = null; pts.forEach(p => { const res = p.u - (icpt + slope * p.t); if (!worst || res > worst.res) worst = { ...p, res }; });
+    pts.forEach(p => { const flag = p === pts.find(q => q.i === worst.i) && worst.res > 5; o += `<circle cx="${X(p.t)}" cy="${Y(p.u)}" r="${flag ? 5 : 3}" fill="${flag ? '#ff7a66' : 'rgba(108,196,255,.75)'}"/>`; });
+    o += `<text x="30" y="168" fill="rgba(242,244,248,.35)" font-size="8.5" font-family="Manrope">daily high →   ·   home kWh/day ↑</text>`;
+    $('acChart').innerHTML = o;
+    const d = new Date(worst.date + 'T12:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    $('acTxt').innerHTML = `Each degree above about 75°F adds <b style="color:var(--text)">${slope.toFixed(1)} kWh</b> a day, mostly AC. ${worst.res > 5 ? `<b style="color:var(--warn)">${d}</b> used ${Math.round(worst.res / (icpt + slope * worst.t) * 100)}% more than normal for a ${Math.round(worst.t)}° day. If that starts happening often, the AC may be working harder than it should (filter, refrigerant, a door left open).` : 'Usage has tracked the temperature normally.'}`;
+  }).catch(() => $('acTxt').textContent = 'Weather history unavailable.');
+fetch('https://api.weather.gov/alerts/active?point=LAT,LON').then(r => r.json()).then(j => {
+  const f = j.features || [];
+  if (!f.length) { $('chipNws').innerHTML = '<i style="--c:var(--batt)"></i>No NWS alerts'; return; }
+  const a = f[0].properties; $('chipNws').className = 'chipx alert'; $('chipNws').innerHTML = `<i style="--c:var(--out)"></i>${a.event}`;
+  $('nwsCard').innerHTML = `<div class="card" style="--c:var(--out)"><div class="ins"><div class="ic">⛈</div><div><b>${a.event}</b> <time>· NWS</time><p>${a.headline || ''}. Storm Watch will charge the Powerwalls to 100% ahead of it.${/hail/i.test(a.description || '') ? ' Hail is possible, so check the Panels tab afterwards for any drop in a string.' : ''}</p></div></div></div>`;
+}).catch(() => $('chipNws').innerHTML = '<i style="--c:var(--mute)"></i>NWS unavailable');
+// calm mode: follow the system reduced-motion setting, and let the user toggle it
+let CALM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+$('calmSw').classList.toggle('on', CALM);
+$('calmSw').onclick = () => { CALM = !CALM; $('calmSw').classList.toggle('on', CALM); };
+// don't burn battery rendering 4 WebGL scenes when the tab is hidden
+let HIDDEN = false; document.addEventListener('visibilitychange', () => HIDDEN = document.hidden);
+
 /* ================= main loop ================= */
 const n0 = new Date(); simH = n0.getHours() + n0.getMinutes() / 60; if (simH < 8 || simH > 18.5) simH = 11.2;
 const clock = new THREE.Clock(); let hud = 1; const mix = new THREE.Vector3(1, 0, 0);
 function frame() {
-  const dt = Math.min(.05, clock.getDelta()), t = clock.elapsedTime;
+  if (HIDDEN) { clock.getDelta(); requestAnimationFrame(frame); return; }
+  const dt = Math.min(.05, clock.getDelta()), t = clock.elapsedTime * (CALM ? .35 : 1);
   simH = (simH + dt * speed / 3600) % 24;
   const base = at(simH); const p = { ...base };
   if (OUT) { // islanded: grid = 0; solar + battery cover the home; surplus solar is curtailed once the battery is full
@@ -1287,6 +1437,7 @@ function frame() {
       : `If the grid went down now, your ${Math.round(p.soc * 100)}% charge would run an average evening for about ${fmtDur(p.soc * CAP * .95 / 1.1)}. With tomorrow's sun, you could stay off the grid indefinitely.`;
     $('readyBar').style.width = Math.min(100, p.soc * 100) + '%';
     $('synced').textContent = speed === 1 ? 'just now' : clock12(simH);
+    if (Math.floor(simH * 4) !== drawForecast.q) { drawForecast.q = Math.floor(simH * 4); drawForecast(); }
     if (hRange === 'day' && isOn('v-hist')) drawDay();
     if (watts) {
       $('rfKw').textContent = (p.s * SOIL_NOW / SOIL).toFixed(1); renderStrings(watts, simH);
