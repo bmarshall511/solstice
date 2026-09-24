@@ -29,6 +29,7 @@ export const api = {
   whatif: q => get(`whatif?${new URLSearchParams(q)}`),
   parseBill: file => call('bills/parse', { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: file }),
   saveBill: bill => send('POST', 'bills', bill),
+  deleteBill: date => call(`bills/${date}`, { method: 'DELETE' }),
   sync: () => send('POST', 'sync'),
   me: () => get('auth/me'),
   login: (email, password) => send('POST', 'auth/login', { email, password }),

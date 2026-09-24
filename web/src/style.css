@@ -356,3 +356,12 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .authcard a.primary[hidden]{display:none}
 .addbill{display:inline-flex}
 .due{border-color:rgba(255,193,94,.35)!important;background:rgba(255,193,94,.07)!important}
+
+/* bills list */
+.bill{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--glass-b);cursor:pointer}
+.bill:first-child{border-top:none}
+.bill .bm{flex:1;font-size:12.5px;color:var(--dim);line-height:1.45}
+.bill .bm b{color:var(--text);font-weight:600;font-size:13.5px}
+.bill .bt{font:500 13px "JetBrains Mono";text-align:right}
+.bill .bt small{display:block;font:500 10.5px Manrope;margin-top:2px}
+.danger{all:unset;box-sizing:border-box;width:100%;cursor:pointer;display:block;text-align:center;margin-top:16px;padding:13px;border-radius:16px;background:rgba(255,90,78,.12);border:1px solid rgba(255,90,78,.4);color:#ffb3aa;font-weight:600;font-size:14px}

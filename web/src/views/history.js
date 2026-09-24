@@ -121,7 +121,39 @@ export function drawOutages(S) {
 }
 
 /* ---------- bills ---------- */
+/** Every saved bill, newest first; tap one for details and to remove it. */
+function drawBillList(S) {
+  const R = (S.reconcile ?? []).slice().reverse();
+  $('billCount').textContent = `${R.length} saved`;
+  $('billList').innerHTML = R.length ? R.map(r => { const ok = r.checks.every(c => c.ok);
+    return `<div class="bill" data-bill="${r.billDate}"><div class="bm"><b>${niceDate(r.billDate, { month: 'long', year: 'numeric' })}</b><br>${niceDate(r.period.from)} – ${niceDate(r.period.to)} · ${r.pec.deliveredKwh.toLocaleString()} kWh bought</div>
+      <div class="bt">${money2(r.total)}<small style="color:${ok ? 'var(--batt)' : 'var(--warn)'}">${ok ? '✓ matches Tesla' : '! check'}</small></div></div>`; }).join('')
+    : '<div class="empty">No bills yet.</div>';
+  document.querySelectorAll('[data-bill]').forEach(el => el.onclick = () => openBillDetail(S, R.find(r => r.billDate === el.dataset.bill)));
+}
+
+function openBillDetail(S, r) {
+  $('sheetBody').innerHTML = `<div class="shead"><h4>${niceDate(r.billDate, { month: 'long', year: 'numeric' })} bill</h4><button class="x" id="sheetX" aria-label="Close">×</button></div>
+    <p class="sub">${niceDate(r.period.from)} – ${niceDate(r.period.to)} · ${r.period.days} days</p>
+    <table class="btable">
+      <tr><td>Bought from PEC</td><td>${r.pec.deliveredKwh.toLocaleString()} kWh</td></tr><tr><td>Sent to PEC</td><td>${r.pec.receivedKwh} kWh</td></tr>
+      <tr><td>Tesla measured bought / sent</td><td>${r.tesla.importKwh == null ? '—' : Math.round(r.tesla.importKwh).toLocaleString()} / ${r.tesla.exportKwh == null ? '—' : Math.round(r.tesla.exportKwh)} kWh</td></tr>
+      ${r.charges.map(c => `<tr><td>${c.label}${c.kwh ? ` · ${c.kwh.toLocaleString()} kWh @ $${c.rate}` : ''}</td><td>${money2(c.amount)}</td></tr>`).join('')}
+      <tr><td><b style="color:var(--text)">Total</b></td><td><b>${money2(r.total)}</b></td></tr></table>
+    <button class="danger" id="billRemove">Remove this bill</button>`;
+  $('phone').classList.add('open');
+  $('sheetX').onclick = () => $('phone').classList.remove('open');
+  $('billRemove').onclick = async () => {
+    if (!confirm(`Remove the ${niceDate(r.billDate, { month: 'long', year: 'numeric' })} bill? You can add it again from the PDF.`)) return;
+    await api.deleteBill(r.billDate);
+    $('phone').classList.remove('open');
+    toast('✓', 'rgba(255,255,255,.12)', 'Bill removed', `${niceDate(r.billDate, { month: 'long', year: 'numeric' })} · ${money2(r.total)}`);
+    S.reconcile = await api.reconcile(); S.tariff = S.reconcile.at(-1)?.tariff ?? null; drawBills(S);
+  };
+}
+
 export function drawBills(S) {
+  drawBillList(S);
   const R = S.reconcile ?? [], last = R.at(-1);
   if (!last) { $('billChecks').innerHTML = '<div class="card"><div class="empty">No PEC bills yet. Add one to compare it with Tesla.</div></div>'; return; }
   const cov = last.coverage < .95 ? `<div class="flag">Tesla has only ${Math.round(last.coverage * 100)}% of this period stored so far.</div>` : '';
