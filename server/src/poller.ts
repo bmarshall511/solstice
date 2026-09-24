@@ -70,30 +70,48 @@ export async function pollSiteInfo(siteId: string) {
   return info;
 }
 
+// Days whose history is fully stored (shared by the background backfill and targeted range loads).
+let doneDays: Set<string> | null = null;
+const done = () => (doneDays ??= new Set(kv.get<string[]>('backfill.days') ?? []));
+const markDone = (day: string) => { done().add(day); kv.set('backfill.days', [...done()]); };
+
+/** Load specific past days first (e.g. a bill period), oldest to newest. */
+export async function fetchRange(siteId: string, from: string, to: string) {
+  const days: string[] = [];
+  for (let d = localMidnight(from); localDay(d) <= to && d.getTime() < Date.now() - 864e5; d = new Date(d.getTime() + 864e5 + 3600e3)) {
+    const day = localDay(d); if (days.at(-1) !== day) days.push(day);
+  }
+  for (const day of days) {
+    if (done().has(day)) continue;
+    try { await fetchDay(siteId, day); markDone(day); } catch (e) { log(`range ${day} failed:`, (e as Error).message); }
+    await sleep(1200);
+  }
+  log(`range ${from}→${to} loaded (${days.length} days)`);
+}
+
 /** Walk backwards one day at a time until `from`, skipping days already stored. Rate-limited and resumable. */
 let backfilling = false;
 export async function backfill(siteId: string, from: string) {
   if (backfilling) return;
   backfilling = true;
   try {
-    const done = new Set(kv.get<string[]>('backfill.days') ?? []);
     const days: string[] = [];
     for (let d = new Date(Date.now() - 864e5); localDay(d) >= from; d = new Date(d.getTime() - 864e5)) days.push(localDay(d));
     kv.set('backfill.target', { from, total: days.length });
     for (const day of days) {
-      if (done.has(day)) continue;
+      if (done().has(day)) continue;
       try {
         const count = await fetchDay(siteId, day);
-        done.add(day);
-        kv.set('backfill.days', [...done]);
-        if (done.size % 10 === 0) log(`backfill: ${done.size}/${days.length} days (latest ${day}, ${count} buckets)`);
+        markDone(day);
+        if (done().size % 25 === 0) log(`backfill: ${done().size}/${days.length} days (latest ${day}, ${count} buckets)`);
       } catch (e) {
         log(`backfill ${day} failed:`, (e as Error).message);
         await sleep(10_000);
       }
       await sleep(1200); // stay well under the 60 req/min data limit
     }
-    log(`backfill complete: ${done.size} days`);
+    log(`backfill complete: ${done().size} days`);
+    kv.set('backfill.completedAt', Date.now());
   } finally {
     backfilling = false;
   }

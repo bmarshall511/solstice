@@ -2,7 +2,7 @@ import express from 'express';
 import { config } from './config.ts';
 import { db, kv } from './db.ts';
 import { loginUrl, handleCallback, isConnected } from './tesla/auth.ts';
-import { ensureSite, startPolling, backfill, pollLive, pollSiteInfo } from './poller.ts';
+import { ensureSite, startPolling, backfill, fetchRange, pollLive, pollSiteInfo } from './poller.ts';
 import { reconcile } from './reconcile.ts';
 
 const app = express();
@@ -57,7 +57,17 @@ app.post('/api/backfill', async (req, res) => {
   res.json({ started: true, from });
 });
 
+app.post('/api/backfill-range', async (req, res) => {
+  const { from, to } = req.query as Record<string, string>;
+  if (![from, to].every(d => /^\d{4}-\d{2}-\d{2}$/.test(d ?? ''))) return res.status(400).json({ error: 'from and to (YYYY-MM-DD) required' });
+  fetchRange(await ensureSite(), from, to);
+  res.json({ started: true, from, to });
+});
+
 app.listen(config.port, '127.0.0.1', () => {
   console.log(`Solstice server on http://localhost:${config.port}`);
   startPolling();
+  // resume an unfinished backfill after a restart
+  const target = kv.get<{ from: string }>('backfill.target');
+  if (isConnected() && target && !kv.get('backfill.completedAt')) ensureSite().then(id => backfill(id, target.from)).catch(() => {});
 });
