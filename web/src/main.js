@@ -6,7 +6,7 @@ import { learnYield } from './lib/model.js';
 import { createAurora } from './scenes/aurora.js';
 import { createOrb } from './scenes/orb.js';
 import { createLandscape } from './scenes/landscape.js';
-import { createRoof } from './scenes/roof.js';
+import { createHomeView } from './scenes/home.js';
 import { buildFlow, renderLive, renderStatic, renderWeather } from './views/now.js';
 import { initHistory, drawHistoryChart, landscapeData, drawSocHeat, drawRecords, drawOutages, drawBills, openBillSheet } from './views/history.js';
 import { initPanels, drawPerformance, roofHud } from './views/panels.js';
@@ -117,7 +117,8 @@ $('calmSw').classList.toggle('on', S.calm); $('calmSw').onclick = () => { S.calm
 $('outSw').onclick = () => { S.preview = !S.preview; S.previewSince = Date.now(); $('outSw').classList.toggle('on', S.preview); updateOutage(); renderLive(S); };
 
 /* ---------------- scenes + loop ---------------- */
-const aurora = createAurora($('aurora')), orb = createOrb($('orb')), land = createLandscape($('land'), $('landTip')), roof = createRoof($('roof'));
+const house = createHomeView($('house'), 'flow');
+const aurora = createAurora($('aurora')), orb = createOrb($('orb')), land = createLandscape($('land'), $('landTip')), roof = createHomeView($('roof'), 'sun');
 buildFlow(); initHistory(S); initPanels(S); initPlanner(S);
 
 let HIDDEN = false; document.addEventListener('visibilitychange', () => HIDDEN = document.hidden);
@@ -131,11 +132,15 @@ function frame(now) {
   if (r) aurora.set(r);
   aurora.render(T, S.outageActive);
   if (isOn('v-now') && r) orb.render({ soc: r.soc, batteryKw: r.batteryKw, solarKw: r.solarKw, peakKw: S.peakKw ?? 9, maxKw: S.now?.site?.maxPowerKw || 10, out: S.outageActive, dt, t: T });
+  if (isOn('v-now') && r) {
+    const i = S.wx ? S.wx.hourly.time.indexOf(`${localDate()}T${String(Math.floor(localHour())).padStart(2, '0')}:00`) : -1;
+    house.render({ r, cloud: i >= 0 ? S.wx.hourly.cloud_cover[i] / 100 : .1, code: i >= 0 ? S.wx.hourly.weather_code[i] : 0, out: S.outageActive, peakKw: S.peakKw ?? 9, dt, t: T, calm: S.calm });
+  }
   if (isOn('v-hist')) land.render(dt, S.calm);
   if (isOn('v-roof')) {
     const d = new Date(), dayStart = Date.parse(`${localDate(d)}T00:00:00${new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', timeZoneName: 'longOffset' }).formatToParts(d).find(p => p.type === 'timeZoneName').value.replace('GMT', '') || 'Z'}`);
     hudTick += dt;
-    const info = roof.render({ now: d, dayStart, cc: S.roofWx?.cc, code: S.roofWx?.code, solarKw: r?.solarKw ?? 0, peakKw: S.peakKw ?? 9, dt, t: T, calm: S.calm });
+    const info = roof.render({ r, now: d, dayStart, cloud: S.roofWx?.cc ?? .1, code: S.roofWx?.code ?? 0, out: S.outageActive, peakKw: S.peakKw ?? 9, dt, t: T, calm: S.calm });
     if (hudTick > .5) { hudTick = 0; S.roofWx = roofHud(S, info, d); $('rfKw').textContent = r ? r.solarKw.toFixed(1) : '—'; }
   }
 }

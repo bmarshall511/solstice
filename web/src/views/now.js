@@ -9,6 +9,7 @@ const FL = {
   pwHome: ['M189 204 Q 262 190 276 149', '#4ef0a6'], gridHome: ['M70 125 Q 165 96 260 125', '#c4a2ff'], gridPw: ['M54 149 Q 68 190 141 204', '#c4a2ff'],
 };
 export function buildFlow() {
+  if (!$('flow')) return; // Energy flow card now uses the 3D house (scenes/house.js)
   let s = '';
   for (const k in FL) s += `<path class="flbase" d="${FL[k][0]}"/>`;
   for (const k in FL) s += `<path class="fl" id="fl-${k}" d="${FL[k][0]}" stroke="${FL[k][1]}" style="opacity:0"/>`;
@@ -46,10 +47,12 @@ export function renderLive(S) {
 
   // flows
   const f = splitFlows(r);
-  setFlow('solHome', f.solHome); setFlow('solPw', f.solPw); setFlow('solGrid', out ? 0 : f.solGrid); setFlow('pwHome', f.pwHome); setFlow('gridHome', out ? 0 : f.gridHome); setFlow('gridPw', out ? 0 : f.gridPw);
-  $('fv-sol').textContent = r.solarKw.toFixed(1) + ' kW'; $('fv-home').textContent = r.homeKw.toFixed(1) + ' kW';
-  $('fv-pw').textContent = `${Math.round(r.soc)}% · ${r.batteryKw < -.05 ? '+' : r.batteryKw > .05 ? '−' : ''}${Math.abs(r.batteryKw).toFixed(1)} kW`;
-  $('fv-grid').textContent = out ? 'Offline' : `${r.gridKw < -.05 ? '↑ ' : r.gridKw > .05 ? '↓ ' : ''}${Math.abs(r.gridKw).toFixed(1)} kW`;
+  if ($('flow')) {
+    setFlow('solHome', f.solHome); setFlow('solPw', f.solPw); setFlow('solGrid', out ? 0 : f.solGrid); setFlow('pwHome', f.pwHome); setFlow('gridHome', out ? 0 : f.gridHome); setFlow('gridPw', out ? 0 : f.gridPw);
+    $('fv-sol').textContent = r.solarKw.toFixed(1) + ' kW'; $('fv-home').textContent = r.homeKw.toFixed(1) + ' kW';
+    $('fv-pw').textContent = `${Math.round(r.soc)}% · ${r.batteryKw < -.05 ? '+' : r.batteryKw > .05 ? '−' : ''}${Math.abs(r.batteryKw).toFixed(1)} kW`;
+    $('fv-grid').textContent = out ? 'Offline' : `${r.gridKw < -.05 ? '↑ ' : r.gridKw > .05 ? '↓ ' : ''}${Math.abs(r.gridKw).toFixed(1)} kW`;
+  }
   $('flowNote').textContent = out ? 'islanded · grid offline' : `live · ${new Date(r.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
 
   // one-sentence story
