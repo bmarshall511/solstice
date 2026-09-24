@@ -72,6 +72,28 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Manrope
 .days span{flex:1}
 .btn{display:inline-flex;margin-top:12px;font-size:12px;font-weight:600;padding:9px 14px;border-radius:999px;background:rgba(255,255,255,.1);border:1px solid var(--glass-b);color:var(--text)}
 
+
+/* Powerwall card */
+.pwh{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);font-weight:500}
+.pwtop{display:flex;align-items:center;gap:14px;margin-top:10px}
+.pwpct{font:300 38px "JetBrains Mono",monospace;letter-spacing:-.03em;line-height:1}
+.pwstate{font-size:13px;font-weight:500}
+.pwstate[data-s=c]{color:#4ef0a6} .pwstate[data-s=d]{color:#ffb547}
+.pwsub{font-size:12px;color:var(--dim);margin-top:2px}
+.pwunits{display:flex;gap:8px;margin-top:12px}
+.pwu{--v:.5;flex:1;height:70px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);position:relative;overflow:hidden}
+.pwu i{position:absolute;left:0;right:0;bottom:0;height:calc(var(--v)*100%);background:linear-gradient(0deg,#4ef0a622,#4ef0a699);transition:height .5s}
+.pwu.chg i{background:linear-gradient(0deg,#4ef0a622,#4ef0a6cc);}
+.pwu.chg i::after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,transparent,rgba(255,255,255,.35),transparent);background-size:100% 40%;background-repeat:no-repeat;animation:pwup 1.6s linear infinite}
+.pwu.dis i{background:linear-gradient(0deg,#ffb54722,#ffb54799)}
+@keyframes pwup{from{background-position:0 140%}to{background-position:0 -40%}}
+.pwres{position:absolute;left:0;right:0;bottom:20%;border-top:1px dashed rgba(255,107,90,.8)}
+.pwu span{position:absolute;left:10px;top:7px;font:500 11px "JetBrains Mono",monospace}
+.pwu em{position:absolute;left:10px;bottom:6px;font-style:normal;font-size:10.5px;color:rgba(255,255,255,.75)}
+.pwkv{display:grid;grid-template-columns:1fr auto;gap:6px 10px;margin-top:12px;font-size:12px;color:var(--dim)}
+.pwkv b{color:inherit;filter:brightness(1.6);font:500 12px "JetBrains Mono",monospace;text-align:right;color:#eef1f6}
+
+.pwc .pwpct{font-size:34px}
 /* hourly weather strip */
 .hours{display:flex;gap:6px;overflow-x:auto;margin-top:12px;scrollbar-width:none}
 .hours::-webkit-scrollbar{display:none}
@@ -142,6 +164,25 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Manrope
           <div class="pill" style="--c:var(--home)"><div class="l"><i></i>Home</div><div class="v" id="p-home">0<small>kW</small></div><div class="s">using now</div></div>
           <div class="pill" style="--c:var(--grid)"><div class="l"><i></i>Grid</div><div class="v" id="p-grid">0<small>kW</small></div><div class="s" id="p-grid-s">—</div></div>
         </div>
+<section class="card pwc">
+  <h3 class="pwh">Powerwall details</h3>
+  <div class="pwtop"><div class="pwpct" id="pwPct">--%</div><div><div class="pwstate" id="pwState">—</div><div class="pwsub" id="pwStored">—</div></div></div>
+  <div class="pwunits">
+    <div class="pwu" id="pwU1"><i></i><b class="pwres"></b><span>PW 1</span><em id="pwU1t">—</em></div>
+    <div class="pwu" id="pwU2"><i></i><b class="pwres"></b><span>PW 2</span><em id="pwU2t">—</em></div>
+  </div>
+  <div class="pwkv">
+    <span id="pwTTl">Time to full</span><b id="pwTT">—</b>
+    <span>Backup at current load</span><b id="pwBackup">—</b>
+    <span>Charged today</span><b id="pwIn">—</b>
+    <span>Discharged today</span><b id="pwOut">—</b>
+    <span>Backup reserve</span><b>20%</b>
+    <span>Mode</span><b>Self-Powered</b>
+    <span>Storm Watch</span><b>Standby</b>
+    <span>Health</span><b>26.1 kWh · 96.7%</b>
+    <span>Round-trip (30d)</span><b>89.6%</b>
+  </div>
+</section>
         <div class="card">
           <div class="h"><b>Next 12 hours</b><span id="wx12s">Open-Meteo</span></div>
           <div class="hours" id="wx12"></div>
@@ -313,6 +354,28 @@ document.querySelectorAll('.tab[data-v]').forEach(t => t.onclick = () => {
   document.querySelector('.screen').scrollTop = 0;
 });
 
+
+/* ---------- Powerwall metrics (maps to live_status + calendar_history) ---------- */
+const fmtDur = hrs => { if (!isFinite(hrs) || hrs <= 0) return '—'; const H = Math.floor(hrs), M = Math.round((hrs - H) * 60); return H ? `${H}h ${String(M).padStart(2, '0')}m` : `${M}m`; };
+function pwTotals(series, h, bKey) { let chg = 0, dis = 0; for (const p of series) { if (p.h > h) break; const b = p[bKey]; if (b < 0) chg += -b / 12; else dis += b / 12; } return { chg, dis }; }
+function pwText(soc, b, home, cap = 27, reserve = .2) {
+  return {
+    st: b < -.05 ? `Charging · ${(-b).toFixed(1)} kW` : b > .05 ? `Discharging · ${b.toFixed(1)} kW` : 'Idle · standing by',
+    ttLabel: b > .05 ? 'Time to reserve (20%)' : 'Time to full',
+    tt: b < -.05 ? fmtDur((1 - soc) * cap / (-b * .95)) : b > .05 ? fmtDur((soc - reserve) * cap * .95 / b) : soc > .99 ? 'Full' : '—',
+    backup: fmtDur(soc * cap * .95 / Math.max(.3, home)), stored: soc * cap,
+    u1: Math.min(1, soc + .012), u2: Math.max(0, soc - .012),
+  };
+}
+function pwRender(P, soc, b, home, tot) {
+  const t = pwText(soc, b, home), q = id => document.getElementById(P + id); if (!q('Pct')) return;
+  q('Pct').textContent = Math.round(soc * 100) + '%'; q('State').textContent = t.st; q('State').dataset.s = b < -.05 ? 'c' : b > .05 ? 'd' : 'i';
+  q('Stored').textContent = `${t.stored.toFixed(1)} of 27.0 kWh stored`;
+  q('TTl').textContent = t.ttLabel; q('TT').textContent = t.tt; q('Backup').textContent = t.backup;
+  q('In').textContent = tot.chg.toFixed(1) + ' kWh'; q('Out').textContent = tot.dis.toFixed(1) + ' kWh';
+  [['U1', t.u1], ['U2', t.u2]].forEach(([k, v]) => { q(k).style.setProperty('--v', v); q(k + 't').textContent = `${Math.round(v * 100)}% · ${(v * 13.5).toFixed(1)} kWh`; q(k).classList.toggle('chg', b < -.05); q(k).classList.toggle('dis', b > .05); });
+}
+
 /* ---------- loop ---------- */
 const $ = id => document.getElementById(id);
 const n0 = new Date(); let simH = n0.getHours() + n0.getMinutes() / 60; if (simH < 8 || simH > 18.5) simH = 11.2;
@@ -337,6 +400,8 @@ function frame() {
     $('soc').textContent = Math.round(p.soc * 100);
     const fullAt = (() => { for (const q of DAY) if (q.h > simH && q.soc > .995) { const H = Math.floor(q.h), M = Math.round(q.h % 1 * 60); return `${(H + 11) % 12 + 1}:${String(M).padStart(2, '0')} ${H < 12 ? 'AM' : 'PM'}`; } return null; })();
     $('battline').textContent = p.b < -.05 ? `Charging ${(-p.b).toFixed(1)} kW${fullAt ? ' · full by ' + fullAt : ''}` : p.b > .05 ? `Powering home · ${p.b.toFixed(1)} kW` : 'Full · standing by';
+    pwRender('pw', p.soc, p.b, p.l, pwTotals(DAY, simH, 'b'));
+    window.__live = { solar: p.s, batt: p.b, grid: p.g, home: p.l, soc: p.soc };
     $('p-sol').innerHTML = p.s.toFixed(1) + '<small>kW</small>'; $('p-sol-s').textContent = Math.round(p.s / PEAK_KW * 100) + '% of peak';
     $('p-home').innerHTML = p.l.toFixed(1) + '<small>kW</small>';
     $('p-grid').innerHTML = Math.abs(p.g).toFixed(1) + '<small>kW</small>'; $('p-grid-s').textContent = p.g < -.05 ? '↑ exporting' : p.g > .05 ? '↓ importing' : 'idle';
@@ -350,5 +415,291 @@ function frame() {
 }
 frame();
 </script>
+<!-- ===== Solstice · All-data drawer (shared across mockups) ===== -->
+<style>
+.dx-tab{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:60;writing-mode:vertical-rl;padding:16px 9px;border-radius:12px 0 0 12px;
+  background:rgba(14,18,28,.82);border:1px solid rgba(255,255,255,.14);border-right:none;color:#e9edf5;font:600 11px Inter,system-ui;letter-spacing:.18em;text-transform:uppercase;cursor:pointer;backdrop-filter:blur(12px)}
+.dx-tab:hover{background:rgba(30,36,52,.9)}
+.dx{position:fixed;top:0;right:0;bottom:0;width:min(580px,100vw);z-index:70;background:rgba(9,11,17,.94);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  border-left:1px solid rgba(255,255,255,.1);transform:translateX(102%);transition:transform .45s cubic-bezier(.2,.8,.2,1);display:flex;flex-direction:column;color:#e9edf5;font-family:Inter,system-ui,sans-serif}
+.dx.open{transform:none}
+.dx-head{padding:20px 22px 12px;border-bottom:1px solid rgba(255,255,255,.08)}
+.dx-head h2{font-size:18px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+.dx-head p{font-size:12px;color:#8b94a8;margin-top:4px}
+.dx-x{all:unset;cursor:pointer;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);font-size:16px}
+.dx-nav{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+.dx-nav a{font-size:11.5px;color:#aab3c5;text-decoration:none;padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}
+.dx-nav a:hover{color:#fff}
+.dx-body{flex:1;overflow:auto;padding:6px 22px 40px;scroll-behavior:smooth}
+.dx-sec{padding:18px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+.dx-sec h3{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#8b94a8;font-weight:500;display:flex;justify-content:space-between;gap:10px}
+.dx-sec h3 code{font:10.5px "JetBrains Mono",monospace;letter-spacing:0;text-transform:none;color:#5a6378}
+.dx-t{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px}
+.dx-t td{padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:top}
+.dx-t td:first-child{font:11.5px "JetBrains Mono",monospace;color:#9fb0cc;width:46%}
+.dx-t td:nth-child(2){text-align:right;font:500 12px "JetBrains Mono",monospace}
+.dx-t td:nth-child(3){text-align:right;color:#5a6378;font-size:11px;padding-left:10px;width:30%}
+.dx-pill{display:inline-block;font:10px "JetBrains Mono",monospace;padding:2px 6px;border-radius:5px;background:rgba(62,224,143,.12);color:#3ee08f}
+.dx-pill.off{background:rgba(255,255,255,.07);color:#8b94a8}
+.dx-pill.warn{background:rgba(255,181,71,.13);color:#ffb547}
+.dx-bars{display:grid;grid-template-columns:70px 1fr 64px;gap:6px 10px;align-items:center;margin-top:12px;font-size:11.5px;color:#aab3c5}
+.dx-bars i{display:block;height:8px;border-radius:4px;background:var(--c);min-width:2px;transition:width .5s}
+.dx-bars b{font:500 11.5px "JetBrains Mono",monospace;text-align:right;color:#e9edf5}
+.dx-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:12px}
+.dx-cal div{aspect-ratio:1;border-radius:6px;display:flex;align-items:flex-end;justify-content:flex-end;padding:3px 5px;font:9.5px "JetBrains Mono",monospace;color:rgba(0,0,0,.55)}
+.dx-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.dx-kpis div{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:10px}
+.dx-kpis span{font-size:10.5px;color:#8b94a8}
+.dx-kpis b{display:block;font:300 20px Inter;margin-top:2px}
+.dx-ev{display:flex;justify-content:space-between;font-size:12px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.04);color:#aab3c5}
+.dx-ev b{font:500 12px "JetBrains Mono",monospace;color:#e9edf5}
+.dx-note{font-size:11px;color:#5a6378;margin-top:8px;line-height:1.5}
+.dx-legend{display:flex;gap:12px;font-size:11px;color:#8b94a8;margin-top:8px}
+.dx-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.dx-btn{all:unset;cursor:pointer;font-size:12px;font-weight:600;padding:8px 14px;border-radius:999px;background:#ffb547;color:#1a1204}
+.dx-btn.ghost{background:rgba(255,255,255,.08);color:#e9edf5}
+.dx-form{display:none;margin-top:12px;padding:14px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}
+.dx-form.on{display:block}
+.dx-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.dx-grid label{font-size:11px;color:#8b94a8;display:flex;flex-direction:column;gap:4px}
+.dx-grid input,.dx-grid select{all:unset;font:13px "JetBrains Mono",monospace;color:#e9edf5;padding:8px 10px;border-radius:8px;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.1)}
+.dx-drop{grid-column:1/-1;border:1px dashed rgba(255,255,255,.2);border-radius:10px;padding:14px;text-align:center;font-size:12px;color:#8b94a8}
+.dx-drop b{color:#e9edf5}
+.dx-bt td:nth-child(n){text-align:right;font:12px "JetBrains Mono",monospace;padding:6px 4px}
+.dx-bt td:first-child{text-align:left;color:#e9edf5;width:auto}
+.dx-bt th{font:500 10px Inter;color:#5a6378;text-align:right;padding:4px;letter-spacing:.06em;text-transform:uppercase}
+.dx-bt th:first-child{text-align:left}
+.dx-var{color:#3ee08f}.dx-var.bad{color:#ff6b5a}
+.dx-uses{display:grid;gap:8px;margin-top:12px}
+.dx-uses div{font-size:12px;color:#aab3c5;line-height:1.5;padding-left:14px;position:relative}
+.dx-uses div::before{content:"";position:absolute;left:0;top:7px;width:6px;height:6px;border-radius:50%;background:#ffb547}
+.dx-uses b{color:#e9edf5}
+</style>
+<button class="dx-tab" id="dxTab">All data</button>
+<aside class="dx" id="dx" aria-label="All data">
+  <div class="dx-head">
+    <h2>Everything the Fleet API gives us <button class="dx-x" id="dxX">×</button></h2>
+    <p>Every field Solstice will collect, grouped by endpoint. Values are simulated until the app connects to your account.</p>
+    <nav class="dx-nav"><a href="#dx-live">Live status</a><a href="#dx-flow">Today's flows</a><a href="#dx-pw">Powerwall</a><a href="#dx-site">Site config</a><a href="#dx-backup">Outages</a><a href="#dx-hist">History</a><a href="#dx-rates">Rates</a><a href="#dx-bills">Bills</a></nav>
+  </div>
+  <div class="dx-body">
+    <section class="dx-sec" id="dx-live">
+      <h3>Live status <code>GET …/live_status · every 30 s</code></h3>
+      <div class="dx-bars" id="dxBars"></div>
+      <table class="dx-t" id="dxLive"></table>
+    </section>
+
+    <section class="dx-sec" id="dx-flow">
+      <h3>Where today's energy went <code>calendar_history?kind=energy</code></h3>
+      <svg id="dxSankey" viewBox="0 0 540 250" width="100%" style="margin-top:12px"></svg>
+      <table class="dx-t" id="dxFlowT"></table>
+    </section>
+
+    <section class="dx-sec" id="dx-pw">
+      <h3>Powerwall <code>live_status + site_info + history</code></h3>
+      <div class="dx-kpis">
+        <div><span>Usable capacity</span><b>26.1 kWh</b></div>
+        <div><span>Health vs nameplate</span><b>96.7%</b></div>
+        <div><span>Round-trip · 30d</span><b>89.6%</b></div>
+        <div><span>Cycles · 30d</span><b>24.3</b></div>
+        <div><span>Avg depth / day</span><b>81%</b></div>
+        <div><span>Grid charging</span><b>0.0 kWh</b></div>
+      </div>
+      <svg id="dxFade" viewBox="0 0 540 110" width="100%" style="margin-top:12px"></svg>
+      <p class="dx-note">Capacity trend comes from logging <code>total_pack_energy</code> every day and comparing it with <code>nameplate_energy</code>. Round-trip efficiency is energy discharged ÷ energy charged, corrected for any change in charge level over the window.</p>
+    </section>
+
+    <section class="dx-sec" id="dx-site">
+      <h3>Site configuration <code>GET …/site_info · hourly</code></h3>
+      <table class="dx-t" id="dxSite"></table>
+    </section>
+
+    <section class="dx-sec" id="dx-backup">
+      <h3>Outages &amp; backup events <code>calendar_history?kind=backup</code></h3>
+      <svg id="dxOut" viewBox="0 0 540 70" width="100%" style="margin-top:12px"></svg>
+      <div id="dxEvents"></div>
+    </section>
+
+    <section class="dx-sec" id="dx-hist">
+      <h3>Last 35 days · solar produced <code>calendar_history?period=month</code></h3>
+      <div class="dx-cal" id="dxCal"></div>
+      <div class="dx-kpis">
+        <div><span>Produced · lifetime</span><b>21.8 MWh</b></div>
+        <div><span>Self-powered · 30d</span><b>91%</b></div>
+        <div><span>CO₂ avoided</span><b>9.4 t</b></div>
+      </div>
+    </section>
+
+    <section class="dx-sec" id="dx-rates">
+      <h3>Your rate plan <code>site_info.tariff_content_v2</code></h3>
+      <svg id="dxTou" viewBox="0 0 540 64" width="100%" style="margin-top:12px"></svg>
+      <div class="dx-legend"><span><i style="background:#2c6e5a"></i>Off-peak $0.09</span><span><i style="background:#b0892f"></i>Mid $0.14</span><span><i style="background:#b34a3c"></i>Peak $0.24</span><span><i style="background:#3b5bd6"></i>Export credit $0.08</span></div>
+      <div class="dx-kpis">
+        <div><span>Saved today</span><b>$4.62</b></div>
+        <div><span>Saved · 30d</span><b>$131</b></div>
+        <div><span>Export credit · 30d</span><b>$42.90</b></div>
+      </div>
+      <p class="dx-note">Rates come from the plan configured in the Tesla app. The official docs don't guarantee this field is present; if it's missing, you'll enter your utility plan once in Settings.</p>
+    </section>
+
+    <section class="dx-sec" id="dx-bills">
+      <h3>Electric bills <code>entered by you · stored locally</code></h3>
+      <p class="dx-note" style="margin-top:6px">Tesla knows what flowed through your system. Your bill shows what the utility's meter recorded and what you actually paid. Putting the two side by side is how Solstice gets real dollar figures.</p>
+      <div style="display:flex;gap:8px;margin-top:12px"><button class="dx-btn" id="dxAdd">+ Add a bill</button><button class="dx-btn ghost">Import CSV / Green Button</button></div>
+      <div class="dx-form" id="dxForm">
+        <div class="dx-grid">
+          <div class="dx-drop"><b>Drop your bill PDF here</b><br>It's read on your Mac and the fields below fill in for you to check. The PDF never leaves your computer.</div>
+          <label>Billing period start<input type="date" id="bS" value="2026-08-12"></label>
+          <label>Billing period end<input type="date" id="bE" value="2026-09-11"></label>
+          <label>kWh delivered (imported)<input id="bIn" value="41"></label>
+          <label>kWh received (exported)<input id="bOut" value="512"></label>
+          <label>Total amount due ($)<input id="bAmt" value="18.40"></label>
+          <label>Fixed / customer charge ($)<input id="bFix" value="22.50"></label>
+          <label>Energy rate ($/kWh, optional)<input id="bRate" value="0.1123"></label>
+          <label>Export credit ($/kWh, optional)<input id="bCred" value="0.0610"></label>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px"><button class="dx-btn" id="dxSave">Save bill</button><button class="dx-btn ghost" id="dxCancel">Cancel</button></div>
+      </div>
+      <svg id="dxBillChart" viewBox="0 0 540 150" width="100%" style="margin-top:14px"></svg>
+      <div class="dx-legend"><span><i style="background:#ffb547"></i>What you paid</span><span><i style="background:rgba(255,255,255,.18)"></i>Estimated bill without solar + Powerwall</span></div>
+      <table class="dx-t dx-bt" id="dxBills"></table>
+      <div class="dx-uses">
+        <div><b>Real savings, not estimates.</b> Solstice compares your actual bill with what the same home usage (<code>consumer_energy_imported_*</code>) would have cost at your rates.</div>
+        <div><b>Meter reconciliation.</b> The utility's kWh is checked against Tesla's grid import and export. Tesla is known to over-report import and export on some multi-Powerwall sites, and a big gap raises an alert.</div>
+        <div><b>Your rates, learned.</b> Effective $/kWh, fixed charges and export credit come from your bills. This fills in the rate plan if Tesla's tariff data is missing.</div>
+        <div><b>Next-bill forecast.</b> Midway through a billing period, Solstice projects the bill from live grid flows at your learned rates.</div>
+        <div><b>Payback tracker.</b> Enter what the system cost once, and Solstice charts cumulative savings against it.</div>
+        <div><b>Year over year.</b> Compare usage and cost by month, adjusted for weather using Open-Meteo temperatures (cooling degree-days).</div>
+      </div>
+    </section>
+  </div>
+</aside>
+<script>
+(() => {
+  const dx = document.getElementById('dx');
+  const open = v => dx.classList.toggle('open', v ?? !dx.classList.contains('open'));
+  document.getElementById('dxTab').onclick = () => open(true);
+  document.getElementById('dxX').onclick = () => open(false);
+  addEventListener('keydown', e => { if (e.key === 'Escape') open(false); if (e.key === 'd' && !e.metaKey && !e.ctrlKey && document.activeElement.tagName !== 'INPUT') open(); });
+  const $ = id => document.getElementById(id);
+  const row = (k, v, note = '') => `<tr><td>${k}</td><td>${v}</td><td>${note}</td></tr>`;
+  const pill = (t, cls = '') => `<span class="dx-pill ${cls}">${t}</span>`;
+
+  // ---- live
+  function live() {
+    const L = window.__live || { solar: 5.2, batt: -2.4, grid: -1.4, home: 1.4, soc: .63 };
+    const W = kw => Math.round(kw * 1000).toLocaleString() + ' W';
+    const bars = [['Solar', L.solar, '#ffb547'], ['Home', L.home, '#5aa9ff'], ['Powerwall', L.batt, L.batt < 0 ? '#3ee08f' : '#ffb547'], ['Grid', L.grid, '#b58cff']];
+    $('dxBars').innerHTML = bars.map(([n, v, c]) => `<span>${n}</span><i style="--c:${c};width:${Math.min(100, Math.abs(v) / 10 * 100)}%"></i><b>${v.toFixed(2)} kW</b>`).join('');
+    $('dxLive').innerHTML =
+      row('solar_power', W(L.solar), 'PV output') +
+      row('load_power', W(L.home), 'home usage') +
+      row('battery_power', W(L.batt), '+ discharge / − charge') +
+      row('grid_power', W(L.grid), '+ import / − export') +
+      row('percentage_charged', (L.soc * 100).toFixed(1) + '%', 'charge level') +
+      row('energy_left', Math.round(L.soc * 26100).toLocaleString() + ' Wh', 'stored now') +
+      row('total_pack_energy', '26,100 Wh', 'usable capacity') +
+      row('grid_status', pill('Active'), 'grid is up') +
+      row('island_status', pill('on_grid'), 'not islanded') +
+      row('backup_capable', pill('true'), '') +
+      row('storm_mode_active', pill('false', 'off'), 'Storm Watch') +
+      row('grid_services_active', pill('false', 'off'), 'VPP events') +
+      row('generator_power', '0 W', 'no generator') +
+      row('timestamp', new Date().toISOString().slice(0, 19), 'site time');
+  }
+  live(); setInterval(() => dx.classList.contains('open') && live(), 1000);
+
+  // ---- sankey (Wh fields from calendar_history, sample day)
+  const F = { solHome: 17.2, solBatt: 23.9, solGrid: 17.9, battHome: 14.9, battGrid: 0, gridHome: .8, gridBatt: 0 };
+  (function sankey() {
+    const svg = $('dxSankey'), S = 2.6, gap = 14, x0 = 110, x1 = 430;
+    const L = [['Solar', F.solHome + F.solBatt + F.solGrid, '#ffb547'], ['Powerwall', F.battHome + F.battGrid, '#3ee08f'], ['Grid', F.gridHome + F.gridBatt, '#b58cff']];
+    const R = [['Home', F.solHome + F.battHome + F.gridHome, '#5aa9ff'], ['Powerwall', F.solBatt + F.gridBatt, '#3ee08f'], ['Grid', F.solGrid + F.battGrid, '#b58cff']];
+    let y = 10; const ly = L.map(n => { const r = { y, h: Math.max(3, n[1] * S) }; y += r.h + gap; return r; });
+    y = 10; const ry = R.map(n => { const r = { y, h: Math.max(3, n[1] * S) }; y += r.h + gap; return r; });
+    const links = [[0, 0, F.solHome], [0, 1, F.solBatt], [0, 2, F.solGrid], [1, 0, F.battHome], [2, 0, F.gridHome]];
+    const lo = ly.map(r => r.y), ro = ry.map(r => r.y); let out = '';
+    links.forEach(([a, b, v]) => { const h = Math.max(1.5, v * S), ya = lo[a] + h / 2, yb = ro[b] + h / 2; lo[a] += h; ro[b] += h;
+      out += `<path d="M${x0} ${ya} C ${(x0 + x1) / 2} ${ya}, ${(x0 + x1) / 2} ${yb}, ${x1} ${yb}" stroke="${L[a][2]}" stroke-opacity=".38" stroke-width="${h}" fill="none"/>`; });
+    L.forEach((n, i) => out += `<rect x="${x0 - 8}" y="${ly[i].y}" width="8" height="${ly[i].h}" rx="2" fill="${n[2]}"/><text x="${x0 - 14}" y="${ly[i].y + ly[i].h / 2 + 4}" text-anchor="end" fill="#e9edf5" font-size="12" font-family="Inter">${n[0]} <tspan fill="#8b94a8" font-family="JetBrains Mono" font-size="11">${n[1].toFixed(1)}</tspan></text>`);
+    R.forEach((n, i) => out += `<rect x="${x1}" y="${ry[i].y}" width="8" height="${ry[i].h}" rx="2" fill="${n[2]}"/><text x="${x1 + 14}" y="${ry[i].y + ry[i].h / 2 + 4}" fill="#e9edf5" font-size="12" font-family="Inter">${n[0]} <tspan fill="#8b94a8" font-family="JetBrains Mono" font-size="11">${n[1].toFixed(1)}</tspan></text>`);
+    out += `<text x="${x0 - 8}" y="248" fill="#5a6378" font-size="10" font-family="Inter">SOURCES · kWh</text><text x="${x1 + 8}" y="248" text-anchor="end" fill="#5a6378" font-size="10" font-family="Inter">USES · kWh</text>`;
+    svg.innerHTML = out;
+    const Wh = v => Math.round(v * 1000).toLocaleString();
+    $('dxFlowT').innerHTML = row('solar_energy_exported', Wh(F.solHome + F.solBatt + F.solGrid), 'total PV') + row('consumer_energy_imported_from_solar', Wh(F.solHome)) +
+      row('consumer_energy_imported_from_battery', Wh(F.battHome)) + row('consumer_energy_imported_from_grid', Wh(F.gridHome)) + row('battery_energy_imported_from_solar', Wh(F.solBatt)) +
+      row('battery_energy_imported_from_grid', Wh(F.gridBatt)) + row('battery_energy_exported', Wh(F.battHome + F.battGrid)) + row('grid_energy_exported_from_solar', Wh(F.solGrid)) +
+      row('grid_energy_exported_from_battery', Wh(F.battGrid)) + row('grid_energy_imported', Wh(F.gridHome + F.gridBatt));
+  })();
+
+  // ---- capacity fade chart
+  (function fade() { const svg = $('dxFade'); let d = '', pts = []; for (let m = 0; m <= 28; m++) { const v = 100 - m * .12 - Math.random() * .35; pts.push([30 + m * 17.5, 90 - (v - 94) * 12]); }
+    d = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('');
+    svg.innerHTML = `<line x1="30" x2="520" y1="${90 - 6 * 12}" y2="${90 - 6 * 12}" stroke="rgba(255,255,255,.08)"/><text x="0" y="${90 - 6 * 12 + 4}" fill="#5a6378" font-size="9" font-family="JetBrains Mono">100%</text>
+      <line x1="30" x2="520" y1="90" y2="90" stroke="rgba(255,255,255,.08)"/><text x="0" y="94" fill="#5a6378" font-size="9" font-family="JetBrains Mono">94%</text>
+      <path d="${d}" fill="none" stroke="#3ee08f" stroke-width="2"/><text x="30" y="106" fill="#5a6378" font-size="9" font-family="Inter">Capacity over the 28 months since install · expected fade ~0.4–1%/yr</text>`; })();
+
+  // ---- site_info
+  $('dxSite').innerHTML = row('site_name', 'Home') + row('battery_count', '2') + row('nameplate_power', '23,000 W', '2 × 11.5 kW') + row('nameplate_energy', '27,000 Wh', '2 × 13.5 kWh') +
+    row('installation_date', '2024-05-14', 'sample') + row('installation_time_zone', 'America/Chicago') + row('version', '26.28.1', 'gateway firmware') +
+    row('default_real_mode', pill('self_consumption'), 'Self-Powered') + row('backup_reserve_percent', '20%') + row('storm_mode_enabled', pill('true')) +
+    row('components.customer_preferred_export_rule', pill('battery_ok', 'warn'), 'export surplus') + row('components.disallow_charge_from_grid_with_solar_installed', pill('true')) +
+    row('components.tou_capable', pill('true')) + row('components.grid_services_enabled', pill('false', 'off')) + row('components.backup_time_remaining_enabled', pill('true')) +
+    row('components.batteries[]', '2 units', 'per-unit serials') + row('components.gateway', 'teg');
+
+  // ---- outages
+  (function outages() { const ev = [['Aug 30', 2.4 * 3600], ['Jul 08', 38 * 60], ['May 21', 6.1 * 3600], ['Feb 03', 12 * 60]]; const svg = $('dxOut');
+    const months = ['Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep']; let out = '<line x1="10" x2="530" y1="40" y2="40" stroke="rgba(255,255,255,.1)"/>';
+    months.forEach((m, i) => out += `<text x="${10 + i * 43.5 + 20}" y="66" text-anchor="middle" fill="#5a6378" font-size="9.5" font-family="JetBrains Mono">${m}</text>`);
+    const mi = { Aug: 10, Jul: 9, May: 7, Feb: 4 }; ev.forEach(([d, s]) => { const i = mi[d.slice(0, 3)], x = 10 + i * 43.5 + 10 + (+d.slice(4)) / 31 * 24, r = 3 + Math.sqrt(s / 3600) * 5;
+      out += `<circle cx="${x}" cy="40" r="${r}" fill="#ff6b5a" fill-opacity=".35" stroke="#ff6b5a"/>`; });
+    svg.innerHTML = out;
+    const fmt = s => s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.round(s % 3600 / 60)}m` : `${Math.round(s / 60)}m`;
+    $('dxEvents').innerHTML = ev.map(([d, s]) => `<div class="dx-ev"><span>${d} · grid outage, home stayed powered by the Powerwall</span><b>${fmt(s)}</b></div>`).join('') +
+      `<p class="dx-note">4 events · 9h 20m off-grid in the last 12 months. <code>duration</code> comes back in seconds.</p>`; })();
+
+  // ---- calendar heatmap
+  (function cal() { const c = $('dxCal'); const today = new Date(); let html = '';
+    for (let i = 34; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i); const cloudy = Math.random() < .2; const v = cloudy ? 18 + Math.random() * 18 : 44 + Math.random() * 14;
+      const t = Math.min(1, v / 60); const col = `rgb(${Math.round(40 + 215 * t)},${Math.round(50 + 131 * t)},${Math.round(80 - 9 * t)})`;
+      html += `<div style="background:${col}" title="${d.toDateString()} · ${v.toFixed(1)} kWh">${d.getDate()}</div>`; }
+    c.innerHTML = html; })();
+
+  // ---- TOU bar
+  (function tou() { const svg = $('dxTou'); const seg = [[0, 7, '#2c6e5a'], [7, 14, '#b0892f'], [14, 20, '#b34a3c'], [20, 22, '#b0892f'], [22, 24, '#2c6e5a']]; let out = '';
+    seg.forEach(([a, b, c]) => out += `<rect x="${10 + a / 24 * 520}" y="8" width="${(b - a) / 24 * 520 - 2}" height="22" rx="4" fill="${c}"/>`);
+    const now = new Date(), h = now.getHours() + now.getMinutes() / 60; out += `<rect x="${10 + h / 24 * 520 - 1}" y="2" width="2" height="34" fill="#fff"/>`;
+    [0, 6, 12, 18, 24].forEach(t => out += `<text x="${10 + t / 24 * 520}" y="50" text-anchor="middle" fill="#5a6378" font-size="9.5" font-family="JetBrains Mono">${String(t % 24).padStart(2, '0')}:00</text>`);
+    svg.innerHTML = out; })();
+
+  // ---- bills
+  (function bills() {
+    const months = ['Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'];
+    const B = months.map((m, i) => { const summer = Math.max(0, Math.sin((i - 3.5) / 12 * Math.PI * 2 * -1 + 1.2)); const use = 900 + summer * 1300;
+      const imp = Math.round(40 + (1 - summer) * 260 + Math.random() * 40), exp = Math.round(250 + summer * 380), amt = Math.max(9, 22.5 + imp * .1123 - exp * .061);
+      return { m, use: Math.round(use), imp, exp, amt, without: 22.5 + use * .1123, tesla: Math.round(imp * (1 + (Math.random() - .3) * .08)) }; });
+    B[B.length - 1] = { m: 'Sep', use: 1980, imp: 41, exp: 512, amt: 18.40, without: 22.5 + 1980 * .1123, tesla: 44 };
+    function draw() {
+      const svg = $('dxBillChart'), mx = Math.max(...B.map(b => b.without)); let out = '';
+      B.forEach((b, i) => { const x = 20 + i * 43, h1 = b.without / mx * 110, h2 = b.amt / mx * 110;
+        out += `<rect x="${x}" y="${120 - h1}" width="30" height="${h1}" rx="4" fill="rgba(255,255,255,.12)"/><rect x="${x + 6}" y="${120 - h2}" width="18" height="${h2}" rx="3" fill="#ffb547"/>
+          <text x="${x + 15}" y="136" text-anchor="middle" fill="#5a6378" font-size="9.5" font-family="JetBrains Mono">${b.m}</text>`; });
+      const saved = B.reduce((a, b) => a + b.without - b.amt, 0);
+      out += `<text x="20" y="12" fill="#e9edf5" font-size="12" font-family="Inter">Saved <tspan fill="#3ee08f" font-family="JetBrains Mono">$${saved.toFixed(0)}</tspan> in 12 months</text>`;
+      svg.innerHTML = out;
+      $('dxBills').innerHTML = '<tr><th>Month</th><th>Paid</th><th>Imported</th><th>Tesla import</th><th>Gap</th><th>Exported</th></tr>' +
+        B.slice().reverse().slice(0, 6).map(b => { const v = (b.tesla - b.imp) / Math.max(1, b.imp) * 100;
+          return `<tr><td>${b.m}</td><td>$${b.amt.toFixed(2)}</td><td>${b.imp}</td><td>${b.tesla}</td><td class="dx-var ${Math.abs(v) > 5 ? 'bad' : ''}">${v > 0 ? '+' : ''}${v.toFixed(0)}%</td><td>${b.exp}</td></tr>`; }).join('');
+    }
+    draw();
+    $('dxAdd').onclick = () => $('dxForm').classList.add('on');
+    $('dxCancel').onclick = () => $('dxForm').classList.remove('on');
+    $('dxSave').onclick = () => { const imp = +$('bIn').value, exp = +$('bOut').value, amt = +$('bAmt').value;
+      B[B.length - 1] = { ...B[B.length - 1], imp, exp, amt }; $('dxForm').classList.remove('on'); draw(); };
+  })();
+})();
+</script>
+<!-- ===== /drawer ===== -->
+
 </body>
 </html>

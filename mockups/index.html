@@ -25,7 +25,7 @@ a.card:hover{transform:translateY(-3px);border-color:#333a47}
 </head>
 <body>
 <main>
-  <h1>Solstice: three directions</h1>
+  <h1>Solstice: four directions</h1>
   <p class="lead">Each mockup runs on simulated Powerwall and solar data shaped like the Fleet API <code>live_status</code> and <code>calendar_history</code> responses. Open each one full-screen and drag the 3D scenes. You can mix and match: a layout from one and a hero visual from another.</p>
   <div class="grid">
     <a class="card" href="a-orbit.html"><div class="sw" style="background:radial-gradient(circle at 70% 30%,#ffb54755,transparent 50%),radial-gradient(circle at 30% 70%,#5aa9ff44,transparent 50%),#080b12"></div>
@@ -34,7 +34,10 @@ a.card:hover{transform:translateY(-3px);border-color:#333a47}
       <div class="body"><span>B · Mission Control</span><h2>Dense, analytical, desktop-first</h2><p>A 3D "production landscape" of 30 days × 24 hours, with underperforming days flagged in red. Around it: live KPIs with sparklines, a system-health panel, alerts and a forecast.</p></div></a>
     <a class="card" href="c-aurora.html"><div class="sw" style="background:radial-gradient(ellipse at 50% 40%,#4ef0a655,transparent 55%),linear-gradient(180deg,#ffc15e33,#c4a2ff22),#05060a"></div>
       <div class="body"><span>C · Aurora</span><h2>Calm, glanceable, phone-first</h2><p>A liquid-filled 3D Powerwall orb in front of an aurora sky that changes color with your energy mix. Plain-language insights and a radial history chart, in an installable PWA.</p></div></a>
+    <a class="card" href="d-rooftop.html"><div class="sw" style="background:linear-gradient(180deg,#3f7fd0,#cfe2f3 70%,#3a4250 70%)"></div>
+      <div class="body"><span>D · Rooftop Twin</span><h2>Your house, panels and Powerwall</h2><p>A 3D model of your roof lit by the real sun position and live Open-Meteo weather. Shows shading on each panel and an irradiance heat map. Scrub through today or tomorrow. (Local only, not in the repo.)</p></div></a>
   </div>
+  <p class="note">Every mockup has an <b>All data</b> tab on the right edge (or press D). It shows every Fleet API field, today's energy flows, Powerwall health, outages, history, rates and your electric bills.</p>
   <p class="note">All numbers are simulated. The efficiency alert ("11% below expected") is a built-in example of the detection we'll run on your real data against Open-Meteo irradiance.</p>
 </main>
 </body>
