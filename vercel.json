@@ -3,6 +3,15 @@
   "outputDirectory": "site",
   "framework": null,
   "headers": [
-    { "source": "/.well-known/(.*)", "headers": [{ "key": "Content-Type", "value": "application/x-pem-file" }] }
-  ]
+    {
+      "source": "/.well-known/(.*)",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/x-pem-file"
+        }
+      ]
+    }
+  ],
+  "installCommand": ""
 }

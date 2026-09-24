@@ -1,0 +1,24 @@
+{
+  "name": "solstice",
+  "private": true,
+  "type": "module",
+  "description": "Local-first Tesla Powerwall + solar monitor",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "server": "node --env-file=.env --no-warnings=ExperimentalWarning --import tsx server/src/index.ts",
+    "dev": "node --env-file=.env --no-warnings=ExperimentalWarning --watch --import tsx server/src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "bills": "node scripts/parse-pec-bill.mjs"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
