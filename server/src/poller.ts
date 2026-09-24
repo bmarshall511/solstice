@@ -59,7 +59,8 @@ export async function pollToday(siteId: string) {
 export async function pollBackups(siteId: string) {
   const res = await tesla.backupHistory(siteId, rfc3339(new Date(Date.now() - 5 * 365 * 864e5)), rfc3339(new Date()));
   const stmt = db.prepare('INSERT OR REPLACE INTO backup_events VALUES (?,?,?)');
-  for (const e of res.events ?? []) stmt.run(e.timestamp, Date.parse(e.timestamp), e.duration);
+  // `duration` is documented as seconds, but real values are milliseconds (e.g. 307419 ≈ a 5-minute outage)
+  for (const e of res.events ?? []) stmt.run(e.timestamp, Date.parse(e.timestamp), Math.round(e.duration / 1000));
   return res.events?.length ?? 0;
 }
 

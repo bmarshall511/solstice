@@ -228,7 +228,7 @@ consumer_energy_imported_from_grid / _from_solar / _from_battery / _from_generat
 **Other kinds** (`power` = 5/15-min power time series with `solar_power, battery_power, grid_power, grid_services_power, generator_power`; `soe`; `self_consumption`; `savings`) existed on the legacy owner-API. They are **not documented for Fleet API [unverified]**. Probe `kind=power` and `kind=soe` since energy calls are free. If they work, `kind=power` gives an intraday curve without constant polling. The legacy `interval=15m` param is also **[unverified]**.
 
 ### 2.5 `GET …/calendar_history?kind=backup` (backup_history)
-Same params as 2.4. Response: `{"events":[{"timestamp":"…","duration":3600}],"total_events":2}`. `duration` is in seconds off-grid.
+Same params as 2.4. Response: `{"events":[{"timestamp":"…","duration":3600}],"total_events":2}`. `duration` is documented as seconds off-grid, but **real responses are in milliseconds** (verified on our site, 2026-09-24: values like 307419 ≈ 5 min).
 
 ### 2.6 `GET …/telemetry_history?kind=charge` (charge_history) — Wall Connector only
 - Params: `kind=charge` (the only kind), `start_date`, `end_date`, `time_zone`. No `period`.
