@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Solstice · Mission Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#060708; --panel:#0c0e11; --panel-2:#101318; --line:#1a1e25; --line-2:#252a33;
+  --text:#e6e9ee; --dim:#8a919d; --mute:#555c68;
+  --solar:#ffae3d; --batt:#34d399; --home:#38bdf8; --grid:#a78bfa; --warn:#ff5d4d; --ok:#34d399;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+body{overflow:hidden}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace}
+.app{height:100vh;display:grid;grid-template-rows:56px 1fr;padding:0 16px 16px;gap:12px}
+header{display:flex;align-items:center;gap:20px;border-bottom:1px solid var(--line);margin:0 -16px;padding:0 20px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:.04em;font-size:14px}
+.brand i{width:10px;height:10px;background:var(--solar);border-radius:2px;box-shadow:0 0 14px var(--solar);transform:rotate(45deg)}
+.site{color:var(--dim);font-size:12px}
+.live{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--ok);letter-spacing:.1em;text-transform:uppercase}
+.live::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--ok);animation:p 1.6s infinite}
+@keyframes p{50%{opacity:.25}}
+.spacer{flex:1}
+.tabs{display:flex;border:1px solid var(--line-2);border-radius:8px;overflow:hidden}
+.tabs button{all:unset;cursor:pointer;padding:6px 12px;font:500 11px "JetBrains Mono";color:var(--dim)}
+.tabs button.on{background:var(--panel-2);color:var(--text)}
+.clock{font-size:12px;color:var(--dim)}
+
+.grid{display:grid;grid-template-columns:280px 1fr 330px;grid-template-rows:1fr 230px;gap:12px;min-height:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;position:relative;overflow:hidden;min-height:0}
+.ph{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 0}
+.ph h2{font:500 10.5px Inter;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.ph span{font-size:11px;color:var(--mute)}
+
+/* left KPIs */
+.kpis{grid-row:1/3;display:flex;flex-direction:column;gap:12px;min-height:0}
+.kpi{padding:14px;flex:1;display:flex;flex-direction:column;min-height:0}
+.kpi .t{display:flex;justify-content:space-between;font:500 10.5px Inter;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.kpi .t em{font-style:normal;color:var(--c)}
+.kpi .v{font:300 34px "JetBrains Mono";letter-spacing:-.03em;margin-top:6px}
+.kpi .v small{font-size:13px;color:var(--dim);margin-left:4px}
+.kpi .d{font-size:11.5px;color:var(--mute);margin-top:2px}
+.kpi canvas{width:100%;flex:1;min-height:30px;margin-top:8px}
+
+/* center 3D */
+.terrain{grid-column:2;grid-row:1}
+#t3d{position:absolute;inset:0}
+.terrain .ph{position:relative;z-index:2}
+.tlegend{position:absolute;left:14px;bottom:12px;z-index:2;display:flex;gap:14px;font-size:11px;color:var(--dim);align-items:center}
+.ramp{width:120px;height:6px;border-radius:3px;background:linear-gradient(90deg,#1b2a4a,#3a6bd6,#ffae3d,#fff1c9)}
+.tip{position:fixed;pointer-events:none;background:rgba(12,14,17,.92);border:1px solid var(--line-2);border-radius:8px;padding:8px 10px;font:12px "JetBrains Mono";z-index:20;display:none;white-space:nowrap;line-height:1.55}
+.tip b{color:var(--solar);font-weight:500}
+.axis{font:10px "JetBrains Mono";color:var(--mute);white-space:nowrap}
+.axis.warn{color:var(--warn)}
+
+/* bottom flow chart */
+.flow{grid-column:2;grid-row:2;display:flex;flex-direction:column}
+.flow .cw{flex:1;position:relative;min-height:0;margin:6px 10px 8px}
+.flow canvas{position:absolute;inset:0;width:100%;height:100%}
+.lg{display:flex;gap:14px;font-size:11px;color:var(--dim)}
+.lg i{display:inline-block;width:10px;height:2px;margin-right:6px;vertical-align:3px}
+
+/* right health */
+.health{grid-column:3;grid-row:1/3;display:flex;flex-direction:column}
+.gauges{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:12px 14px}
+.g{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center}
+.g svg{display:block;margin:0 auto}
+.g b{display:block;font:400 17px "JetBrains Mono";margin-top:-34px;height:34px}
+.g span{display:block;font-size:10px;color:var(--dim);margin-top:6px;letter-spacing:.06em}
+.alerts{flex:1;overflow:auto;padding:4px 14px 14px;display:flex;flex-direction:column;gap:8px}
+.al{border:1px solid var(--line);border-left:2px solid var(--c);border-radius:8px;padding:10px 12px;background:var(--panel-2)}
+.al .h{display:flex;justify-content:space-between;font-size:12.5px;font-weight:500}
+.al .h time{font:400 10.5px "JetBrains Mono";color:var(--mute)}
+.al p{font-size:12px;color:var(--dim);line-height:1.5;margin-top:4px}
+.al .m{display:flex;gap:10px;margin-top:8px;font:11px "JetBrains Mono";color:var(--mute)}
+.al .m b{color:var(--text);font-weight:400}
+.wx{border-top:1px solid var(--line);padding:12px 14px}
+.wx .row{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-top:10px;text-align:center;font:10.5px "JetBrains Mono";color:var(--mute)}
+.wx .row div{display:flex;flex-direction:column;align-items:center;gap:4px}
+.wx .row i{display:block;width:100%;border-radius:3px;background:linear-gradient(0deg,rgba(255,174,61,.15),rgba(255,174,61,.8))}
+.wx .sum{display:flex;justify-content:space-between;margin-top:10px;font-size:12px;color:var(--dim)}
+.wx .sum b{color:var(--text);font:500 12px "JetBrains Mono"}
+.mock{position:fixed;right:20px;bottom:6px;font-size:10px;color:var(--mute);letter-spacing:.14em;text-transform:uppercase}
+
+@media (max-width:1100px){
+  body{overflow:auto}
+  .app{height:auto}
+  .grid{grid-template-columns:1fr;grid-template-rows:auto}
+  .kpis{grid-row:auto;flex-direction:row;overflow-x:auto}
+  .kpi{min-width:200px;height:170px}
+  .terrain,.flow,.health{grid-column:1;grid-row:auto}
+  .terrain{height:420px}.flow{height:230px}
+  .site,.clock{display:none}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand"><i></i>SOLSTICE</div>
+    <div class="site">Home · 2× Powerwall 3 (27 kWh) · 8.4 kW solar</div>
+    <div class="live">Live · 30s</div>
+    <div class="site" id="wxh">weather…</div>
+    <div class="spacer"></div>
+    <div class="tabs" id="range"><button>24H</button><button>7D</button><button class="on">30D</button><button>1Y</button></div>
+    <div class="clock mono" id="clock"></div>
+  </header>
+
+  <div class="grid">
+    <div class="kpis">
+      <div class="panel kpi" style="--c:var(--solar)"><div class="t">Solar <em>●</em></div><div class="v" id="k-sol">0<small>kW</small></div><div class="d" id="k-sol-d">—</div><canvas id="sp-sol"></canvas></div>
+      <div class="panel kpi" style="--c:var(--batt)"><div class="t">Powerwall <em>●</em></div><div class="v" id="k-bat">0<small>%</small></div><div class="d" id="k-bat-d">—</div><canvas id="sp-bat"></canvas></div>
+      <div class="panel kpi" style="--c:var(--home)"><div class="t">Home <em>●</em></div><div class="v" id="k-home">0<small>kW</small></div><div class="d" id="k-home-d">—</div><canvas id="sp-home"></canvas></div>
+      <div class="panel kpi" style="--c:var(--grid)"><div class="t">Grid <em>●</em></div><div class="v" id="k-grid">0<small>kW</small></div><div class="d" id="k-grid-d">—</div><canvas id="sp-grid"></canvas></div>
+    </div>
+
+    <section class="panel terrain">
+      <div class="ph"><h2>Production landscape · last 30 days × 24 h</h2><span>drag to orbit · hover a bar</span></div>
+      <div id="t3d"></div>
+      <div class="tlegend"><span>kWh / hour</span><div class="ramp"></div><span style="color:var(--warn)">▌ below expected</span></div>
+    </section>
+
+    <section class="panel flow">
+      <div class="ph"><h2>Power flow · today</h2>
+        <div class="lg"><span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--home)"></i>Home</span><span><i style="background:var(--batt)"></i>Battery ±</span><span><i style="background:var(--grid)"></i>Grid ±</span><span><i style="background:#fff;opacity:.35"></i>Irradiance</span></div>
+      </div>
+      <div class="cw"><canvas id="flow"></canvas></div>
+    </section>
+
+    <aside class="panel health">
+      <div class="ph"><h2>System health</h2><span>model: Open-Meteo GHI → PV</span></div>
+      <div class="gauges">
+        <div class="g"><svg width="70" height="70" id="g1"></svg><b>89%</b><span>SOLAR PR · 7D</span></div>
+        <div class="g"><svg width="70" height="70" id="g2"></svg><b>89.6</b><span>ROUND-TRIP %</span></div>
+        <div class="g"><svg width="70" height="70" id="g3"></svg><b>96.7</b><span>CAPACITY %</span></div>
+      </div>
+      <div class="ph" style="padding-top:2px"><h2>Alerts</h2><span>3 open</span></div>
+      <div class="alerts">
+        <div class="al" style="--c:var(--warn)"><div class="h">Solar underperforming<time>4 days</time></div>
+          <p>Production is 11% below the clear-sky model on 4 consecutive sunny days. The loss is even across the day, which points to dirty panels rather than shading.</p>
+          <div class="m"><span>PR <b>0.89</b></span><span>baseline <b>0.99</b></span><span>loss <b>~3.1 kWh/d</b></span></div></div>
+        <div class="al" style="--c:var(--solar)"><div class="h">Overnight baseline up 18%<time>6 days</time></div>
+          <p>Home draw between 1 and 5 AM rose from 410 W to 485 W. Something new may be left on.</p>
+          <div class="m"><span>Δ <b>+75 W</b></span><span>≈ <b>$6.40/mo</b></span></div></div>
+        <div class="al" style="--c:var(--home)"><div class="h">Capacity trend nominal<time>30 days</time></div>
+          <p>Usable capacity is 26.1 kWh (96.7% of nameplate). It is fading 0.4% per year, which is within the expected range.</p></div>
+      </div>
+      <div class="wx">
+        <div class="ph" style="padding:0"><h2>Tomorrow · forecast</h2><span id="wxsrc">Open-Meteo</span></div>
+        <div class="row" id="wx"></div>
+        <div class="sum"><span>Predicted production</span><b id="wxpred">—</b></div>
+        <div class="sum" style="margin-top:4px"><span>Battery full by</span><b>12:40</b></div>
+      </div>
+    </aside>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+<div class="mock">Mockup B · Mission Control</div>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+/* ---------- simulated data ---------- */
+const PEAK_KW = 8.4, CAP_KWH = 27, BATT_MAX = 11.5, RESERVE = .2;
+let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const gauss = (x, m, s) => Math.exp(-((x - m) ** 2) / (2 * s * s));
+const clearSky = h => (h < 6.1 || h > 19.7) ? 0 : Math.pow(Math.sin(Math.PI * (h - 6.1) / 13.6), 1.25);
+const homeLoad = h => .55 + 1.5 * gauss(h, 7.4, .9) + 2.8 * gauss(h, 18.9, 1.6) + .5 * gauss(h, 12.5, 1.5) + 1.8 * gauss(h, 14.8, .7);
+const DAYS = 30;
+const days = [];
+for (let d = 0; d < DAYS; d++) {
+  const overcast = rnd() < .18 ? .35 + rnd() * .3 : 1;
+  const ph = rnd() * 6, amp = rnd() * .35;
+  const soil = d >= DAYS - 4 ? .89 : .985 + rnd() * .02;
+  const hours = [];
+  for (let h = 0; h < 24; h++) {
+    const w = overcast * (1 - amp * Math.max(0, Math.sin(h * 1.3 + ph)));
+    const exp = PEAK_KW * clearSky(h + .5) * w;
+    hours.push({ exp, act: exp * soil * (1 + (rnd() - .5) * .03) });
+  }
+  const date = new Date(); date.setDate(date.getDate() - (DAYS - 1 - d));
+  const tot = hours.reduce((a, b) => a + b.act, 0), texp = hours.reduce((a, b) => a + b.exp, 0);
+  days.push({ date, hours, soil, pr: tot / texp, tot });
+}
+// today's 5-min flow
+const today = [];
+{ let soc = .36; const soilT = .89;
+  for (let m = 0; m <= 1440; m += 5) { const h = m / 60, dt = 5 / 60;
+    const irr = clearSky(h) * (1 - .22 * Math.max(0, Math.sin(h * 2.3 + 1)) * Math.max(0, Math.sin(h * .9 + 2)));
+    const s = PEAK_KW * irr * soilT, l = homeLoad(h); let b, net = s - l;
+    if (net > 0) b = -Math.min(net, BATT_MAX, (1 - soc) * CAP_KWH / dt / .95); else b = Math.min(-net, BATT_MAX, Math.max(0, soc - RESERVE) * CAP_KWH / dt * .95);
+    soc += (b < 0 ? -b * .95 : -b / .95) * dt / CAP_KWH;
+    today.push({ h, s, l, b, g: l - s - b, soc, irr }); } }
+const at = h => today[Math.min(today.length - 1, Math.round(h * 12))];
+
+
+/* ---------- live weather (Open-Meteo, ZIP your ZIP) ---------- */
+const WXURL = 'https://api.open-meteo.com/v1/forecast?latitude=LAT&longitude=LON&current=temperature_2m,cloud_cover,weather_code,is_day,wind_speed_10m&hourly=cloud_cover,weather_code,global_tilted_irradiance,temperature_2m&daily=uv_index_max,sunrise,sunset&tilt=27&azimuth=64&timezone=America%2FChicago&forecast_days=2&temperature_unit=fahrenheit&wind_speed_unit=mph';
+const WMO = c => c === 0 ? 'Clear' : c <= 2 ? 'Partly cloudy' : c === 3 ? 'Overcast' : c <= 48 ? 'Fog' : c <= 67 ? 'Rain' : c <= 82 ? 'Showers' : 'Storms';
+const WICON = (c, day = true) => c === 0 ? (day ? '☀︎' : '☾') : c <= 2 ? '⛅︎' : c <= 48 ? '☁︎' : c >= 95 ? '⛈︎' : '☂︎';
+const wxReady = fetch(WXURL).then(r => r.json()).catch(() => null);
+
+wxReady.then(w => { if (!w) return; const c = w.current;
+  document.getElementById('wxh').textContent = `${WICON(c.weather_code, c.is_day)} ${Math.round(c.temperature_2m)}°F · ${WMO(c.weather_code)} · ${c.cloud_cover}% cloud · ${Math.round(c.wind_speed_10m)} mph`;
+  const wx = document.getElementById('wx'); wx.innerHTML = ''; let kwh = 0;
+  for (let h = 24; h < 48; h++) kwh += (w.hourly.global_tilted_irradiance[h] || 0) / 1000 * PEAK_KW * .86 * .89;
+  [6, 8, 10, 12, 14, 16, 18, 20].forEach(h => { const i = 24 + h, g = w.hourly.global_tilted_irradiance[i + 1] || 0, cd = w.hourly.weather_code[i];
+    wx.insertAdjacentHTML('beforeend', `<div title="${WMO(cd)} · ${w.hourly.cloud_cover[i]}% cloud"><span>${WICON(cd, h > 6 && h < 20)}</span><i style="height:${6 + g / 900 * 44}px;opacity:${.3 + Math.min(1, g / 900) * .7}"></i><span>${String(h).padStart(2, '0')}</span></div>`); });
+  document.getElementById('wxpred').textContent = kwh.toFixed(1) + ' kWh';
+  document.getElementById('wxsrc').textContent = `Open-Meteo · live · hi ${Math.round(Math.max(...w.hourly.temperature_2m.slice(24)))}°`; });
+/* ---------- 3D terrain ---------- */
+const host = document.getElementById('t3d');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+host.appendChild(renderer.domElement);
+const labels = new CSS2DRenderer(); Object.assign(labels.domElement.style, { position: 'absolute', inset: 0, pointerEvents: 'none' }); host.appendChild(labels.domElement);
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x0c0e11, 40, 95);
+const camera = new THREE.PerspectiveCamera(34, 1, .1, 300);
+camera.position.set(30, 30, 44);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.5, 0); controls.enableDamping = true; controls.maxPolarAngle = Math.PI * .46; controls.minDistance = 18; controls.maxDistance = 90;
+controls.autoRotate = true; controls.autoRotateSpeed = .25;
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), .35, .4, .75); composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+scene.add(new THREE.HemisphereLight(0x8fb2ff, 0x101216, .6));
+const key = new THREE.DirectionalLight(0xffffff, 1.1); key.position.set(10, 30, 20); scene.add(key);
+
+const SX = 1.05, SZ = 1.25, HS = .75;
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(24 * SX + 4, DAYS * SZ + 4), new THREE.MeshStandardMaterial({ color: 0x0e1117, roughness: 1 }));
+floor.rotation.x = -Math.PI / 2; floor.position.y = -.01; scene.add(floor);
+const gh = new THREE.GridHelper(60, 60, 0x1c2029, 0x14171d); gh.position.y = -.005; scene.add(gh);
+
+const N = DAYS * 24;
+const bars = new THREE.InstancedMesh(new THREE.BoxGeometry(.82, 1, 1.0).translate(0, .5, 0),
+  new THREE.MeshStandardMaterial({ roughness: .35, metalness: .15, emissive: 0xffffff, emissiveIntensity: .0 }), N);
+scene.add(bars);
+const ramp = [new THREE.Color(0x1b2a4a), new THREE.Color(0x3a6bd6), new THREE.Color(0xffae3d), new THREE.Color(0xfff1c9)];
+const rampAt = t => { t = Math.max(0, Math.min(.999, t)) * 3; const i = Math.floor(t); return ramp[i].clone().lerp(ramp[i + 1], t - i); };
+const warnC = new THREE.Color(0xff5d4d);
+const meta = [];
+const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), ps = new THREE.Vector3();
+days.forEach((d, di) => d.hours.forEach((hr, h) => {
+  const i = di * 24 + h;
+  let c = rampAt(hr.act / 7.6);
+  if (d.soil < .95 && hr.act > .3) c.lerp(warnC, .55);
+  bars.setColorAt(i, c);
+  meta[i] = { d, h, hr, x: (h - 11.5) * SX, z: (di - DAYS / 2 + .5) * SZ, y: Math.max(.04, hr.act * HS) };
+}));
+function place(i, k) { const m = meta[i]; ps.set(m.x, 0, m.z); sc.set(1, m.y * k, 1); m4.compose(ps, q, sc); bars.setMatrixAt(i, m4); }
+for (let i = 0; i < N; i++) place(i, 0);
+bars.instanceMatrix.needsUpdate = true; bars.instanceColor.needsUpdate = true;
+
+// ghost "expected" line for flagged days
+days.forEach((d, di) => { if (d.soil > .95) return;
+  const pts = d.hours.map((hr, h) => new THREE.Vector3((h - 11.5) * SX, hr.exp * HS + .05, (di - DAYS / 2 + .5) * SZ));
+  const g = new THREE.BufferGeometry().setFromPoints(pts);
+  scene.add(new THREE.Line(g, new THREE.LineDashedMaterial({ color: 0xff5d4d, dashSize: .25, gapSize: .18 })).computeLineDistances());
+});
+
+// axis labels
+const lab = (txt, pos, cls = '') => { const el = document.createElement('div'); el.className = 'axis ' + cls; el.textContent = txt; const o = new CSS2DObject(el); o.position.copy(pos); scene.add(o); };
+[0, 6, 12, 18, 23].forEach(h => lab(String(h).padStart(2, '0') + ':00', new THREE.Vector3((h - 11.5) * SX, 0, DAYS / 2 * SZ + 1.6)));
+days.forEach((d, di) => { if (di % 5 && di !== DAYS - 1 && d.soil > .95) return;
+  lab(d.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), new THREE.Vector3(12.5 * SX + 1.4, 0, (di - DAYS / 2 + .5) * SZ), d.soil < .95 ? 'warn' : ''); });
+
+function resize3d() { const r = host.getBoundingClientRect(); renderer.setSize(r.width, r.height); composer.setSize(r.width, r.height); labels.setSize(r.width, r.height); camera.aspect = r.width / r.height; camera.updateProjectionMatrix(); }
+new ResizeObserver(resize3d).observe(host);
+
+// hover
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(), tip = document.getElementById('tip');
+let hover = -1; const hoverC = new THREE.Color();
+host.addEventListener('pointermove', e => {
+  const r = host.getBoundingClientRect(); mouse.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
+  ray.setFromCamera(mouse, camera); const hit = ray.intersectObject(bars)[0];
+  if (hover >= 0) { bars.setColorAt(hover, hoverC); bars.instanceColor.needsUpdate = true; hover = -1; }
+  if (hit) { hover = hit.instanceId; bars.getColorAt(hover, hoverC); bars.setColorAt(hover, new THREE.Color(0xffffff)); bars.instanceColor.needsUpdate = true;
+    const m = meta[hover]; tip.style.display = 'block'; tip.style.left = e.clientX + 14 + 'px'; tip.style.top = e.clientY + 14 + 'px';
+    tip.innerHTML = `${m.d.date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · ${String(m.h).padStart(2, '0')}:00<br><b>${m.hr.act.toFixed(2)} kWh</b> produced<br>expected ${m.hr.exp.toFixed(2)} · PR ${m.hr.exp > .1 ? Math.round(m.hr.act / m.hr.exp * 100) + '%' : '—'}`;
+  } else tip.style.display = 'none';
+});
+host.addEventListener('pointerleave', () => tip.style.display = 'none');
+
+/* ---------- 2D canvases ---------- */
+const fit = c => { const r = c.getBoundingClientRect(); c.width = r.width * devicePixelRatio; c.height = r.height * devicePixelRatio; return c.getContext('2d'); };
+function spark(id, key, color, fn = v => v) {
+  const c = document.getElementById(id), x = fit(c), W = c.width, H = c.height;
+  const vals = today.map(p => fn(p[key])), mn = Math.min(0, ...vals), mx = Math.max(...vals) || 1;
+  const Y = v => H - 2 - (H - 4) * (v - mn) / (mx - mn);
+  x.beginPath(); vals.forEach((v, i) => { const px = i / (vals.length - 1) * W; i ? x.lineTo(px, Y(v)) : x.moveTo(px, Y(v)); });
+  x.strokeStyle = color; x.lineWidth = 1.5 * devicePixelRatio; x.stroke();
+  x.lineTo(W, Y(mn)); x.lineTo(0, Y(mn)); const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, color + '55'); g.addColorStop(1, color + '00'); x.fillStyle = g; x.fill();
+  return { x, W, H, Y };
+}
+let sparks;
+function drawSparks() { sparks = [spark('sp-sol', 's', '#ffae3d'), spark('sp-bat', 'soc', '#34d399'), spark('sp-home', 'l', '#38bdf8'), spark('sp-grid', 'g', '#a78bfa')]; }
+drawSparks();
+
+const fc = document.getElementById('flow');
+let fx = fit(fc);
+function drawFlow(nowH) {
+  const W = fc.width, H = fc.height, d = devicePixelRatio, pl = 30 * d, pb = 16 * d;
+  fx.clearRect(0, 0, W, H);
+  const X = h => pl + (W - pl - 6 * d) * h / 24, Y = kw => (H - pb) / 2 - (H - pb - 8 * d) / 2 * kw / 9;
+  fx.font = `${9.5 * d}px JetBrains Mono`; fx.fillStyle = '#555c68';
+  for (let k = -8; k <= 8; k += 4) { fx.fillText((k > 0 ? '+' : '') + k, 2 * d, Y(k) + 3 * d); fx.fillStyle = k === 0 ? '#252a33' : '#15181e'; fx.fillRect(pl, Y(k), W - pl, 1 * d); fx.fillStyle = '#555c68'; }
+  for (let h = 0; h <= 24; h += 3) fx.fillText(String(h).padStart(2, '0'), X(h) - 6 * d, H - 2 * d);
+  // irradiance backdrop
+  fx.beginPath(); today.forEach((p, i) => i ? fx.lineTo(X(p.h), Y(p.irr * 9)) : fx.moveTo(X(p.h), Y(p.irr * 9)));
+  fx.lineTo(X(24), Y(0)); fx.lineTo(X(0), Y(0)); fx.fillStyle = 'rgba(255,255,255,.04)'; fx.fill();
+  const line = (fn, color, w = 1.5) => { fx.beginPath(); today.forEach((p, i) => { if (p.h > nowH) return; i ? fx.lineTo(X(p.h), Y(fn(p))) : fx.moveTo(X(p.h), Y(fn(p))); }); fx.strokeStyle = color; fx.lineWidth = w * d; fx.stroke(); };
+  // solar area
+  fx.beginPath(); fx.moveTo(X(0), Y(0)); today.forEach(p => { if (p.h <= nowH) fx.lineTo(X(p.h), Y(p.s)); }); fx.lineTo(X(nowH), Y(0));
+  const g = fx.createLinearGradient(0, Y(8), 0, Y(0)); g.addColorStop(0, 'rgba(255,174,61,.5)'); g.addColorStop(1, 'rgba(255,174,61,0)'); fx.fillStyle = g; fx.fill();
+  line(p => p.s, '#ffae3d', 1.8); line(p => p.l, '#38bdf8'); line(p => -p.b, '#34d399'); line(p => p.g, '#a78bfa');
+  fx.fillStyle = 'rgba(255,255,255,.5)'; fx.fillRect(X(nowH), 4 * d, 1 * d, H - pb - 4 * d);
+}
+
+// gauges
+function gauge(id, v, color) {
+  const s = document.getElementById(id), r = 28, C = 2 * Math.PI * r * .75;
+  s.innerHTML = `<g transform="rotate(135 35 35)"><circle cx="35" cy="35" r="${r}" fill="none" stroke="#1a1e25" stroke-width="5" stroke-dasharray="${C} 999" stroke-linecap="round"/>
+  <circle cx="35" cy="35" r="${r}" fill="none" stroke="${color}" stroke-width="5" stroke-dasharray="${C * v} 999" stroke-linecap="round" style="filter:drop-shadow(0 0 4px ${color})"/></g>`;
+}
+gauge('g1', .89, '#ff5d4d'); gauge('g2', .896, '#34d399'); gauge('g3', .967, '#38bdf8');
+
+
+/* ---------- loop ---------- */
+const $ = id => document.getElementById(id);
+const nowD = new Date(); let simH = nowD.getHours() + nowD.getMinutes() / 60; if (simH < 8 || simH > 18.5) simH = 13.2;
+const clock = new THREE.Clock(); let grow = 0, hudT = 1;
+function frame() {
+  const dt = Math.min(.05, clock.getDelta()), t = clock.elapsedTime;
+  if (grow < 1) { grow = Math.min(1, grow + dt * .45);
+    for (let i = 0; i < N; i++) { const di = Math.floor(i / 24), local = Math.max(0, Math.min(1, grow * 2.2 - di / DAYS * 1.2)); place(i, 1 - Math.pow(1 - local, 3)); }
+    bars.instanceMatrix.needsUpdate = true; }
+  simH += dt / 60; // 1 simulated minute per second
+  hudT += dt;
+  if (hudT > .5) { hudT = 0;
+    const p = at(simH), j = 1 + .012 * Math.sin(t * 3.1);
+    $('clock').textContent = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + String(Math.floor(simH)).padStart(2, '0') + ':' + String(Math.floor(simH % 1 * 60)).padStart(2, '0');
+    $('k-sol').innerHTML = (p.s * j).toFixed(2) + '<small>kW</small>'; $('k-sol-d').textContent = `${Math.round(p.s / PEAK_KW * 100)}% of peak · irradiance ${Math.round(p.irr * 930)} W/m²`;
+    $('k-bat').innerHTML = (p.soc * 100).toFixed(1) + '<small>%</small>'; $('k-bat-d').textContent = p.b < -.05 ? `charging ${(-p.b).toFixed(2)} kW · full ~14:50` : p.b > .05 ? `discharging ${p.b.toFixed(2)} kW` : 'standby';
+    $('k-home').innerHTML = p.l.toFixed(2) + '<small>kW</small>'; $('k-home-d').textContent = 'today 32.9 kWh · 7d avg 31.4';
+    $('k-grid').innerHTML = (p.g > 0 ? '+' : '') + p.g.toFixed(2) + '<small>kW</small>'; $('k-grid-d').textContent = p.g < -.05 ? 'exporting' : p.g > .05 ? 'importing' : 'idle — self-powered';
+    drawFlow(simH);
+    sparks.forEach(sp => { /* now marker */ const x = simH / 24 * sp.W; sp.x.fillStyle = 'rgba(255,255,255,.12)'; sp.x.fillRect(x, 0, 1, sp.H); });
+  }
+  controls.update(); composer.render(); labels.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+frame();
+addEventListener('resize', () => { fx = fit(fc); drawSparks(); });
+</script>
+</body>
+</html>

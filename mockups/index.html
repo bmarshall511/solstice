@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Solstice Mockups</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#06070a;--text:#eceff4;--dim:#8b93a3;--line:#1b1f27}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;padding:56px 24px;-webkit-font-smoothing:antialiased}
+main{max-width:1100px;margin:0 auto}
+h1{font-weight:300;font-size:40px;letter-spacing:-.02em}
+.lead{color:var(--dim);margin:10px 0 36px;max-width:640px;line-height:1.6}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+a.card{display:block;text-decoration:none;color:inherit;border:1px solid var(--line);border-radius:18px;overflow:hidden;background:#0b0d12;transition:transform .2s,border-color .2s}
+a.card:hover{transform:translateY(-3px);border-color:#333a47}
+.sw{height:150px}
+.body{padding:18px}
+.body span{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.body h2{font-weight:500;font-size:20px;margin:6px 0 8px}
+.body p{color:var(--dim);font-size:14px;line-height:1.55}
+.note{margin-top:28px;color:var(--dim);font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Solstice: three directions</h1>
+  <p class="lead">Each mockup runs on simulated Powerwall and solar data shaped like the Fleet API <code>live_status</code> and <code>calendar_history</code> responses. Open each one full-screen and drag the 3D scenes. You can mix and match: a layout from one and a hero visual from another.</p>
+  <div class="grid">
+    <a class="card" href="a-orbit.html"><div class="sw" style="background:radial-gradient(circle at 70% 30%,#ffb54755,transparent 50%),radial-gradient(circle at 30% 70%,#5aa9ff44,transparent 50%),#080b12"></div>
+      <div class="body"><span>A · Orbit</span><h2>Your house, live, in 3D</h2><p>A 3D model of your home with glowing particle streams showing energy moving between solar, Powerwall, home and grid in real time. The sun tracks the time of day, and glass panels sit over the scene.</p></div></a>
+    <a class="card" href="b-mission.html"><div class="sw" style="background:linear-gradient(0deg,#ffae3d33,transparent),repeating-linear-gradient(90deg,#1a1e25 0 1px,transparent 1px 14px),#0c0e11"></div>
+      <div class="body"><span>B · Mission Control</span><h2>Dense, analytical, desktop-first</h2><p>A 3D "production landscape" of 30 days × 24 hours, with underperforming days flagged in red. Around it: live KPIs with sparklines, a system-health panel, alerts and a forecast.</p></div></a>
+    <a class="card" href="c-aurora.html"><div class="sw" style="background:radial-gradient(ellipse at 50% 40%,#4ef0a655,transparent 55%),linear-gradient(180deg,#ffc15e33,#c4a2ff22),#05060a"></div>
+      <div class="body"><span>C · Aurora</span><h2>Calm, glanceable, phone-first</h2><p>A liquid-filled 3D Powerwall orb in front of an aurora sky that changes color with your energy mix. Plain-language insights and a radial history chart, in an installable PWA.</p></div></a>
+  </div>
+  <p class="note">All numbers are simulated. The efficiency alert ("11% below expected") is a built-in example of the detection we'll run on your real data against Open-Meteo irradiance.</p>
+</main>
+</body>
+</html>

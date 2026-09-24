@@ -1,0 +1,12 @@
+# secrets — never commit
+.env
+.env.*
+secrets/
+*.pem
+!site/.well-known/appspecific/com.tesla.3p.public-key.pem
+# local-only (contains home layout)
+mockups/d-rooftop.html
+# tooling
+node_modules/
+.vercel
+.DS_Store
