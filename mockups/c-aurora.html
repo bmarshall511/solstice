@@ -184,6 +184,8 @@ body.out .gx{opacity:1}
 /* panels view */
 .roof3d{position:relative;height:300px;margin:6px -16px 0;touch-action:none}
 .roof3d canvas{display:block}
+.roof3d{border-radius:0;overflow:hidden}
+.roofhud{position:absolute;left:12px;top:10px;z-index:2;padding:6px 10px;border-radius:12px;background:rgba(8,10,16,.55);border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(8px);font:11px 'JetBrains Mono';color:#fff;line-height:1.5;pointer-events:none}
 .chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:5px 10px;border-radius:999px;background:rgba(108,196,255,.12);color:var(--home);border:1px solid rgba(108,196,255,.3)}
 .str{display:grid;grid-template-columns:30px 1fr auto;gap:4px 12px;align-items:center;padding:11px 0;border-top:1px solid var(--glass-b);cursor:pointer}
 .str:first-child{border-top:none}
@@ -199,6 +201,34 @@ body.out .gx{opacity:1}
 .cleanrow{display:flex;gap:16px;align-items:center;margin-top:12px}
 .cleanrow svg{flex:none}
 .cleanrow p{margin-top:0}
+/* PEC bill analysis */
+.check{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.45}
+.check:first-of-type{border-top:none}
+.check i{flex:none;width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-style:normal;font-size:12px;font-weight:700;margin-top:1px}
+.check i.ok{background:rgba(78,240,166,.15);color:var(--batt)} .check i.wa{background:rgba(255,193,94,.15);color:var(--solar)} .check i.al{background:rgba(255,90,78,.18);color:var(--out)}
+.check b{color:var(--text);font-weight:600}
+.flag{margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(255,90,78,.08);border:1px solid rgba(255,90,78,.3);font-size:12px;color:#ffd6d1;line-height:1.5}
+.flag b{color:#fff}
+.cyc{height:10px;border-radius:5px;background:rgba(255,255,255,.08);margin-top:12px;position:relative;overflow:hidden}
+.cyc i{position:absolute;left:0;top:0;bottom:0;border-radius:5px;background:linear-gradient(90deg,var(--grid),var(--home))}
+.cycl{display:flex;justify-content:space-between;font-size:11px;color:var(--mute);margin-top:5px}
+/* what-if planner */
+.slider{margin-top:14px}
+.slider label{display:flex;justify-content:space-between;font-size:13px;font-weight:600}
+.slider label b{font:500 13px "JetBrains Mono";color:var(--solar)}
+.slider small{display:block;font-size:11px;color:var(--mute);margin-top:4px}
+.slider input{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:3px;background:rgba(255,255,255,.12);margin-top:10px;outline:none}
+.slider input::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.4),0 0 0 4px rgba(255,193,94,.35);cursor:pointer}
+.slider input::-moz-range-thumb{width:24px;height:24px;border-radius:50%;background:#fff;border:none}
+.cmp{display:grid;grid-template-columns:1fr auto auto;gap:8px 12px;margin-top:16px;font-size:12.5px;color:var(--dim);align-items:baseline}
+.cmp .hd{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);text-align:right}
+.cmp .hd:first-child{text-align:left}
+.cmp b{font:500 12.5px "JetBrains Mono";text-align:right;color:var(--text)}
+.cmp b.up{color:var(--batt)} .cmp b.dn{color:var(--warn)}
+.cmp span.n{font:12.5px "JetBrains Mono";text-align:right;color:var(--mute)}
+.rec{margin-top:14px;padding:12px 14px;border-radius:16px;background:rgba(255,193,94,.08);border:1px solid rgba(255,193,94,.25);font-size:13px;line-height:1.55;color:var(--dim)}
+.rec b{color:var(--text)}
+.fine{font-size:11px!important;color:var(--mute)!important}
 /* insights */
 .ins{display:flex;gap:12px;align-items:flex-start}
 .ins .ic{flex:none;width:38px;height:38px;border-radius:13px;display:grid;place-items:center;background:color-mix(in srgb,var(--c) 18%,transparent);color:var(--c);font-size:17px}
@@ -377,18 +407,56 @@ body.out .gx{opacity:1}
           <div id="outList" style="margin-top:6px"></div>
         </div>
 
-        <div class="sect">Electric bills · PEC</div>
+        <div class="sect" id="billSect">Electric bills · PEC</div>
         <div class="card">
-          <div class="h"><b>Saved $1,823 this year</b><span>vs. no solar</span></div>
-          <svg class="mini" id="billChart" viewBox="0 0 310 120"></svg>
-          <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Paid</span><span><i style="background:rgba(255,255,255,.2)"></i>Without solar</span></div>
+          <div class="h"><b>September bill check</b><span class="badge" style="background:rgba(255,193,94,.12);color:var(--solar);border-color:rgba(255,193,94,.3)">1 to look at</span></div>
+          <div style="margin-top:8px">
+            <div class="check"><i class="ok">✓</i><div><b>Meter matches Tesla.</b> PEC billed 41 kWh delivered. Tesla measured 44 kWh imported over the same dates, a 7% gap that's within normal tolerance.</div></div>
+            <div class="check"><i class="ok">✓</i><div><b>Export credit applied.</b> PEC credited 512 kWh received. Tesla measured 519 kWh sent, so the credit is complete.</div></div>
+            <div class="check"><i class="wa">!</i><div><b>Your energy rate is up 9%.</b> You paid $0.122/kWh this cycle against $0.112 in spring. That usually means PEC changed its power-cost adjustment, not your usage.</div></div>
+            <div class="check"><i class="ok">✓</i><div><b>Actual meter read.</b> This isn't an estimated bill.</div></div>
+          </div>
           <div class="kv">
-            <span>Last bill · Aug 12 – Sep 11</span><b>$18.40</b>
-            <span>kWh delivered / received</span><b>41 / 512</b>
-            <span>PEC meter vs Tesla import</span><b style="color:var(--batt)">+7% ✓</b>
-            <span>Projected next bill</span><b>$21–26</b>
+            <span>Aug 12 – Sep 11 · amount due</span><b>$0.00</b>
+            <span>Credit carried forward</span><b style="color:var(--batt)">$4.14</b>
           </div>
           <button class="link" id="addBill">+ Add a bill</button>
+        </div>
+
+        <div class="card">
+          <div class="h"><b>PEC meter vs Tesla</b><span>kWh bought · 12 months</span></div>
+          <svg class="mini" id="meterChart" viewBox="0 0 310 150"></svg>
+          <div class="legend" style="justify-content:flex-start"><span><i style="background:rgba(196,162,255,.35)"></i>PEC billed</span><span><i style="background:var(--grid)"></i>Tesla measured</span><span><i style="background:var(--out)"></i>&gt;15% apart</span></div>
+          <div class="flag"><b>March looks off.</b> PEC billed 330 kWh but Tesla measured 254, which is 30% more than your system saw. April then came in 31% under. That pattern is an <b>estimated meter read followed by a correction</b>. It evened out, but if it happens twice in a row, it's worth a call to PEC.</div>
+        </div>
+
+        <div class="card">
+          <div class="h"><b>Where September's bill went</b><span>vs. no solar</span></div>
+          <svg class="mini" id="waterfall" viewBox="0 0 310 190"></svg>
+          <p class="fine" style="margin-top:6px">Split by matching each 5-minute Tesla reading against the bill's rates.</p>
+        </div>
+
+        <div class="card">
+          <div class="h"><b>This billing cycle</b><span>day 13 of 30 · closes Oct 11</span></div>
+          <div class="cyc"><i style="width:43%"></i></div><div class="cycl"><span>Sep 12</span><span>today</span><span>Oct 11</span></div>
+          <div class="kv">
+            <span>Bought from PEC so far</span><b>14 kWh</b>
+            <span>Sent to PEC so far</span><b>205 kWh</b>
+            <span>Projected bill</span><b style="color:var(--batt)">$0 due · ~$6 credit</b>
+            <span>Projected with cooler weather</span><b>$0–4 due</b>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="h"><b>Your effective PEC rate</b><span>$/kWh · energy charges</span></div>
+          <svg class="mini" id="rateChart" viewBox="0 0 310 110"></svg>
+          <p>Solstice learns your real rates from each bill and uses them for every savings number, the upgrade planner and the next-bill forecast. Nothing is assumed once a bill is entered.</p>
+        </div>
+
+        <div class="card">
+          <div class="h"><b>A year of bills</b><span>saved $1,823</span></div>
+          <svg class="mini" id="billChart" viewBox="0 0 310 120"></svg>
+          <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Paid</span><span><i style="background:rgba(255,255,255,.2)"></i>Without solar</span></div>
         </div>
       </section>
 
@@ -398,7 +466,7 @@ body.out .gx{opacity:1}
         <div class="hello"><div><h3>Panels</h3><p>30 panels · 6 strings · facing 244°</p></div><div class="wx"><b id="rfKw">—</b>kW right now</div></div>
         <div class="card">
           <div class="h"><b>Live roof</b><span>tap a panel or string</span></div>
-          <div class="roof3d" id="roof"></div>
+          <div class="roof3d" id="roof"><div class="roofhud" id="roofHud">—</div></div>
           <div class="legend" style="justify-content:flex-start">W per panel<span class="ramp"></span><span>0 → 400</span></div>
           <div class="landtip" id="panelTip">Each panel glows with its estimated output right now. Tap one to see its string, output and efficiency.</div>
         </div>
@@ -436,12 +504,24 @@ body.out .gx{opacity:1}
       <!-- ================= INSIGHTS ================= -->
       <section class="view" id="v-ins">
         <div class="hello"><div><h3>Insights</h3><p>Checked every 15 minutes</p></div></div>
+        <div class="card" style="--c:var(--solar)"><div class="ins"><div class="ic">$</div><div><b>PEC rate up 9%</b> <time>· Sep bill</time><p>Your energy rate went from $0.112 to $0.122/kWh. Your usage didn't change, so it's PEC's adjustment. It costs about $3 a month at your current imports.</p></div></div><button class="link" data-go="v-hist" data-bills="1">Open bill check →</button></div>
+        <div class="card" id="planner">
+          <div class="h"><b>What if you added…</b><span>upgrade planner</span></div>
+          <div class="slider"><label>Solar panels <b id="aPv">+8</b></label><input type="range" id="rPv" min="0" max="20" step="2" value="8"><small id="aPvS">—</small></div>
+          <div class="slider"><label>Powerwalls <b id="aPw">+1</b></label><input type="range" id="rPw" min="0" max="2" step="1" value="1"><small id="aPwS">—</small></div>
+          <div class="slider"><label>New daily usage <b id="aUse">+0 kWh</b></label><input type="range" id="rUse" min="0" max="30" step="2" value="0"><small>EV charging, pool pump, heat pump… (added mostly in the evening)</small></div>
+          <div class="cmp" id="cmp"></div>
+          <svg class="mini" id="planChart" viewBox="0 0 310 130" style="margin-top:14px"></svg>
+          <div class="legend" style="justify-content:flex-start"><span><i style="background:rgba(196,162,255,.45)"></i>Bought from PEC now</span><span><i style="background:var(--grid)"></i>With upgrade</span></div>
+          <div class="rec" id="planRec">—</div>
+          <p class="fine">Estimates: a full year simulated in 5-minute steps using typical your town sunlight and your usage pattern. Assumes 400 W panels at ~$2.75/W installed, about $11.5k per added Powerwall 3, and PEC energy at $0.112/kWh with a $0.061/kWh export credit. The federal 30% residential credit ended with 2025 installs. Real quotes and your actual bills will replace these numbers.</p>
+        </div>
         <div class="card" style="--c:var(--batt)"><div class="ins"><div class="ic">⛨</div><div><b>Outage ready</b> <time>· now</time><p id="readyTxt">—</p></div></div><div class="meter"><i id="readyBar" style="width:60%"></i></div></div>
         <div class="card" style="--c:var(--warn)"><div class="ins"><div class="ic">☀</div><div><b>Solar output 11% low</b> <time>· 4 days</time><p>Clear skies and an even loss all day point to dust on the panels. Rain in the forecast Saturday may wash it off.</p></div></div><div class="meter"><i style="width:89%"></i></div></div>
         <div class="card" style="--c:var(--solar)"><div class="ins"><div class="ic">◐</div><div><b>Overnight usage up 75 W</b> <time>· 6 days</time><p>Your 1–5 AM baseline went from 410 W to 485 W, about $6 a month on your PEC bill. A new device may be left on.</p></div></div></div>
         <div class="card" style="--c:var(--batt)"><div class="ins"><div class="ic">▮</div><div><b>Powerwalls healthy</b> <time>· 30 days</time><p>Round-trip efficiency is 89.6% and usable capacity is 26.1 of 27 kWh. Both are normal for their age.</p></div></div><div class="meter"><i style="width:96.7%"></i></div></div>
         <div class="card" style="--c:var(--home)"><div class="ins"><div class="ic">⛅</div><div><b id="tmrwT">Tomorrow</b> <time>· forecast</time><p id="tmrwP">—</p></div></div></div>
-        <div class="card" style="--c:var(--grid)"><div class="ins"><div class="ic">≈</div><div><b>PEC meter matches Tesla</b> <time>· Sep bill</time><p>Your bill says 41 kWh delivered and Tesla measured 44 kWh. A 7% gap is within normal meter tolerance.</p></div></div></div>
+        <div class="card" style="--c:var(--grid)"><div class="ins"><div class="ic">≈</div><div><b>PEC meter matches Tesla</b> <time>· Sep bill</time><p>Your bill says 41 kWh delivered and Tesla measured 44 kWh, a 7% gap within normal tolerance. March's estimated read was corrected in April.</p></div></div></div>
       </section>
 
       <!-- ================= SETTINGS ================= -->
@@ -458,6 +538,7 @@ body.out .gx{opacity:1}
           <div class="row" style="--c:var(--batt)"><div class="ri">▮</div><div class="rt">Powerwalls</div><div class="rv">2 × PW3 · 27 kWh</div></div>
           <div class="row tap" style="--c:var(--solar)"><div class="ri">☀</div><div class="rt">Solar panels<small>30 panels · add wattage for exact size</small></div><div class="rv">30 ›</div></div>
           <div class="row" style="--c:var(--warn)"><div class="ri">⛨</div><div class="rt">Backup reserve</div><div class="rv">20%</div></div>
+          <div class="row tap" style="--c:var(--solar)" data-go="v-ins"><div class="ri">+</div><div class="rt">Plan an upgrade<small>What more panels or Powerwalls would do</small></div><div class="chev">›</div></div>
           <div class="row tap" style="--c:var(--home)"><div class="ri">$</div><div class="rt">Utility<small>Pedernales Electric Cooperative</small></div><div class="rv">PEC ›</div></div>
         </div>
         <div class="sect">Alerts · in app</div>
@@ -736,11 +817,11 @@ function go(v, anchor) {
   if (anchor) setTimeout(() => $(anchor).scrollIntoView({ behavior: 'smooth', block: 'start' }), 60); else $('screen').scrollTo({ top: 0 });
 }
 document.querySelectorAll('.tab[data-v]').forEach(t => t.onclick = () => go(t.dataset.v));
-document.querySelectorAll('[data-go]').forEach(t => t.onclick = () => go(t.dataset.go, t.dataset.land ? 'landSect' : null));
+document.querySelectorAll('[data-go]').forEach(t => t.onclick = () => go(t.dataset.go, t.dataset.land ? 'landSect' : t.dataset.bills ? 'billSect' : null));
 $('openData').onclick = () => document.getElementById('dxTab')?.click();
 const sheet = on => $('phone').classList.toggle('open', on);
 $('addBill').onclick = () => sheet(true); $('scrim').onclick = () => sheet(false);
-$('saveBill').onclick = () => { sheet(false); toast('$', 'rgba(255,193,94,.2)', 'Bill saved', 'Sep · $18.40 · meter matches Tesla within 7%'); };
+$('saveBill').onclick = () => { sheet(false); toast('$', 'rgba(255,193,94,.2)', 'Bill saved', 'Sep · $0 due · meter matches Tesla within 7%'); };
 
 let speed = 240;
 document.querySelectorAll('#speed button').forEach(b => b.onclick = () => {
@@ -827,7 +908,7 @@ document.querySelectorAll('#hseg button').forEach(b => b.onclick = () => { docum
 
 /* ================= weather wiring ================= */
 fetch(WXURL).then(r => r.json()).then(w => {
-  const c = w.current, hrs = w.hourly;
+  WXD = w; const c = w.current, hrs = w.hourly;
   simulate(h => { const x = h + .5, i = Math.floor(x), f = x - i; const a = hrs.global_tilted_irradiance[i] ?? 0, b = hrs.global_tilted_irradiance[i + 1] ?? a; return a + (b - a) * f; });
   $('wxtop').innerHTML = `<b>${Math.round(c.temperature_2m)}°</b>${WMO(c.weather_code)} · UV ${Math.round(w.daily.uv_index_max[0])}`;
   const now = new Date().getHours(), box = $('wx12');
@@ -849,35 +930,90 @@ const STR = 'ABCDEF'.split('');
 const panelFx = Array.from({ length: PANELS }, (_, i) => ({ row: Math.floor(i / 10), col: i % 10, str: Math.floor(i / 5), name: `${STR[Math.floor(i / 5)]}${i % 5 + 1}`, fx: i === 12 ? .93 : 1 + (Math.sin(i * 12.9) * .012) }));
 let SOIL_NOW = SOIL;
 const shadeF = (pi, h) => pi.str === 5 && h > 16.3 ? Math.max(.55, 1 - (h - 16.3) * .22) : 1; // string F: afternoon shade on the lower corner
+/* sun position (NOAA approximation) for LAT°N 97.99°W */
+const LAT = LAT, LON = LON, RAD = Math.PI / 180;
+function sunAt(date) {
+  const start = new Date(Date.UTC(date.getUTCFullYear(), 0, 0)), doy = Math.floor((date - start) / 864e5);
+  const hr = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600, g = 2 * Math.PI / 365 * (doy - 1 + (hr - 12) / 24);
+  const eqt = 229.18 * (.000075 + .001868 * Math.cos(g) - .032077 * Math.sin(g) - .014615 * Math.cos(2 * g) - .040849 * Math.sin(2 * g));
+  const dec = .006918 - .399912 * Math.cos(g) + .070257 * Math.sin(g) - .006758 * Math.cos(2 * g) + .000907 * Math.sin(2 * g) - .002697 * Math.cos(3 * g) + .00148 * Math.sin(3 * g);
+  const ha = ((hr * 60 + eqt + 4 * LON) / 4 - 180) * RAD, lat = LAT * RAD;
+  const el = 90 - Math.acos(Math.max(-1, Math.min(1, Math.sin(lat) * Math.sin(dec) + Math.cos(lat) * Math.cos(dec) * Math.cos(ha)))) / RAD;
+  return { el, az: (Math.atan2(Math.sin(ha), Math.cos(ha) * Math.sin(lat) - Math.tan(dec) * Math.cos(lat)) / RAD + 540) % 360 };
+}
+const dayBase = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+const sunVec = ({ el, az }, v = new THREE.Vector3()) => v.set(Math.sin(az * RAD) * Math.cos(el * RAD), Math.sin(el * RAD), -Math.cos(az * RAD) * Math.cos(el * RAD));
+let WXD = null;
 const ROOF = (() => {
-  const host = $('roof'); let ready = false, renderer, scene, camera, controls, meshes = [], sel = -1, selStr = -1;
+  const host = $('roof'); let ready = false, renderer, labels, scene, camera, controls, meshes = [], sel = -1, selStr = -1;
+  let skyU, sunL, hemi, sunBall, clouds = [], rain, panelNormal = new THREE.Vector3(), arr;
   function hip(W, L, wall, tilt) {
     const g = new THREE.Group(); const cl = c => new THREE.MeshStandardMaterial({ color: c, roughness: .85 });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(W, wall, L), cl(0x2a303c)); body.position.y = wall / 2; g.add(body);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(W, wall, L), cl(0xd9d5cc)); body.position.y = wall / 2; body.castShadow = body.receiveShadow = true; g.add(body);
     const w = W / 2 + .5, l = L / 2 + .5, H = w * Math.tan(tilt), r = l - w;
     const A = [-w, 0, -l], B = [w, 0, -l], C = [w, 0, l], D = [-w, 0, l], R1 = [0, H, -r], R2 = [0, H, r];
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute([A, D, R2, A, R2, R1, B, R1, R2, B, R2, C, A, R1, B, D, C, R2].flat(), 3)); geo.computeVertexNormals();
-    const roof = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x4a515c, roughness: .9, side: THREE.DoubleSide, flatShading: true })); roof.position.y = wall; g.add(roof);
-    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .18 })); e.position.y = wall; g.add(e);
+    const roof = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x6d747e, roughness: .9, side: THREE.DoubleSide, flatShading: true })); roof.position.y = wall; roof.castShadow = roof.receiveShadow = true; g.add(roof);
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .2 })); e.position.y = wall; g.add(e);
+    // two Powerwalls on the east wall by the garage
+    [5.6, 6.5].forEach(z => { const u = new THREE.Mesh(new THREE.BoxGeometry(.22, 1.1, .62), new THREE.MeshStandardMaterial({ color: 0xf4f5f7, roughness: .3 })); u.position.set(W / 2 + .12, .75, z); u.castShadow = true; g.add(u); });
     return { g, w, wall };
   }
+  function puffTex() { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
+    for (let i = 0; i < 9; i++) { const px = 30 + Math.random() * 68, py = 46 + Math.random() * 36, r = 20 + Math.random() * 22;
+      const g = x.createRadialGradient(px, py, 0, px, py, r); g.addColorStop(0, 'rgba(255,255,255,.9)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); }
+    return new THREE.CanvasTexture(c); }
   function init() {
     ready = true;
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.toneMapping = THREE.ACESFilmicToneMapping; host.appendChild(renderer.domElement);
-    scene = new THREE.Scene(); camera = new THREE.PerspectiveCamera(34, 1, .1, 200); camera.position.set(-26, 18, 16);
-    controls = new OrbitControls(camera, renderer.domElement); controls.target.set(-2, 3, 0); controls.enableDamping = true; controls.enableZoom = false; controls.enablePan = false;
-    controls.maxPolarAngle = Math.PI * .48; controls.autoRotate = true; controls.autoRotateSpeed = .35; controls.minAzimuthAngle = -Math.PI * .95; controls.maxAzimuthAngle = -Math.PI * .05;
-    scene.add(new THREE.HemisphereLight(0xbcd4ff, 0x0c0e14, .9)); const k = new THREE.DirectionalLight(0xfff1dc, 1.6); k.position.set(-20, 25, 10); scene.add(k);
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(20, 64), new THREE.MeshStandardMaterial({ color: 0x151922, roughness: 1 })); disc.rotation.x = -Math.PI / 2; scene.add(disc);
-    const TILT = 27 * Math.PI / 180, house = hip(14, 24, 3.2, TILT); scene.add(house.g);
-    const arr = new THREE.Group(); arr.position.set(-house.w, house.wall, 0); arr.rotation.z = TILT; house.g.add(arr);
+    renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; host.appendChild(renderer.domElement);
+    labels = new CSS2DRenderer(); Object.assign(labels.domElement.style, { position: 'absolute', inset: 0, pointerEvents: 'none' }); host.appendChild(labels.domElement);
+    scene = new THREE.Scene(); scene.fog = new THREE.Fog(0x9fb4cf, 60, 160);
+    camera = new THREE.PerspectiveCamera(40, 1, .1, 400); camera.position.set(-30, 17, 22);
+    controls = new OrbitControls(camera, renderer.domElement); controls.target.set(-1, 3.5, 1); controls.enableDamping = true; controls.enableZoom = false; controls.enablePan = false;
+    controls.maxPolarAngle = Math.PI * .49; controls.autoRotate = true; controls.autoRotateSpeed = .25;
+    // sky dome
+    skyU = { top: { value: new THREE.Color() }, hor: { value: new THREE.Color() }, sunDir: { value: new THREE.Vector3() }, glow: { value: new THREE.Color() } };
+    scene.add(new THREE.Mesh(new THREE.SphereGeometry(200, 32, 16), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, uniforms: skyU,
+      vertexShader: `varying vec3 vD;void main(){vD=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+      fragmentShader: `varying vec3 vD;uniform vec3 top,hor,sunDir,glow;void main(){float y=max(vD.y,0.);vec3 c=mix(hor,top,pow(y,.55));float s=max(dot(vD,normalize(sunDir)),0.);c+=glow*(pow(s,500.)*3.+pow(s,10.)*.35);gl_FragColor=vec4(c,1.);}` })));
+    hemi = new THREE.HemisphereLight(0xcfe0ff, 0x2a2f3a, .7); scene.add(hemi);
+    sunL = new THREE.DirectionalLight(0xfff2dc, 3); sunL.castShadow = true; sunL.shadow.mapSize.set(2048, 2048); sunL.shadow.bias = -.0004; sunL.shadow.normalBias = .04;
+    Object.assign(sunL.shadow.camera, { left: -20, right: 20, top: 20, bottom: -20, near: 1, far: 150 }); scene.add(sunL, sunL.target);
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(24, 72), new THREE.MeshStandardMaterial({ color: 0x3a4250, roughness: 1 })); disc.rotation.x = -Math.PI / 2; disc.receiveShadow = true; scene.add(disc);
+    // house rotated to its true bearing so the array faces 244° (WSW)
+    const TILT = 27 * RAD, house = hip(14, 24, 3.2, TILT); house.g.rotation.y = Math.atan2(Math.sin(154 * RAD), -Math.cos(154 * RAD)); scene.add(house.g);
+    arr = new THREE.Group(); arr.position.set(-house.w, house.wall, 0); arr.rotation.z = TILT; house.g.add(arr);
     const geo = new THREE.BoxGeometry(1.66, .06, 1.08), edge = new THREE.EdgesGeometry(geo);
     panelFx.forEach((pi, i) => {
-      const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x07101f, metalness: .6, roughness: .25, emissive: 0x2d5bff, emissiveIntensity: .4 }));
-      m.position.set(.8 + (pi.row + .5) * 1.72, .1, (pi.col - 4.5) * 1.13 + .6); m.userData.i = i;
+      const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x07101f, metalness: .6, roughness: .22, emissive: 0x2d5bff, emissiveIntensity: .4 }));
+      m.position.set(.8 + (pi.row + .5) * 1.72, .1, (pi.col - 4.5) * 1.13 + .6); m.userData.i = i; m.castShadow = m.receiveShadow = true;
       const ln = new THREE.LineSegments(edge, new THREE.LineBasicMaterial({ color: 0xc9d6ff, transparent: true, opacity: .35 })); m.add(ln); m.userData.ln = ln;
       arr.add(m); meshes.push(m);
     });
+    scene.updateMatrixWorld(true);
+    panelNormal.set(0, 1, 0).applyQuaternion(arr.getWorldQuaternion(new THREE.Quaternion())).normalize();
+    // compass
+    const nEl = document.createElement('div'); nEl.className = 'lax'; nEl.style.cssText = 'color:#fff;font-weight:700;text-shadow:0 1px 4px #000'; nEl.textContent = 'N';
+    const nO = new CSS2DObject(nEl); nO.position.set(0, .1, -26); scene.add(nO);
+    // sun + today's path
+    sunBall = new THREE.Mesh(new THREE.SphereGeometry(3.2, 24, 12), new THREE.MeshBasicMaterial({ color: 0xffd48a, fog: false })); scene.add(sunBall);
+    const pts = [], v = new THREE.Vector3();
+    for (let h = 4; h <= 22; h += 1 / 6) { const sp = sunAt(new Date(dayBase.getTime() + h * 36e5)); if (sp.el > -1) pts.push(sunVec(sp, v).clone().multiplyScalar(110)); }
+    const path = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineDashedMaterial({ color: 0xffe0a0, dashSize: 2.5, gapSize: 2, transparent: true, opacity: .75, fog: false }));
+    path.computeLineDistances(); scene.add(path);
+    [8, 10, 12, 14, 16, 18].forEach(h => { const sp = sunAt(new Date(dayBase.getTime() + h * 36e5)); if (sp.el < 1) return;
+      const el = document.createElement('div'); el.className = 'lax'; el.style.color = '#ffe0a0'; el.textContent = `${(h + 11) % 12 + 1}${h < 12 ? 'a' : 'p'}`;
+      const o = new CSS2DObject(el); o.position.copy(sunVec(sp, v).multiplyScalar(110)); scene.add(o); });
+    // clouds + rain
+    const tex = puffTex();
+    clouds = Array.from({ length: 22 }, () => { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0, fog: false }));
+      const k = 14 + Math.random() * 18; sp.scale.set(k, k * .5, 1); sp.position.set((Math.random() - .5) * 120, 26 + Math.random() * 12, (Math.random() - .5) * 120); scene.add(sp); return sp; });
+    const RN = 900, rp = new Float32Array(RN * 6);
+    for (let i = 0; i < RN; i++) { const x = (Math.random() - .5) * 60, y = Math.random() * 30, z = (Math.random() - .5) * 60; rp.set([x, y, z, x - .1, y - .9, z], i * 6); }
+    const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.BufferAttribute(rp, 3));
+    rain = new THREE.LineSegments(rg, new THREE.LineBasicMaterial({ color: 0xaecbff, transparent: true, opacity: 0 })); scene.add(rain);
+    // tap to select
     const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(); let down = null;
     renderer.domElement.addEventListener('pointerdown', e => down = [e.clientX, e.clientY]);
     renderer.domElement.addEventListener('pointerup', e => {
@@ -888,18 +1024,35 @@ const ROOF = (() => {
     });
     new ResizeObserver(resize).observe(host); resize();
   }
-  function resize() { const r = host.getBoundingClientRect(); if (!r.width) return; renderer.setSize(r.width, r.height); camera.aspect = r.width / r.height; camera.updateProjectionMatrix(); }
-  function select(i, strOnly) { sel = strOnly ? -1 : i; selStr = strOnly ? i : i >= 0 ? panelFx[i].str : -1; ROOF.dirty = true; document.querySelectorAll('.str').forEach((el, k) => el.classList.toggle('sel', k === selStr)); }
+  function resize() { const r = host.getBoundingClientRect(); if (!r.width) return; renderer.setSize(r.width, r.height); labels.setSize(r.width, r.height); camera.aspect = r.width / r.height; camera.updateProjectionMatrix(); }
+  function select(i, strOnly) { sel = strOnly ? -1 : i; selStr = strOnly ? i : i >= 0 ? panelFx[i].str : -1; document.querySelectorAll('.str').forEach((el, k) => el.classList.toggle('sel', k === selStr)); }
   const ramp = [0x0e1a3a, 0x2d5bff, 0xffc15e, 0xfff3d0].map(c => new THREE.Color(c));
   const rampAt = t => { t = Math.max(0, Math.min(.999, t)) * 3; const i = Math.floor(t); return ramp[i].clone().lerp(ramp[i + 1], t - i); };
+  const C = { nightTop: new THREE.Color(0x03050b), nightHor: new THREE.Color(0x0d1426), duskTop: new THREE.Color(0x24325a), duskHor: new THREE.Color(0xf2a36e),
+    dayTop: new THREE.Color(0x3f7fd0), dayHor: new THREE.Color(0xcfe2f3), grayTop: new THREE.Color(0x6f7884), grayHor: new THREE.Color(0xaab2bd) };
+  const sd = new THREE.Vector3();
+  let info = { el: 0, az: 0, cc: 0, code: 0, temp: null, inc: 90 };
   return {
-    dirty: true, select, get sel() { return sel; }, get selStr() { return selStr; },
-    render(watts) {
+    select, get sel() { return sel; }, get selStr() { return selStr; }, get info() { return info; },
+    render(watts, h, dt, t) {
       if (!ready) init();
-      meshes.forEach((m, i) => { const w = watts[i], c = rampAt(w / PANEL_W); m.material.emissive.copy(c); m.material.emissiveIntensity = .35 + w / PANEL_W * .9;
-        const on = selStr < 0 || panelFx[i].str === selStr; m.material.opacity = 1; m.userData.ln.material.opacity = i === sel ? 1 : on && selStr >= 0 ? .8 : .3;
+      const sp = sunAt(new Date(dayBase.getTime() + h * 36e5)); sunVec(sp, sd);
+      const hi = Math.min(23, Math.floor(h)), cc = WXD ? WXD.hourly.cloud_cover[hi] / 100 : .1, code = WXD ? WXD.hourly.weather_code[hi] : 0;
+      info = { el: sp.el, az: sp.az, cc, code, temp: WXD ? WXD.hourly.temperature_2m[hi] : null, inc: Math.acos(Math.max(-1, Math.min(1, panelNormal.dot(sd)))) / RAD };
+      const up = Math.max(0, Math.min(1, (sp.el + 4) / 14)), high = Math.max(0, Math.min(1, sp.el / 35));
+      const top = C.nightTop.clone().lerp(C.duskTop, up).lerp(C.dayTop, high).lerp(C.grayTop, cc * .65 * up);
+      const hor = C.nightHor.clone().lerp(C.duskHor, up).lerp(C.dayHor, high).lerp(C.grayHor, cc * .65 * up);
+      skyU.top.value.copy(top); skyU.hor.value.copy(hor); skyU.sunDir.value.copy(sd); skyU.glow.value.set(0xffd9a0).multiplyScalar(up * (1 - cc * .8)); scene.fog.color.copy(hor);
+      sunBall.position.copy(sd).multiplyScalar(110); sunBall.visible = sp.el > -3; sunBall.material.color.set(cc > .7 ? 0xd8d2c4 : 0xffd48a);
+      sunL.position.copy(sd).multiplyScalar(60); sunL.intensity = 3 * Math.max(0, Math.min(1, sp.el / 8)) * (1 - cc * .8);
+      sunL.color.set(0xffc58a).lerp(new THREE.Color(0xfff4e2), high); hemi.intensity = .15 + .75 * up; hemi.color.copy(hor);
+      const nC = Math.round(clouds.length * cc), gray = new THREE.Color(0x8a93a0).lerp(new THREE.Color(0xffffff), up * (1 - cc * .4));
+      clouds.forEach((c, i) => { c.position.x += dt * 1.8; if (c.position.x > 60) c.position.x = -60; c.material.opacity += ((i < nC ? .85 : 0) - c.material.opacity) * dt * 2; c.material.color.copy(gray); });
+      const raining = code >= 51; rain.material.opacity += ((raining ? .5 : 0) - rain.material.opacity) * dt * 2; if (raining) rain.position.y = -((t * 22) % 30);
+      meshes.forEach((m, i) => { const w = watts[i], c = rampAt(w / PANEL_W); m.material.emissive.copy(c); m.material.emissiveIntensity = .15 + w / PANEL_W * .9;
+        const on = selStr < 0 || panelFx[i].str === selStr; m.userData.ln.material.opacity = i === sel ? 1 : on && selStr >= 0 ? .85 : .3;
         m.userData.ln.material.color.set(i === sel ? 0xffffff : on && selStr >= 0 ? 0xffc15e : 0xc9d6ff); m.scale.y = i === sel ? 2.2 : 1; });
-      controls.update(); renderer.render(scene, camera);
+      controls.update(); renderer.render(scene, camera); labels.render(scene, camera);
     },
   };
 })();
@@ -951,6 +1104,122 @@ fetch('https://api.open-meteo.com/v1/forecast?latitude=LAT&longitude=LON&daily=p
   }).catch(() => renderClean());
 renderClean();
 
+
+
+/* ================= PEC bill analysis charts ================= */
+(function billCharts() {
+  const M = 'ONDJFMAMJJAS'.split('');
+  // meter vs Tesla
+  const pec = [212, 340, 512, 560, 420, 330, 102, 60, 95, 120, 88, 41], tes = [205, 331, 498, 547, 410, 254, 147, 59, 93, 117, 86, 44];
+  let s = '', mx = 600;
+  [0, 300, 600].forEach(v => s += `<line x1="22" x2="306" y1="${112 - v / mx * 100}" y2="${112 - v / mx * 100}" stroke="rgba(255,255,255,.06)"/><text x="0" y="${115 - v / mx * 100}" fill="rgba(242,244,248,.3)" font-size="8.5" font-family="JetBrains Mono">${v}</text>`);
+  M.forEach((m, i) => { const x = 26 + i * 23.4, h1 = pec[i] / mx * 100, h2 = tes[i] / mx * 100, gap = (pec[i] - tes[i]) / tes[i], bad = Math.abs(gap) > .15;
+    s += `<rect x="${x}" y="${112 - h1}" width="17" height="${h1}" rx="4" fill="${bad ? 'rgba(255,90,78,.35)' : 'rgba(196,162,255,.28)'}"/><rect x="${x + 4.5}" y="${112 - h2}" width="8" height="${h2}" rx="3" fill="#c4a2ff"/>`;
+    if (bad) s += `<text x="${x + 8.5}" y="${108 - Math.max(h1, h2)}" text-anchor="middle" fill="#ff8a80" font-size="9" font-family="JetBrains Mono">${gap > 0 ? '+' : ''}${Math.round(gap * 100)}%</text>`;
+    s += `<text x="${x + 8.5}" y="128" text-anchor="middle" fill="rgba(242,244,248,.35)" font-size="9.5" font-family="JetBrains Mono">${m}</text>`; });
+  s += `<text x="26" y="146" fill="rgba(242,244,248,.35)" font-size="9" font-family="Manrope">Bars should match within ±5–10%. Bigger gaps get flagged.</text>`;
+  $('meterChart').innerHTML = s;
+  // waterfall: without solar → paid
+  const steps = [['Without solar', 244.26, 'base'], ['Solar used directly', -146.72], ['Powerwall at night', -70.45], ['Export credit', -31.23], ['You paid', -4.14, 'end']];
+  let w = '', run = 0; const X = v => 118 + v / 260 * 180;
+  steps.forEach(([label, v, kind], i) => { const y = 8 + i * 36; let a, b, col;
+    if (kind === 'base') { a = 0; b = v; run = v; col = 'rgba(255,255,255,.25)'; }
+    else if (kind === 'end') { a = Math.min(0, v); b = Math.max(0, v); col = '#4ef0a6'; }
+    else { a = run + v; b = run; run += v; col = v < 0 ? '#ffc15e' : '#ff7a66'; }
+    w += `<text x="0" y="${y + 15}" fill="rgba(242,244,248,.7)" font-size="11" font-family="Manrope">${label}</text>`;
+    w += `<rect x="${X(a)}" y="${y + 4}" width="${Math.max(2, X(b) - X(a))}" height="16" rx="4" fill="${col}"/>`;
+    const right = X(Math.max(a, b)) > 250;
+    w += `<text x="${right ? X(Math.min(a, b)) - 5 : X(Math.max(a, b)) + 4}" y="${y + 16}" fill="#f2f4f8" font-size="10.5" font-family="JetBrains Mono" ${right ? 'text-anchor="end"' : ''}>${kind === 'end' ? '−$4.14 credit' : (v < 0 ? '−' : '') + '$' + Math.abs(v).toFixed(0)}</text>`;
+    if (i < steps.length - 1 && kind !== 'end') w += `<line x1="${X(run)}" x2="${X(run)}" y1="${y + 20}" y2="${y + 40}" stroke="rgba(255,255,255,.2)" stroke-dasharray="2 2"/>`; });
+  w += `<line x1="${X(0)}" x2="${X(0)}" y1="4" y2="186" stroke="rgba(255,255,255,.15)"/>`;
+  $('waterfall').innerHTML = w;
+  // effective rate
+  const rate = [.111, .111, .112, .112, .112, .112, .112, .114, .118, .122, .122, .122]; let r = '', pts = '';
+  const RY = v => 86 - (v - .105) / .022 * 70;
+  [.11, .12].forEach(v => r += `<line x1="30" x2="306" y1="${RY(v)}" y2="${RY(v)}" stroke="rgba(255,255,255,.06)"/><text x="0" y="${RY(v) + 3}" fill="rgba(242,244,248,.3)" font-size="8.5" font-family="JetBrains Mono">${v.toFixed(2)}</text>`);
+  rate.forEach((v, i) => { const x = 36 + i * 24; pts += `${i ? 'L' : 'M'}${x} ${RY(v)}`; r += `<text x="${x}" y="104" text-anchor="middle" fill="rgba(242,244,248,.35)" font-size="9.5" font-family="JetBrains Mono">${M[i]}</text>`; });
+  r += `<path d="${pts}" fill="none" stroke="#ffc15e" stroke-width="2"/>`;
+  rate.forEach((v, i) => r += `<circle cx="${36 + i * 24}" cy="${RY(v)}" r="${i >= 9 ? 3.5 : 2.5}" fill="${i >= 9 ? '#ff7a66' : '#ffc15e'}"/>`);
+  r += `<text x="${36 + 9 * 24}" y="${RY(.122) - 8}" text-anchor="middle" fill="#ff8a80" font-size="9.5" font-family="JetBrains Mono">+9%</text>`;
+  $('rateChart').innerHTML = r;
+})();
+
+/* ================= what-if upgrade planner ================= */
+const PLAN = (() => {
+  const MS = [.62, .7, .82, .9, .95, 1, 1, .97, .88, .78, .66, .6];      // relative solar by month (central TX)
+  const ML = [1, .95, .85, .9, 1.1, 1.35, 1.5, 1.5, 1.3, 1, .9, 1];      // relative home load by month (AC-heavy summers)
+  const MD = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31], MN = 'JFMAMJJASOND'.split('');
+  const RATE = .112, CREDIT = .061, PV_COST = 400 * 2.75, PW_COST = 11500, WX = .86;
+  function year(panels, pws, extra) {
+    const pk = panels * PANEL_W / 1000, cap = 13.5 * pws, pmax = 11.5 * pws; let out = [];
+    const CLR = [.45, .45, .5, .5, .5, .6, .7, .7, .6, .55, .5, .45], OVC = [.3, .3, .25, .2, .2, .1, .05, .05, .1, .15, .25, .3];
+    for (let m = 0; m < 12; m++) {
+      // a 10-day weather sequence for the month: clear, partly cloudy and back-to-back overcast days
+      const nO = Math.round(10 * OVC[m]), nC = Math.round(10 * CLR[m]), seq = [...Array(nC).fill(1), ...Array(10 - nC - nO).fill(.62), ...Array(nO).fill(.22)];
+      for (let i = 0; i < seq.length; i += 3) { const j = Math.min(seq.length - 1, i + 1); [seq[i], seq[j]] = [seq[j], seq[i]]; }
+      let soc = .6, imp = 0, exp = 0, pv = 0, use = 0; const dt = 5 / 60;
+      for (let pass = 0; pass < 2; pass++) { imp = exp = pv = use = 0; // second pass starts from the sequence's ending charge
+        for (const wf of seq) for (let t = 0; t < 24; t += dt) {
+          const sN = pk * clearSky(t) * MS[m] * wf * .8, l = homeLoad(t) * ML[m] + extra * (t >= 19 && t < 23 ? .25 : 0);
+          let n = sN - l, b;
+          if (n > 0) b = -Math.min(n, pmax, (1 - soc) * cap / dt / .95); else b = Math.min(-n, pmax, Math.max(0, soc - RESERVE) * cap / dt * .95);
+          soc += cap ? (b < 0 ? -b * .95 : -b / .95) * dt / cap : 0;
+          const g = l - sN - b; if (g > 0) imp += g * dt; else exp += -g * dt; pv += sN * dt; use += l * dt;
+        } }
+      const k = MD[m] / seq.length; out.push({ imp: imp * k, exp: exp * k, pv: pv * k, use: use * k });
+    }
+    // outage test: an August night (7 PM – 8 AM) on batteries alone, starting full
+    let nightKwh = 0; for (let t = 19; t < 32; t += .25) nightKwh += (homeLoad(t % 24) * ML[7] + extra * (t >= 19 && t < 23 ? .25 : 0)) * .25;
+    const sum = k => out.reduce((a, o) => a + o[k], 0);
+    return { months: out, imp: sum('imp'), exp: sum('exp'), pv: sum('pv'), use: sum('use'), cap, nightKwh, nightOk: cap * .95 >= nightKwh,
+      eveningH: cap * .95 / (1.1 + extra * .25) };
+  }
+  let base = null;
+  function update() {
+    const addPv = +$('rPv').value, addPw = +$('rPw').value, extra = +$('rUse').value;
+    $('aPv').textContent = '+' + addPv; $('aPw').textContent = '+' + addPw; $('aUse').textContent = `+${extra} kWh`;
+    $('aPvS').textContent = addPv ? `${PANELS + addPv} panels · ${((PANELS + addPv) * PANEL_W / 1000).toFixed(1)} kW · roughly $${(addPv * PV_COST / 1000).toFixed(1)}k` : 'No change';
+    $('aPwS').textContent = addPw ? `${2 + addPw} Powerwalls · ${(13.5 * (2 + addPw)).toFixed(0)} kWh · roughly $${(addPw * PW_COST / 1000).toFixed(1)}k` : 'No change';
+    const now = year(PANELS, 2, extra), up = year(PANELS + addPv, 2 + addPw, extra);
+    base = base || year(PANELS, 2, 0);
+    const bill = y => y.imp * RATE - y.exp * CREDIT, save = bill(now) - bill(up), cost = addPv * PV_COST + addPw * PW_COST;
+    const self = y => Math.round((1 - y.imp / y.use) * 100);
+    const row = (label, a, b, fmt, better) => { const d = b - a, cls = Math.abs(d) < 1e-6 ? '' : (better === 'up' ? d > 0 : d < 0) ? 'up' : 'dn';
+      return `<span>${label}</span><span class="n">${fmt(a)}</span><b class="${cls}">${fmt(b)}</b>`; };
+    const k = v => v >= 1000 ? (v / 1000).toFixed(1) + ' MWh' : Math.round(v) + ' kWh';
+    $('cmp').innerHTML = `<span class="hd">Per year</span><span class="hd">Now</span><span class="hd">With it</span>` +
+      row('Solar produced', now.pv, up.pv, k, 'up') + row('Self-powered', self(now), self(up), v => v + '%', 'up') +
+      row('Bought from PEC', now.imp, up.imp, k, 'dn') + row('Sent to PEC', now.exp, up.exp, k, 'up') +
+      row('Net PEC energy cost', bill(now), bill(up), v => (v < 0 ? '−$' : '$') + Math.abs(Math.round(v)), 'dn') +
+      row('Evening backup', now.eveningH, up.eveningH, v => v.toFixed(0) + ' h', 'up') +
+      `<span>Summer night on battery</span><span class="n">${now.nightOk ? 'yes' : 'no'}</span><b class="${up.nightOk && !now.nightOk ? 'up' : ''}">${up.nightOk ? 'yes' : 'no'}</b>` +
+      `<span>Est. installed cost</span><span class="n">—</span><b>${cost ? '$' + (cost / 1000).toFixed(1) + 'k' : '—'}</b>` +
+      `<span>Saves per year</span><span class="n">—</span><b class="${save > 0 ? 'up' : ''}">${cost ? '$' + Math.round(save) : '—'}</b>` +
+      `<span>Payback</span><span class="n">—</span><b>${cost && save > 0 ? (cost / save).toFixed(1) + ' yrs' : '—'}</b>`;
+    // chart: monthly grid purchases now vs with upgrade
+    const mx = Math.max(...now.months.map(o => o.imp), 1); let svg = '';
+    now.months.forEach((o, i) => { const x = 6 + i * 25.5, h1 = o.imp / mx * 96, h2 = up.months[i].imp / mx * 96;
+      svg += `<rect x="${x}" y="${104 - h1}" width="19" height="${h1}" rx="4" fill="rgba(196,162,255,.28)"/><rect x="${x + 5}" y="${104 - h2}" width="9" height="${h2}" rx="3" fill="#c4a2ff"/>
+        <text x="${x + 9.5}" y="122" text-anchor="middle" fill="rgba(242,244,248,.35)" font-size="9.5" font-family="JetBrains Mono">${MN[i]}</text>`; });
+    $('planChart').innerHTML = svg;
+    // recommendation: compare single-change options at the current usage level
+    const opt = [[8, 0, '8 more panels'], [0, 1, '1 more Powerwall'], [8, 1, '8 panels + 1 Powerwall']].map(([a, b, name]) => {
+      const y = year(PANELS + a, 2 + b, extra), sv = bill(now) - bill(y), c = a * PV_COST + b * PW_COST; return { name, pay: sv > 0 ? c / sv : Infinity, sv, y }; });
+    const best = opt.reduce((a, b) => a.pay < b.pay ? a : b), pwOpt = opt[1];
+    const exportShare = now.exp / now.pv;
+    const netExporter = now.exp > now.imp * 2;
+    $('planRec').innerHTML = (best.pay > 20
+      ? `<b>Honest answer: an upgrade won't pay for itself on savings right now.</b> You already send ${Math.round(exportShare * 100)}% of your solar to PEC. Extra output would mostly be exported at PEC's low credit, so the best option (${best.name}) takes about ${isFinite(best.pay) ? best.pay.toFixed(0) : '∞'} years to pay back. `
+      : `<b>Best value: ${best.name}.</b> It pays back in about ${best.pay.toFixed(1)} years ($${Math.round(best.sv)} a year). `) +
+      (extra >= 8 ? `With +${extra} kWh a day of new usage, extra capacity starts to earn its keep, because that load would otherwise come from PEC in the evening. ` : netExporter ? 'That changes if you add load, such as an EV. Try the usage slider. ' : '') +
+      `Another Powerwall mainly buys <b>resilience</b>: ${pwOpt.y.eveningH.toFixed(0)} h of evening backup instead of ${now.eveningH.toFixed(0)} h. ` +
+      `Your west-southwest roof looks like it has room for about 8–10 more panels.`;
+  }
+  ['rPv', 'rPw', 'rUse'].forEach(id => $(id).addEventListener('input', update));
+  return { update };
+})();
+PLAN.update();
+
 /* ================= main loop ================= */
 const n0 = new Date(); simH = n0.getHours() + n0.getMinutes() / 60; if (simH < 8 || simH > 18.5) simH = 11.2;
 const clock = new THREE.Clock(); let hud = 1; const mix = new THREE.Vector3(1, 0, 0);
@@ -984,7 +1253,7 @@ function frame() {
   mix.lerp(new THREE.Vector3(sh + .05, bh * 1.2, gh * 1.2), .03); bgU.uMix.value.copy(mix); bgU.uT.value = t;
   if (isOn('v-hist')) LAND.render(dt);
   let watts = null;
-  if (isOn('v-roof')) { watts = panelWatts(p.s * SOIL_NOW / SOIL, simH); ROOF.render(watts); }
+  if (isOn('v-roof')) { watts = panelWatts(p.s * SOIL_NOW / SOIL, simH); ROOF.render(watts, simH, dt, t); }
 
   hud += dt;
   if (hud > .25) { hud = 0;
@@ -1021,6 +1290,8 @@ function frame() {
     if (hRange === 'day' && isOn('v-hist')) drawDay();
     if (watts) {
       $('rfKw').textContent = (p.s * SOIL_NOW / SOIL).toFixed(1); renderStrings(watts, simH);
+      const I = ROOF.info;
+      $('roofHud').innerHTML = `${clock12(simH)} · ${I.el > 0 ? '☀ ' + I.el.toFixed(0) + '° up, ' + I.az.toFixed(0) + '°' : '☾ sun down'}<br>${WICON(I.code, I.el > 0)} ${WMO(I.code)} · ${Math.round(I.cc * 100)}% cloud${I.temp != null ? ' · ' + Math.round(I.temp) + '°' : ''}${I.el > 0 ? '<br>sun hits panels at ' + Math.round(I.inc) + '°' : ''}`;
       const i = ROOF.sel;
       if (i >= 0) { const pi = panelFx[i], w = watts[i], e = w > 2 ? SOIL_NOW * pi.fx : 0;
         $('panelTip').innerHTML = `Panel <b>${pi.name}</b> · string ${STR[pi.str]} · row ${pi.row + 1}, position ${pi.col + 1}<br><b>${w.toFixed(0)} W</b> now · ${e ? Math.round(e * 100) + '% of clean-panel output' : 'idle'}${pi.str === 5 && simH > 16.3 ? ' · afternoon shade' : ''}${i === 12 ? ' · on watch list' : ''}<br>today ≈ ${(w / 1000 * 5.2 + .4).toFixed(2)} kWh · est. cell temp ${Math.round(88 + w / 12)}°F`; }
