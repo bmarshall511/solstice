@@ -575,7 +575,7 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
           <svg class="mini" id="planChart" viewBox="0 0 310 130" style="margin-top:14px"></svg>
           <div class="legend" style="justify-content:flex-start"><span><i style="background:rgba(196,162,255,.45)"></i>Bought from PEC now</span><span><i style="background:var(--grid)"></i>With upgrade</span></div>
           <div class="rec" id="planRec">—</div>
-          <p class="fine">Estimates: a full year simulated in 5-minute steps using typical your town sunlight and your usage pattern. Assumes 400 W panels at ~$2.75/W installed, about $11.5k per added Powerwall 3, and PEC energy at $0.112/kWh with a $0.061/kWh export credit. The federal 30% residential credit ended with 2025 installs. Real quotes and your actual bills will replace these numbers.</p>
+          <p class="fine">Estimates: a full year simulated in 5-minute steps using typical your town sunlight and your usage pattern. Assumes 400 W panels at ~$2.75/W installed, about $11.5k per added Powerwall 3, and PEC's actual tariff from your bills: $0.1064/kWh all-in (delivery + transmission + base power + your town franchise fee) and a $0.0719/kWh Sustainable Power Credit for exports. The federal 30% residential credit ended with 2025 installs. Real quotes and your actual bills will replace these numbers.</p>
         </div>
         <div class="card" style="--c:var(--batt)"><div class="ins"><div class="ic">⛨</div><div><b>Outage ready</b> <time>· now</time><p id="readyTxt">—</p></div></div><div class="meter"><i id="readyBar" style="width:60%"></i></div></div>
         <div class="card" style="--c:var(--warn)"><div class="ins"><div class="ic">☀</div><div><b>Solar output 11% low</b> <time>· 4 days</time><p>Clear skies and an even loss all day point to dust on the panels. Rain in the forecast Saturday may wash it off.</p></div></div><div class="meter"><i style="width:89%"></i></div></div>
@@ -1235,7 +1235,7 @@ const PLAN = (() => {
   const MS = [.62, .7, .82, .9, .95, 1, 1, .97, .88, .78, .66, .6];      // relative solar by month (central TX)
   const ML = [1, .95, .85, .9, 1.1, 1.35, 1.5, 1.5, 1.3, 1, .9, 1];      // relative home load by month (AC-heavy summers)
   const MD = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31], MN = 'JFMAMJJASOND'.split('');
-  const RATE = .112, CREDIT = .061, PV_COST = 400 * 2.75, PW_COST = 11500, WX = .86;
+  const RATE = .1064, CREDIT = .0719, PV_COST = PANEL_W * 2.75, PW_COST = 11500, WX = .86; // PEC residential: delivery + TCOS + base power + ~3.96% your town franchise fee; Sustainable Power Credit for exports
   function year(panels, pws, extra) {
     const pk = panels * PANEL_W / 1000, cap = 13.5 * pws, pmax = 11.5 * pws; let out = [];
     const CLR = [.45, .45, .5, .5, .5, .6, .7, .7, .6, .55, .5, .45], OVC = [.3, .3, .25, .2, .2, .1, .05, .05, .1, .15, .25, .3];

@@ -10,3 +10,6 @@ mockups/d-rooftop.html
 node_modules/
 .vercel
 .DS_Store
+
+# personal data (bills, readings, tokens) — local only
+data/
