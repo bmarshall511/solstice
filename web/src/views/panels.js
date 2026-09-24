@@ -35,12 +35,14 @@ export function drawPerformance(S) {
 /** Measured output per unit of full sun against the SunPower 25-year power warranty (docs/system-specs.md). */
 function drawWarranty(S) {
   const sp = S.now?.site?.solar; if (!sp) return;
-  const pct = S.yieldK ? Math.round(S.yieldK / sp.acKw * 100) : null;
-  $('wrNow').textContent = S.yieldK ? `${S.yieldK.toFixed(2)} kW · ${pct}% of ${sp.acKw} kW AC` : '—';
+  const y = S.yieldStc ?? S.yieldK, pct = y ? Math.round(y / sp.acKw * 100) : null;
+  $('wrNow').textContent = y ? `${y.toFixed(2)} kW · ${pct}% of ${sp.acKw} kW AC` : '—';
   $('wrYear').textContent = `year ${sp.year} of ${sp.warranty.years}`;
   $('wrFloor').textContent = `≥ ${sp.warrantedDcPct}% DC · ${(sp.dcKw * sp.warrantedDcPct / 100).toFixed(2)} kW`;
   $('wrAc').textContent = `≥ ${sp.warranty.acFloorPct}% · ${(sp.acKw * sp.warranty.acFloorPct / 100).toFixed(2)} kW`;
-  const w = pct == null ? '' : pct >= sp.warranty.acFloorPct ? ` Today's full-sun output is ${pct >= sp.warrantedDcPct ? 'above' : 'within'} the warranted range: no sign of ageing beyond SunPower's ${sp.warranty.dcDeclinePctPerYear}% a year.` : ` Today's full-sun output is below the ${sp.warranty.acFloorPct}% AC floor. If it stays there on clean, clear days, that's a warranty claim.`;
+  const w = pct == null ? '' : pct >= sp.warranty.acFloorPct ? ` Corrected to the warranty's 25 °C test conditions, full-sun output is ${pct >= sp.warrantedDcPct ? 'above' : 'within'} the warranted range: no sign of ageing beyond SunPower's ${sp.warranty.dcDeclinePctPerYear}% a year.`
+    : pct >= 80 ? ` Corrected to the warranty's 25 °C test conditions, full-sun output sits a little under the ${sp.warranty.acFloorPct}% AC floor, but soiling, wiring and shading normally cost 5–10% that the warranty doesn't count, so this is what a healthy array looks like.`
+    : ` Even corrected to the warranty's 25 °C test conditions, full-sun output is well below the ${sp.warranty.acFloorPct}% AC floor. If it stays there on clean, clear days, talk to SunPower.`;
   $('prTxt').innerHTML += w;
 }
 
