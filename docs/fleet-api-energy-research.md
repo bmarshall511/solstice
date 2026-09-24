@@ -192,6 +192,7 @@ Additional fields in real responses **[community: HA fixture]**:
 - `vpp_backup_reserve_percent`
 - `tariff_content` / `tariff_content_v2`: the utility rate plan. Present on many sites per community reports; not in the official example. **[unverified]**
 - **Solar array nameplate (kWp) is not exposed.** No PV array size, tilt or azimuth. The user must enter these.
+  - For this site the as-built values come from the install paperwork: see `docs/system-specs.md` (9.6 kW DC, 9.45 kW AC, microinverters).
 
 **Site location:** **not exposed.** No lat/lon/address appears in the official `site_info`, `live_status` or `products` examples, or in the HA fixture. Use `installation_time_zone` for the timezone and ask the user for location or postcode. `user_data` covers "home address" in the scope description, but `/users/me` response fields are **[unverified]** and would be the account address, not necessarily the site.
 

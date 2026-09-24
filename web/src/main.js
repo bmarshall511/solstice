@@ -73,9 +73,8 @@ function computeModel() {
   S.yieldK = learnYield(S.daily.filter(d => d.date >= addDays(today, -30) && d.date < today), gti);
   const yearAgo = addDays(today, -365), base = S.daily.filter(d => d.date >= addDays(yearAgo, -30) && d.date <= addDays(yearAgo, 30));
   S.baselineK = learnYield(base, gti) ?? S.yieldK;
-  S.peakKw = S.yieldK ?? 9; // ≈ kW at 1000 W/m² on the panel plane
-  S.kwp = S.yieldK ? Math.round(S.yieldK / .8 * 10) / 10 : null;
-  $('kwpLine').textContent = S.kwp ? `≈ ${S.kwp} kW` : '—';
+  const spec = S.now?.site?.solar;
+  S.peakKw = Math.min(S.yieldK ?? 9, spec?.acKw ?? 9.45); // ≈ kW at 1000 W/m² on the panel plane, never above the microinverters' AC rating
   const clear = S.daily.filter(d => d.date < today && gti[d.date] > 4.5).slice(-7);
   S.perf = S.baselineK && clear.length >= 3 ? { loss: Math.max(0, 1 - clear.reduce((a, d) => a + d.solar / (S.baselineK * gti[d.date]), 0) / clear.length) } : null;
 }

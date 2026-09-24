@@ -32,7 +32,7 @@ export function initPlanner(S) {
     const q = { panels: +$('rPv').value, powerwalls: +$('rPw').value, extra: +$('rUse').value };
     $('aPv').textContent = '+' + q.panels; $('aPw').textContent = '+' + q.powerwalls; $('aUse').textContent = `+${q.extra} kWh`;
     const r = await api.whatif(q).catch(() => null); if (!r) return;
-    $('aPvS').textContent = q.panels ? `${r.panels + q.panels} panels · roughly $${(q.panels * 400 * 2.75 / 1000).toFixed(1)}k (400 W each)` : `Today: ${r.panels} panels · about ${r.kwpNow} kW`;
+    $('aPvS').textContent = q.panels ? `${r.panels + q.panels} panels · roughly $${(q.panels * r.assumptions.panelW * 2.75 / 1000).toFixed(1)}k (assumes ${r.assumptions.panelW} W modules)` : `Today: ${r.panels} × ${r.panelWdc} W SunPower · ${r.kwpNow} kW DC`;
     $('aPwS').textContent = q.powerwalls ? `${2 + q.powerwalls} Powerwalls · ${27 + q.powerwalls * 13.5} kWh · roughly $${(q.powerwalls * 11.5).toFixed(1)}k` : 'Today: 2 × Powerwall 2 · 27 kWh';
     const B = r.baseline, U = r.upgraded, k = v => v >= 1000 ? (v / 1000).toFixed(1) + ' MWh' : Math.round(v) + ' kWh';
     const row = (label, a, b, f, better) => { const d = b - a, cls = Math.abs(d) < 1e-6 ? '' : (better === 'up' ? d > 0 : d < 0) ? 'up' : 'dn'; return `<span>${label}</span><span class="n">${f(a)}</span><b class="${cls}">${f(b)}</b>`; };
@@ -48,6 +48,10 @@ export function initPlanner(S) {
       `Another Powerwall would save about ${money(pw.savesPerYear)}, because today's batteries only reach full on ${pw.baseline.batteryFullDays} days a year, so there's rarely any surplus to store. ` +
       `Extra batteries would mainly buy outage time: about ${pw.backupHoursEvening.upgraded} h of evening backup instead of ${pw.backupHoursEvening.now} h.` : '';
     $('planFine').textContent = `Replays ${r.days} days of your real 5-minute data (as-built replay: ${k(B.importKwh)} bought vs ${k(r.actual.importKwh)} actually bought). Prices are placeholders: $2.75/W for panels, $11.5k per Powerwall, your PEC rate of $${r.assumptions.tariff.importRateAllIn}/kWh and $${r.assumptions.tariff.exportCredit}/kWh export credit. No federal credit (it ended with 2025 installs).`;
+    const s = r.system;
+    $('sysPay').innerHTML = s ? `<b>Your system so far.</b> Without solar or Powerwalls, the last 12 months would have cost ${money(r.noSystem.netCost)} in PEC energy instead of ${money(B.netCost)}: it saves about ${money(s.savesPerYear)} a year. ` +
+      `You paid $${(s.priceUsd / 1000).toFixed(1)}k${s.taxCreditPct ? ` before the ${s.taxCreditPct}% federal credit, about $${(s.netUsd / 1000).toFixed(1)}k after` : ''}${s.monthlyPayment ? `, financed over ${s.loanYears} years at ${s.loanRatePct}% (about $${s.monthlyPayment}/month)` : ''}. ` +
+      (s.paybackYears ? `At today's rates that pays back in about ${s.paybackYears} years; it's ${s.yearsSinceInstall} years old now${s.paybackYears > s.yearsSinceInstall ? `, so roughly ${Math.max(0, Math.round((s.paybackYears - s.yearsSinceInstall) * 10) / 10)} years to go` : ' and already paid for itself in energy'}.` : '') : '';
   }
 }
 

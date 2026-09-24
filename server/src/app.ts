@@ -8,6 +8,7 @@ import { teslaFor, localDay, addDays } from './tesla/client.js';
 import { refreshLive, refreshSiteInfo, syncSite, saveEnergyRows, saveSoe } from './sync.js';
 import { listBills, parsePecPdf, saveBill, type Bill } from './bills.js';
 import { reconcile } from './reconcile.js';
+import { SOLAR, warrantedDcPct, systemYear } from './system.js';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -127,7 +128,8 @@ app.post('/api/admin/import', express.json({ limit: '25mb' }), wrap(async (req, 
 /* ======================= everything below needs a signed-in user ======================= */
 app.use('/api', requireUser);
 
-app.get('/api/settings', wrap(async (req, res) => res.json(req.user ? req.user.settings ?? {} : await kv.get('settings:owner') ?? {})));
+const settingsFor = async (req: Request) => (req.user ? req.user.settings ?? {} : await kv.get<Record<string, any>>('settings:owner') ?? {}) as Record<string, any>;
+app.get('/api/settings', wrap(async (req, res) => res.json(await settingsFor(req))));
 app.put('/api/settings', express.json(), wrap(async (req, res) => {
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify(req.body ?? {})]);
   else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ...(req.body ?? {}) });
@@ -143,6 +145,7 @@ function summary(info: any) {
     batteryCount: info.battery_count, batteries: (info.components?.batteries ?? []).map((b: any) => ({ name: b.part_name, kwh: b.nameplate_energy / 1000, kw: b.nameplate_max_discharge_power / 1000 })),
     capacityKwh: (info.nameplate_energy ?? 0) / 1000, maxPowerKw: (info.nameplate_power ?? 0) / 1000,
     reservePct: info.backup_reserve_percent, mode: info.default_real_mode, stormWatch: info.user_settings?.storm_mode_enabled ?? null,
+    solar: { ...SOLAR, year: systemYear(), warrantedDcPct: warrantedDcPct(systemYear()) },
   };
 }
 const siteInfo = async (id: string) => (await one<{ info: any }>('SELECT info FROM sites WHERE id = $1', [id]))?.info;
@@ -279,27 +282,38 @@ app.get('/api/whatif', wrap(async (req, res) => {
   const to = localDay(), from = addDays(to, -365);
   const rows = await q<{ day: string; hour: number; s: number; h: number }>(`SELECT day, hour::int, (SUM(solar_wh) / 1000.0)::float8 s, (SUM(home_wh) / 1000.0)::float8 h
     FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day, hour ORDER BY day, hour`, [id, from, to]);
-  const peak = await one<{ p: number }>(`SELECT (MAX(solar_wh) * 12 / 1000.0)::float8 p FROM energy WHERE site_id = $1 AND day >= $2`, [id, from]);
   const tariff = (await listBills(id)).at(-1)?.tariff ?? { importRateAllIn: .1064, exportCredit: .0719 } as Bill['tariff'];
   const info = summary(await siteInfo(id)), cap0 = info.capacityKwh || 27, pw0 = info.batteryCount || 2, reserve = (info.reservePct ?? 20) / 100;
-  const kwpNow = Math.round((peak?.p ?? 9) / .85 * 10) / 10, scale = 1 + addPanels * panelW / 1000 / kwpNow;
+  // the as-built array is 30 × 320 W DC (9.6 kW); added panels scale real production by their share of that nameplate
+  const kwpNow = SOLAR.dcKw, scale = 1 + addPanels * panelW / 1000 / kwpNow;
   function replay(solarScale: number, cap: number, maxKw: number) {
     let soc = .5, imp = 0, exp = 0, solar = 0, home = 0; const full = new Set<string>();
     for (const r of rows) {
       const s = r.s * solarScale, h = r.h + (r.hour >= 17 && r.hour < 23 ? extra / 6 : 0);
       let net = s - h;
-      if (net > 0) { const c = Math.min(net, maxKw, (1 - soc) * cap / .95); soc += c * .95 / cap; net -= c; if (soc > .995) full.add(r.day); exp += net; }
-      else { const d = Math.min(-net, maxKw, Math.max(0, soc - reserve) * cap * .95); soc -= d / .95 / cap; imp += -net - d; }
+      if (net > 0) { const c = cap ? Math.min(net, maxKw, (1 - soc) * cap / .95) : 0; if (cap) soc += c * .95 / cap; net -= c; if (soc > .995) full.add(r.day); exp += net; }
+      else { const d = cap ? Math.min(-net, maxKw, Math.max(0, soc - reserve) * cap * .95) : 0; if (cap) soc -= d / .95 / cap; imp += -net - d; }
       solar += s; home += h;
     }
     return { importKwh: Math.round(imp), exportKwh: Math.round(exp), solarKwh: Math.round(solar), homeKwh: Math.round(home), selfPowered: home ? Math.round((1 - imp / home) * 100) : 0,
       batteryFullDays: full.size, netCost: Math.round(imp * tariff.importRateAllIn - exp * (tariff.exportCredit ?? 0)) };
   }
-  const baseline = replay(1, cap0, pw0 * 5), upgraded = replay(scale, cap0 + addPw * 13.5, pw0 * 5 + addPw * 11.5);
+  const baseline = replay(1, cap0, pw0 * 5), upgraded = replay(scale, cap0 + addPw * 13.5, pw0 * 5 + addPw * 11.5), noSystem = replay(0, 0, 0);
   const actual = await one(`SELECT ROUND((SUM(import_wh) / 1000.0)::numeric)::float8 "importKwh", ROUND((SUM(export_wh) / 1000.0)::numeric)::float8 "exportKwh" FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3`, [id, from, to]);
   const cost = addPanels * panelW * 2.75 + addPw * 11500, saves = baseline.netCost - upgraded.netCost;
-  res.json({ days: new Set(rows.map(r => r.day)).size, kwpNow, panels: 30, assumptions: { panelW, dollarsPerW: 2.75, powerwallCost: 11500, tariff },
-    actual, baseline, upgraded, cost, savesPerYear: saves, paybackYears: saves > 0 && cost ? Math.round(cost / saves * 10) / 10 : null,
+  // what the existing system saves per year vs. having no solar and no batteries, and what it cost (owner settings, never in git)
+  const sys = (await settingsFor(req)).system as { priceUsd?: number; taxCreditPct?: number; loanYears?: number; loanRatePct?: number } | undefined;
+  const savesNow = noSystem.netCost - baseline.netCost;
+  let system = null;
+  if (sys?.priceUsd) {
+    const net = Math.round(sys.priceUsd * (1 - (sys.taxCreditPct ?? 0) / 100)), years = (Date.now() - Date.parse(SOLAR.installedOn)) / (365.25 * 864e5);
+    const r = (sys.loanRatePct ?? 0) / 100 / 12, n = (sys.loanYears ?? 0) * 12;
+    const payment = n && r ? Math.round(sys.priceUsd * r / (1 - (1 + r) ** -n)) : n ? Math.round(sys.priceUsd / n) : null;
+    system = { priceUsd: sys.priceUsd, taxCreditPct: sys.taxCreditPct ?? 0, netUsd: net, loanYears: sys.loanYears ?? null, loanRatePct: sys.loanRatePct ?? null, monthlyPayment: payment,
+      savesPerYear: savesNow, yearsSinceInstall: Math.round(years * 10) / 10, paybackYears: savesNow > 0 ? Math.round(net / savesNow * 10) / 10 : null, installedOn: SOLAR.installedOn };
+  }
+  res.json({ days: new Set(rows.map(r => r.day)).size, kwpNow, acKw: SOLAR.acKw, panels: SOLAR.panels, panelWdc: SOLAR.panelWdc, assumptions: { panelW, dollarsPerW: 2.75, powerwallCost: 11500, tariff },
+    actual, baseline, upgraded, noSystem, cost, savesPerYear: saves, paybackYears: saves > 0 && cost ? Math.round(cost / saves * 10) / 10 : null, system,
     backupHoursEvening: { now: Math.round(cap0 * .8 / 4.5), upgraded: Math.round((cap0 + addPw * 13.5) * .8 / 4.5) } });
 }));
 

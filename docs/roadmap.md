@@ -10,7 +10,7 @@ Status legend: ✅ in the mockup · ◻︎ planned, not mocked · ⚠️ depends
 | Tesla Fleet API `live_status` | solar / home / battery / grid W, charge %, energy left, pack capacity, grid & island status, storm mode | poll every 30 s (60 s when idle) | free (energy endpoints aren't charged) |
 | Tesla Fleet API `site_info` | battery count, nameplate, firmware, reserve %, mode, export rule, tariff | hourly | free |
 | Tesla Fleet API `calendar_history` (energy, backup) | Wh flows by source→sink, outage events | every 5 min today, once per closed day, backfill on first run | free |
-| Powerwall 3 local gateway (TEDAPI) ⚠️ | per-string (6 inputs) solar V / A / W, per-battery detail | LAN poll every 30 s via a pypowerwall-style client | free · needs the gateway password on the unit's label |
+| SunPower PVS monitor (local) ◻︎ | per-module W / V from the Enphase IQ7XS microinverters (the array has no strings) | LAN poll of the PVS installer port, if it is still online | free · unverified on this unit |
 | Open-Meteo | hourly forecast, sunlight on your panels (tilt 27°, azimuth 244°), cloud, temperature, rainfall, 60+ days of history | browser or server | free, no key |
 | NWS `api.weather.gov` | active severe-weather alerts for LAT, −97.99 | every 10 min | free |
 | ERCOT dashboards | grid condition (normal / conservation / EEA), demand vs capacity, fuel mix for CO₂ | via the server (CORS blocks the browser) | free |
@@ -30,13 +30,13 @@ Status legend: ✅ in the mockup · ◻︎ planned, not mocked · ⚠️ depends
 
 ### Panels
 - ✅ Roof twin with the real sun position and path, live clouds and rain, shadows, and per-panel glow
-- ✅ Strings A–F: kW, V, A, efficiency, status (ok / dusty / shade / watch)
+- ◻︎ Per-panel output (needs the SunPower PVS; the array is 30 AC modules with microinverters, so there are no strings)
 - ✅ Cleaning check: dust score, loss pattern, real past rainfall, next rain, cost of dust, "I cleaned" logging
 - ✅ Watch list for a single low panel
 - ◻︎ Before/after cleaning comparison (the first 3 sunny days after logging a cleaning)
-- ◻︎ Degradation trend: performance ratio per year, with the expected ~0.5%/yr panel aging
-- ◻︎ Clipping detection (output flat-topping at the inverter limit on bright days)
-- ◻︎ After a hail warning: automatic per-string check against the pre-storm baseline
+- ✅ Full-sun output vs the SunPower warranty floor (98% year 1, then −0.25%/yr; AC ≥ 90%). ◻︎ Year-by-year trend
+- ◻︎ Clipping detection (each microinverter tops out at 315 VA, so the array flat-tops at 9.45 kW)
+- ◻︎ After a hail warning: automatic check against the pre-storm baseline
 
 ### History
 - ✅ Day radial chart; Week / Month / Year bars; outage markers
@@ -78,11 +78,11 @@ Status legend: ✅ in the mockup · ◻︎ planned, not mocked · ⚠️ depends
 3. History and Powerwall analytics from stored readings
 4. Weather model → performance ratio → cleaning check and alerts
 5. PEC bill entry and parser → reconciliation, rates, savings, planner calibration
-6. Powerwall 3 local string data (Panels tab goes from estimated to measured)
+6. SunPower PVS per-module data, if reachable (Panels tab goes from estimated to measured)
 7. Polish, the PWA manifest and service worker, and install on the phone
 
 ## Open questions
-- System size in kW (or panel wattage), to replace the 400 W assumption
+- ~~System size~~ Resolved: 30 × SunPower E19-320 AC, 9.6 kW DC / 9.45 kW AC (docs/system-specs.md). Still need the permit drawing for tilt, azimuth and layout, and the PTO date.
 - One or two real PEC bills (PDF or photo) for the parser
 - Do you have a Tesla vehicle or Wall Connector? (It would unlock "EV charged from sunshine".)
-- Powerwall 3 gateway password (on the label behind the unit's cover) for per-string data
+- Is the SunPower PVS monitor still online, and reachable on the LAN, for per-module data?

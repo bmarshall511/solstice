@@ -8,7 +8,7 @@ import { sunAt, RAD, hourLabel } from '../lib/util.js';
  *   'flow' (Now → Energy flow card): Tesla-style framing, live flow lines along the wiring, kW labels.
  *   'sun'  (Panels → Live roof):     today's sun path, real shadows, panel glow, weather.
  * Geometry traced from the satellite image: a single hip roof (~14 × 24 m, 27° pitch), the house's long axis
- * running 154°/334°, all 30 panels on the west-southwest face (facing 244°) in 3 rows × 10, covered patio at the
+ * running 154°/334°, all 30 SunPower E19-320 AC modules on the west-southwest face (facing 244°) in 3 rows × 10, covered patio at the
  * pool (north) end, garage door on the driveway (south) end. World axes: +x east, −z north.
  */
 const TILT = 27 * RAD, W = 14, L = 24, WALL = 3.2, OH = .5;
@@ -41,8 +41,9 @@ function buildHouse() {
 
   // 30 panels on the west (−x) face: 3 rows up the slope × 10 along the ridge
   const arr = new THREE.Group(); arr.position.set(-main.w, WALL, 0); arr.rotation.z = TILT; g.add(arr);
-  const pGeo = new THREE.BoxGeometry(1.68, .05, 1.09);
-  for (let r = 0; r < 3; r++) for (let c = 0; c < 10; c++) { const p = new THREE.Mesh(pGeo, panelMat); p.position.set(.9 + (r + .5) * 1.72, .09, 1.2 + (c - 4.5) * 1.13); p.castShadow = p.receiveShadow = true; arr.add(p); }
+  // SunPower SPR-E19-320-AC modules: 1558 × 1046 mm, portrait (long side up the slope), 33 mm apart
+  const pGeo = new THREE.BoxGeometry(1.558, .05, 1.046);
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 10; c++) { const p = new THREE.Mesh(pGeo, panelMat); p.position.set(.9 + (r + .5) * 1.591, .09, 1.2 + (c - 4.5) * 1.079); p.castShadow = p.receiveShadow = true; arr.add(p); }
 
   // windows on the west wall (north of the equipment), garage door on the south (driveway) end
   [-8.5, -5.5, 1.5, 4.5].forEach(z => { const w = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.2), winMat); w.rotation.y = -Math.PI / 2; w.position.set(-W / 2 - .02, 1.7, z); g.add(w);

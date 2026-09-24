@@ -16,7 +16,7 @@ export function drawSettings(S) {
   const row = (c, i, title, sub, v) => `<div class="row" style="--c:${c}"><div class="ri">${i}</div><div class="rt">${title}${sub ? `<small>${sub}</small>` : ''}</div><div class="rv">${v}</div></div>`;
   $('sysGroup').innerHTML =
     row('var(--batt)', '▮', 'Powerwalls', `${site.batteries?.map(b => b.name).join(' + ') ?? ''}`, `${site.capacityKwh ?? '—'} kWh · ${site.maxPowerKw ?? '—'} kW`) +
-    row('var(--solar)', '☀', 'Solar', `30 panels · WSW roof · est. from peak output`, S.kwp ? `≈ ${S.kwp} kW` : '—') +
+    row('var(--solar)', '☀', 'Solar', site.solar ? `${site.solar.panels} × ${site.solar.module} · Enphase IQ7XS microinverters` : '30 panels', site.solar ? `${site.solar.dcKw} kW DC · ${site.solar.acKw} kW AC` : '—') +
     row('var(--warn)', '⛨', 'Backup reserve', 'Set in the Tesla app', `${site.reservePct ?? '—'}%`) +
     row('var(--grid)', '⚙', 'Operating mode', site.mode === 'autonomous' ? 'Time-Based Control' : '', site.mode ?? '—') +
     row('var(--home)', '$', 'Utility', t ? `$${t.importRateAllIn}/kWh all-in · $${t.exportCredit}/kWh export credit` : 'Add a bill to learn your rates', 'PEC') +

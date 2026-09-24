@@ -28,7 +28,20 @@ export function drawPerformance(S) {
   const clear = rows.filter(r => S.gtiByDate[r.date] > 4.5), ratio = clear.length ? clear.reduce((a, r) => a + r.solar / exp(r), 0) / clear.length : null;
   $('prTxt').innerHTML = ratio == null ? 'Not enough clear days yet to judge performance.'
     : `On clear days over the last month, the panels made <b style="color:var(--text)">${Math.round(ratio * 100)}%</b> of what the same sunlight produced this time last year. ${ratio >= .95 ? "That's healthy, with no sign of lost output." : ratio >= .9 ? 'A little low. Worth watching.' : 'Noticeably low. Check the cleaning card below.'}`;
+  drawWarranty(S);
   drawCleaning(S, rows, exp);
+}
+
+/** Measured output per unit of full sun against the SunPower 25-year power warranty (docs/system-specs.md). */
+function drawWarranty(S) {
+  const sp = S.now?.site?.solar; if (!sp) return;
+  const pct = S.yieldK ? Math.round(S.yieldK / sp.acKw * 100) : null;
+  $('wrNow').textContent = S.yieldK ? `${S.yieldK.toFixed(2)} kW · ${pct}% of ${sp.acKw} kW AC` : '—';
+  $('wrYear').textContent = `year ${sp.year} of ${sp.warranty.years}`;
+  $('wrFloor').textContent = `≥ ${sp.warrantedDcPct}% DC · ${(sp.dcKw * sp.warrantedDcPct / 100).toFixed(2)} kW`;
+  $('wrAc').textContent = `≥ ${sp.warranty.acFloorPct}% · ${(sp.acKw * sp.warranty.acFloorPct / 100).toFixed(2)} kW`;
+  const w = pct == null ? '' : pct >= sp.warranty.acFloorPct ? ` Today's full-sun output is ${pct >= sp.warrantedDcPct ? 'above' : 'within'} the warranted range: no sign of ageing beyond SunPower's ${sp.warranty.dcDeclinePctPerYear}% a year.` : ` Today's full-sun output is below the ${sp.warranty.acFloorPct}% AC floor. If it stays there on clean, clear days, that's a warranty claim.`;
+  $('prTxt').innerHTML += w;
 }
 
 function drawCleaning(S, rows, exp) {

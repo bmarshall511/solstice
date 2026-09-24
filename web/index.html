@@ -188,7 +188,7 @@
 
       <!-- ================= PANELS ================= -->
       <section class="view" id="v-roof">
-        <div class="hello"><div><h3>Panels</h3><p>30 panels · <span id="kwpLine">—</span> · facing 244°</p></div><div class="wx"><b id="rfKw">—</b>kW right now</div></div>
+        <div class="hello"><div><h3>Panels</h3><p>30 × 320 W SunPower · <span id="kwpLine">9.6 kW DC</span> · facing 244°</p></div><div class="wx"><b id="rfKw">—</b>kW right now</div></div>
         <div class="card">
           <div class="h"><b>Live roof</b><span>drag to rotate</span></div>
           <div class="roof3d" id="roof"><div class="roofhud" id="roofHud">—</div></div>
@@ -199,6 +199,11 @@
           <svg class="mini" id="prChart" viewBox="0 0 310 150"></svg>
           <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Produced</span><span><i style="background:rgba(255,255,255,.25)"></i>Expected from sunlight</span></div>
           <p id="prTxt">—</p>
+          <div class="kv" id="warrKv">
+            <span>Output at full sun · last 30 days</span><b id="wrNow">—</b>
+            <span>SunPower warranty floor · <span id="wrYear">year —</span></span><b id="wrFloor">—</b>
+            <span>AC floor for the full 25 years</span><b id="wrAc">—</b>
+          </div>
         </div>
         <div class="card">
           <div class="h"><b>Cleaning check</b><span class="badge g" id="cleanBadge">—</span></div>
@@ -213,7 +218,7 @@
         </div>
         <div class="card">
           <div class="h"><b>About panel-level data</b><span class="chip">system-level</span></div>
-          <p>Your Powerwall 2s don't include a solar inverter, so Tesla only reports the array's total output, not individual strings or panels. Solstice compares that total against the sunlight hitting your roof, which is enough to catch dust, shading changes or a failed section of the array.</p>
+          <p>Each of your 30 SunPower panels has its own Enphase IQ7XS microinverter, so there are no strings: every panel tracks its own maximum power point and tops out at 315 W AC. Tesla's meter only sees the array's total, so Solstice compares that total against the sunlight hitting your roof, which is enough to catch dust, shading changes or a failed section of the array. Per-panel readings would need the SunPower monitoring box (PVS) on your wall.</p>
         </div>
       </section>
 
@@ -228,6 +233,7 @@
           <div class="slider"><label>New daily usage <b id="aUse">+0 kWh</b></label><input type="range" id="rUse" min="0" max="30" step="2" value="0"><small>EV, pool heater, heat pump… (added 5–11 PM)</small></div>
           <div class="cmp" id="cmp"></div>
           <div class="rec" id="planRec">Calculating…</div>
+          <div class="rec" id="sysPay"></div>
           <p class="fine" id="planFine"></p>
         </div>
         <div class="card">
