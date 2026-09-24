@@ -43,12 +43,17 @@ async function loadHistory() {
 async function loadWeather() {
   const w = await forecast();
   S.wx = w;
-  const today = localDate(), hourNow = localHour(), recent = {};
+  const today = localDate(), hourNow = localHour(), recent = {}, eff = {};
+  // sunlight the panels would need at standard test conditions (25 °C cells) to make what they made: hot cells lose γ per °C
+  const gamma = (S.now?.site?.solar?.tempCoefPctPerC ?? -.35) / 100;
   let soFar = 0; // sunlight on the panels so far today (radiation values describe the hour ending at t)
-  w.hourly.time.forEach((t, i) => { const d = t.slice(0, 10), g = (w.hourly.global_tilted_irradiance[i] ?? 0) / 1000;
+  w.hourly.time.forEach((t, i) => { const d = t.slice(0, 10), gw = w.hourly.global_tilted_irradiance[i] ?? 0, g = gw / 1000;
     recent[d] = (recent[d] ?? 0) + g;
+    const tAir = ((w.hourly.temperature_2m[i] ?? 77) - 32) * 5 / 9, tCell = tAir + gw * (45 - 20) / 800; // NOCT ≈ 45 °C
+    eff[d] = (eff[d] ?? 0) + g * (1 + gamma * (tCell - 25));
     const end = +t.slice(11, 13); if (d === today) soFar += g * Math.max(0, Math.min(1, hourNow - (end - 1))); });
   S.gtiByDate = { ...(S.gtiArchive ?? {}), ...recent };
+  S.gtiEffByDate = eff;
   S.gtiToday = soFar;
   S.highs = { ...(S.highsArchive ?? {}), ...Object.fromEntries(w.daily.time.map((d, i) => [d, w.daily.temperature_2m_max[i]])) };
   computeModel();
@@ -73,6 +78,7 @@ function computeModel() {
   S.yieldK = learnYield(S.daily.filter(d => d.date >= addDays(today, -30) && d.date < today), gti);
   const yearAgo = addDays(today, -365), base = S.daily.filter(d => d.date >= addDays(yearAgo, -30) && d.date <= addDays(yearAgo, 30));
   S.baselineK = learnYield(base, gti) ?? S.yieldK;
+  S.yieldStc = S.gtiEffByDate ? learnYield(S.daily.filter(d => d.date >= addDays(today, -30) && d.date < today), S.gtiEffByDate) : null; // temperature-corrected, for the warranty comparison
   const spec = S.now?.site?.solar;
   S.peakKw = Math.min(S.yieldK ?? 9, spec?.acKw ?? 9.45); // ≈ kW at 1000 W/m² on the panel plane, never above the microinverters' AC rating
   const clear = S.daily.filter(d => d.date < today && gti[d.date] > 4.5).slice(-7);
