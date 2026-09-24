@@ -159,10 +159,11 @@
         </div>
 
         <div class="sect" id="billSect">Electric bills · PEC</div>
+        <div class="card" id="billListCard">
+          <div class="h"><b>Your bills <span id="billCount" style="font-weight:400;font-size:12px;color:var(--mute);margin-left:4px">—</span></b><button class="link" data-addbill="1" style="margin:0;padding:7px 12px">+ Add a PEC bill</button></div>
+          <div id="billList" style="margin-top:6px"></div></div>
         <div id="billDue"></div>
-        <button class="link addbill" data-addbill="1" style="margin:0 0 4px">+ Add a PEC bill</button>
         <div id="billChecks"></div>
-        <div class="card" id="billListCard"><div class="h"><b>Your bills</b><span id="billCount">—</span></div><div id="billList" style="margin-top:6px"></div></div>
         <div class="card">
           <div class="h"><b>PEC meter vs Tesla</b><span>kWh bought per bill</span></div>
           <svg class="mini" id="meterChart" viewBox="0 0 310 150"></svg>
