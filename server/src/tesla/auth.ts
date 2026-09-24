@@ -15,9 +15,9 @@ async function tokenRequest(body: Record<string, string>): Promise<TeslaTokens> 
 }
 
 /** Exchange the OAuth code and store/replace the user's Tesla account. Returns the tesla_accounts id. */
-export async function exchangeCode(code: string, userId: number): Promise<number> {
+export async function exchangeCode(code: string, userId: number | null): Promise<number> {
   const t = await tokenRequest({ grant_type: 'authorization_code', client_id: config.clientId, client_secret: config.clientSecret, code, audience: config.audience, redirect_uri: config.redirectUri });
-  const existing = await one<{ id: number }>('SELECT id FROM tesla_accounts WHERE user_id = $1', [userId]);
+  const existing = await one<{ id: number }>('SELECT id FROM tesla_accounts WHERE user_id IS NOT DISTINCT FROM $1 ORDER BY id LIMIT 1', [userId]);
   if (existing) { await q('UPDATE tesla_accounts SET access_token=$2, refresh_token=$3, expires_at=$4, scope=$5 WHERE id=$1', [existing.id, t.access_token, t.refresh_token, t.expires_at, t.scope]); return existing.id; }
   return (await one<{ id: number }>('INSERT INTO tesla_accounts (user_id, access_token, refresh_token, expires_at, scope) VALUES ($1,$2,$3,$4,$5) RETURNING id', [userId, t.access_token, t.refresh_token, t.expires_at, t.scope]))!.id;
 }

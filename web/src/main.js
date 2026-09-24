@@ -196,9 +196,14 @@ async function boot() {
   if (params.get('tesla_error')) toast('!', 'rgba(255,90,78,.25)', 'Tesla connection failed', params.get('tesla_error'));
   let me;
   try { me = await api.me(); } catch { $('authErr').textContent = 'Can’t reach the Solstice server.'; return showAuth('login'); }
-  if (!me.user) return me.needsSetup && params.get('setup') ? showAuth('setup', { token: params.get('setup') }) : showAuth('login');
-  $('acctEmail').textContent = me.user.email;
-  if (!me.site) return showAuth('connect');
+  if (me.mode === 'single') {           // no accounts yet: open straight to the connected site
+    document.querySelectorAll('.acct').forEach(el => el.hidden = true);
+    if (!me.site) return showAuth('connect');
+  } else {
+    if (!me.user) return me.needsSetup && params.get('setup') ? showAuth('setup', { token: params.get('setup') }) : showAuth('login');
+    $('acctEmail').textContent = me.user.email;
+    if (!me.site) return showAuth('connect');
+  }
   started = true;
   const prefs = await api.settings().catch(() => ({}));
   if (typeof prefs.calm === 'boolean') { S.calm = prefs.calm; $('calmSw').classList.toggle('on', S.calm); }

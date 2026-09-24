@@ -2,10 +2,10 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { q, one, kv, migrate } from './db.js';
 import { config } from './config.js';
-import { hashPassword, verifyPassword, startSession, endSession, currentUser, requireUser, requireSite, tooManyAttempts, recordAttempt, signState, verifyState } from './auth.js';
+import { hashPassword, verifyPassword, startSession, endSession, currentUser, requireUser, requireSite, tooManyAttempts, recordAttempt, signState, verifyState, multiUser } from './auth.js';
 import { authorizeUrl, exchangeCode } from './tesla/auth.js';
 import { teslaFor, localDay, addDays } from './tesla/client.js';
-import { refreshLive, refreshSiteInfo, syncSite } from './sync.js';
+import { refreshLive, refreshSiteInfo, syncSite, saveEnergyRows, saveSoe } from './sync.js';
 import { listBills, parsePecPdf, saveBill, type Bill } from './bills.js';
 import { reconcile } from './reconcile.js';
 
@@ -22,6 +22,10 @@ const site = (req: Request) => req.siteId!;
 
 /* ======================= accounts ======================= */
 app.get('/api/auth/me', wrap(async (req, res) => {
+  if (!multiUser()) { // single-owner mode: no accounts, just the connected site
+    const s = await one<{ id: string; name: string }>('SELECT id, name FROM sites WHERE tesla_account_id IS NOT NULL ORDER BY created_at LIMIT 1');
+    return res.json({ mode: 'single', user: null, site: s ?? null });
+  }
   const user = await currentUser(req);
   const users = Number((await one<{ n: string }>('SELECT COUNT(*) n FROM users'))!.n);
   if (!user) return res.json({ user: null, needsSetup: users === 0, signupsOpen: process.env.ALLOW_SIGNUPS === 'true' });
@@ -67,6 +71,7 @@ app.post('/api/auth/logout', wrap(async (req, res) => { await endSession(req, re
 
 /* ======================= Tesla connection ======================= */
 app.get('/auth/login', wrap(async (req, res) => {
+  if (!multiUser()) return res.redirect(authorizeUrl(signState(0)));
   const user = await currentUser(req);
   if (!user) return res.redirect('/?signin=1');
   res.redirect(authorizeUrl(signState(user.id)));
@@ -75,14 +80,16 @@ app.get('/auth/login', wrap(async (req, res) => {
 app.get('/auth/callback', wrap(async (req, res) => {
   const { code, state, error, error_description } = req.query as Record<string, string>;
   if (error) return res.redirect(`/?tesla_error=${encodeURIComponent(error_description || error)}`);
-  const uid = verifyState(state ?? ''), user = await currentUser(req);
-  if (!uid || !user || user.id !== uid) return res.redirect('/?tesla_error=Sign-in+expired.+Try+again.');
-  const accountId = await exchangeCode(code, user.id);
+  const uid = verifyState(state ?? '');
+  let ownerId: number | null = null;
+  if (multiUser()) { const user = await currentUser(req); if (!uid || !user || user.id !== uid) return res.redirect('/?tesla_error=Sign-in+expired.+Try+again.'); ownerId = user.id; }
+  else if (uid !== 0) return res.redirect('/?tesla_error=Sign-in+expired.+Try+again.');
+  const accountId = await exchangeCode(code, ownerId);
   const products = await teslaFor(accountId).products();
   for (const p of products.filter(p => p.energy_site_id)) {
     const id = String(p.energy_site_id);
     await q(`INSERT INTO sites (id, user_id, tesla_account_id, name) VALUES ($1, $2, $3, $4)
-      ON CONFLICT (id) DO UPDATE SET user_id = excluded.user_id, tesla_account_id = excluded.tesla_account_id`, [id, user.id, accountId, String(p.site_name ?? 'Home')]);
+      ON CONFLICT (id) DO UPDATE SET user_id = excluded.user_id, tesla_account_id = excluded.tesla_account_id`, [id, ownerId, accountId, String(p.site_name ?? 'Home')]);
     await refreshSiteInfo(id, accountId);
   }
   res.redirect('/');
@@ -98,12 +105,32 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
   res.json(out);
 }));
 
+/* ======================= one-time import from the local install (protected by SETUP_TOKEN) ======================= */
+app.post('/api/admin/import', express.json({ limit: '25mb' }), wrap(async (req, res) => {
+  if (!process.env.SETUP_TOKEN || req.headers.authorization !== `Bearer ${process.env.SETUP_TOKEN}`) return res.status(401).json({ error: 'unauthorized' });
+  const { kind, siteId, rows, site } = req.body ?? {};
+  if (kind === 'site') {
+    const a = site.tokens, existing = await one<{ id: number }>('SELECT id FROM tesla_accounts WHERE user_id IS NULL ORDER BY id LIMIT 1');
+    const acct = existing ? (await q('UPDATE tesla_accounts SET access_token=$2, refresh_token=$3, expires_at=$4, scope=$5 WHERE id=$1 RETURNING id', [existing.id, a.access_token, a.refresh_token, a.expires_at, a.scope ?? null]))[0].id
+      : (await one<{ id: number }>('INSERT INTO tesla_accounts (user_id, access_token, refresh_token, expires_at, scope) VALUES (NULL,$1,$2,$3,$4) RETURNING id', [a.access_token, a.refresh_token, a.expires_at, a.scope ?? null]))!.id;
+    await q(`INSERT INTO sites (id, user_id, tesla_account_id, name, info, info_at) VALUES ($1, NULL, $2, $3, $4, now())
+      ON CONFLICT (id) DO UPDATE SET tesla_account_id = excluded.tesla_account_id, info = excluded.info, info_at = now()`, [siteId, acct, site.info?.site_name ?? 'Home', JSON.stringify(site.info ?? {})]);
+  } else if (kind === 'energy') await saveEnergyRows(siteId, rows);
+  else if (kind === 'soe') await saveSoe(siteId, rows);
+  else if (kind === 'outages') for (const e of rows) await q('INSERT INTO backup_events VALUES ($1,$2,$3,$4) ON CONFLICT (site_id, ts) DO UPDATE SET duration_s = excluded.duration_s', [siteId, e.ts, e.epoch, e.duration_s]);
+  else if (kind === 'bills') for (const b of rows) await saveBill(siteId, b);
+  else if (kind === 'days') await q(`INSERT INTO synced_days SELECT $1, 'day', unnest($2::text[]) ON CONFLICT DO NOTHING`, [siteId, rows]);
+  else return res.status(400).json({ error: 'unknown kind' });
+  res.json({ ok: true, kind, n: rows?.length ?? 1 });
+}));
+
 /* ======================= everything below needs a signed-in user ======================= */
 app.use('/api', requireUser);
 
-app.get('/api/settings', wrap(async (req, res) => res.json(req.user!.settings ?? {})));
+app.get('/api/settings', wrap(async (req, res) => res.json(req.user ? req.user.settings ?? {} : await kv.get('settings:owner') ?? {})));
 app.put('/api/settings', express.json(), wrap(async (req, res) => {
-  await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user!.id, JSON.stringify(req.body ?? {})]);
+  if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify(req.body ?? {})]);
+  else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ...(req.body ?? {}) });
   res.json({ ok: true });
 }));
 

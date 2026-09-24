@@ -39,9 +39,16 @@ export async function currentUser(req: Request): Promise<User | undefined> {
   return one<User>(`SELECT u.id, u.email, u.name, u.role, u.settings FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > now()`, [sha(t)]);
 }
 
-/** API guard: 401 without a session. Also attaches the user's energy site (if connected). */
+/** Accounts are off until MULTI_USER=true: the app serves the one connected energy site with no sign-in. */
+export const multiUser = () => process.env.MULTI_USER === 'true';
+
+/** API guard. Single-owner mode (default): attach the connected site. Multi-user mode: require a session. */
 export async function requireUser(req: Request, res: Response, next: NextFunction) {
   try {
+    if (!multiUser()) {
+      req.siteId = (await one<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL ORDER BY created_at LIMIT 1'))?.id;
+      return next();
+    }
     const user = await currentUser(req);
     if (!user) return res.status(401).json({ error: 'Sign in required' });
     req.user = user;
