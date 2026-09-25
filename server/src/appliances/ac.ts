@@ -5,6 +5,8 @@ import { localDay, addDays } from '../tesla/client.js';
 import { readNest, nestConfigured, nestLinked, setCool, type NestState } from './nest.js';
 import { forecast } from './autopilot.js';
 import type { Mode } from './autopilot.js';
+import { lastSetpointWrite } from './nest.js';
+import { guardCoolSetpoint, explainRefusal, GuardRefusal } from './guards.js';
 
 export type AcSettings = { band: { homeLo: number; homeHi: number; nightLo: number; nightHi: number }; awayF: number; nightFrom: number; nightTo: number; precoolDepth: number; coastF: number; maxStepF: number; humidityCap: number; autopilot: Mode; presence: 'home' | 'away' };
 const DEFAULTS: AcSettings = { band: { homeLo: 74, homeHi: 78, nightLo: 74, nightHi: 76 }, awayF: 80, nightFrom: 22, nightTo: 7, precoolDepth: 2, coastF: 78, maxStepF: 2, humidityCap: 60, autopilot: 'suggest', presence: 'home' };
@@ -95,7 +97,11 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
       outdoor: learned.heatKw != null ? (learned.heatKw < 5 ? `heat pump (measured ${learned.heatKw.toFixed(1)} kW when heating)` : `straight AC, heating on the strips (measured ${learned.heatKw.toFixed(1)} kW)`) : 'outdoor unit type: Solstice will measure it from the first heating steps this winter' } };
 }
 
-/** Called every 5 minutes by the cron: sample Nest, and if today's plan is approved (or Autopilot is Auto), apply the step due now. */
+/**
+ * Called every 5 minutes by the cron: sample Nest, and if today's plan is approved (or Autopilot is Auto), apply the step due now.
+ * Every write goes through the safety guard (guards.ts): Autopilot Off writes nothing, 65–85 °F, at most 2 °F per write, one write
+ * per 30 minutes. Refused and stepped writes are recorded in the AC log.
+ */
 export async function acTick(siteId: string, settingsAll: Record<string, any>, rate: number, slope: number) {
   const d = await acDetail(siteId, settingsAll, rate, slope, { fresh: true });
   if (!d.linked || !d.state) return { sampled: false };
@@ -106,10 +112,18 @@ export async function acTick(siteId: string, settingsAll: Record<string, any>, r
     const lo = Math.min(s.band.homeLo, s.band.nightLo), hi = Math.max(s.band.homeHi, s.band.nightHi, s.awayF);
     const target = Math.max(lo, Math.min(hi, step.coolF));
     const from = d.state.coolF ?? target, next = Math.abs(target - from) > s.maxStepF ? from + Math.sign(target - from) * s.maxStepF : target;
-    await setCool(d.state.deviceId, next);
-    log.unshift({ at: Date.now(), day: plan.date, text: `Set ${next}° (${step.why})`, delta: next === target ? undefined : 'stepping' });
-    if (next === target) rec.lastStepHour = step.hour;
-    await kv.set(`${siteId}:ac:plan`, rec); await kv.set(`${siteId}:ac:log`, log.slice(0, 40));
+    const g = guardCoolSetpoint({ mode: s.autopilot, targetF: target, valueF: next, currentF: d.state.coolF, lastWriteAt: (await lastSetpointWrite(d.state.deviceId))?.at ?? null, now: Date.now() });
+    // setCool re-checks the same rules, and still refuses if another invocation took the 30-minute slot a moment ago
+    const refused = !g.ok ? g.reason : await setCool(d.state.deviceId, g.value, s.autopilot).then(() => null, (e: unknown) => { if (e instanceof GuardRefusal) return e.reason; throw e; });
+    if (refused == null && g.ok) {
+      log.unshift({ at: Date.now(), day: plan.date, text: `Set ${g.value}° (${step.why})${g.stepped ? `; safety ${g.reason}` : ''}`, delta: g.value === target ? undefined : 'stepping' });
+      if (g.value === target) rec.lastStepHour = step.hour;
+      await kv.set(`${siteId}:ac:plan`, rec); await kv.set(`${siteId}:ac:log`, log.slice(0, 40));
+    } else {
+      const text = `Did not set ${g.ok ? g.value : next}° (${step.why}): ${explainRefusal(refused ?? '')}`;
+      // the cron retries every 5 minutes: a refusal that repeats is logged once
+      if (log[0]?.text !== text || log[0]?.day !== plan.date) { log.unshift({ at: Date.now(), day: plan.date, text, delta: 'refused' }); await kv.set(`${siteId}:ac:log`, log.slice(0, 40)); }
+    }
   }
   return { sampled: true, applied: rec.approved };
 }
