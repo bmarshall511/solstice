@@ -23,9 +23,9 @@ async function drawDay(S) {
   o += svgText(0, -4, `${self}%`, { size: 28, fill: '#f2f4f8', anchor: 'middle', font: 'Manrope', weight: 300 }) + svgText(0, 15, 'solar + battery', { size: 10.5, fill: 'rgba(242,244,248,.5)', anchor: 'middle', font: 'Manrope' });
   svg.innerHTML = o;
   $('hleg').innerHTML = `<span><i style="background:var(--solar)"></i>Solar kW</span><span><i style="background:var(--home)"></i>Home kW</span><span><i style="background:var(--batt)"></i>Battery %</span>`;
-  const rate = S.tariff?.importRateAllIn ?? .1064;
+  const rate = S.tariff?.importRateAllIn;
   $('hstats').innerHTML = stat('Solar', t.solar, `peak ${Math.max(0, ...B.map(b => b.solar)).toFixed(1)} kW`) + stat('Home', t.home, `peak ${Math.max(0, ...B.map(b => b.home)).toFixed(1)} kW`) +
-    stat('Bought from PEC', t.import, `≈ $${((t.import ?? 0) * rate).toFixed(2)}`) + stat('Powerwall', t.discharge, `out · ${(t.charge ?? 0).toFixed(1)} in`);
+    stat('Bought from PEC', t.import, rate != null ? `≈ $${((t.import ?? 0) * rate).toFixed(2)}` : 'rate unknown') + stat('Powerwall', t.discharge, `out · ${(t.charge ?? 0).toFixed(1)} in`);
 }
 const stat = (label, v, sub) => `<div class="stat"><span>${label}</span><b>${v == null ? '—' : v >= 1000 ? (v / 1000).toFixed(1) + '<small>MWh</small>' : v.toFixed(1) + '<small>kWh</small>'}</b><em>${sub}</em></div>`;
 
@@ -47,9 +47,9 @@ async function drawBars(S) {
   o += svgText(10, 8, range === 'year' ? 'kWh / month' : 'kWh / day', { font: 'Manrope' });
   svg.innerHTML = o;
   $('hleg').innerHTML = `<span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--home)"></i>Home</span><span><i style="background:var(--out)"></i>Outage</span>`;
-  const sum = k => rows.reduce((a, r) => a + (r[k] ?? 0), 0), rate = S.tariff?.importRateAllIn ?? .1064;
+  const sum = k => rows.reduce((a, r) => a + (r[k] ?? 0), 0), rate = S.tariff?.importRateAllIn, credit = S.tariff?.exportCredit;
   $('hstats').innerHTML = stat('Solar', sum('solar'), `${Math.round(sum('solar') / sum('home') * 100)}% of home use`) + stat('Home', sum('home'), `${(sum('home') / (range === 'year' ? 365 : rows.length)).toFixed(0)} kWh/day avg`) +
-    stat('Bought from PEC', sum('import'), `≈ $${Math.round(sum('import') * rate)}`) + stat('Sent to PEC', sum('export'), `≈ $${Math.round(sum('export') * (S.tariff?.exportCredit ?? .0719))} credit`);
+    stat('Bought from PEC', sum('import'), rate != null ? `≈ $${Math.round(sum('import') * rate)}` : 'rate unknown') + stat('Sent to PEC', sum('export'), credit != null ? `≈ $${Math.round(sum('export') * credit)} credit` : 'rate unknown');
 }
 
 export async function drawHistoryChart(S) {
@@ -148,7 +148,7 @@ function openBillDetail(S, r) {
     await api.deleteBill(r.billDate);
     $('phone').classList.remove('open');
     toast('✓', 'rgba(255,255,255,.12)', 'Bill removed', `${niceDate(r.billDate, { month: 'long', year: 'numeric' })} · ${money2(r.total)}`);
-    S.reconcile = await api.reconcile(); S.tariff = S.reconcile.at(-1)?.tariff ?? null; drawBills(S);
+    S.reconcile = await api.reconcile(); S.tariff = S.reconcile.findLast(x => x.tariff?.importRateAllIn > 0)?.tariff ?? null; drawBills(S);
   };
 }
 
@@ -162,7 +162,7 @@ export function drawBills(S) {
   $('billChecks').innerHTML = `<div class="card"><div class="h"><b>${niceDate(last.billDate, { month: 'long' })} bill check</b><span class="badge ${last.checks.every(c => c.ok) ? 'g' : ''}">${last.checks.every(c => c.ok) ? 'all good' : 'look at this'}</span></div>
     <div style="margin-top:8px">${last.checks.map(c => `<div class="check"><i class="${c.ok ? 'ok' : 'al'}">${c.ok ? '✓' : '!'}</i><div><b>${c.label}.</b> ${c.detail}</div></div>`).join('')}${yoy}</div>${cov}
     <div class="kv"><span>${niceDate(last.period.from)} – ${niceDate(last.period.to)} · total</span><b>${money2(last.total)}</b>
-    <span>Your rate, all-in</span><b>$${last.tariff.importRateAllIn.toFixed(4)}/kWh</b><span>Solar + Powerwall covered</span><b style="color:var(--batt)">${last.solarShareOfHome ?? '—'}% of home use</b>
+    <span>Your rate, all-in</span><b>${last.tariff ? `$${last.tariff.importRateAllIn.toFixed(4)}/kWh` : '—'}</b><span>Solar + Powerwall covered</span><b style="color:var(--batt)">${last.solarShareOfHome ?? '—'}% of home use</b>
     <span>Without solar it would have been</span><b>${money2(last.withoutSolarCost)}</b></div></div>`;
 
   // meter vs Tesla per bill
@@ -176,10 +176,10 @@ export function drawBills(S) {
   $('meterChart').innerHTML = s;
 
   // waterfall for the latest bill
-  const t = last.tesla, rate = last.tariff.importRateAllIn, fixed = (last.tariff.fixedMonthly ?? 0) + (last.tariff.discounts ?? 0);
-  if (t.homeKwh != null) {
+  const t = last.tesla, bt = last.tariff, T = S.tariff, rate = T?.importRateAllIn, fixed = (T?.fixedMonthly ?? 0) + (T?.discounts ?? 0);
+  if (t.homeKwh != null && bt) { // this bill's own rates; a bill saved without rates gets no waterfall
     const direct = Math.max(0, t.homeKwh - t.importKwh - (t.dischargeKwh ?? 0));
-    const steps = [['Without solar', last.withoutSolarCost, 'base'], ['Solar used directly', -direct * rate], ['Powerwall at night', -(t.dischargeKwh ?? 0) * rate], ['Export credit', -(t.exportKwh ?? 0) * (last.tariff.exportCredit ?? 0)], ['PEC bill', last.total, 'end']];
+    const steps = [['Without solar', last.withoutSolarCost, 'base'], ['Solar used directly', -direct * bt.importRateAllIn], ['Powerwall at night', -(t.dischargeKwh ?? 0) * bt.importRateAllIn], ['Export credit', -(t.exportKwh ?? 0) * (bt.exportCredit ?? 0)], ['PEC bill', last.total, 'end']];
     const top = Math.max(...steps.map(s => Math.abs(s[1]))) * 1.05, X = v => 118 + v / top * 180; let w = '', run = 0;
     steps.forEach(([label, v, kind], i) => { const y = 8 + i * 36; let a, b, c;
       if (kind === 'base') { a = 0; b = v; run = v; c = 'rgba(255,255,255,.25)'; } else if (kind === 'end') { a = 0; b = v; c = '#4ef0a6'; } else { a = run + v; b = run; run += v; c = '#ffc15e'; }
@@ -187,12 +187,12 @@ export function drawBills(S) {
       const right = X(Math.max(a, b)) > 250; w += svgText(right ? X(Math.min(a, b)) - 5 : X(Math.max(a, b)) + 4, y + 16, `${v < 0 ? '−' : ''}$${Math.abs(v).toFixed(0)}`, { size: 10.5, fill: '#f2f4f8', anchor: right ? 'end' : 'start' }); });
     $('waterfall').innerHTML = w;
     $('wfNote').textContent = `${niceDate(last.period.from)} – ${niceDate(last.period.to)}`;
-  }
+  } else $('waterfall').innerHTML = '';
 
   // this billing cycle
   const from = last.period.to, to = addDays(from, 31), today = localDate(), el = Math.max(1, (Date.parse(today) - Date.parse(from)) / 864e5);
   const soFar = (S.daily ?? []).filter(d => d.date >= from && d.date <= today), imp = soFar.reduce((a, d) => a + d.import, 0), exp = soFar.reduce((a, d) => a + d.export, 0);
-  const proj = fixed + (imp * rate - exp * (last.tariff.exportCredit ?? 0)) * 31 / el;
+  const proj = rate != null ? fixed + (imp * rate - exp * (T.exportCredit ?? 0)) * 31 / el : null;
   const lyImp = (S.daily ?? []).filter(d => d.date >= addDays(from, -365) && d.date <= addDays(today, -365)).reduce((a, d) => a + d.import, 0);
   $('cycBar').style.width = Math.min(100, el / 31 * 100) + '%'; $('cycFrom').textContent = niceDate(from); $('cycTo').textContent = niceDate(to);
   $('cycNote').textContent = `day ${Math.round(el)} of ~31`;
@@ -200,9 +200,9 @@ export function drawBills(S) {
     <span>Projected bill</span><b>${money(proj)}</b><span>Same dates last year</span><b>${lyImp ? `${Math.round(lyImp)} kWh bought` : '—'}</b>`;
 
   // monthly estimated cost
-  const M = (S.monthly ?? []).slice(-12), top = Math.max(1, ...M.map(m => fixed + m.home * rate)) * 1.05;
+  const M = rate != null ? (S.monthly ?? []).slice(-12) : [], top = Math.max(1, ...M.map(m => fixed + m.home * rate)) * 1.05; // no rate: no dollar bars
   let b = '';
-  M.forEach((m, i) => { const x = 6 + i * 25.5, wo = fixed + m.home * rate, paid = fixed + m.import * rate - m.export * (last.tariff.exportCredit ?? 0), h1 = wo / top * 98, h2 = Math.max(0, paid) / top * 98;
+  M.forEach((m, i) => { const x = 6 + i * 25.5, wo = fixed + m.home * rate, paid = fixed + m.import * rate - m.export * (T.exportCredit ?? 0), h1 = wo / top * 98, h2 = Math.max(0, paid) / top * 98;
     b += `<rect x="${x}" y="${104 - h1}" width="19" height="${h1}" rx="5" fill="rgba(255,255,255,.13)"><title>${m.month}: without solar $${wo.toFixed(0)}</title></rect><rect x="${x + 4}" y="${104 - h2}" width="11" height="${h2}" rx="3" fill="#ffc15e"><title>paid ≈ $${paid.toFixed(0)}</title></rect>` +
       svgText(x + 9.5, 120, new Date(m.month + '-15').toLocaleDateString('en-US', { month: 'narrow' }), { anchor: 'middle' }); });
   $('billChart').innerHTML = b;

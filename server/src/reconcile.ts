@@ -26,11 +26,11 @@ export async function reconcile(siteId: string) {
       { id: 'math', ok: bill.checks?.lineItemsSumToTotal !== false, label: 'Bill adds up', detail: `Line items sum to $${bill.total.toFixed(2)}.` },
     ];
     return {
-      billDate: bill.billDate, period: bill.period, total: bill.total, tariff: bill.tariff, charges: bill.charges,
+      billDate: bill.billDate, period: bill.period, total: bill.total, tariff: bill.tariff ?? null, charges: bill.charges,
       pec: { deliveredKwh: bill.deliveredKwh, receivedKwh: bill.receivedKwh, lastYearKwh: bill.comparison?.lastYearKwh ?? null },
       tesla, lastYear, coverage: Math.round(tesla.days / bill.period.days * 100) / 100, importGapPct, checks,
       solarShareOfHome: tesla.homeKwh ? Math.round((tesla.homeKwh - (tesla.importKwh ?? 0)) / tesla.homeKwh * 100) : null,
-      withoutSolarCost: tesla.homeKwh != null && bill.tariff.fixedMonthly != null
+      withoutSolarCost: tesla.homeKwh != null && bill.tariff?.fixedMonthly != null // this bill's own rates; null when it has none
         ? Math.round((bill.tariff.fixedMonthly + bill.tariff.discounts + tesla.homeKwh * bill.tariff.importRateAllIn) * 100) / 100 : null,
     };
   }));

@@ -5,6 +5,7 @@ import { localDay, addDays } from '../tesla/client.js';
 import { readNest, nestConfigured, nestLinked, setCool, type NestState } from './nest.js';
 import { forecast } from './autopilot.js';
 import type { Mode } from './autopilot.js';
+import { usd } from '../tariff.js';
 
 export type AcSettings = { band: { homeLo: number; homeHi: number; nightLo: number; nightHi: number }; awayF: number; nightFrom: number; nightTo: number; precoolDepth: number; coastF: number; maxStepF: number; humidityCap: number; autopilot: Mode; presence: 'home' | 'away' };
 const DEFAULTS: AcSettings = { band: { homeLo: 74, homeHi: 78, nightLo: 74, nightHi: 76 }, awayF: 80, nightFrom: 22, nightTo: 7, precoolDepth: 2, coastF: 78, maxStepF: 2, humidityCap: 60, autopilot: 'suggest', presence: 'home' };
@@ -43,12 +44,12 @@ async function runtimeToday(siteId: string) {
 
 /* ---------- the plan ---------- */
 export type AcStep = { hour: number; coolF: number; why: string };
-export type AcPlan = { date: string; steps: AcStep[]; precool: boolean; precoolFrom: number; precoolTo: number; coastFrom: number; coastTo: number; high: number; sunKwhM2: number; kwhSaved: number; costSavedMonth: number; why: string[] };
+export type AcPlan = { date: string; steps: AcStep[]; precool: boolean; precoolFrom: number; precoolTo: number; coastFrom: number; coastTo: number; high: number; sunKwhM2: number; kwhSaved: number; costSavedMonth: number | null; why: string[] };
 /**
  * Pre-cool to (homeLo) while the panels are strong when tomorrow/today is hot and sunny; coast up to coastF into the evening;
  * night band overnight; away target when marked away. Steps only ever move inside the band, and by at most maxStepF at a time.
  */
-export function planFor(o: { date: string; high: number; sunKwhM2: number; hourlySun: number[]; settings: AcSettings; acKw: number | null; slope: number; rate: number; humidity: number | null }): AcPlan {
+export function planFor(o: { date: string; high: number; sunKwhM2: number; hourlySun: number[]; settings: AcSettings; acKw: number | null; slope: number; rate: number | null; humidity: number | null }): AcPlan {
   const s = o.settings, why: string[] = [], steps: AcStep[] = [];
   const kwPerDeg = o.slope; // kWh per degree of daily high, from the heat model; also a fair proxy for kWh per degree of setpoint
   const sunny = o.sunKwhM2 >= 4.5, hot = o.high >= 88, humid = (o.humidity ?? 0) >= s.humidityCap;
@@ -56,7 +57,7 @@ export function planFor(o: { date: string; high: number; sunKwhM2: number; hourl
   const precool = sunny && hot && !humid && s.presence === 'home';
   const low = s.band.homeLo, mid = Math.min(s.band.homeHi, Math.max(low, Math.round((s.band.homeLo + s.band.homeHi) / 2)));
   const night = Math.max(s.band.nightLo, Math.min(s.band.nightHi, mid));
-  if (s.presence === 'away') { steps.push({ hour: 0, coolF: s.awayF, why: 'marked away' }); why.push(`Away: holding ${s.awayF}° until you mark Home`); return { date: o.date, steps, precool: false, precoolFrom: from, precoolTo: to, coastFrom: to, coastTo: 21, high: Math.round(o.high), sunKwhM2: Math.round(o.sunKwhM2 * 10) / 10, kwhSaved: 0, costSavedMonth: 0, why }; }
+  if (s.presence === 'away') { steps.push({ hour: 0, coolF: s.awayF, why: 'marked away' }); why.push(`Away: holding ${s.awayF}° until you mark Home`); return { date: o.date, steps, precool: false, precoolFrom: from, precoolTo: to, coastFrom: to, coastTo: 21, high: Math.round(o.high), sunKwhM2: Math.round(o.sunKwhM2 * 10) / 10, kwhSaved: 0, costSavedMonth: usd(0, o.rate), why }; }
   steps.push({ hour: s.nightTo, coolF: mid, why: 'morning, comfort band' });
   if (precool) {
     const deep = Math.max(low, mid - s.precoolDepth); steps.push({ hour: from, coolF: deep, why: 'pre-cool on solar surplus' });
@@ -70,12 +71,12 @@ export function planFor(o: { date: string; high: number; sunKwhM2: number; hourl
   // savings vs holding the middle of the band all day: coasting degrees-hours minus pre-cool degrees-hours, at the learned kWh/°F/day ÷ hours
   const kwhSaved = precool ? Math.round(((Math.min(s.coastF, s.band.homeHi) - mid) * 4 - s.precoolDepth * (to - from) * .55) * kwPerDeg / 10 * 10) / 10 : 0;
   steps.sort((a, b) => a.hour - b.hour);
-  return { date: o.date, steps, precool, precoolFrom: from, precoolTo: to, coastFrom: to, coastTo: Math.min(21, to + 4), high: Math.round(o.high), sunKwhM2: Math.round(o.sunKwhM2 * 10) / 10, kwhSaved: Math.max(0, kwhSaved), costSavedMonth: Math.round(Math.max(0, kwhSaved) * 30.4 * o.rate), why };
+  return { date: o.date, steps, precool, precoolFrom: from, precoolTo: to, coastFrom: to, coastTo: Math.min(21, to + 4), high: Math.round(o.high), sunKwhM2: Math.round(o.sunKwhM2 * 10) / 10, kwhSaved: Math.max(0, kwhSaved), costSavedMonth: usd(Math.max(0, kwhSaved) * 30.4, o.rate), why };
 }
 export const stepAt = (plan: AcPlan, hour: number) => [...plan.steps].reverse().find(s => s.hour <= hour) ?? plan.steps[plan.steps.length - 1];
 
 /* ---------- detail for the app ---------- */
-export async function acDetail(siteId: string, settingsAll: Record<string, any>, rate: number, slope: number, opts: { fresh?: boolean } = {}) {
+export async function acDetail(siteId: string, settingsAll: Record<string, any>, rate: number | null, slope: number, opts: { fresh?: boolean } = {}) {
   const settings: AcSettings = { ...DEFAULTS, ...(settingsAll.ac ?? {}), band: { ...DEFAULTS.band, ...(settingsAll.ac?.band ?? {}) } };
   const configured = nestConfigured(), linked = configured && await nestLinked();
   let st = await kv.get<NestState>('nest:last') ?? null, error: string | null = null;
@@ -96,7 +97,7 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
 }
 
 /** Called every 5 minutes by the cron: sample Nest, and if today's plan is approved (or Autopilot is Auto), apply the step due now. */
-export async function acTick(siteId: string, settingsAll: Record<string, any>, rate: number, slope: number) {
+export async function acTick(siteId: string, settingsAll: Record<string, any>, rate: number | null, slope: number) {
   const d = await acDetail(siteId, settingsAll, rate, slope, { fresh: true });
   if (!d.linked || !d.state) return { sampled: false };
   const s = d.settings, plan = d.plan, h = hourNow(), step = stepAt(plan, h), rec = d.applied ?? { date: plan.date, approved: s.autopilot === 'auto', lastStepHour: null as number | null };

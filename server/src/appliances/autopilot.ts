@@ -34,7 +34,7 @@ async function useDays(siteId: string) {
 const pollenFor = (month: number): Signals['pollen'] => [2, 3].includes(month) ? 'high' : [1, 4, 11].includes(month) ? 'medium' : 'low';
 
 /** One day's plan: the season plan, then the day's adjustments. Returns the plan and why. */
-export function planDay(o: { day: Daily; prev?: Daily; heatDays: number; useYesterday: boolean; waterTemp: number; settings: PoolSettings; W: (r: number) => number; rate: number; names: Map<number, string>; pollen: Signals['pollen'] }) {
+export function planDay(o: { day: Daily; prev?: Daily; heatDays: number; useYesterday: boolean; waterTemp: number; settings: PoolSettings; W: (r: number) => number; rate: number | null; names: Map<number, string>; pollen: Signals['pollen'] }) {
   const why: string[] = [];
   const base = planFor({ waterTemp: o.waterTemp, solarKw: o.day.hourlySun.map(v => v * 9.45 * .8), settings: o.settings, W: o.W, rate: o.rate, month: new Date(o.day.date).getMonth(), names: o.names });
   let hours = base.hours, boost = base.boostHours;
@@ -53,7 +53,7 @@ export function planDay(o: { day: Daily; prev?: Daily; heatDays: number; useYest
 
 export type AutopilotState = { mode: Mode; nextRunAt: string; signals: Signals; tomorrow: { date: string; plan: Plan; why: string[] }; week: Array<{ date: string; hours: number; boost: number; sunKwhM2: number; rainPct: number; high: number }>; pending: boolean; log: Array<{ at: number; day: string; text: string; delta?: string }>; filterHours: number; filterCleanedOn: string | null };
 
-export async function autopilot(siteId: string, o: { settings: PoolSettings; mode: Mode; W: (r: number) => number; rate: number; names: Map<number, string>; snap: PoolSnapshot | null; waterTemp: number; currentHours: number; act: boolean }): Promise<AutopilotState> {
+export async function autopilot(siteId: string, o: { settings: PoolSettings; mode: Mode; W: (r: number) => number; rate: number | null; names: Map<number, string>; snap: PoolSnapshot | null; waterTemp: number; currentHours: number; act: boolean }): Promise<AutopilotState> {
   const days = await forecast(), today = localDay(), ti = days.findIndex(d => d.date === today);
   const use = await useDays(siteId), pollen = pollenFor(new Date().getMonth());
   const heatDaysAt = (i: number) => { let n = 0; for (let k = i; k >= 0 && days[k].high >= 95; k--) n++; return n; };

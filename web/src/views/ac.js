@@ -54,7 +54,7 @@ function drawPlan(S, sim, outdoor, sunH) {
   svg.innerHTML = o;
   const b = d.settings.band;
   $('acBand').textContent = `${b.homeLo}°–${b.homeHi}° home · ${b.nightLo}°–${b.nightHi}° night · away ${d.settings.awayF}°`;
-  $('acDeltas').innerHTML = `<div><small>AC electricity</small><b>${P.kwhSaved ? '−' + P.kwhSaved + ' kWh' : '0 kWh'}</b><span>per day</span></div><div><small>Cost</small><b>${P.costSavedMonth ? '−' + money(P.costSavedMonth) : '$0'}</b><span>per month</span></div>
+  $('acDeltas').innerHTML = `<div><small>AC electricity</small><b>${P.kwhSaved ? '−' + P.kwhSaved + ' kWh' : '0 kWh'}</b><span>per day</span></div><div><small>Cost</small><b>${P.costSavedMonth == null ? '—' : P.costSavedMonth ? '−' + money(P.costSavedMonth) : '$0'}</b><span>per month</span></div>
     <div><small>Today</small><b>${Math.round(P.high)}° · ${Number(P.sunKwhM2).toFixed(1)} kWh/m²</b><span>${P.precool ? 'pre-cool day' : 'hold the band'}</span></div><div><small>Warmest indoor</small><b>${Math.max(...P.steps.map(s => s.coolF))}°</b><span>${P.precool ? `${hm(P.coastFrom)}–${hm(P.coastTo)}` : 'all day'}</span></div>`;
   const why = P.why.map((w, i) => `<div><i>${['☀', '▮', '°', '⏱', '⚡'][i % 5]}</i><b>${i === 0 ? 'Today' : 'Also'}</b><p>${w}.</p></div>`).concat([
     `<div><i>°</i><b>Every degree counts</b><p>Your heat model says about ${(S.acSlope ?? 2.5).toFixed(1)} kWh a day per degree of daily high, so each degree of setpoint is worth roughly ${((S.acSlope ?? 2.5) * .6).toFixed(1)} kWh on a hot day.</p></div>`,

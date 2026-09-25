@@ -12,8 +12,8 @@ export function drawAlerts(S) {
   if (S.perf?.loss > .08) card('var(--warn)', '☀', `Solar output ${Math.round(S.perf.loss * 100)}% low`, 'last 7 clear days', 'Compared with the same sunlight this time last year. An even loss like this usually means dust or pollen.', '<button class="link" data-go="v-roof">See your panels →</button>');
   const N = S.overnight ?? [];
   if (N.length > 20) { const recent = N.slice(-7).reduce((a, n) => a + n.kw, 0) / 7, base = N.slice(-37, -7).map(n => n.kw).sort((a, b) => a - b), med = base[Math.floor(base.length / 2)];
-    if (recent > med * 1.15 && recent - med > .15) card('var(--solar)', '◐', `Overnight usage up ${Math.round((recent / med - 1) * 100)}%`, '7 nights', `Your 1–5 AM average went from ${(med * 1000).toFixed(0)} W to ${(recent * 1000).toFixed(0)} W, about $${((recent - med) * 24 * 30 * (S.tariff?.importRateAllIn ?? .1064) / 6).toFixed(0)}/month if it's always-on. Nights are hotter too, so some of this may be AC.`); }
-  if (S.pool?.extras?.lightReadings30d > 0) card('var(--solar)', '💡', 'Pool lights are 600 W of incandescent', 'from the plan', `The AmeriLite pool (500 W) and spa (100 W) lights cost about $${(0.6 * (S.tariff?.importRateAllIn ?? .1064)).toFixed(2)} an hour. LED replacements draw about a tenth of that and change colour.`);
+    if (recent > med * 1.15 && recent - med > .15) card('var(--solar)', '◐', `Overnight usage up ${Math.round((recent / med - 1) * 100)}%`, '7 nights', `Your 1–5 AM average went from ${(med * 1000).toFixed(0)} W to ${(recent * 1000).toFixed(0)} W, about ${S.tariff ? `$${((recent - med) * 24 * 30 * S.tariff.importRateAllIn / 6).toFixed(0)}` : '—'}/month if it's always-on. Nights are hotter too, so some of this may be AC.`); }
+  if (S.pool?.extras?.lightReadings30d > 0) card('var(--solar)', '💡', 'Pool lights are 600 W of incandescent', 'from the plan', `The AmeriLite pool (500 W) and spa (100 W) lights cost about ${S.tariff ? `$${(0.6 * S.tariff.importRateAllIn).toFixed(2)}` : '—'} an hour. LED replacements draw about a tenth of that and change colour.`);
   const D = (S.daily ?? []).slice(-30).filter(d => d.socMax != null);
   if (D.length > 10) { const full = D.filter(d => d.socMax >= 99).length;
     card('var(--batt)', '▮', full < 5 ? 'Your Powerwalls rarely fill up' : 'Powerwalls are cycling well', '30 days', full < 5
@@ -38,19 +38,19 @@ export function initPlanner(S) {
     const B = r.baseline, U = r.upgraded, k = v => v >= 1000 ? (v / 1000).toFixed(1) + ' MWh' : Math.round(v) + ' kWh';
     const row = (label, a, b, f, better) => { const d = b - a, cls = Math.abs(d) < 1e-6 ? '' : (better === 'up' ? d > 0 : d < 0) ? 'up' : 'dn'; return `<span>${label}</span><span class="n">${f(a)}</span><b class="${cls}">${f(b)}</b>`; };
     $('planTiles').innerHTML = `<div class="stat"><small>Covered by solar + battery</small><b class="${U.selfPowered > B.selfPowered ? 'up' : ''}">${B.selfPowered}% → ${U.selfPowered}%</b></div><div class="stat"><small>PEC energy cost / yr</small><b class="${U.netCost < B.netCost ? 'up' : ''}">${money(B.netCost)} → ${money(U.netCost)}</b></div>
-      <div class="stat"><small>Payback</small><b>${r.paybackYears ? r.paybackYears + ' yrs' : r.cost ? 'never' : '—'}</b></div><div class="stat"><small>Days batteries full</small><b class="${U.batteryFullDays > B.batteryFullDays ? 'up' : ''}">${B.batteryFullDays} → ${U.batteryFullDays}</b></div>`;
+      <div class="stat"><small>Payback</small><b>${r.paybackYears ? r.paybackYears + ' yrs' : r.cost && r.savesPerYear != null ? 'never' : '—'}</b></div><div class="stat"><small>Days batteries full</small><b class="${U.batteryFullDays > B.batteryFullDays ? 'up' : ''}">${B.batteryFullDays} → ${U.batteryFullDays}</b></div>`;
     $('cmp').innerHTML = `<span class="hd">Last 12 months</span><span class="hd">As built</span><span class="hd">With it</span>` +
       row('Solar produced', B.solarKwh, U.solarKwh, k, 'up') + row('Covered by solar + battery', B.selfPowered, U.selfPowered, v => v + '%', 'up') +
       row('Bought from PEC', B.importKwh, U.importKwh, k, 'dn') + row('Sent to PEC', B.exportKwh, U.exportKwh, k, 'up') +
       row('PEC energy cost', B.netCost, U.netCost, money, 'dn') + row('Days batteries hit 100%', B.batteryFullDays, U.batteryFullDays, v => v, 'up') +
       `<span>Est. installed cost</span><span class="n">—</span><b>${r.cost ? '$' + (r.cost / 1000).toFixed(1) + 'k' : '—'}</b>` +
       `<span>Saves per year</span><span class="n">—</span><b class="${r.savesPerYear > 0 ? 'up' : ''}">${r.cost ? money(r.savesPerYear) : '—'}</b>` +
-      `<span>Payback</span><span class="n">—</span><b>${r.paybackYears ? r.paybackYears + ' yrs' : r.cost ? 'never' : '—'}</b>`;
+      `<span>Payback</span><span class="n">—</span><b>${r.paybackYears ? r.paybackYears + ' yrs' : r.cost && r.savesPerYear != null ? 'never' : '—'}</b>`;
     const pv = await api.whatif({ panels: 8, extra: q.extra }).catch(() => null), pw = await api.whatif({ powerwalls: 1, extra: q.extra }).catch(() => null);
     $('planRec').innerHTML = pv && pw ? `<b>For your home, panels beat batteries.</b> 8 more panels would save about ${money(pv.savesPerYear)} a year (${pv.paybackYears ?? '—'}-year payback). ` +
       `Another Powerwall would save about ${money(pw.savesPerYear)}, because today's batteries only reach full on ${pw.baseline.batteryFullDays} days a year, so there's rarely any surplus to store. ` +
       `Extra batteries would mainly buy outage time: about ${pw.backupHoursEvening.upgraded} h of evening backup instead of ${pw.backupHoursEvening.now} h.` : '';
-    $('planFine').textContent = `Replays ${r.days} days of your real 5-minute data (as-built replay: ${k(B.importKwh)} bought vs ${k(r.actual.importKwh)} actually bought). Prices are placeholders: $2.75/W for panels, $11.5k per Powerwall, your PEC rate of $${r.assumptions.tariff.importRateAllIn}/kWh and $${r.assumptions.tariff.exportCredit}/kWh export credit. No federal credit (it ended with 2025 installs).`;
+    $('planFine').textContent = `Replays ${r.days} days of your real 5-minute data (as-built replay: ${k(B.importKwh)} bought vs ${k(r.actual.importKwh)} actually bought). Prices are placeholders: $2.75/W for panels, $11.5k per Powerwall, your PEC rate of ${r.assumptions.tariff ? `$${r.assumptions.tariff.importRateAllIn}/kWh and ${r.assumptions.tariff.exportCredit != null ? `$${r.assumptions.tariff.exportCredit}` : '—'}/kWh export credit` : '— (rate unknown)'}. No federal credit (it ended with 2025 installs).`;
     const s = r.system;
     $('sysPay').innerHTML = s ? `<b>Your system so far.</b> Without solar or Powerwalls, the last 12 months would have cost ${money(r.noSystem.netCost)} in PEC energy instead of ${money(B.netCost)}: it saves about ${money(s.savesPerYear)} a year. ` +
       `You paid $${(s.priceUsd / 1000).toFixed(1)}k${s.taxCreditPct ? ` before the ${s.taxCreditPct}% federal credit, about $${(s.netUsd / 1000).toFixed(1)}k after` : ''}${s.monthlyPayment ? `, financed over ${s.loanYears} years at ${s.loanRatePct}% (about $${s.monthlyPayment}/month)` : ''}. ` +
@@ -76,7 +76,7 @@ export function drawAC(S) {
   res.forEach(p => { const flag = p === worst && worst.res > 12; o += `<circle cx="${X(p.t)}" cy="${Y(p.u)}" r="${flag ? 5 : 3}" fill="${flag ? '#ff7a66' : p.date >= recent ? 'rgba(108,196,255,.9)' : 'rgba(108,196,255,.3)'}"><title>${p.date}: ${p.u.toFixed(0)} kWh at ${Math.round(p.t)}°</title></circle>`; });
   o += svgText(30, 168, `daily high →  ·  home kWh/day ↑  ·  ${pts.length} hot days (bright = last 60)`, { size: 8.5, font: 'Manrope' });
   $('acChart').innerHTML = o;
-  $('acTxt').innerHTML = `Each extra degree of daily high adds about <b style="color:var(--text)">${slope.toFixed(1)} kWh</b> a day, mostly air conditioning. That's about $${(slope * 30 * (S.tariff?.importRateAllIn ?? .1064)).toFixed(0)} a month per degree. ` +
+  $('acTxt').innerHTML = `Each extra degree of daily high adds about <b style="color:var(--text)">${slope.toFixed(1)} kWh</b> a day, mostly air conditioning. That's about ${S.tariff ? `$${(slope * 30 * S.tariff.importRateAllIn).toFixed(0)}` : '—'} a month per degree. ` +
     (worst.res > 12 ? `<b style="color:var(--warn)">${niceDate(worst.date)}</b> used ${Math.round(worst.res)} kWh more than normal for a ${Math.round(worst.t)}° day. That could be guests, laundry or the pool heater. If days like that become common, get the AC checked.` : 'Usage has tracked the temperature normally.');
 }
 

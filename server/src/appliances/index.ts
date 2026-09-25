@@ -7,7 +7,7 @@ export type ApplianceSummary = { id: string; name: string; status: 'linked' | 'e
 export type Appliance = {
   id: string; name: string; source: string;
   available: () => boolean;
-  summary: (siteId: string, settings: Record<string, any>, rate: number) => Promise<ApplianceSummary>;
+  summary: (siteId: string, settings: Record<string, any>, rate: number | null) => Promise<ApplianceSummary>; // rate null: no bill parsed, costs null
 };
 
 export const appliances: Appliance[] = [poolAppliance];

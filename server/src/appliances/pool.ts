@@ -4,6 +4,7 @@ import { readPool, writePoolPlan, configured, type PoolSnapshot } from './screen
 import { localDay, addDays } from '../tesla/client.js';
 import type { Appliance, ApplianceSummary } from './index.js';
 import { autopilot, type Mode } from './autopilot.js';
+import { usd } from '../tariff.js';
 
 export type PoolSettings = { gallons: number; spaGallons: number; designGpm: number; filterRpm: number; boostRpm: number; poolCircuit: number; boostCircuit: number; featureCircuits: number[]; autopilot: Mode; uv: boolean;
   heaterBtu: number; propaneUsdPerGal: number; loads: Record<string, number> };
@@ -61,7 +62,7 @@ const onSolarPct = (prof: ReturnType<typeof hourlyRpm>, W: (r: number) => number
 
 /* ---------- the optimizer ---------- */
 export type Plan = ReturnType<typeof planFor>;
-export function planFor(o: { waterTemp: number; solarKw: number[]; settings: PoolSettings; W: (r: number) => number; rate: number; month: number; names: Map<number, string>; force?: { hours: number; boost: number } }) {
+export function planFor(o: { waterTemp: number; solarKw: number[]; settings: PoolSettings; W: (r: number) => number; rate: number | null; month: number; names: Map<number, string>; force?: { hours: number; boost: number } }) {
   const { waterTemp: t, settings: s, W } = o;
   // how much water to move: at least one turnover, more when warm (algae pressure and use), less when cold; and the 1 h per 10 °F rule of thumb
   const turnovers = t >= 85 ? 1.25 : t >= 70 ? 1 : t >= 60 ? .75 : .6;
@@ -79,7 +80,7 @@ export function planFor(o: { waterTemp: number; solarKw: number[]; settings: Poo
   const speeds = new Map(schedules.map(x => [x.circuitId, x.rpm]));
   const prof = hourlyRpm(schedules, speeds), kwh = dayKwh(prof, W) + (s.uv ? hoursOn(prof) * UV_W / 1000 : 0);
   return { month: o.month, waterTemp: t, turnovers, hours, boostHours: boostH, start, stop, boostAt, schedules, kwhPerDay: Math.round(kwh * 10) / 10,
-    costPerMonth: Math.round(kwh * 30.4 * o.rate), onSolarPct: onSolarPct(prof, W, o.solarKw), turnoverPerDay: Math.round(hours * gpmAt(s.filterRpm, s.designGpm) * 60 / s.gallons * 100) / 100, hourly: prof, uvKwh: s.uv ? Math.round(hoursOn(prof) * UV_W) / 1000 : 0 };
+    costPerMonth: usd(kwh * 30.4, o.rate), onSolarPct: onSolarPct(prof, W, o.solarKw), turnoverPerDay: Math.round(hours * gpmAt(s.filterRpm, s.designGpm) * 60 / s.gallons * 100) / 100, hourly: prof, uvKwh: s.uv ? Math.round(hoursOn(prof) * UV_W) / 1000 : 0 };
 }
 
 /* ---------- storage ---------- */
@@ -99,7 +100,7 @@ const solarProfile = async (siteId: string) => {
 };
 
 /* ---------- the appliance ---------- */
-export async function poolDetail(siteId: string, settingsAll: Record<string, any>, rate: number, opts: { fresh?: boolean; act?: boolean } = {}) {
+export async function poolDetail(siteId: string, settingsAll: Record<string, any>, rate: number | null, opts: { fresh?: boolean; act?: boolean } = {}) {
   const settings: PoolSettings = { ...DEFAULTS, ...(settingsAll.pool ?? {}) };
   let snap = await kv.get<PoolSnapshot>(`${siteId}:pool:last`) ?? null, error: string | null = null;
   if (configured() && (opts.fresh || !snap || Date.now() - snap.at > 60_000)) {
@@ -135,15 +136,15 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   const spaTemp = snap?.bodies?.[1]?.temp ?? null, spaSet = snap?.bodies?.[1]?.setPoint ?? null, rise = spaTemp != null && spaSet != null ? Math.max(0, spaSet - spaTemp) : null;
   const btu = rise != null ? settings.spaGallons * 8.34 * rise : null, heatMin = btu != null ? Math.round(btu / (settings.heaterBtu * .82) * 60) : null, propaneGal = btu != null ? Math.round(btu / .82 / 91_500 * 100) / 100 : null;
   const spaRpm = speeds.get(1) ?? 3190, spaSession = { spaGallons: settings.spaGallons, spaTemp, spaSet, riseF: rise, heatMinutes: heatMin, propaneGal, propaneUsd: propaneGal != null ? Math.round(propaneGal * settings.propaneUsdPerGal * 100) / 100 : null,
-    pumpWattsAtSpa: Math.round(W(spaRpm)), blowerWatts: settings.loads['2'] ?? 0, electricUsdPerHour: Math.round((W(spaRpm) + (settings.loads['2'] ?? 0) + (settings.loads['4'] ?? 0)) / 1000 * rate * 100) / 100 };
+    pumpWattsAtSpa: Math.round(W(spaRpm)), blowerWatts: settings.loads['2'] ?? 0, electricUsdPerHour: usd((W(spaRpm) + (settings.loads['2'] ?? 0) + (settings.loads['4'] ?? 0)) / 1000, rate, true) };
   return { id: 'pool', autopilot: auto, pending, extras: { hourlyToday: extraHourly.map(v => Math.round(v * 1000) / 1000), todayKwh: Math.round(extraKwh * 100) / 100, nowW: extraNowW, loads: settings.loads, uvW: settings.uv ? UV_W : 0, lightReadings30d: lightH[0]?.h ?? 0 }, spaSession, name: 'Pool pump', linked: configured() && !!snap, error, settings, snapshot: snap,
     live: snap?.pump ? { watts: snap.pump.watts, rpm: snap.pump.rpm, running: snap.pump.running, gpm: snap.pump.gpm, at: snap.at, waterTemp, airTemp: snap.airTemp, freezeMode: snap.freezeMode,
       on: snap.circuits.filter(c => c.on).map(c => c.name), activeRpm: Math.max(0, ...snap.circuits.filter(c => c.on).map(c => speeds.get(c.id) ?? 0)) } : null,
     model: { measured: await measuredPoints(siteId), curve: [1000, 1500, 1800, 2400, 3000, 3450].map(r => ({ rpm: r, watts: Math.round(W(r)) })) },
-    current: { schedules: current, hours: Math.round(hoursOn(prof) * 10) / 10, kwhPerDay: Math.round(kwh * 10) / 10, costPerMonth: Math.round(kwh * 30.4 * rate), onSolarPct: onSolarPct(prof, W, solarKw),
+    current: { schedules: current, hours: Math.round(hoursOn(prof) * 10) / 10, kwhPerDay: Math.round(kwh * 10) / 10, costPerMonth: usd(kwh * 30.4, rate), onSolarPct: onSolarPct(prof, W, solarKw),
       turnoverPerDay: Math.round(prof.reduce((a, h) => a + gpmAt(h.rpm) * 60 * h.frac, 0) / settings.gallons * 100) / 100, hourly: prof,
       byProgram: current.map(s => { const p = hourlyRpm([s], speeds); return { name: s.name, rpm: s.rpm, start: s.start, stop: s.stop, kwhPerDay: Math.round(dayKwh(p, W) * 10) / 10 }; }) },
-    plan, seasons, solarKw, todayKwh: Math.round(todayKwh * 10) / 10, todayCost: Math.round(todayKwh * rate * 100) / 100, shareOfHomePct: home[0]?.kwh ? Math.round(todayKwh / home[0].kwh * 100) : null,
+    plan, seasons, solarKw, todayKwh: Math.round(todayKwh * 10) / 10, todayCost: usd(todayKwh, rate, true), shareOfHomePct: home[0]?.kwh ? Math.round(todayKwh / home[0].kwh * 100) : null,
     rate, applied };
 }
 
@@ -173,6 +174,6 @@ export const poolAppliance: Appliance = {
   available: () => configured(),
   summary: async (siteId, settings, rate): Promise<ApplianceSummary> => {
     const d = await poolDetail(siteId, settings, rate);
-    return { id: 'pool', name: 'Pool pump', status: d.linked ? 'linked' : 'estimated', watts: d.live?.watts ?? null, kwhPerDay: d.current.kwhPerDay, savesPerMonth: Math.max(0, d.current.costPerMonth - d.plan.costPerMonth) };
+    return { id: 'pool', name: 'Pool pump', status: d.linked ? 'linked' : 'estimated', watts: d.live?.watts ?? null, kwhPerDay: d.current.kwhPerDay, savesPerMonth: d.current.costPerMonth != null && d.plan.costPerMonth != null ? Math.max(0, d.current.costPerMonth - d.plan.costPerMonth) : null };
   },
 };

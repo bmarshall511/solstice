@@ -34,7 +34,7 @@ async function loadHistory() {
   const [daily, monthly, gridDays, records, outages, overnight, reconcile, profile] = await Promise.all([
     api.daily(400), api.monthly(13), api.gridDays(30), api.records(), api.outages(), api.overnight(60), api.reconcile(), api.profile(14)]);
   Object.assign(S, { daily, monthly, gridDays, records, outages, overnight, reconcile });
-  S.tariff = reconcile.at(-1)?.tariff ?? null;
+  S.tariff = reconcile.findLast(r => r.tariff?.importRateAllIn > 0)?.tariff ?? null; // learned from the newest parsed bill (server: currentTariff); null = rate unknown
   S.profile = Array.from({ length: 24 }, (_, h) => profile.hours.find(x => x.hour === h)?.home ?? 2);
   computeModel();
   [drawSocHeat, drawRecords, drawOutages, drawBills, drawOvernight, drawAC, drawPerformance, drawAlerts, drawSettings, renderStatic, renderWeather].forEach(f => safe(f)(S));

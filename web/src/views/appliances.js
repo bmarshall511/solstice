@@ -1,4 +1,4 @@
-import { $, money, niceDate } from '../lib/util.js';
+import { $, money, money2, niceDate } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { createPoolTwin } from '../scenes/pooltwin.js';
 
@@ -47,7 +47,7 @@ export function drawPool(S) {
   const ss = d.spaSession;
   $('poolStats').innerHTML = `<div class="stat"><small>Pump</small><b>${running ? `${Math.round(L.watts)} W · ${L.rpm.toLocaleString()} rpm` : 'off'}</b></div><div class="stat"><small>Today</small><b>${d.todayKwh} kWh${d.shareOfHomePct != null ? ` · ${d.shareOfHomePct}%` : ''}</b></div>
     <div class="stat"><small>Pool · spa · air</small><b>${st.poolTemp ?? '—'}° · ${st.spaTemp ?? '—'}° · ${L?.airTemp ?? '—'}°</b></div><div class="stat"><small>Turnover</small><b>${d.current.turnoverPerDay}× a day</b></div>`
-    + (ss && ss.riseF != null ? `<div class="stat" style="grid-column:1/-1"><small>Spa session · ${ss.spaTemp}° → ${ss.spaSet}°</small><b>${ss.riseF ? `${ss.heatMinutes} min of propane · ${ss.propaneGal} gal ≈ $${ss.propaneUsd.toFixed(2)}` : 'already at temperature'} · then $${ss.electricUsdPerHour.toFixed(2)}/h pump + blower</b></div>` : '');
+    + (ss && ss.riseF != null ? `<div class="stat" style="grid-column:1/-1"><small>Spa session · ${ss.spaTemp}° → ${ss.spaSet}°</small><b>${ss.riseF ? `${ss.heatMinutes} min of propane · ${ss.propaneGal} gal ≈ $${ss.propaneUsd.toFixed(2)}` : 'already at temperature'} · then ${money2(ss.electricUsdPerHour)}/h pump + blower</b></div>` : '');
   $('poolNote').innerHTML = `IntelliFlo VSF on a Quad D.E. 80 filter, ${sp.gallons.toLocaleString()} gal. Streams follow the water: skimmer → pump → filter → heater → returns; green is the spa loop, purple the sheer-descent feed. Speed follows the pump's RPM. Lights are 500 W + 100 W incandescent, the blower 1.1 kW, the UV lamp ~60 W while the pump runs.${d.model.measured.length ? ` Measured: ${d.model.measured.map(m => `${m.rpm}→${Math.round(m.watts)} W`).join(', ')}.` : ''}${d.error ? ` <span style="color:var(--warn)">Last read failed: ${d.error}</span>` : ''}`;
   drawDial(S); drawAutopilot(S);
   $('poolSeason').innerHTML = d.seasons.map(s => `<div class="${s.current ? 'cur' : ''}"><b>${s.kwhPerDay}</b>${s.label}</div>`).join('');
@@ -75,11 +75,11 @@ function drawDial(S) {
     $('schNow').hidden = m !== 'now'; $('schRec').hidden = m === 'now'; document.querySelectorAll('#schMode button').forEach(b => b.classList.toggle('on', b.dataset.m === m)); };
   $('schMode').onclick = e => { const b = e.target.closest('button'); if (b) set(b.dataset.m); };
   // Now: what each program costs
-  $('schNow').innerHTML = `<div class="kv" style="margin-top:10px">${C.byProgram.map(p => `<span>${p.name} · ${p.rpm.toLocaleString()} RPM · ${hm(p.start)}–${hm(p.stop)}</span><b${p.kwhPerDay > 5 ? ' style="color:var(--warn)"' : ''}>${p.kwhPerDay} kWh</b>`).join('')}<span>Total per day</span><b>${C.kwhPerDay} kWh · $${(C.kwhPerDay * d.rate).toFixed(2)}</b></div>
+  $('schNow').innerHTML = `<div class="kv" style="margin-top:10px">${C.byProgram.map(p => `<span>${p.name} · ${p.rpm.toLocaleString()} RPM · ${hm(p.start)}–${hm(p.stop)}</span><b${p.kwhPerDay > 5 ? ' style="color:var(--warn)"' : ''}>${p.kwhPerDay} kWh</b>`).join('')}<span>Total per day</span><b>${C.kwhPerDay} kWh · ${money2(d.rate == null ? null : C.kwhPerDay * d.rate)}</b></div>
     <p>${C.schedules.length ? 'When two pump programs overlap, the controller runs the faster one. Switch to <b style="color:var(--text)">Recommended</b> to see the fix.' : 'No pump schedules on the controller.'}</p>`;
   // Recommended: deltas, reasons, apply
-  const dk = C.kwhPerDay - P.kwhPerDay, dc = C.costPerMonth - P.costPerMonth, topNow = Math.max(0, ...C.schedules.map(s => s.rpm)), topRec = Math.max(0, ...P.schedules.map(s => s.rpm));
-  $('schDeltas').innerHTML = `<div><small>Electricity</small><b>${dk >= 0 ? '−' : '+'}${Math.abs(dk).toFixed(dk % 1 ? 1 : 0)} kWh</b><span>per day</span></div><div><small>Cost</small><b>${dc >= 0 ? '−' : '+'}$${Math.abs(dc)}</b><span>per month</span></div>
+  const dk = C.kwhPerDay - P.kwhPerDay, dc = C.costPerMonth == null || P.costPerMonth == null ? null : C.costPerMonth - P.costPerMonth, topNow = Math.max(0, ...C.schedules.map(s => s.rpm)), topRec = Math.max(0, ...P.schedules.map(s => s.rpm));
+  $('schDeltas').innerHTML = `<div><small>Electricity</small><b>${dk >= 0 ? '−' : '+'}${Math.abs(dk).toFixed(dk % 1 ? 1 : 0)} kWh</b><span>per day</span></div><div><small>Cost</small><b>${dc == null ? '—' : `${dc >= 0 ? '−' : '+'}$${Math.abs(dc)}`}</b><span>per month</span></div>
     <div><small>Turnover</small><b>${C.turnoverPerDay}× → ${P.turnoverPerDay}×</b><span>${P.turnoverPerDay >= 1 ? 'still one a day' : 'partial in winter'}</span></div><div><small>Top speed</small><b>${topNow.toLocaleString()} → ${topRec.toLocaleString()}</b><span>RPM</span></div>`;
   const Wc = d.model.curve, wAt = r => Wc.reduce((a, c) => Math.abs(c.rpm - r) < Math.abs(a.rpm - r) ? c : a).watts;
   const why = [['⚡', 'Speed³', `Power rises with the cube of RPM. ${topNow ? `${topNow.toLocaleString()} RPM draws ${(wAt(topNow) / 1000).toFixed(1)} kW, ` : ''}${sp.filterRpm.toLocaleString()} RPM draws ${(wAt(sp.filterRpm) / 1000).toFixed(2)} kW.`],

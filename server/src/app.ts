@@ -9,6 +9,7 @@ import { refreshLive, refreshSiteInfo, syncSite, saveEnergyRows, saveSoe } from 
 import { listBills, parsePecPdf, saveBill, type Bill } from './bills.js';
 import { reconcile } from './reconcile.js';
 import { SOLAR, warrantedDcPct, systemYear } from './system.js';
+import { currentTariff, netEnergyCost, NO_TARIFF } from './tariff.js';
 import { appliances, comingSoon } from './appliances/index.js';
 import { poolDetail, applyPlan, restorePrevious } from './appliances/pool.js';
 import { readPool } from './appliances/screenlogic.js';
@@ -253,9 +254,8 @@ app.post('/api/bills/parse', express.raw({ type: ['application/pdf', 'applicatio
 app.post('/api/bills', express.json({ limit: '1mb' }), wrap(async (req, res) => {
   const b = req.body as Partial<Bill>;
   if (!b.billDate || !b.period?.from || !b.period?.to || b.deliveredKwh == null || b.total == null) return res.status(400).json({ error: 'billDate, period, deliveredKwh and total are required' });
-  const fallback = (await listBills(site(req))).at(-1)?.tariff;
   await saveBill(site(req), { utility: 'PEC', dueDate: null, receivedKwh: 0, charges: [], ...b,
-    tariff: b.tariff ?? fallback ?? { importRate: .102346, importRateAllIn: .1064, exportCredit: .071921, fixedMonthly: 32.5, discounts: -2.5, franchisePct: .0396 } } as Bill);
+    tariff: b.tariff ?? null } as Bill);
   res.json({ saved: b.billDate });
 }));
 app.delete('/api/bills/:date', wrap(async (req, res) => { await q('DELETE FROM bills WHERE site_id = $1 AND bill_date = $2', [site(req), req.params.date]); res.json({ deleted: req.params.date }); }));
@@ -287,7 +287,7 @@ app.get('/api/whatif', wrap(async (req, res) => {
   const to = localDay(), from = addDays(to, -365);
   const rows = await q<{ day: string; hour: number; s: number; h: number }>(`SELECT day, hour::int, (SUM(solar_wh) / 1000.0)::float8 s, (SUM(home_wh) / 1000.0)::float8 h
     FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day, hour ORDER BY day, hour`, [id, from, to]);
-  const tariff = (await listBills(id)).at(-1)?.tariff ?? { importRateAllIn: .1064, exportCredit: .0719 } as Bill['tariff'];
+  const tariff = await currentTariff(id); // null until a bill is parsed: kWh still replay, every cost is null
   const info = summary(await siteInfo(id)), cap0 = info.capacityKwh || 27, pw0 = info.batteryCount || 2, reserve = (info.reservePct ?? 20) / 100;
   // the as-built array is 30 × 320 W DC (9.6 kW); added panels scale real production by their share of that nameplate
   const kwpNow = SOLAR.dcKw, scale = 1 + addPanels * panelW / 1000 / kwpNow;
@@ -301,29 +301,29 @@ app.get('/api/whatif', wrap(async (req, res) => {
       solar += s; home += h;
     }
     return { importKwh: Math.round(imp), exportKwh: Math.round(exp), solarKwh: Math.round(solar), homeKwh: Math.round(home), selfPowered: home ? Math.round((1 - imp / home) * 100) : 0,
-      batteryFullDays: full.size, netCost: Math.round(imp * tariff.importRateAllIn - exp * (tariff.exportCredit ?? 0)) };
+      batteryFullDays: full.size, netCost: netEnergyCost(tariff, imp, exp) };
   }
   const baseline = replay(1, cap0, pw0 * 5), upgraded = replay(scale, cap0 + addPw * 13.5, pw0 * 5 + addPw * 11.5), noSystem = replay(0, 0, 0);
   const actual = await one(`SELECT ROUND((SUM(import_wh) / 1000.0)::numeric)::float8 "importKwh", ROUND((SUM(export_wh) / 1000.0)::numeric)::float8 "exportKwh" FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3`, [id, from, to]);
-  const cost = addPanels * panelW * 2.75 + addPw * 11500, saves = baseline.netCost - upgraded.netCost;
+  const cost = addPanels * panelW * 2.75 + addPw * 11500, saves = tariff ? baseline.netCost! - upgraded.netCost! : null;
   // what the existing system saves per year vs. having no solar and no batteries, and what it cost (owner settings, never in git)
   const sys = (await settingsFor(req)).system as { priceUsd?: number; taxCreditPct?: number; loanYears?: number; loanRatePct?: number } | undefined;
-  const savesNow = noSystem.netCost - baseline.netCost;
+  const savesNow = tariff ? noSystem.netCost! - baseline.netCost! : null;
   let system = null;
   if (sys?.priceUsd) {
     const net = Math.round(sys.priceUsd * (1 - (sys.taxCreditPct ?? 0) / 100)), years = (Date.now() - Date.parse(SOLAR.installedOn)) / (365.25 * 864e5);
     const r = (sys.loanRatePct ?? 0) / 100 / 12, n = (sys.loanYears ?? 0) * 12;
     const payment = n && r ? Math.round(sys.priceUsd * r / (1 - (1 + r) ** -n)) : n ? Math.round(sys.priceUsd / n) : null;
     system = { priceUsd: sys.priceUsd, taxCreditPct: sys.taxCreditPct ?? 0, netUsd: net, loanYears: sys.loanYears ?? null, loanRatePct: sys.loanRatePct ?? null, monthlyPayment: payment,
-      savesPerYear: savesNow, yearsSinceInstall: Math.round(years * 10) / 10, paybackYears: savesNow > 0 ? Math.round(net / savesNow * 10) / 10 : null, installedOn: SOLAR.installedOn };
+      savesPerYear: savesNow, yearsSinceInstall: Math.round(years * 10) / 10, paybackYears: savesNow != null && savesNow > 0 ? Math.round(net / savesNow * 10) / 10 : null, installedOn: SOLAR.installedOn };
   }
   res.json({ days: new Set(rows.map(r => r.day)).size, kwpNow, acKw: SOLAR.acKw, panels: SOLAR.panels, panelWdc: SOLAR.panelWdc, assumptions: { panelW, dollarsPerW: 2.75, powerwallCost: 11500, tariff },
-    actual, baseline, upgraded, noSystem, cost, savesPerYear: saves, paybackYears: saves > 0 && cost ? Math.round(cost / saves * 10) / 10 : null, system,
+    actual, baseline, upgraded, noSystem, cost, savesPerYear: saves, paybackYears: saves != null && saves > 0 && cost ? Math.round(cost / saves * 10) / 10 : null, system, ...(tariff ? {} : { reason: NO_TARIFF }),
     backupHoursEvening: { now: Math.round(cap0 * .8 / 4.5), upgraded: Math.round((cap0 + addPw * 13.5) * .8 / 4.5) } });
 }));
 
 /* ---------- appliances: pool pump (ScreenLogic), AC next ---------- */
-const rateFor = async (id: string) => (await listBills(id)).at(-1)?.tariff?.importRateAllIn ?? .1064;
+const rateFor = async (id: string) => (await currentTariff(id))?.importRateAllIn ?? null; // null: costs unknown until a bill is parsed
 app.get('/api/appliances', wrap(async (req, res) => {
   const id = site(req), settings = await settingsFor(req), rate = await rateFor(id);
   const list = await Promise.all(appliances.filter(a => a.available()).map(a => a.summary(id, settings, rate).catch(e => ({ id: a.id, name: a.name, status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message }))));
