@@ -1,0 +1,59 @@
+# Allow-list for `vercel deploy` uploads.
+#
+# When this file exists, Vercel CLI uses it *instead of* .gitignore to decide
+# what rides along in the deployment tarball — .gitignore is not consulted.
+# So this file has to independently keep every sensitive/irrelevant path out,
+# not just rely on git's rules.
+#
+# Strategy: deny everything, then un-ignore only what the build genuinely
+# touches. Patterns are gitignore syntax, applied top to bottom — a later
+# line overrides an earlier one, and un-ignoring a directory does not
+# un-ignore files re-excluded by a later pattern.
+#
+# If a new top-level directory becomes part of the build (installCommand,
+# buildCommand, or the api/index.ts function's imports), add a `!/<dir>`
+# line for it here, or it will silently stop being deployed.
+
+# 1. Ignore everything by default.
+/*
+
+# 2. Un-ignore the top-level paths the Vercel build actually needs:
+#    - api/         the single serverless function (api/index.ts) and its
+#                    includeFiles/import graph
+#    - server/      TypeScript source that api/index.ts imports
+#    - web/         Vite project: index.html, src/, public/ (built by
+#                    `npm run build` into web/dist, vercel.json's
+#                    outputDirectory)
+#    - package.json, package-lock.json  installCommand ("npm install")
+#    - vercel.json  read by the CLI itself before any of this applies
+#    - tsconfig.json  read by the TypeScript/Node function build
+#    - .nvmrc       records the Node version the app is written for
+!/api
+!/server
+!/web
+!/package.json
+!/package-lock.json
+!/vercel.json
+!/tsconfig.json
+!/.nvmrc
+
+# 3. Re-exclude things that live *inside* the un-ignored directories but
+#    must never be uploaded.
+# Local web env files (none should exist, but never risk it).
+/web/.env*
+# Vite's own build output — Vercel builds it fresh from source.
+/web/dist
+# No dependency should ever be uploaded from the local machine; Vercel
+# installs its own via installCommand. Covers any nested node_modules too.
+**/node_modules
+# Private keys anywhere in the tree, EXCEPT the one Fleet API public key
+# that must be served from web/public/.well-known/ (re-included below).
+*.pem
+
+# 4. Re-include the single .pem that has to be deployable.
+!/web/public/.well-known/appspecific/com.tesla.3p.public-key.pem
+
+# Everything else — .env*, secrets/, data/, docs/, mockups/, scripts/,
+# tests/, README.md, site/ (superseded by web/public/, see README history),
+# .claude/, .git — stays excluded by rule 1 with no un-ignore rule, on
+# purpose. Do not add one without checking rule 5 in CLAUDE.md first.
