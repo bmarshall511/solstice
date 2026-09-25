@@ -141,12 +141,13 @@ describe('poolDetail', () => {
         labels.push(d.seasons.filter(s => s.current).map(s => s.label).join(','));
       }
     });
-    // BUG-4 · today months 3, 4, 6, 7, 9 and 10 (0-based) highlight the next season: April shows Jun–Aug, October shows Dec–Feb.
-    it.fails('BUG-4: every month highlights its own season', () => {
+    // BUG-4 · fixed: months 3, 4, 6, 7, 9 and 10 (0-based) used to highlight the next season (April showed Jun–Aug, October
+    // showed Dec–Feb). The flag now compares meteorological seasons.
+    it('BUG-4: every month highlights its own season', () => {
       expect(labels).toEqual(['Dec–Feb', 'Dec–Feb', 'Mar–May', 'Mar–May', 'Mar–May', 'Jun–Aug', 'Jun–Aug', 'Jun–Aug', 'Sep–Nov', 'Sep–Nov', 'Sep–Nov', 'Dec–Feb']);
     });
-    it('BUG-4 (today): April highlights Jun–Aug and October highlights Dec–Feb', () => {
-      expect([labels[3], labels[9]]).toEqual(['Jun–Aug', 'Dec–Feb']);
+    it('BUG-4 (fixed): April highlights Mar–May and October highlights Sep–Nov', () => {
+      expect([labels[3], labels[9]]).toEqual(['Mar–May', 'Sep–Nov']);
     });
   });
 

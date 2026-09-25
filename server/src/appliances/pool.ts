@@ -17,6 +17,8 @@ export { DEFAULTS as POOL_DEFAULTS };
 const UV_W = 60;
 // Typical pool-water temperature by month for central Texas (°F): used only for the season table; the live plan uses the real reading.
 const WATER_BY_MONTH = [55, 57, 62, 70, 78, 84, 88, 88, 84, 75, 65, 58];
+/** Meteorological season of a 0-based month: 0 Dec–Feb, 1 Mar–May, 2 Jun–Aug, 3 Sep–Nov. */
+const seasonOf = (m: number) => Math.floor((m + 1) % 12 / 3);
 const FREEZE_CIRCUIT = 132; // ScreenLogic's virtual "freeze protection" pump circuit
 
 /* ---------- power and flow models ---------- */
@@ -159,7 +161,7 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   const seasons = [[11, 'Dec–Feb'], [2, 'Mar–May'], [5, 'Jun–Aug'], [8, 'Sep–Nov']].map(([m, label]) => {
     const months = [m as number, ((m as number) + 1) % 12, ((m as number) + 2) % 12], avg = Math.round(months.reduce((a, i) => a + WATER_BY_MONTH[i], 0) / 3);
     const p = planFor({ waterTemp: avg, solarKw, settings, W, rate, month: m as number, names });
-    return { label, waterTemp: p.waterTemp, hours: p.hours, boostHours: p.boostHours, rpm: settings.filterRpm, kwhPerDay: p.kwhPerDay, costPerMonth: p.costPerMonth, current: [11, 0, 1].includes(month) ? m === 11 : Math.floor(month / 3) === Math.floor((m as number) / 3) };
+    return { label, waterTemp: p.waterTemp, hours: p.hours, boostHours: p.boostHours, rpm: settings.filterRpm, kwhPerDay: p.kwhPerDay, costPerMonth: p.costPerMonth, current: seasonOf(month) === seasonOf(m as number) };
   });
   // today so far, in 15-minute steps up to the current quarter-hour: the pump's measured watts where a reading exists for the
   // quarter-hour, the schedule × curve otherwise; the UV lamp while the pump runs; plus the other circuits from readings
