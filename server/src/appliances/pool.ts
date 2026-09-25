@@ -108,7 +108,8 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   const waterTemp = snap?.bodies[0]?.temp ?? WATER_BY_MONTH[month];
   const plan = planFor({ waterTemp, solarKw, settings, W, rate, month, names });
   const seasons = [[11, 'Dec–Feb'], [2, 'Mar–May'], [5, 'Jun–Aug'], [8, 'Sep–Nov']].map(([m, label]) => {
-    const p = planFor({ waterTemp: WATER_BY_MONTH[m as number], solarKw, settings, W, rate, month: m as number, names });
+    const months = [m as number, ((m as number) + 1) % 12, ((m as number) + 2) % 12], avg = Math.round(months.reduce((a, i) => a + WATER_BY_MONTH[i], 0) / 3);
+    const p = planFor({ waterTemp: avg, solarKw, settings, W, rate, month: m as number, names });
     return { label, waterTemp: p.waterTemp, hours: p.hours, boostHours: p.boostHours, rpm: settings.filterRpm, kwhPerDay: p.kwhPerDay, costPerMonth: p.costPerMonth, current: [11, 0, 1].includes(month) ? m === 11 : Math.floor(month / 3) === Math.floor((m as number) / 3) };
   });
   // today's estimate from the schedule model, up to now, plus the running measured watts if the pump is on

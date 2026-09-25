@@ -17,6 +17,39 @@ const timeline = (scheds, solarKw, maxRpm) => {
 };
 const legend = scheds => `<div class="legend" style="justify-content:flex-start">${[...new Map(scheds.map(s => [s.name, s])).values()].map(s => `<span><i style="background:${colorFor(s.name)}"></i>${s.name} ${s.rpm.toLocaleString()}</span>`).join('')}<span><i style="background:rgba(255,193,94,.5)"></i>Your solar</span></div>`;
 
+/** Power ring: watts against the pump's full-speed draw, RPM as the inner arc. */
+const gauge = (watts, rpm, maxW = 2900, maxRpm = 3450) => {
+  const r1 = 40, r2 = 31, C1 = 2 * Math.PI * r1, C2 = 2 * Math.PI * r2, fw = Math.min(1, watts / maxW), fr = Math.min(1, rpm / maxRpm);
+  const col = fw > .5 ? '#ff7a66' : fw > .2 ? '#ffc15e' : '#4ef0a6';
+  return `<svg width="100" height="100" viewBox="0 0 100 100">
+    <circle cx="50" cy="50" r="${r1}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="7"/>
+    <circle cx="50" cy="50" r="${r1}" fill="none" stroke="${col}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${C1 * fw} ${C1}" transform="rotate(-90 50 50)"/>
+    <circle cx="50" cy="50" r="${r2}" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="4"/>
+    <circle cx="50" cy="50" r="${r2}" fill="none" stroke="rgba(108,196,255,.8)" stroke-width="4" stroke-linecap="round" stroke-dasharray="${C2 * fr} ${C2}" transform="rotate(-90 50 50)"/>
+    <text x="50" y="48" text-anchor="middle" fill="#f2f4f8" font-size="19" font-family="Manrope" font-weight="300">${Math.round(watts)}</text>
+    <text x="50" y="61" text-anchor="middle" fill="rgba(242,244,248,.5)" font-size="8.5" font-family="Manrope">watts</text>
+    <text x="50" y="72" text-anchor="middle" fill="rgba(108,196,255,.9)" font-size="8" font-family="JetBrains Mono">${rpm ? rpm.toLocaleString() + ' rpm' : 'off'}</text></svg>`;
+};
+
+/** Speed → watts curve with the program speeds marked, measured points as dots and the live operating point. */
+const curveChart = (model, programs, live) => {
+  const W = 310, H = 130, x = r => 14 + (r - 450) / 3000 * (W - 28), y = w => H - 22 - w / 3000 * (H - 40);
+  const pts = []; for (let r = 450; r <= 3450; r += 50) { const lo = model.curve.filter(c => c.rpm <= r).at(-1) ?? model.curve[0], hi = model.curve.find(c => c.rpm >= r) ?? model.curve.at(-1);
+    const w = lo === hi || hi.rpm === lo.rpm ? lo.watts : lo.watts * (r / lo.rpm) ** (Math.log(hi.watts / lo.watts) / Math.log(hi.rpm / lo.rpm)); pts.push(`${x(r)},${y(w)}`); }
+  const wAt = r => { const lo = model.curve.filter(c => c.rpm <= r).at(-1) ?? model.curve[0], hi = model.curve.find(c => c.rpm >= r) ?? model.curve.at(-1); return lo === hi || hi.rpm === lo.rpm ? lo.watts : lo.watts * (r / lo.rpm) ** (Math.log(hi.watts / lo.watts) / Math.log(hi.rpm / lo.rpm)); };
+  const marks = [...new Map(programs.map(p => [p.rpm, p])).values()].map(p => `<line x1="${x(p.rpm)}" y1="${y(wAt(p.rpm))}" x2="${x(p.rpm)}" y2="${H - 22}" stroke="${colorFor(p.name)}" stroke-dasharray="2 3" opacity=".7"/><circle cx="${x(p.rpm)}" cy="${y(wAt(p.rpm))}" r="3.5" fill="${colorFor(p.name)}"/>
+    <text x="${x(p.rpm)}" y="${H - 11}" text-anchor="middle" fill="rgba(242,244,248,.55)" font-size="8.5" font-family="JetBrains Mono">${p.rpm}</text>`).join('');
+  const meas = model.measured.map(m => `<circle cx="${x(m.rpm)}" cy="${y(m.watts)}" r="3" fill="none" stroke="#fff" stroke-width="1.5"/>`).join('');
+  const now = live?.running ? `<circle cx="${x(live.rpm)}" cy="${y(live.watts)}" r="6" fill="rgba(78,240,166,.25)"/><circle cx="${x(live.rpm)}" cy="${y(live.watts)}" r="3" fill="#4ef0a6"/>` : '';
+  return `<svg class="mini" viewBox="0 0 ${W} ${H}">${[1000, 2000, 3000].map(w => `<line x1="14" x2="${W - 14}" y1="${y(w)}" y2="${y(w)}" stroke="rgba(255,255,255,.07)"/><text x="${W - 12}" y="${y(w) + 3}" fill="rgba(242,244,248,.4)" font-size="8" font-family="JetBrains Mono">${w / 1000}kW</text>`).join('')}
+    <polyline points="${pts.join(' ')}" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>${marks}${meas}${now}</svg>`;
+};
+
+/** kWh/day per season as bars, current season highlighted. */
+const seasonBars = seasons => { const mx = Math.max(.1, ...seasons.map(s => s.kwhPerDay));
+  return `<svg class="mini" viewBox="0 0 310 90">${seasons.map((s, i) => { const x = 20 + i * 72, h = s.kwhPerDay / mx * 50;
+    return `<rect x="${x}" y="${66 - h}" width="48" height="${h}" rx="4" fill="${s.current ? 'var(--solar)' : 'rgba(255,255,255,.18)'}"/><text x="${x + 24}" y="${60 - h}" text-anchor="middle" fill="#f2f4f8" font-size="10" font-family="JetBrains Mono">${s.kwhPerDay}</text><text x="${x + 24}" y="80" text-anchor="middle" fill="rgba(242,244,248,.5)" font-size="9" font-family="Manrope">${s.label}</text>`; }).join('')}</svg>`; };
+
 let timer;
 export function initAppliances(S) { load(S); clearInterval(timer); timer = setInterval(() => load(S), 3 * 60_000); }
 async function load(S) {
@@ -32,7 +65,7 @@ export function drawPool(S) {
   ['poolNow', 'poolPlan', 'poolSeason'].forEach(id => $(id).hidden = !(d.linked || L));
   if (!d.linked && !L) { $('poolLive').innerHTML = `<div class="h"><b>Pool pump</b><span class="badge">Not linked</span></div><p>${d.error ?? 'Add the ScreenLogic system name and password to link the pool.'}</p>`; return; }
   $('poolLive').innerHTML = `<div class="h"><b>Pool pump</b><span class="badge g">Linked · ScreenLogic</span></div>
-    <div class="big"><b>${L ? Math.round(L.watts) + ' W' : '—'}</b><span>${L ? (L.running ? `${L.on.filter(n => n !== 'Pool Light' && n !== 'Spa Light').join(' + ') || 'Running'} · ${L.rpm.toLocaleString()} RPM` : 'Off') : ''}${L?.freezeMode ? ' · freeze mode' : ''}</span></div>
+    <div class="cleanrow">${gauge(L?.watts ?? 0, L?.rpm ?? 0)}<p><b style="color:var(--text)">${L ? (L.running ? `${L.on.filter(n => !/light/i.test(n)).join(' + ') || 'Running'}` : 'Off') : '—'}</b>${L?.freezeMode ? ' · freeze mode' : ''}<br>${L?.running ? `Drawing ${Math.round(L.watts)} W at ${L.rpm.toLocaleString()} RPM, about ${Math.round(45 * L.rpm / 1500)} GPM.` : 'The pump is idle.'} Outer ring is power against full speed (2.9 kW), inner ring is speed.</p></div>
     <div class="two">
       <div class="stat"><small>Water · air</small><b>${L ? `${L.waterTemp}° · ${L.airTemp}°` : '—'}</b></div>
       <div class="stat"><small>Today so far</small><b>${d.todayKwh} kWh · $${d.todayCost.toFixed(2)}</b></div>
@@ -46,6 +79,8 @@ export function drawPool(S) {
     ${timeline(C.schedules, d.solarKw, maxRpm)}${legend(C.schedules)}
     <div class="kv">${C.byProgram.map(p => `<span>${p.name}, ${p.rpm.toLocaleString()} RPM, ${hm(p.start)}–${hm(p.stop)}</span><b${p.kwhPerDay > 5 ? ' style="color:var(--warn)"' : ''}>${p.kwhPerDay} kWh/day</b>`).join('')}
       <span>Water turned over</span><b>${C.turnoverPerDay}× a day</b><span>Runs while the sun is up</span><b>${C.onSolarPct}%</b></div>
+    ${curveChart(d.model, C.schedules, L)}
+    <div class="legend" style="justify-content:flex-start"><span><i style="background:#4ef0a6"></i>Right now</span><span><i style="background:rgba(255,255,255,.55)"></i>Speed → watts</span><span><i style="border:1.5px solid #fff;background:none"></i>Measured</span></div>
     <p>${C.schedules.length ? 'When two pump programs overlap, the controller runs the faster one. Pump power rises with roughly the cube of speed, so a program at 3,400 RPM costs about ten times one at 1,800.' : 'No pump schedules on the controller.'}</p>`;
 
   const P = d.plan, month = new Date().toLocaleDateString('en-US', { month: 'long' });
@@ -76,6 +111,7 @@ export function drawPool(S) {
   };
 
   $('poolSeason').innerHTML = `<div class="h"><b>Season plan</b><span>follows the water temperature</span></div>
+    ${seasonBars(d.seasons)}
     <div class="season"><span class="hd">When</span><span class="hd">Filtration</span><span class="hd">kWh/d</span><span class="hd">$/mo</span>
     ${d.seasons.map(s => `<span class="${s.current ? 'cur' : ''}">${s.label}</span><span class="${s.current ? 'cur' : ''}">${s.rpm.toLocaleString()} RPM · ${s.hours} h${s.boostHours ? ' + 1 h boost' : ''} · water ~${s.waterTemp}°</span><b>${s.kwhPerDay}</b><b>${money(s.costPerMonth)}</b>`).join('')}</div>
     <p>Rule of thumb built in: about one hour of filtration per 10°F of water temperature, at least one turnover a day, more when it's warm. Solstice re-plans from the live water temperature and tells you when the season's plan changes; it never rewrites ScreenLogic on its own.</p>`;
