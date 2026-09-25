@@ -1,6 +1,7 @@
 import { $, fmtDur, clock12, niceDate, localDate, addDays, svgText, path, money, money2, toast } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { yearRingCard, yearModel } from '../scenes/yearring.js';
+import { createFlowsCard, mountFlows } from '../scenes/flows.js';
 
 let range = 'day', day = null;
 
@@ -58,6 +59,7 @@ export async function drawHistoryChart(S) {
   $('hdate').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   try { range === 'day' ? await drawDay(S) : await drawBars(S); } catch (e) { $('hchart').innerHTML = svgText(0, 0, 'Could not load history', { anchor: 'middle' }); }
   try { drawYearRing(S); } catch (e) { console.error(e); }
+  drawFlows(S);
 }
 
 /* ---------- Year: the year ring card (mockup o-year-ring), Year range only ---------- */
@@ -78,10 +80,28 @@ export function showDay(S, date) {
   drawHistoryChart(S); $('screen').scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+/* ---------- m-flows: "Where every kWh went", after the totals, for Day and Month (scenes/flows.js) ---------- */
+let flowsCard = null, flowsView = null, flowsSeq = 0;
+async function drawFlows(S) {
+  const today = localDate(), date = range === 'day' ? day ?? today : today, key = `${range}|${date}`, seq = ++flowsSeq;
+  if (!flowsCard) { flowsCard = createFlowsCard(); $('hstats').after(flowsCard); }
+  flowsCard.hidden = range !== 'day' && range !== 'month';
+  if (flowsCard.hidden) { flowsView?.dispose(); flowsView = null; return; }
+  const hit = (S.flowsCache ??= {})[key], fresh = hit && (Date.now() - hit.at < 5 * 60e3 || (range === 'day' && date < today));
+  if (fresh && flowsView?.alive() && flowsView.key === key && flowsView.data === hit.data) return;   // already showing it
+  try {
+    const data = fresh ? hit.data : (S.flowsCache[key] = { at: Date.now(), data: await api.flows(range, date) }).data;
+    if (seq !== flowsSeq) return;
+    const sel = flowsView?.key === key ? flowsView.sel() : null;
+    flowsView?.dispose();
+    flowsView = Object.assign(mountFlows(flowsCard, data, { title: range === 'month' ? 'Last 30 days' : date === today ? 'Today' : niceDate(date, { weekday: 'short', month: 'short', day: 'numeric' }), today, calm: () => S.calm, sel }), { key, data });
+  } catch (e) { if (seq === flowsSeq) { flowsView?.dispose(); flowsView = null; flowsCard.querySelector('.landtip').textContent = 'Could not load where the energy went.'; } }
+}
+
 export function initHistory(S) {
   document.querySelectorAll('#hseg button').forEach(b => b.onclick = () => { document.querySelectorAll('#hseg button').forEach(x => x.classList.toggle('on', x === b)); range = b.dataset.r; drawHistoryChart(S); });
-  $('dayPrev').onclick = () => { day = addDays(day ?? localDate(), -1); drawDay(S); };
-  $('dayNext').onclick = () => { if (day < localDate()) { day = addDays(day, 1); drawDay(S); } };
+  $('dayPrev').onclick = () => { day = addDays(day ?? localDate(), -1); drawDay(S); drawFlows(S); };
+  $('dayNext').onclick = () => { if (day < localDate()) { day = addDays(day, 1); drawDay(S); drawFlows(S); } };
 }
 
 /* ---------- landscape data: hourly solar + each day's ratio to what its sunlight should give ---------- */

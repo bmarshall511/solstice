@@ -69,6 +69,37 @@ async function runtimeToday(siteId: string) {
   let on = 0, all = 0; for (let i = 1; i < rows.length; i++) { const dt = Math.min(20 * 60_000, Number(rows[i].ts) - Number(rows[i - 1].ts)); all += dt; if (rows[i - 1].hvac === 'COOLING') on += dt; }
   return { minutes: Math.round(on / 60_000), duty: all ? Math.round(on / all * 100) : null };
 }
+/** AC kW for energy figures: the learned cooling step, or an estimate from the heat model's slope until one is learned. */
+export const acKwFor = (coolKw: number | null, slope: number) => coolKw ?? (slope ? Math.max(2, Math.min(5, slope * 1.3)) : 3.4);
+
+/**
+ * AC kWh for the History flows card (database only). A day whose Nest readings cover at least 80% of it (of the part elapsed, for
+ * today), each reading holding until the next for at most 20 min as runtimeToday counts them, uses its COOLING time × the AC kW.
+ * Any other day uses the heat model, `slope` kWh per °F of daily high above 80 (pro rata for a day in progress), when that day's high
+ * is cached (the Open-Meteo archive `wx:highs`, else the forecast `pool:forecast`); a day with neither adds nothing.
+ * `source`: 'readings' when every day used readings, 'heat-model' when any day used the model, else 'none'.
+ */
+export async function acKwhBetween(siteId: string, spans: Array<{ day: string; elapsedMs: number; lengthMs: number }>, slope: number) {
+  const learned = await learnAcKw(siteId), acKw = acKwFor(learned.coolKw, slope);
+  const rows = spans.length ? await q<{ ts: string; day: string; hvac: string }>(`SELECT ts::text, day, hvac FROM nest_readings WHERE site_id = $1 AND day BETWEEN $2 AND $3 ORDER BY ts`,
+    [siteId, spans[0].day, spans[spans.length - 1].day]) : [];
+  const covered = new Map<string, number>(), cooling = new Map<string, number>();
+  for (let i = 1; i < rows.length; i++) {
+    const a = rows[i - 1], dt = Math.min(20 * 60_000, Number(rows[i].ts) - Number(a.ts));
+    covered.set(a.day, (covered.get(a.day) ?? 0) + dt); if (a.hvac === 'COOLING') cooling.set(a.day, (cooling.get(a.day) ?? 0) + dt);
+  }
+  const archive = (await kv.get<{ byDay: Record<string, number> }>('wx:highs'))?.byDay ?? {}, fc = (await kv.get<{ days: Array<{ date: string; high: number }> }>('pool:forecast'))?.days ?? [];
+  let kwh = 0, days = 0, readingDays = 0, modelDays = 0;
+  for (const s of spans) {
+    if (s.elapsedMs <= 0) continue;
+    days++;
+    const high = archive[s.day] ?? fc.find(d => d.date === s.day)?.high;
+    if ((covered.get(s.day) ?? 0) >= .8 * s.elapsedMs) { kwh += (cooling.get(s.day) ?? 0) / 3600e3 * acKw; readingDays++; }
+    else if (high != null) { kwh += slope * Math.max(0, high - 80) * s.elapsedMs / s.lengthMs; modelDays++; }
+  }
+  return { kwh: Math.round(kwh * 100) / 100, source: days && readingDays === days ? 'readings' as const : modelDays ? 'heat-model' as const : readingDays ? 'readings' as const : 'none' as const,
+    days, readingDays, modelDays, acKw: Math.round(acKw * 100) / 100, acKwSource: learned.coolKw != null ? 'learned' as const : 'estimated' as const, slope: Math.round(slope * 100) / 100 };
+}
 
 /* ---------- the plan ---------- */
 export type AcStep = { hour: number; coolF: number; why: string };
@@ -115,7 +146,7 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
   const week = days.slice(ti, ti + 7).map(d => { const p = planFor({ date: d.date, high: d.high, sunKwhM2: d.sunKwhM2, hourlySun: d.hourlySun, settings, acKw: learned.coolKw, slope, rate, humidity: null }); return { date: d.date, high: Math.round(d.high), sunKwhM2: Math.round(d.sunKwhM2 * 10) / 10, precool: p.precool, depth: p.precool ? settings.precoolDepth : 0, kwhSaved: p.kwhSaved }; });
   const applied = await kv.get<{ date: string; approved: boolean; lastStepHour: number | null }>(`${siteId}:ac:plan`) ?? null;
   const log = await kv.get<Array<{ at: number; day: string; text: string; delta?: string }>>(`${siteId}:ac:log`) ?? [];
-  const acKw = learned.coolKw ?? (slope ? Math.max(2, Math.min(5, slope * 1.3)) : 3.4);
+  const acKw = acKwFor(learned.coolKw, slope);
   const todayKwh = Math.round(rt.minutes / 60 * acKw * 10) / 10;
   const home = await q<{ kwh: number }>(`SELECT (SUM(home_wh) / 1000.0)::float8 kwh FROM energy WHERE site_id = $1 AND day = $2`, [siteId, today]);
   return { id: 'ac', name: 'AC', configured, linked, error, settings, state: st, learned: { ...learned, acKw, source: learned.coolKw ? 'measured' : 'estimated' }, runtime: rt, todayKwh, shareOfHomePct: home[0]?.kwh ? Math.round(todayKwh / home[0].kwh * 100) : null,
