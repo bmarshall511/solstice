@@ -76,6 +76,9 @@ describe('pool Autopilot', () => {
     expect(writePoolPlan).toHaveBeenCalledWith({
       pumpId: 1, speeds: [{ circuitId: 6, rpm: 1500 }, { circuitId: 8, rpm: 2400 }], replaceCircuits: [6, 8, 5],
       schedules: [{ circuitId: 6, start: 480, stop: 1020 }, { circuitId: 8, start: 720, stop: 780 }],
+      // what the safety guard checks the write against: the fixture's circuits and pump slots, the pump's RPM range, and the
+      // fixed managed circuits (Pool 6, High Speed 8, Waterfall 5)
+      guard: { circuits: poolSnapshot(NOW).circuits, pumpCircuits: [6, 8, 5, 1, 132], minRpm: 450, maxRpm: 3450, managed: [6, 8, 5] },
     });
     const applied = await kv.get<any>('p-auto:pool:applied');
     expect(applied.plan).toMatchObject({ start: 8, stop: 17, boostAt: 12 });
@@ -214,14 +217,15 @@ describe('AC Autopilot (acTick)', () => {
     nest({ coolF: 80 });
     expect(await tick('ac-step')).toEqual({ sampled: true, applied: true });
     expect(setCool).toHaveBeenCalledTimes(1);
-    expect(setCool).toHaveBeenLastCalledWith('dev-test', 78);
+    expect(setCool).toHaveBeenLastCalledWith('dev-test', 78, 'suggest');
     expect(await kv.get('ac-step:ac:plan')).toEqual({ date: '2026-09-25', approved: true, lastStepHour: null });
     expect((await kv.get<any[]>('ac-step:ac:log'))?.[0]).toEqual({ at: NOW, day: '2026-09-25', text: 'Set 78° (pre-cool on solar surplus)', delta: 'stepping' });
 
+    vi.setSystemTime(NOW + 30 * 60_000); // the safety guard allows one setpoint write per 30 minutes (13:30 is still the 11:00 step)
     nest({ coolF: 76 });
     await tick('ac-step');
     expect(setCool).toHaveBeenCalledTimes(2);
-    expect(setCool).toHaveBeenLastCalledWith('dev-test', 74);
+    expect(setCool).toHaveBeenLastCalledWith('dev-test', 74, 'suggest');
     expect(await kv.get('ac-step:ac:plan')).toEqual({ date: '2026-09-25', approved: true, lastStepHour: 11 });
 
     nest({ coolF: 74 });
@@ -242,19 +246,23 @@ describe('AC Autopilot (acTick)', () => {
   it('Auto applies the step without an approval', async () => {
     nest({ coolF: 80 });
     expect(await tick('ac-auto', { ac: { autopilot: 'auto' } })).toEqual({ sampled: true, applied: true });
-    expect(setCool).toHaveBeenCalledWith('dev-test', 78);
+    expect(setCool).toHaveBeenCalledWith('dev-test', 78, 'auto');
   });
-  it('with no cool setpoint reported, the step goes straight to its target', async () => {
+  // Changed by the safety clamps (guards.ts): with no current setpoint the 2° step limit can't be checked, so the write is
+  // refused and logged instead of going straight to the target (before the clamps it set 74° and recorded lastStepHour 11).
+  it('with no cool setpoint reported, the write is refused and logged, and the step stays due', async () => {
     await approve('ac-null');
     nest({ coolF: null });
     await tick('ac-null');
-    expect(setCool).toHaveBeenCalledWith('dev-test', 74);
-    expect(await kv.get('ac-null:ac:plan')).toMatchObject({ lastStepHour: 11 });
+    expect(setCool).not.toHaveBeenCalled();
+    expect(await kv.get('ac-null:ac:plan')).toMatchObject({ lastStepHour: null });
+    expect((await kv.get<any[]>('ac-null:ac:log'))?.[0]).toMatchObject({ at: NOW, day: '2026-09-25', delta: 'refused' });
+    expect((await kv.get<any[]>('ac-null:ac:log'))?.[0].text).toContain("the thermostat's current setpoint is unknown");
   });
   it('marked away in Auto steps up toward the away setpoint, 2° at a time', async () => {
     nest({ coolF: 76 });
     await tick('ac-away', { ac: { autopilot: 'auto', presence: 'away' } });
-    expect(setCool).toHaveBeenCalledWith('dev-test', 78);
+    expect(setCool).toHaveBeenCalledWith('dev-test', 78, 'auto');
   });
   it('an approved plan does nothing while the thermostat is heating', async () => {
     await approve('ac-heat');
@@ -263,19 +271,24 @@ describe('AC Autopilot (acTick)', () => {
     expect(setCool).not.toHaveBeenCalled();
   });
 
-  // BUG-5 · today Off still applies a plan approved earlier the same day (depends on owner question 20: should Off mean
-  // "never write to Nest"?). If the owner decides an explicit approval should still run while Off, delete this ratchet.
-  it.fails('BUG-5: Off stops a plan that was approved today', async () => {
+  // BUG-5 · fixed by the safety clamps (guards.ts AUTOPILOT_OFF; the owner decided on 2026-09-25 that Off means no writes to
+  // Nest at all). Before the fix, Off still applied a plan approved earlier the same day and set 78°.
+  it('BUG-5: Off stops a plan that was approved today', async () => {
     await approve('ac-off-approved');
     nest({ coolF: 80 });
     await tick('ac-off-approved', { ac: { autopilot: 'off' } });
     expect(setCool).not.toHaveBeenCalled();
   });
-  it('BUG-5 (today): Off with an approved plan still sets 78°', async () => {
+  it('BUG-5 (fixed): Off with an approved plan logs the refusal once, however often the cron ticks', async () => {
     await approve('ac-off-approved-2');
     nest({ coolF: 80 });
     await tick('ac-off-approved-2', { ac: { autopilot: 'off' } });
-    expect(setCool).toHaveBeenCalledWith('dev-test', 78);
+    await tick('ac-off-approved-2', { ac: { autopilot: 'off' } });
+    expect(setCool).not.toHaveBeenCalled();
+    const log = await kv.get<any[]>('ac-off-approved-2:ac:log');
+    expect(log).toHaveLength(1);
+    expect(log![0]).toMatchObject({ at: NOW, day: '2026-09-25', delta: 'refused' });
+    expect(log![0].text).toContain('autopilot_off');
   });
 });
 
@@ -332,17 +345,18 @@ describe('syncSite with a fake Tesla client', () => {
       const call = tesla.energy.mock.calls.find(c => c[1].startsWith(day));
       return { start: call?.[1], end: call?.[2] };
     };
-    // BUG-9 · today a day ends at start + 24 h − 1 s. On 2026-11-01 (25 h) that is 22:59:59 CST, so 23:00–23:59 is never
-    // fetched; on 2026-03-08 (23 h) the window runs one hour into 2026-03-09.
-    it.fails('BUG-9: the fall-back day (2026-11-01) is fetched to 23:59:59', async () => {
+    // BUG-9 · fixed by dayWindow() (tesla/client.ts): a day ends one second before the next local midnight. Before the fix a
+    // day ended at start + 24 h − 1 s: 22:59:59 CST on 2026-11-01 (23:00–23:59 never fetched) and 00:59:59 on 2026-03-09.
+    it('BUG-9: the fall-back day (2026-11-01) is fetched to 23:59:59', async () => {
       expect(await windowFor('dst-fall', '2026-11-02T18:00:00Z', '2026-11-01')).toEqual({ start: '2026-11-01T00:00:00-05:00', end: '2026-11-01T23:59:59-06:00' });
     });
-    it.fails('BUG-9: the spring-forward day (2026-03-08) ends at its own midnight', async () => {
+    it('BUG-9: the spring-forward day (2026-03-08) ends at its own midnight', async () => {
       expect(await windowFor('dst-spring', '2026-03-09T18:00:00Z', '2026-03-08')).toEqual({ start: '2026-03-08T00:00:00-06:00', end: '2026-03-08T23:59:59-05:00' });
     });
-    it('BUG-9 (today): the DST windows are 24 h − 1 s long', async () => {
-      expect(await windowFor('dst-fall-2', '2026-11-02T18:00:00Z', '2026-11-01')).toEqual({ start: '2026-11-01T00:00:00-05:00', end: '2026-11-01T22:59:59-06:00' });
-      expect(await windowFor('dst-spring-2', '2026-03-09T18:00:00Z', '2026-03-08')).toEqual({ start: '2026-03-08T00:00:00-06:00', end: '2026-03-09T00:59:59-05:00' });
+    it('BUG-9 (fixed): the DST windows are 25 h − 1 s and 23 h − 1 s long', async () => {
+      const hours = (w: { start?: string; end?: string }) => (Date.parse(w.end!) - Date.parse(w.start!) + 1000) / 3600e3;
+      expect(hours(await windowFor('dst-fall-2', '2026-11-02T18:00:00Z', '2026-11-01'))).toBe(25);
+      expect(hours(await windowFor('dst-spring-2', '2026-03-09T18:00:00Z', '2026-03-08'))).toBe(23);
     });
   });
 });
