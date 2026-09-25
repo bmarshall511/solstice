@@ -17,7 +17,8 @@ import { appliances, comingSoon } from './appliances/index.js';
 import { poolDetail, applyPlan, restorePrevious } from './appliances/pool.js';
 import { readPool } from './appliances/screenlogic.js';
 import { acDetail, acTick } from './appliances/ac.js';
-import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, nestLinked, readNest } from './appliances/nest.js';
+import { cronTick } from './appliances/sampling.js';
+import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest } from './appliances/nest.js';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -386,13 +387,17 @@ app.post('/api/appliances/ac/settings', express.json(), wrap(async (req, res) =>
   const id = site(req); if (patch.presence) { const rec = await kv.get<any>(`${id}:ac:plan`); if (rec) { rec.lastStepHour = null; await kv.set(`${id}:ac:plan`, rec); } await acTick(id, await settingsFor(req), await rateFor(id), await acSlope(id)).catch(() => {}); }
   res.json({ ok: true, ac: next });
 }));
-/** Every 5 minutes: sample Nest (feeds the AC kW learning) and apply due plan steps. */
+/**
+ * Fires every 5 minutes; sampling.ts decides what is due. Nest (with acTick: AC learning and due plan steps) every 5 minutes 10:00–22:00
+ * in cooling season, every 15 minutes otherwise; a read-only pool read every 15 minutes of scheduled pump hours plus 02:00 and 05:00.
+ * A tick with nothing due answers without touching the database.
+ */
 app.get('/api/cron/nest', wrap(async (req, res) => {
   if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'unauthorized' });
-  if (!nestConfigured() || !(await nestLinked())) return res.json({ skipped: 'nest not linked' });
-  const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL'), out: Record<string, unknown> = {};
-  for (const s of sites) { const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; out[s.id] = await acTick(s.id, settings, await rateFor(s.id), await acSlope(s.id)).catch(e => ({ error: e.message })); }
-  res.json(out);
+  res.json(await cronTick(Date.now(), {
+    sites: async () => (await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL')).map(s => s.id),
+    acTick: async id => acTick(id, await kv.get<Record<string, any>>('settings:owner') ?? {}, await rateFor(id), await acSlope(id)),
+  }));
 }));
 /* ---------- Google (Nest) OAuth ---------- */
 app.get('/auth/google', (req, res) => { if (!nestConfigured()) return res.status(503).send('Nest is not configured'); res.redirect(nestAuthorizeUrl(signOwnerState('nest', 60 * 60_000))); }); // owner-only; Google's permissions page can take a while

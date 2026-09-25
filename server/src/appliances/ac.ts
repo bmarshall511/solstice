@@ -62,10 +62,11 @@ async function computeAcKw(siteId: string): Promise<AcLearned> {
   const med = (a: number[]) => a.length >= 5 ? a.sort((x, y) => x - y)[Math.floor(a.length / 2)] : null;
   return { coolKw: med(steps), heatKw: med(heat), samples: steps.length, heatSamples: heat.length };
 }
-/** Today's run time and duty from readings (gaps capped at 10 min). */
+/** Today's run time and duty from readings. Each reading holds until the next, at most 20 min: the cron samples every 5 minutes
+ *  in cooling-season daytime and every 15 minutes otherwise (sampling.ts), so a 15-minute gap counts in full. */
 async function runtimeToday(siteId: string) {
   const rows = await q<{ ts: string; hvac: string }>(`SELECT ts::text, hvac FROM nest_readings WHERE site_id = $1 AND day = $2 ORDER BY ts`, [siteId, localDay()]);
-  let on = 0, all = 0; for (let i = 1; i < rows.length; i++) { const dt = Math.min(10 * 60_000, Number(rows[i].ts) - Number(rows[i - 1].ts)); all += dt; if (rows[i - 1].hvac === 'COOLING') on += dt; }
+  let on = 0, all = 0; for (let i = 1; i < rows.length; i++) { const dt = Math.min(20 * 60_000, Number(rows[i].ts) - Number(rows[i - 1].ts)); all += dt; if (rows[i - 1].hvac === 'COOLING') on += dt; }
   return { minutes: Math.round(on / 60_000), duty: all ? Math.round(on / all * 100) : null };
 }
 

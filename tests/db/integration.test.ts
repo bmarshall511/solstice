@@ -4,7 +4,8 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 import { q, one, kv, migrate } from '../../server/src/db.js';
 import { autopilot } from '../../server/src/appliances/autopilot.js';
-import { poolDetail, powerModel, recordReading, POOL_DEFAULTS } from '../../server/src/appliances/pool.js';
+import { poolDetail, powerModel, recordReading, measuredQuarters, POOL_DEFAULTS } from '../../server/src/appliances/pool.js';
+import { cronTick } from '../../server/src/appliances/sampling.js';
 import { acDetail, acTick } from '../../server/src/appliances/ac.js';
 import { readPool, writePoolPlan } from '../../server/src/appliances/screenlogic.js';
 import { readNest, setCool } from '../../server/src/appliances/nest.js';
@@ -358,5 +359,48 @@ describe('syncSite with a fake Tesla client', () => {
       expect(hours(await windowFor('dst-fall-2', '2026-11-02T18:00:00Z', '2026-11-01'))).toBe(25);
       expect(hours(await windowFor('dst-spring-2', '2026-03-09T18:00:00Z', '2026-03-08'))).toBe(23);
     });
+  });
+});
+
+/* ---------------------------------------------------------------- the 5-minute cron's sampling and the 15-minute pool energy */
+describe('cron sampling and 15-minute pool energy on PGlite (Q17, Q18, Q23)', () => {
+  const T10 = Date.parse('2026-09-25T10:00:00-05:00'); // Friday 10:00 CDT: cooling season, 5-minute Nest samples
+  const tick = (t: number) => { vi.setSystemTime(t + 2_000); return cronTick(t, { sites: async () => ['cron-s'], acTick: id => acTick(id, {}, RATE, SLOPE) }); };
+
+  it('a due tick claims its slots in kv, samples Nest through acTick and stores a pool reading; a repeat invocation skips both', async () => {
+    vi.mocked(readPool).mockClear();
+    await kv.set('cron-s:pool:last', poolSnapshot(T10 - 3600e3));      // the fixture's schedule: Pool 8a–5p, High Speed 12p–1p
+    expect(await tick(T10)).toEqual({ 'cron-s': { nest: { every: 5, tick: { sampled: true, applied: false } },
+      pool: { read: true, at: T10 + 2_000, running: true, rpm: 1500, watts: 153 } } });
+    expect(await kv.get('cron-s:nest:sampledAt')).toEqual({ at: T10 });
+    expect(await kv.get('cron-s:pool:readAt')).toEqual({ at: T10 });
+    expect(await one(`SELECT COUNT(*)::int n FROM nest_readings WHERE site_id = 'cron-s'`)).toEqual({ n: 1 });
+    expect(await one(`SELECT day, hour, running, watts, rpm FROM pool_readings WHERE site_id = 'cron-s'`)).toEqual({ day: '2026-09-25', hour: 10, running: true, watts: 153, rpm: 1500 });
+    expect(await tick(T10 + 30_000)).toEqual({ 'cron-s': { nest: { skipped: 'already sampled', every: 5 }, pool: { skipped: 'already read' } } });
+    expect(await tick(T10 + 5 * 60_000)).toMatchObject({ 'cron-s': { nest: { every: 5, tick: { sampled: true } }, pool: { skipped: 'not due' } } });
+    expect(await one(`SELECT COUNT(*)::int n FROM nest_readings WHERE site_id = 'cron-s'`)).toEqual({ n: 2 });
+    expect(readPool).toHaveBeenCalledTimes(1);
+    expect(writePoolPlan).not.toHaveBeenCalled();
+    expect(setCool).not.toHaveBeenCalled();
+  });
+
+  it('measuredQuarters averages a day’s readings into Chicago quarter-hours, 0 W with the pump off', async () => {
+    const t = (hm: string) => Date.parse(`2026-09-25T${hm}:00-05:00`);
+    await recordReading('mq', poolSnapshot(t('10:01'), { watts: 150 }));
+    await recordReading('mq', poolSnapshot(t('10:09'), { watts: 160 }));
+    await recordReading('mq', poolSnapshot(t('10:15'), { running: false, watts: 0, rpm: 0 }));
+    await recordReading('mq', poolSnapshot(t('14:30'), { rpm: 2400, watts: 780 }));
+    const m = await measuredQuarters('mq', '2026-09-25');
+    expect(m).toHaveLength(96);
+    expect([m[39], m[40], m[41], m[58]]).toEqual([null, 155, 0, 780]);
+    expect(m.filter(v => v != null)).toHaveLength(3);
+  });
+
+  it('poolDetail: today so far is integrated per quarter-hour, with a measured quarter-hour in place of the model', async () => {
+    await kv.set('p-today:pool:last', poolSnapshot(NOW - 30_000));      // fresh, so poolDetail does not read
+    expect((await poolDetail('p-today', {}, RATE)).todayKwh).toBe(1.8);  // 08:00–12:59 from the model + UV: 1.762 kWh
+    await recordReading('p-today', poolSnapshot(Date.parse('2026-09-25T12:05:00-05:00'), { rpm: 2400, watts: 300 }));
+    await kv.set('p-today:pool:last', poolSnapshot(NOW - 30_000));
+    expect((await poolDetail('p-today', {}, RATE)).todayKwh).toBe(1.6);  // the 12:00 quarter-hour measured at 300 W: 1.638 kWh
   });
 });
