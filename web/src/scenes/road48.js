@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { touchIntent } from '../lib/touchorbit.js';
+import { gestureState, roadZoomAt, roadPanBy, atHome, expandButton, openSceneSheet } from '../lib/scenesheet.js';
 
 /*
  * Next 48 hours as a road (Now → Next 48 hours; mockups/l-forecast48.html, docs/audit-designs/visualizations.md §4).
@@ -11,6 +12,10 @@ import { touchIntent } from '../lib/touchorbit.js';
  *
  * Scene host rules (§2): renders on demand and only while the card is on screen; DPR capped at 1.5; when the Now tab is left the
  * WebGL context is disposed (geometries, materials, overlays, renderer) and rebuilt from the last model on return.
+ *
+ * Expand (mockups/s-expand.html): the glass button in the scene's top-right corner opens the same scene full screen
+ * (openRoadSheet below, shell in lib/scenesheet.js). The card stops rendering while the sheet is open and gets the drive
+ * position and the tapped hour back when it closes.
  */
 const DPR_CAP = 1.5, MAX_LABELS = 4;
 const TGT = new THREE.Vector3(15, 1.3, 0), OFF = new THREE.Vector3(-22, 3.4, 6).multiplyScalar(1.22);
@@ -36,7 +41,7 @@ const palette = () => PAL ??= (() => {
 })();
 
 /** The scene's meshes and label overlays for one model (lib/road48data.js roadModel). */
-function buildContent(M, el) {
+function buildContent(M, el, { allDays = false } = {}) {   // allDays: the sheet labels both days' windows at once
   const PL = palette(), n = M.n, H = M.hours, scene = new THREE.Scene(), m4 = new THREE.Matrix4(), q0 = new THREE.Quaternion();
 
   // floor: one tile per hour, night/day and cloud shading per instance
@@ -107,12 +112,33 @@ function buildContent(M, el) {
     M.low && { txt: M.low.txt, at: [M.low.x, 2.5 * M.low.soc, -1.2], w: true, on: () => true },
     ...['pre', 'pool', 'coast'].flatMap(kind => M.windows.filter(w => w.kind === kind && w.label).map(w => ({
       txt: w.label, at: [kind === 'pool' ? Math.min(w.a + 1.5, (w.a + w.b) / 2) : (w.a + w.b) / 2, .12, (ROW[kind][0] + ROW[kind][1]) / 2], color: CSSVAR[kind],
-      on: d => w.day === dayAt(d) }))),
+      on: d => allDays || w.day === dayAt(d) }))),
     M.rain && { txt: M.rain.txt, at: [M.rain.k + .5, 2.2, .6], color: 'var(--dim)', on: () => true },
   ].filter(Boolean);
   LBL.forEach(l => { const e = document.createElement('div'); e.className = 'lax rl' + (l.w ? ' w' : ''); if (l.color) e.style.color = l.color; e.textContent = l.txt; el.appendChild(e); l.el = e; });
 
   return { scene, floor, tileCol, pick: [solarLane, homeLane, socWall], labels: LBL };
+}
+
+function measureLabels(labels) { labels.forEach(l => { l.el.style.display = 'block'; l.bw = l.el.offsetWidth; l.bh = l.el.offsetHeight; l.el.style.display = 'none'; }); }
+const pv = new V3(), cv = new V3();
+/** Project, clamp inside the band [yTop, yBot], de-overlap (also with the `blocked` rects) and show at most `max` labels. */
+function placeLabels(labels, cam, W, H, dd, { max = MAX_LABELS, band = [4, H - 4], blocked = [], tries = 4 } = {}) {
+  const placed = blocked.map(b => ({ ...b })), [yTop, yBot] = band; let n = 0;
+  for (const l of labels) {
+    let show = false;
+    if (n < max && l.on(dd)) {
+      pv.set(...l.at); cv.copy(pv).applyMatrix4(cam.matrixWorldInverse); pv.project(cam);
+      const px = (pv.x + 1) / 2 * W, py = (1 - pv.y) / 2 * H;
+      if (cv.z < -.2 && px > -6 && px < W + 6 && py > yTop - 4 && py < yBot + 4) {
+        let x = clamp(px - l.bw / 2, 4, W - 4 - l.bw), y = clamp(py - l.bh - 6, yTop, yBot - l.bh), ok = true;
+        for (let i = 0; i < tries; i++) { const hit = placed.find(r => x < r.x + r.w + 2 && x + l.bw + 2 > r.x && y < r.y + r.h + 2 && y + l.bh + 2 > r.y);
+          if (!hit) break; y = hit.y - l.bh - 3; if (y < yTop || i === tries - 1) { ok = false; break; } }
+        if (ok) { show = true; n++; placed.push({ x, y, w: l.bw, h: l.bh }); l.el.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`; }
+      }
+    }
+    l.el.style.display = show ? 'block' : 'none';
+  }
 }
 
 /**
@@ -159,27 +185,9 @@ export function createRoad48(el, tip, { model, calm = () => false }) {
     showTip(); kick();
   }
 
-  /* ---------- labels: projected, clamped inside the card, de-overlapped, at most 4 ---------- */
-  function measure() { C?.labels.forEach(l => { l.el.style.display = 'block'; l.bw = l.el.offsetWidth; l.bh = l.el.offsetHeight; l.el.style.display = 'none'; }); }
+  /* ---------- labels: projected, clamped inside the card, de-overlapped, at most 4, never under the expand button ---------- */
+  function measure() { if (C) measureLabels(C.labels); }
   document.fonts?.ready.then(() => { measure(); kick(); });
-  const pv = new V3(), cv = new V3();
-  function placeLabels(dd) {
-    const placed = [], cam = G.cam;
-    for (const l of C.labels) {
-      let show = false;
-      if (placed.length < MAX_LABELS && l.on(dd)) {
-        pv.set(...l.at); cv.copy(pv).applyMatrix4(cam.matrixWorldInverse); pv.project(cam);
-        const px = (pv.x + 1) / 2 * W, py = (1 - pv.y) / 2 * H;
-        if (cv.z < -.2 && px > -6 && px < W + 6 && py > 0 && py < H) {
-          let x = clamp(px - l.bw / 2, 4, W - 4 - l.bw), y = clamp(py - l.bh - 6, 4, H - 4 - l.bh), ok = true;
-          for (let i = 0; i < 4; i++) { const hit = placed.find(r => x < r.x + r.w + 2 && x + l.bw + 2 > r.x && y < r.y + r.h + 2 && y + l.bh + 2 > r.y);
-            if (!hit) break; y = hit.y - l.bh - 3; if (y < 4 || i === 3) { ok = false; break; } }
-          if (ok) { show = true; placed.push({ x, y, w: l.bw, h: l.bh }); l.el.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`; }
-        }
-      }
-      l.el.style.display = show ? 'block' : 'none';
-    }
-  }
 
   /* ---------- tap readout ---------- */
   const selK = () => selT ? M.hours.findIndex(h => h.t === selT) : -1;
@@ -202,7 +210,7 @@ export function createRoad48(el, tip, { model, calm = () => false }) {
   /* ---------- drive: horizontal drag slides along x (damped); vertical drag is left to the page (touch-action: pan-y) ---------- */
   let st = null; const down = new Set();
   el.addEventListener('pointerdown', e => {
-    if (e.button) return;
+    if (e.button || e.target.closest('.xbtn')) return;
     if (e.isPrimary) down.clear();   // a new first touch: any pointer still listed lost its pointerup
     down.add(e.pointerId);
     st = down.size > 1 ? null : { x: e.clientX, y: e.clientY, d: dT, id: e.pointerId, intent: null };   // a second finger never drives
@@ -219,14 +227,15 @@ export function createRoad48(el, tip, { model, calm = () => false }) {
   el.addEventListener('keydown', e => { if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { dT = clamp(dT + (e.key === 'ArrowRight' ? 3 : -3), 0, dmax()); kick(); e.preventDefault(); } });
 
   /* ---------- render on demand, only while on screen ---------- */
-  function kick() { if (!raf && visible && G) raf = requestAnimationFrame(loop); }
+  let paused = false;   // the full-screen sheet is open: only one scene renders at a time
+  function kick() { if (!raf && visible && G && !paused) raf = requestAnimationFrame(loop); }
   function loop(t) {
-    raf = 0; if (!visible || !G || !C) return;
+    raf = 0; if (!visible || !G || !C || paused) return;
     const dt = last ? Math.min(.05, (t - last) / 1000) : .016; last = t;
     d = calm() ? dT : d + (dT - d) * (1 - Math.exp(-dt * 8)); if (Math.abs(dT - d) < .003) d = dT;
     const cam = G.cam;
     cam.position.set(TGT.x + OFF.x + d, TGT.y + OFF.y, TGT.z + OFF.z); cam.lookAt(TGT.x + d, TGT.y, TGT.z); cam.updateMatrixWorld();
-    G.renderer.render(C.scene, cam); placeLabels(d);
+    G.renderer.render(C.scene, cam); placeLabels(C.labels, cam, W, H, d, { blocked: [{ x: W - 44, y: 0, w: 44, h: 42 }] });
     hud.textContent = M.hours[clamp(Math.round(d), 0, M.n - 1)].hud;
     if (d !== dT) kick(); else last = 0;
   }
@@ -241,5 +250,133 @@ export function createRoad48(el, tip, { model, calm = () => false }) {
     W = el.clientWidth; H = el.clientHeight; G.renderer.setSize(W, H); G.cam.aspect = W / H; G.cam.updateProjectionMatrix(); measure(); kick();
   }).observe(el);
 
+  /* ---------- expand: the same scene full screen; the drive position and the tapped hour go in and come back ---------- */
+  expandButton(el, 'Open Next 48 hours full screen', btn => {
+    if (!M) return;
+    paused = true; cancelAnimationFrame(raf); raf = 0;
+    const title = el.closest('.card')?.querySelector('.h b')?.textContent ?? 'Next 48 hours';
+    openRoadSheet({ M, d: dT, selT, title, calm, from: btn, placeholder,
+      onClose: back => { dT = d = clamp(back.d, 0, dmax()); selT = back.selT; paused = false; last = 0; paintSel(); showTip(); kick(); } });
+  });
+
   return { refresh, dispose };
+}
+
+/* ================= the sheet (mockups/s-expand.html frames 2–3) =================
+ * Same content as the card; a wider lens and a higher eye so a portrait screen is filled by road, not sky. Zoom 1×–4× toward the
+ * pinch point; pan clamped from 3 h before now to the last hour and from the floor to the top of the battery wall. One finger
+ * drives, two pinch + pan (lib/scenesheet.js gestureState), a tap reads an hour. Up to 6 labels. */
+const S_TGT = new V3(10.5, 1, 0), S_OFF = new V3(-19, 12.5, 8), S_FOV = 50, Z_MAX = 4, TY_LIM = [-.6, 1.6], SHEET_LABELS = 6;
+const LEGEND = '<span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--home)"></i>Home</span><span><i style="background:var(--batt)"></i>Battery %</span><span><i style="background:var(--out)"></i>Reserve</span>';
+
+function openRoadSheet({ M, d: d0, selT: sel0, title, calm, from, placeholder, onClose }) {
+  let selT = sel0;
+  const handback = { d: d0, selT: sel0 };
+  openSceneSheet({
+    title, calm, from, legend: LEGEND, tip: placeholder,
+    label: 'Next 48 hours, full screen. Pinch to zoom, two fingers to pan, drag to drive, tap an hour for its numbers.',
+    hint: 'pinch to zoom · two fingers to pan · drag to drive',
+    onClose: () => onClose(handback),
+    mount(bits) {
+      const el = bits.scene, n = M.n;
+      let W = el.clientWidth, H = el.clientHeight;
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, DPR_CAP)); renderer.setSize(W, H); el.prepend(renderer.domElement);
+      const cam = new THREE.PerspectiveCamera(S_FOV, W / H, .1, 140);
+      const C = buildContent(M, el, { allDays: true }); measureLabels(C.labels);
+      document.fonts?.ready.then(() => { if (alive) { measureLabels(C.labels); kick(); } });
+
+      /* view: d (drive), z (zoom), ty (vertical pan); the targets T are eased with the card's damping */
+      const home = { d: d0, z: 1, ty: 0 };
+      let v = { ...home }, T = { ...home };
+      const span = () => 2 * S_OFF.length() * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * cam.aspect;
+      const opts = () => ({ W, H, span: span(), zMax: Z_MAX, dLim: [-3, n - 4], tyLim: TY_LIM });
+      const zoomAt = (f, sx, sy) => { T = roadZoomAt(T, f, sx, sy, opts()); kick(); };
+      const panBy = (dx, dy) => { T = roadPanBy(T, dx, dy, opts()); kick(); };
+      const driveTo = x => { T = { ...T, d: clamp(x, -3, n - 4) }; kick(); };
+
+      /* tap readout */
+      const selK = () => selT ? M.hours.findIndex(h => h.t === selT) : -1;
+      const HI = palette().solar.clone().multiplyScalar(.28);
+      function paintSel() { const k = selK(); C.tileCol.forEach((c, i) => C.floor.setColorAt(i, i === k ? HI : c)); C.floor.instanceColor.needsUpdate = true; }
+      function showTip() { const k = selK(); bits.tip.innerHTML = k >= 0 ? M.hours[k].readout : placeholder; }
+      const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+      function tap(x, y) {
+        ndc.set(x / W * 2 - 1, -y / H * 2 + 1); ray.setFromCamera(ndc, cam);
+        const f = ray.intersectObject(C.floor)[0], h = f ? null : ray.intersectObjects(C.pick)[0];
+        const k = f ? f.instanceId : h ? clamp(Math.floor(h.point.x), 0, n - 1) : -1;
+        if (k < 0) return;
+        selT = handback.selT = M.hours[k].t; paintSel(); showTip(); kick();
+      }
+      paintSel(); showTip();
+
+      /* touch and mouse: the sheet takes all touch (touch-action: none); right-drag pans, the wheel zooms */
+      const g = gestureState(); let drive0 = 0, rpan = null;
+      const local = e => { const r = el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+      el.addEventListener('pointerdown', e => {
+        if (e.button === 2) { rpan = { x: e.clientX, y: e.clientY, id: e.pointerId }; try { el.setPointerCapture(e.pointerId); } catch {} return; }
+        if (e.button) return;
+        if (g.down(e.pointerId, ...local(e), e.isPrimary && e.pointerType === 'touch').type === 'start') drive0 = T.d;
+        try { el.setPointerCapture(e.pointerId); } catch {}
+      });
+      el.addEventListener('pointermove', e => {
+        if (rpan && e.pointerId === rpan.id) { panBy(e.clientX - rpan.x, e.clientY - rpan.y); rpan.x = e.clientX; rpan.y = e.clientY; return; }
+        const r = g.move(e.pointerId, ...local(e)); if (!r) return;
+        if (r.type === 'pinch') { zoomAt(r.scale, r.x, r.y); panBy(r.dx, r.dy); }
+        else driveTo(drive0 - r.dx * 24 / W / T.z);
+      });
+      const up = e => {
+        if (rpan && e.pointerId === rpan.id) { rpan = null; return; }
+        const r = g.up(e.pointerId, ...local(e), e.type === 'pointercancel'); if (r) tap(r.x, r.y);
+      };
+      el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+      el.addEventListener('wheel', e => { e.preventDefault(); const [x, y] = local(e); zoomAt(Math.exp(-e.deltaY * .0015), x, y); }, { passive: false });
+
+      /* the hour at the centre of the view, between the top bar and the dock (for the zoomed HUD) */
+      const floorPlane = new THREE.Plane(new V3(0, 1, 0), 0), hitP = new V3();
+      let keep = bits.keepOut();
+      const centreHour = () => { ray.setFromCamera(ndc.set(0, 1 - (keep.top + H - keep.bottom) / H), cam); return ray.ray.intersectPlane(floorPlane, hitP) ? clamp(Math.floor(hitP.x), 0, n - 1) : null; };
+
+      let raf = 0, last = 0, alive = true;
+      function kick() { if (!raf && alive) raf = requestAnimationFrame(loop); }
+      function loop(t) {
+        raf = 0; if (!alive) return;
+        const dt = last ? Math.min(.05, (t - last) / 1000) : .016; last = t;
+        const a = 1 - Math.exp(-dt * 8), ease = (x, X) => { const y = x + (X - x) * a; return Math.abs(X - y) < .003 ? X : y; };
+        v = bits.calm ? { ...T } : { d: ease(v.d, T.d), z: ease(v.z, T.z), ty: ease(v.ty, T.ty) };
+        const tg = new V3(S_TGT.x + v.d, S_TGT.y + v.ty, S_TGT.z);
+        cam.position.copy(tg).addScaledVector(S_OFF, 1 / v.z); cam.lookAt(tg); cam.updateMatrixWorld();
+        renderer.render(C.scene, cam);
+        placeLabels(C.labels, cam, W, H, v.d, { max: SHEET_LABELS, band: [keep.top, H - keep.bottom], tries: 5 });
+        if (v.z < 1.05) bits.hud.textContent = M.hours[clamp(Math.round(v.d), 0, n - 1)].hud;
+        else { const c = centreHour(); bits.hud.textContent = `${c == null ? '' : `around ${M.hours[c].hud.split(' · ')[0]} · +${c} h · `}${v.z.toFixed(1)}×`; }
+        bits.setZoom(T.z, atHome(T, home));
+        handback.d = T.d;
+        if (v.d !== T.d || v.z !== T.z || v.ty !== T.ty) kick(); else last = 0;
+      }
+      const ro = new ResizeObserver(() => {
+        if (!el.clientWidth || !el.clientHeight) return;
+        W = el.clientWidth; H = el.clientHeight; renderer.setSize(W, H); cam.aspect = W / H; cam.updateProjectionMatrix();
+        keep = bits.keepOut(); measureLabels(C.labels); kick();
+      });
+      ro.observe(el);
+      kick();
+
+      return {
+        reset() { T = { ...home }; kick(); },
+        onKey(e) {
+          if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { driveTo(T.d + (e.key === 'ArrowRight' ? 3 : -3)); return true; }
+          if (e.key === '+' || e.key === '=') { zoomAt(1.25, W / 2, H / 2); return true; }
+          if (e.key === '-' || e.key === '_') { zoomAt(.8, W / 2, H / 2); return true; }
+          return false;
+        },
+        dispose() {
+          alive = false; cancelAnimationFrame(raf); ro.disconnect();
+          C.scene.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+          C.labels.forEach(l => l.el.remove());
+          renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
+        },
+      };
+    },
+  });
 }

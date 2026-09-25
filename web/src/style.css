@@ -638,3 +638,45 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.side){visibili
 .trim[hidden]{display:none}
 .trim .link{margin-top:10px}
 /* end r-learning */
+
+/* s-expand */
+/* Expand the 3D cards (approved mockups/s-expand.html; lib/scenesheet.js): the icon-only glass button on the Next 48 hours road
+   and the Production landscape, and the full-screen sheet it opens over the tab bar. */
+.xbtn{all:unset;cursor:pointer;position:absolute;top:8px;right:10px;z-index:3;width:30px;height:30px;border-radius:10px;display:grid;place-items:center;
+  background:rgba(8,10,16,.55);border:1px solid var(--glass-b);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);color:var(--text)}
+.xbtn svg{width:15px;height:15px}
+.xbtn:active{transform:scale(.94)}
+.xbtn:focus-visible{outline:2px solid var(--home);outline-offset:2px}
+.phone.xs-on .screen{overflow:hidden}
+.xs{--xs-sa:47px;--xs-sb:30px;position:absolute;inset:0;z-index:40;overflow:hidden;background:#05060a;transform:translateY(100%);transition:transform .24s var(--ease)}
+.xs.on{transform:none}
+.xs.calm,.xs.calm .xs-hint{transition:none}
+.xs-scene{position:absolute;left:0;right:0;top:var(--xs-sa);bottom:0;touch-action:none;cursor:grab;outline:none;overflow:hidden;
+  background:radial-gradient(120% 70% at 30% 80%,rgba(108,196,255,.07),rgba(0,0,0,0) 70%),#06070c}
+.xs-scene:active{cursor:grabbing}
+.xs-scene canvas{display:block;width:100%;height:100%}
+.xs-scene .rl{position:absolute;left:0;top:0;padding:2px 6px;border-radius:7px;background:rgba(8,10,16,.62);border:1px solid rgba(255,255,255,.08);pointer-events:none;display:none;will-change:transform;z-index:1}
+.xs-scene .lax{font-size:10px}
+.xs-top{position:absolute;left:10px;right:10px;top:calc(var(--xs-sa) + 8px);z-index:3;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 14px;border-radius:18px;
+  background:rgba(14,16,24,.62);border:1px solid var(--glass-b);backdrop-filter:blur(20px) saturate(150%);-webkit-backdrop-filter:blur(20px) saturate(150%)}
+.xs-top .t{flex:1;min-width:0}
+.xs-top .t b{display:block;font-size:15px;font-weight:600;line-height:1.2}
+.xs-top .t span{display:block;font:500 11px "JetBrains Mono";color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.xs-close{all:unset;cursor:pointer;flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.09);border:1px solid var(--glass-b)}
+.xs-close svg{width:14px;height:14px}
+.xs-close:focus-visible,.xs-reset:focus-visible{outline:2px solid var(--home);outline-offset:2px}
+.xs-hint{position:absolute;left:50%;top:calc(var(--xs-sa) + 71px);transform:translateX(-50%);z-index:3;white-space:nowrap;font:500 10.5px "JetBrains Mono";color:var(--text);
+  padding:6px 11px;border-radius:999px;background:rgba(8,10,16,.66);border:1px solid var(--glass-b);pointer-events:none;transition:opacity .6s var(--ease)}
+.xs-hint.gone{opacity:0}
+.xs-tools{position:absolute;right:12px;bottom:140px;z-index:3;display:flex;align-items:center;gap:6px}
+.xs-zoom{font:500 10.5px "JetBrains Mono";color:var(--dim);padding:5px 8px;border-radius:999px;background:rgba(8,10,16,.62);border:1px solid var(--glass-b)}
+.xs-reset{all:unset;cursor:pointer;width:34px;height:34px;border-radius:12px;display:grid;place-items:center;background:rgba(8,10,16,.62);border:1px solid var(--glass-b);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);transition:opacity .2s}
+.xs-reset svg{width:16px;height:16px}
+.xs-reset[disabled]{opacity:.35;cursor:default}
+.xs-dock{position:absolute;left:10px;right:10px;bottom:0;z-index:3;padding:10px 12px var(--xs-sb);border-radius:20px 20px 0 0;
+  background:rgba(14,16,24,.7);border:1px solid var(--glass-b);border-bottom:none;backdrop-filter:blur(20px) saturate(150%);-webkit-backdrop-filter:blur(20px) saturate(150%)}
+.xs-dock .legend{justify-content:flex-start;margin:0 0 8px}
+.xs-dock .landtip{margin-top:0;min-height:58px;background:rgba(0,0,0,.32)}
+@media (max-width:900px){.xs{--xs-sa:env(safe-area-inset-top,0px);--xs-sb:calc(env(safe-area-inset-bottom,0px) + 12px)}}
+/* end s-expand */
