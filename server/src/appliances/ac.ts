@@ -56,12 +56,12 @@ export function planFor(o: { date: string; high: number; sunKwhM2: number; hourl
   const precool = sunny && hot && !humid && s.presence === 'home';
   const low = s.band.homeLo, mid = Math.min(s.band.homeHi, Math.max(low, Math.round((s.band.homeLo + s.band.homeHi) / 2)));
   const night = Math.max(s.band.nightLo, Math.min(s.band.nightHi, mid));
-  if (s.presence === 'away') { steps.push({ hour: 0, coolF: s.awayF, why: 'marked away' }); why.push(`Away: holding ${s.awayF}° until you mark Home`); return { date: o.date, steps, precool: false, precoolFrom: from, precoolTo: to, coastFrom: to, coastTo: 21, high: o.high, sunKwhM2: o.sunKwhM2, kwhSaved: 0, costSavedMonth: 0, why }; }
+  if (s.presence === 'away') { steps.push({ hour: 0, coolF: s.awayF, why: 'marked away' }); why.push(`Away: holding ${s.awayF}° until you mark Home`); return { date: o.date, steps, precool: false, precoolFrom: from, precoolTo: to, coastFrom: to, coastTo: 21, high: Math.round(o.high), sunKwhM2: Math.round(o.sunKwhM2 * 10) / 10, kwhSaved: 0, costSavedMonth: 0, why }; }
   steps.push({ hour: s.nightTo, coolF: mid, why: 'morning, comfort band' });
   if (precool) {
     const deep = Math.max(low, mid - s.precoolDepth); steps.push({ hour: from, coolF: deep, why: 'pre-cool on solar surplus' });
     steps.push({ hour: to, coolF: Math.min(s.coastF, s.band.homeHi), why: 'coast on the Powerwalls' });
-    why.push(`Pre-cool to ${deep}° from ${from}:00 to ${to}:00 while the panels peak (${o.sunKwhM2} kWh/m² of sun, high ${Math.round(o.high)}°)`);
+    why.push(`Pre-cool to ${deep}° from ${from}:00 to ${to}:00 while the panels peak (${(Math.round(o.sunKwhM2 * 10) / 10)} kWh/m² of sun, high ${Math.round(o.high)}°)`);
     why.push(`Coast to ${Math.min(s.coastF, s.band.homeHi)}° until ${Math.min(21, to + 4)}:00 so the batteries carry a lighter evening`);
     if (o.high >= 100) { steps[1].hour = 11; why.push('Heat wave: pre-cool starts at 11:00 so the system never falls behind'); }
   } else why.push(!hot ? `Mild day (high ${Math.round(o.high)}°): no pre-cool needed` : !sunny ? 'Cloudy: no solar surplus to pre-cool with' : humid ? `Humidity ${o.humidity}%: no coast, holding ${mid}°` : 'Holding the comfort band');
@@ -70,7 +70,7 @@ export function planFor(o: { date: string; high: number; sunKwhM2: number; hourl
   // savings vs holding the middle of the band all day: coasting degrees-hours minus pre-cool degrees-hours, at the learned kWh/°F/day ÷ hours
   const kwhSaved = precool ? Math.round(((Math.min(s.coastF, s.band.homeHi) - mid) * 4 - s.precoolDepth * (to - from) * .55) * kwPerDeg / 10 * 10) / 10 : 0;
   steps.sort((a, b) => a.hour - b.hour);
-  return { date: o.date, steps, precool, precoolFrom: from, precoolTo: to, coastFrom: to, coastTo: Math.min(21, to + 4), high: o.high, sunKwhM2: o.sunKwhM2, kwhSaved: Math.max(0, kwhSaved), costSavedMonth: Math.round(Math.max(0, kwhSaved) * 30.4 * o.rate), why };
+  return { date: o.date, steps, precool, precoolFrom: from, precoolTo: to, coastFrom: to, coastTo: Math.min(21, to + 4), high: Math.round(o.high), sunKwhM2: Math.round(o.sunKwhM2 * 10) / 10, kwhSaved: Math.max(0, kwhSaved), costSavedMonth: Math.round(Math.max(0, kwhSaved) * 30.4 * o.rate), why };
 }
 export const stepAt = (plan: AcPlan, hour: number) => [...plan.steps].reverse().find(s => s.hour <= hour) ?? plan.steps[plan.steps.length - 1];
 
