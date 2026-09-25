@@ -6,6 +6,7 @@ import type { Appliance, ApplianceSummary } from './index.js';
 import { autopilot, type Mode } from './autopilot.js';
 import { GuardRefusal, type PoolGuardContext } from './guards.js';
 import { usd } from '../tariff.js';
+import { confidenceFor } from '../learn/confidence.js';
 
 export type PoolSettings = { gallons: number; spaGallons: number; designGpm: number; filterRpm: number; boostRpm: number; poolCircuit: number; boostCircuit: number; featureCircuits: number[]; autopilot: Mode; uv: boolean;
   heaterBtu: number; propaneUsdPerGal: number; loads: Record<string, number> };
@@ -222,7 +223,7 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
       turnoverPerDay: Math.round(prof.reduce((a, h) => a + h.slices.reduce((b, r) => b + gpmAt(r) * 15, 0), 0) / settings.gallons * 100) / 100, hourly: prof,
       byProgram: current.map(s => { const p = hourlyRpm([s], speeds); return { name: s.name, rpm: s.rpm, start: s.start, stop: s.stop, kwhPerDay: Math.round(dayKwh(p, W) * 10) / 10 }; }) },
     plan, seasons, solarKw, todayKwh: Math.round(todayKwh * 10) / 10, todayCost: usd(todayKwh, rate, true), shareOfHomePct: home[0]?.kwh ? Math.round(todayKwh / home[0].kwh * 100) : null,
-    rate, applied };
+    rate, applied, conf: { kwhPerDay: await confidenceFor(siteId, 'pool.kwhDay') } }; // learning layer: trust in every kWh/day figure above
 }
 
 /* ---------- writes: every one goes through the safety guard (guards.ts) inside writePoolPlan ---------- */

@@ -1,18 +1,20 @@
 // AC appliance: Nest state, AC power learned from Tesla's load steps, today's comfort plan (pre-cool on solar surplus, coast on the
 // Powerwalls) inside the owner's comfort band, and an Autopilot that suggests or applies the plan's setpoint steps through the day.
 import { q, kv } from '../db.js';
-import { localDay, addDays } from '../tesla/client.js';
+import { localDay, addDays, rfc3339 } from '../tesla/client.js';
 import { readNest, nestConfigured, nestLinked, setCool, type NestState } from './nest.js';
 import { forecast } from './autopilot.js';
 import type { Mode } from './autopilot.js';
 import { lastSetpointWrite } from './nest.js';
 import { guardCoolSetpoint, explainRefusal, GuardRefusal } from './guards.js';
-import { usd } from '../tariff.js';
+import { acSavings, learnedPlan, type AppliedTrim } from '../learn/ac.js';
+import type { Tier } from '../learn/confidence.js';
 
 export type AcSettings = { band: { homeLo: number; homeHi: number; nightLo: number; nightHi: number }; awayF: number; nightFrom: number; nightTo: number; precoolDepth: number; coastF: number; maxStepF: number; humidityCap: number; autopilot: Mode; presence: 'home' | 'away' };
 const DEFAULTS: AcSettings = { band: { homeLo: 74, homeHi: 78, nightLo: 74, nightHi: 76 }, awayF: 80, nightFrom: 22, nightTo: 7, precoolDepth: 2, coastF: 78, maxStepF: 2, humidityCap: 60, autopilot: 'suggest', presence: 'home' };
 export { DEFAULTS as AC_DEFAULTS };
-const hourNow = () => Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }).format(new Date())) % 24;
+/** The Chicago hour with minutes as a fraction (19.5 = 19:30), so a step at a half hour (a learned coast trim) applies on time. */
+const hourNow = () => { const t = rfc3339(new Date()); return Number(t.slice(11, 13)) + Number(t.slice(14, 16)) / 60; };
 
 /* ---------- readings and learning ---------- */
 export async function recordNest(siteId: string, st: NestState) {
@@ -103,20 +105,22 @@ export async function acKwhBetween(siteId: string, spans: Array<{ day: string; e
 
 /* ---------- the plan ---------- */
 export type AcStep = { hour: number; coolF: number; why: string };
-export type AcPlan = { date: string; steps: AcStep[]; precool: boolean; precoolFrom: number; precoolTo: number; coastFrom: number; coastTo: number; high: number; sunKwhM2: number; kwhSaved: number; costSavedMonth: number | null; why: string[] };
+export type AcPlan = { date: string; steps: AcStep[]; precool: boolean; precoolFrom: number; precoolTo: number; coastFrom: number; coastTo: number; high: number; sunKwhM2: number;
+  /** Savings estimates (learn/ac.ts acSavings); on today's plan replaced by the measured figures once control days allow, with `conf`. */
+  shiftedKwh: number; eveningAvoidedKwh: number; control: boolean; why: string[];
+  trim?: AppliedTrim | null; conf?: { shiftedKwh: Tier; eveningAvoidedKwh: Tier } };
 /**
  * Pre-cool to (homeLo) while the panels are strong when tomorrow/today is hot and sunny; coast up to coastF into the evening;
  * night band overnight; away target when marked away. Steps only ever move inside the band, and by at most maxStepF at a time.
  */
-export function planFor(o: { date: string; high: number; sunKwhM2: number; hourlySun: number[]; settings: AcSettings; acKw: number | null; slope: number; rate: number | null; humidity: number | null }): AcPlan {
+export function planFor(o: { date: string; high: number; sunKwhM2: number; hourlySun: number[]; settings: AcSettings; acKw: number | null; slope: number; rate: number | null; humidity: number | null; control?: boolean }): AcPlan {
   const s = o.settings, why: string[] = [], steps: AcStep[] = [];
-  const kwPerDeg = o.slope; // kWh per degree of daily high, from the heat model; also a fair proxy for kWh per degree of setpoint
   const sunny = o.sunKwhM2 >= 4.5, hot = o.high >= 88, humid = (o.humidity ?? 0) >= s.humidityCap;
   const peak = o.hourlySun.reduce((bi, v, i, a) => v > a[bi] ? i : bi, 0), from = Math.max(11, peak - 2), to = Math.min(17, peak + 3);
-  const precool = sunny && hot && !humid && s.presence === 'home';
+  const precool = sunny && hot && !humid && s.presence === 'home' && !o.control; // control day (learn/ac.ts): hold the band so savings can be measured
   const low = s.band.homeLo, mid = Math.min(s.band.homeHi, Math.max(low, Math.round((s.band.homeLo + s.band.homeHi) / 2)));
   const night = Math.max(s.band.nightLo, Math.min(s.band.nightHi, mid));
-  if (s.presence === 'away') { steps.push({ hour: 0, coolF: s.awayF, why: 'marked away' }); why.push(`Away: holding ${s.awayF}° until you mark Home`); return { date: o.date, steps, precool: false, precoolFrom: from, precoolTo: to, coastFrom: to, coastTo: 21, high: Math.round(o.high), sunKwhM2: Math.round(o.sunKwhM2 * 10) / 10, kwhSaved: 0, costSavedMonth: usd(0, o.rate), why }; }
+  if (s.presence === 'away') { steps.push({ hour: 0, coolF: s.awayF, why: 'marked away' }); why.push(`Away: holding ${s.awayF}° until you mark Home`); return { date: o.date, steps, precool: false, precoolFrom: from, precoolTo: to, coastFrom: to, coastTo: 21, high: Math.round(o.high), sunKwhM2: Math.round(o.sunKwhM2 * 10) / 10, shiftedKwh: 0, eveningAvoidedKwh: 0, control: false, why }; }
   steps.push({ hour: s.nightTo, coolF: mid, why: 'morning, comfort band' });
   if (precool) {
     const deep = Math.max(low, mid - s.precoolDepth); steps.push({ hour: from, coolF: deep, why: 'pre-cool on solar surplus' });
@@ -124,13 +128,13 @@ export function planFor(o: { date: string; high: number; sunKwhM2: number; hourl
     why.push(`Pre-cool to ${deep}° from ${from}:00 to ${to}:00 while the panels peak (${(Math.round(o.sunKwhM2 * 10) / 10)} kWh/m² of sun, high ${Math.round(o.high)}°)`);
     why.push(`Coast to ${Math.min(s.coastF, s.band.homeHi)}° until ${Math.min(21, to + 4)}:00 so the batteries carry a lighter evening`);
     if (o.high >= 100) { steps[1].hour = 11; why.push('Heat wave: pre-cool starts at 11:00 so the system never falls behind'); }
-  } else why.push(!hot ? `Mild day (high ${Math.round(o.high)}°): no pre-cool needed` : !sunny ? 'Cloudy: no solar surplus to pre-cool with' : humid ? `Humidity ${o.humidity}%: no coast, holding ${mid}°` : 'Holding the comfort band');
+  } else why.push(o.control ? 'Control day: holding the comfort band (1 in 5 hot, sunny days) so Solstice can measure what pre-cooling saves' : !hot ? `Mild day (high ${Math.round(o.high)}°): no pre-cool needed` : !sunny ? 'Cloudy: no solar surplus to pre-cool with' : humid ? `Humidity ${o.humidity}%: no coast, holding ${mid}°` : 'Holding the comfort band');
   steps.push({ hour: precool ? Math.min(21, to + 4) : 21, coolF: mid, why: 'evening, comfort band' });
   steps.push({ hour: s.nightFrom, coolF: night, why: 'night band' });
-  // savings vs holding the middle of the band all day: coasting degrees-hours minus pre-cool degrees-hours, at the learned kWh/°F/day ÷ hours
-  const kwhSaved = precool ? Math.round(((Math.min(s.coastF, s.band.homeHi) - mid) * 4 - s.precoolDepth * (to - from) * .55) * kwPerDeg / 10 * 10) / 10 : 0;
   steps.sort((a, b) => a.hour - b.hour);
-  return { date: o.date, steps, precool, precoolFrom: from, precoolTo: to, coastFrom: to, coastTo: Math.min(21, to + 4), high: Math.round(o.high), sunKwhM2: Math.round(o.sunKwhM2 * 10) / 10, kwhSaved: Math.max(0, kwhSaved), costSavedMonth: usd(Math.max(0, kwhSaved) * 30.4, o.rate), why };
+  const plan = { date: o.date, steps, precool, precoolFrom: from, precoolTo: to, coastFrom: to, coastTo: Math.min(21, to + 4), high: Math.round(o.high), sunKwhM2: Math.round(o.sunKwhM2 * 10) / 10, shiftedKwh: 0, eveningAvoidedKwh: 0, control: !!o.control, why };
+  const saved = acSavings(plan, s, o.slope, o.acKw); // kWh shifted onto solar and evening kWh avoided, vs holding the middle of the band
+  return { ...plan, shiftedKwh: saved.shiftedKwh, eveningAvoidedKwh: saved.eveningAvoidedKwh };
 }
 export const stepAt = (plan: AcPlan, hour: number) => [...plan.steps].reverse().find(s => s.hour <= hour) ?? plan.steps[plan.steps.length - 1];
 
@@ -142,8 +146,10 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
   if (linked && (opts.fresh || !st || Date.now() - st.at > 60_000)) { try { st = await readNest(); await recordNest(siteId, st); } catch (e: any) { error = e.message; } }
   const learned = await learnAcKw(siteId), rt = await runtimeToday(siteId);
   const days = await forecast(), today = localDay(), ti = Math.max(0, days.findIndex(d => d.date === today));
-  const plan = planFor({ date: today, high: days[ti]?.high ?? 90, sunKwhM2: days[ti]?.sunKwhM2 ?? 5, hourlySun: days[ti]?.hourlySun ?? Array(24).fill(0), settings, acKw: learned.coolKw, slope, rate, humidity: st?.humidity ?? null });
-  const week = days.slice(ti, ti + 7).map(d => { const p = planFor({ date: d.date, high: d.high, sunKwhM2: d.sunKwhM2, hourlySun: d.hourlySun, settings, acKw: learned.coolKw, slope, rate, humidity: null }); return { date: d.date, high: Math.round(d.high), sunKwhM2: Math.round(d.sunKwhM2 * 10) / 10, precool: p.precool, depth: p.precool ? settings.precoolDepth : 0, kwhSaved: p.kwhSaved, precoolFrom: p.precoolFrom, precoolTo: p.precoolTo, coastFrom: p.coastFrom, coastTo: p.coastTo }; });
+  // today's plan through the learning layer: a control day holds the band, a learned trim applies, the savings carry `conf`
+  const plan = await learnedPlan(siteId, { date: today, high: days[ti]?.high ?? 90, sunKwhM2: days[ti]?.sunKwhM2 ?? 5, hourlySun: days[ti]?.hourlySun ?? Array(24).fill(0), settings, acKw: learned.coolKw, slope, rate, humidity: st?.humidity ?? null },
+    planFor, learned.coolKw ?? (slope ? Math.max(2, Math.min(5, slope * 1.3)) : 3.4));
+  const week = days.slice(ti, ti + 7).map(d => { const p = planFor({ date: d.date, high: d.high, sunKwhM2: d.sunKwhM2, hourlySun: d.hourlySun, settings, acKw: learned.coolKw, slope, rate, humidity: null }); return { date: d.date, high: Math.round(d.high), sunKwhM2: Math.round(d.sunKwhM2 * 10) / 10, precool: p.precool, depth: p.precool ? settings.precoolDepth : 0, shiftedKwh: p.shiftedKwh, eveningAvoidedKwh: p.eveningAvoidedKwh }; });
   const applied = await kv.get<{ date: string; approved: boolean; lastStepHour: number | null }>(`${siteId}:ac:plan`) ?? null;
   const log = await kv.get<Array<{ at: number; day: string; text: string; delta?: string }>>(`${siteId}:ac:log`) ?? [];
   const acKw = acKwFor(learned.coolKw, slope);

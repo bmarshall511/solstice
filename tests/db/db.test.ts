@@ -24,8 +24,8 @@ describe('schema and kv', () => {
   it('31: migrate() creates every table and is safe to call again', async () => {
     await expect(migrate()).resolves.toBeUndefined();
     const tables = (await q<{ t: string }>(`SELECT table_name t FROM information_schema.tables WHERE table_schema = 'public' ORDER BY 1`)).map(r => r.t);
-    expect(tables).toEqual(['access_tokens', 'backup_events', 'bills', 'energy', 'events', 'kv', 'login_attempts', 'nest_readings', 'owner_sessions', 'pool_readings', 'pvs_readings', 'readings',
-      'sessions', 'sites', 'soe', 'synced_days', 'tesla_accounts', 'users']);
+    expect(tables).toEqual(['access_tokens', 'anomalies', 'backup_events', 'bills', 'daily_metrics', 'energy', 'events', 'kv', 'login_attempts', 'model_scores', 'nest_readings', 'owner_sessions',
+      'pool_readings', 'predictions', 'pvs_readings', 'readings', 'sessions', 'sites', 'soe', 'synced_days', 'tesla_accounts', 'users']);
   });
   it('31: kv round-trips JSON, stores null, and returns undefined for a missing key', async () => {
     await kv.set('test:obj', { x: 1 });

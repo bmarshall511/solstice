@@ -6,6 +6,7 @@ import { planFor, applyPlan, planWrite, type Plan, type PoolSettings } from './p
 import type { PoolSnapshot } from './screenlogic.js';
 import { siteLocation } from '../site.js';
 import { guardPoolWrite } from './guards.js';
+import { logPoolPlan } from '../learn/hooks.js';
 
 export type Mode = 'off' | 'suggest' | 'auto';
 type Daily = { date: string; high: number; rainMm: number; rainPct: number; sunKwhM2: number; hourlySun: number[] };
@@ -66,6 +67,7 @@ export async function autopilot(siteId: string, o: { settings: PoolSettings; mod
   }
   const tmr = days[ti + 1], tomorrow = { date: tmr.date, plan: plans[0].plan, why: plans[0].why };
   const signals: Signals = { waterTemp: o.waterTemp, sunKwhM2: Math.round(tmr.sunKwhM2 * 10) / 10, sunPct: Math.round(Math.min(1, tmr.sunKwhM2 / 8) * 100), high: Math.round(tmr.high), heatDays: heatDaysAt(ti + 1), rainPct: tmr.rainPct, rainMm: tmr.rainMm, rainYesterdayMm: days[ti - 1]?.rainMm ?? 0, useDays: use, pollen };
+  if (o.act) await logPoolPlan(siteId, { mode: o.mode, date: tomorrow.date, plan: tomorrow.plan, signals, settings: o.settings }); // learning layer: tomorrow's kWh
   const log = await kv.get<AutopilotState['log']>(`${siteId}:pool:autolog`) ?? [];
   const cleaned = await q<{ day: string }>(`SELECT day FROM events WHERE site_id = $1 AND type = 'filter_cleaned' ORDER BY day DESC LIMIT 1`, [siteId]);
   const since = cleaned[0]?.day ?? (log.at(-1)?.day ?? today), daysSince = Math.max(0, Math.round((Date.parse(today) - Date.parse(since)) / 864e5));

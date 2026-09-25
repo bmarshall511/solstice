@@ -78,17 +78,18 @@ describe('costs are null without a tariff, kWh unchanged', () => {
   const ac = (rate: number | null, settings: AcSettings = AC) =>
     acPlan({ date: '2026-07-15', high: 96, sunKwhM2: 6, hourlySun: sun13, settings, acKw: 2, slope: 2.5, rate, humidity: null });
 
-  it('AC plan: costSavedMonth is null, kwhSaved and the steps are unchanged', () => {
+  // The AC plan's savings are two kWh figures (owner question 22, learning layer): no dollar figure, so the rate changes nothing.
+  it('AC plan: no dollar figure; the kWh figures and the steps are the same with or without a rate', () => {
     const known = ac(.1), unknown = ac(null);
-    expect(unknown.kwhSaved).toBeGreaterThan(0);
-    expect(unknown.costSavedMonth).toBeNull();
-    expect(known.costSavedMonth).toBe(Math.round(known.kwhSaved * 30.4 * .1));
-    expect(unknown).toEqual({ ...known, costSavedMonth: null });
+    expect(unknown.shiftedKwh).toBeGreaterThan(0);
+    expect(unknown.eveningAvoidedKwh).toBeGreaterThan(0);
+    expect(unknown).not.toHaveProperty('costSavedMonth');
+    expect(unknown).toEqual(known);
   });
 
-  it('AC plan while away: no saving, and no dollar figure without a rate', () => {
+  it('AC plan while away: no saving', () => {
     const away = { ...AC, presence: 'away' as const };
-    expect([ac(null, away).kwhSaved, ac(null, away).costSavedMonth]).toEqual([0, null]);
-    expect(ac(.1, away).costSavedMonth).toBe(0);
+    expect([ac(null, away).shiftedKwh, ac(null, away).eveningAvoidedKwh]).toEqual([0, 0]);
+    expect(ac(.1, away)).toEqual(ac(null, away));
   });
 });
