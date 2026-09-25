@@ -573,3 +573,46 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.side){visibili
 .twin .circ span.b.dis{background:rgba(255,193,94,.13);border-color:rgba(255,193,94,.42);color:var(--text)}
 .twin .landtip{min-height:58px;overflow-wrap:anywhere}
 /* end k-home-twin */
+
+/* r-learning -----------------------------------------------------------------------------------------------------------------
+   Confidence badges and the "How well Solstice knows your home" model report (approved mockup mockups/r-learning.html).
+   Chips: web/src/lib/conf.js; the report card: web/src/views/learn.js; the AC trim / control-day note: web/src/views/ac.js. */
+.conf{display:inline-flex;align-items:center;gap:0;font:500 10.5px "JetBrains Mono";padding:2px 7px;border-radius:999px;white-space:nowrap;line-height:1.5;border:1px solid transparent;vertical-align:1px}
+.conf[data-t="m"]{color:var(--home);background:rgba(108,196,255,.12);border-color:rgba(108,196,255,.32)}
+.conf[data-t="l"]{color:var(--batt);background:rgba(78,240,166,.12);border-color:rgba(78,240,166,.32)}
+.conf[data-t="e"]{color:var(--solar);background:rgba(255,193,94,.12);border-color:rgba(255,193,94,.32)}
+.conf[data-t="n"]{color:var(--mute);background:rgba(255,255,255,.05);border-color:var(--glass-b)}
+.conf[data-t="u"]{color:var(--mute);background:transparent;border:1px dashed rgba(255,255,255,.22)}
+.mrhead{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.mrhead b{font-size:15px;font-weight:600;line-height:1.3}
+.mrhead .badge{flex:none}
+#learnCard .headline{font-size:13px;color:var(--dim);line-height:1.5;margin-top:8px}
+#learnCard .lrows{margin-top:14px}
+#learnCard .lrow{display:block;padding:10px 0;border-top:1px solid var(--glass-b);cursor:pointer}
+#learnCard .lrow:first-child{border-top:none}
+#learnCard .lrow:active{background:rgba(255,255,255,.04)}
+#learnCard .lrow-top{display:flex;align-items:center;gap:8px;min-width:0}
+#learnCard .lrow-top .lbl{flex:1;font-size:12.5px;color:var(--text);font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#learnCard .lrow .dot{flex:none;width:8px;height:8px;border-radius:50%;box-sizing:border-box}
+#learnCard .lrow .dot.learned{background:var(--batt);box-shadow:0 0 6px var(--batt)}
+#learnCard .lrow .dot.estimated{background:linear-gradient(90deg,var(--solar) 50%,rgba(255,255,255,.1) 50%);border:1px solid var(--solar)}
+#learnCard .lrow .dot.learning{background:transparent;border:1px solid var(--mute)}
+#learnCard .lrow .dot.unscored{background:transparent;border:1px dashed rgba(255,255,255,.35)}
+#learnCard .lrow .dot.measured{background:var(--home);box-shadow:0 0 6px var(--home)}
+#learnCard .lrow-mid{display:flex;align-items:center;gap:8px;margin-top:5px;padding-left:16px}
+#learnCard .lrow-mid svg{flex:none;display:block}
+#learnCard .lrow .bias{flex:none;font:500 10.5px "JetBrains Mono";width:14px;text-align:center}
+#learnCard .lrow .bias.up{color:var(--warn)}#learnCard .lrow .bias.dn{color:var(--home)}#learnCard .lrow .bias.ev{color:var(--mute)}
+#learnCard .lnote{flex:1;font-size:11px;color:var(--mute);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#learnCard .lhelp{padding-left:16px;margin-top:4px;font-size:11px;color:var(--mute);line-height:1.4}
+#learnCard .chev-r{flex:none;color:var(--mute);font-size:13px}
+#learnCard .lanom{margin-top:12px;padding-top:12px;border-top:1px solid var(--glass-b)}
+#learnCard .sect2{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:600;margin:16px 2px 4px}
+#learnCard [hidden],#learnCard[hidden]{display:none}
+.sheet .scatter{margin-top:12px}
+.sheet .scatter svg{display:block;width:100%}
+.deltas span.conf,.dialc span.conf{display:inline-flex;margin-top:4px;font:500 10.5px "JetBrains Mono"}
+.trim{margin-top:14px}
+.trim[hidden]{display:none}
+.trim .link{margin-top:10px}
+/* end r-learning */

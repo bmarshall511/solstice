@@ -2,6 +2,7 @@ import { $, money, niceDate, localDate, localHour } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { createThermalTwin } from '../scenes/thermaltwin.js';
 import { veil, nameStart } from '../lib/frost.js';
+import { confChip, esc } from '../lib/conf.js';
 
 /* AC (Insights → Appliances): thermal twin with a day scrubber, today's plan vs Nest, Autopilot, Home/Away, and the Nest link. */
 let twin = null, scrubT = null;
@@ -55,9 +56,9 @@ function drawPlan(S, sim, outdoor, sunH) {
   svg.innerHTML = o;
   const b = d.settings.band;
   $('acBand').textContent = `${b.homeLo}°–${b.homeHi}° home · ${b.nightLo}°–${b.nightHi}° night · away ${d.settings.awayF}°`;
-  // kwhSaved/costSavedMonth left the plan with the learning layer (now shiftedKwh/eveningAvoidedKwh + conf); both cells read —
-  // until the r-learning mockup's savings card replaces this row
-  $('acDeltas').innerHTML = `<div><small>AC electricity</small><b>—</b><span>per day</span></div><div><small>Cost</small><b>${S.guest ? veil() : P.costSavedMonth == null ? '—' : P.costSavedMonth ? '−' + money(P.costSavedMonth) : '$0'}</b><span>per month</span></div>
+  // r-learning savings row: the plan's two kWh figures (learn/ac.ts), each with its confidence tier from plan.conf
+  const sv = (label, v, tier) => `<div><small>${label}</small><b>${v == null ? '—' : `${Number(v).toFixed(1)} kWh`}</b><span>today's plan</span>${confChip(tier) && `<span style="margin-top:5px">${confChip(tier)}</span>`}</div>`;
+  $('acDeltas').innerHTML = sv('kWh shifted onto solar', P.shiftedKwh, P.conf?.shiftedKwh) + sv('Evening kWh avoided', P.eveningAvoidedKwh, P.conf?.eveningAvoidedKwh) + `
     <div><small>Today</small><b>${Math.round(P.high)}° · ${Number(P.sunKwhM2).toFixed(1)} kWh/m²</b><span>${P.precool ? 'pre-cool day' : 'hold the band'}</span></div><div><small>Warmest indoor</small><b>${Math.max(...P.steps.map(s => s.coolF))}°</b><span>${P.precool ? `${hm(P.coastFrom)}–${hm(P.coastTo)}` : 'all day'}</span></div>`;
   const why = P.why.map((w, i) => `<div><i>${['☀', '▮', '°', '⏱', '⚡'][i % 5]}</i><b>${i === 0 ? 'Today' : 'Also'}</b><p>${w}.</p></div>`).concat([
     `<div><i>°</i><b>Every degree counts</b><p>Your heat model says about ${(S.acSlope ?? 2.5).toFixed(1)} kWh a day per degree of daily high, so each degree of setpoint is worth roughly ${((S.acSlope ?? 2.5) * .6).toFixed(1)} kWh on a hot day.</p></div>`,
@@ -76,13 +77,24 @@ function drawAuto(S) {
   $('acAutoBadge').textContent = `Autopilot · ${{ off: 'Off', suggest: 'Suggest', auto: 'Auto' }[s.autopilot] ?? s.autopilot}`; $('acAutoBadge').className = `badge${s.autopilot === 'off' ? '' : ' g'}`;   // a guest's static badge
   $('acMode').onclick = async e => { const b = e.target.closest('button'); if (!b || b.dataset.m === s.autopilot) return; if (b.dataset.m === 'auto' && !confirm('Auto mode sets the cooling setpoint through each day without asking, always inside your comfort band. Turn it on?')) return; await api.acSettings({ autopilot: b.dataset.m }).catch(err => alert(err.message)); await loadAc(S); };
   $('acStatus').innerHTML = `<i class="${s.autopilot === 'off' ? 'off' : ''}"></i><span>${s.autopilot === 'off' ? 'Off. Suggest plans each day and waits for you; Auto applies the steps itself.' : `${s.autopilot === 'auto' ? 'Applies' : 'Suggests'} each day's plan from the 6 AM forecast, samples Nest every 5 minutes, never leaves your comfort band, never touches heating mode`}</span></div>`;
-  const P = d.plan, st = d.state, ring = (v, l, f, c) => { const C = 2 * Math.PI * 17; return `<div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="${c}" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="${C * Math.max(0, Math.min(1, f))} ${C}" transform="rotate(-90 22 22)"/></svg><b>${v}</b><small>${l}</small></div>`; };
+  drawTrim(S);
+  const P = d.plan, st = d.state, ring =(v, l, f, c) => { const C = 2 * Math.PI * 17; return `<div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="${c}" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="${C * Math.max(0, Math.min(1, f))} ${C}" transform="rotate(-90 22 22)"/></svg><b>${v}</b><small>${l}</small></div>`; };
   const soc = S.live?.soc ?? null;
   $('acSignals').innerHTML = ring(`${Math.round(P.high)}°`, 'high', P.high / 105, '#ff9e66') + ring(P.sunKwhM2, 'sun', P.sunKwhM2 / 8, '#ffc15e') + ring(s.presence ?? '—', 'presence', s.presence === 'home' ? 1 : .2, '#4ef0a6') + ring(soc != null ? Math.round(soc) + '%' : '—', 'powerwall', (soc ?? 0) / 100, '#6cc4ff') + ring(st?.humidity != null ? st.humidity + '%' : '—', 'humidity', (st?.humidity ?? 0) / 100, '#c4a2ff') + ring(S.ercot?.condition ?? '—', 'ercot', S.ercot?.eea ? .9 : .15, '#8d93a8');
   const days = d.week, X = i => 12 + i * 42; let o = ''; days.forEach((x, i) => { const px = X(i), tm = i === 0, hh = Math.max(4, (x.high - 70) / 35 * 56); o += `${tm ? `<rect x="${px - 2}" y="4" width="34" height="102" rx="8" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.1)"/>` : ''}<rect x="${px + 7}" y="${84 - hh}" width="16" height="${hh}" rx="4" fill="#ff9e66" opacity="${tm ? 1 : .7}"/>${x.precool ? `<rect x="${px + 7}" y="${84 - hh - 4 - x.depth * 6}" width="16" height="${x.depth * 6}" rx="3" fill="#4ef0a6"/>` : ''}<text x="${px + 15}" y="${84 - hh - 8 - (x.precool ? x.depth * 6 : 0)}" text-anchor="middle" fill="#f2f4f8" font-size="9.5" font-family="JetBrains Mono">${x.high}°</text><text x="${px + 15}" y="100" text-anchor="middle" fill="rgba(242,244,248,${tm ? .9 : .5})" font-size="9.5" font-family="Manrope">${new Date(x.date + 'T12:00').toLocaleDateString('en-US', { weekday: 'short' })}</text>`; });
   $('acWeek').innerHTML = o;
   $('acTomorrow').textContent = days[1] ? `Tomorrow ${days[1].high}° · ${days[1].precool ? `pre-cool ${days[1].depth}°` : 'hold the band'}` : '';
   $('acLog').innerHTML = d.log.slice(0, 6).map(l => `<div><i></i><span>${niceDate(l.day, { month: 'short', day: 'numeric' })}</span><p>${l.text}${l.delta ? `<em>${l.delta}</em>` : ''}</p></div>`).join('') || `<div><i class="w"></i><span>—</span><p>No changes yet. Nest is sampled every 5 minutes to learn the AC's real draw.</p></div>`;
+}
+/** r-learning: today's learned trim ("trimmed because…", Undo for the owner) or the control-day note, under the Autopilot status. */
+function drawTrim(S) {
+  const P = S.ac.plan, t = P.trim, clk = h => `${Math.floor(h) % 12 || 12}${h % 1 ? ':' + String(Math.round(h % 1 * 60)).padStart(2, '0') : ''} ${h < 12 ? 'AM' : 'PM'}`;
+  let box = $('acTrim'); if (!box) { $('acStatus').insertAdjacentHTML('afterend', '<div class="trim" id="acTrim"></div>'); box = $('acTrim'); }
+  const what = !t ? '' : t.what === 'coast' ? `Coast ${t.to < t.from ? 'shortened' : 'lengthened'} to ${clk(t.to)}` : `Pre-cool to ${t.to}° instead of ${t.from}°`;
+  box.innerHTML = t ? `<div class="rec"><b>Trimmed from the last pre-cool days</b><br>${what} because ${esc(t.reason)}.${S.guest ? '' : '<button class="link" id="acUntrim" data-owner>Undo for today</button>'}</div>`
+    : P.control ? `<div class="rec"><b>Control day</b><br>Holding the comfort band today, 1 in 5 hot, sunny days, so Solstice can measure what pre-cooling really saves.</div>` : '';
+  box.hidden = !t && !P.control;
+  const u = $('acUntrim'); if (u) u.onclick = async () => { u.disabled = true; u.textContent = 'Undoing…'; try { await api.acUntrim(); await loadAc(S); } catch (e) { alert(e.message); u.disabled = false; u.textContent = 'Undo for today'; } };
 }
 let timer;
 export function initAc(S) { loadAc(S); clearInterval(timer); timer = setInterval(() => loadAc(S), 3 * 60_000); }

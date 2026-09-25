@@ -2,6 +2,7 @@ import { $, money, money2, niceDate } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { createPoolTwin } from '../scenes/pooltwin.js';
 import { veil, nameStart } from '../lib/frost.js';
+import { confChip, modelOf } from '../lib/conf.js';
 
 /*
  * Appliances (Insights): the big loads, one at a time. Pool pump first: the flow twin, the schedule dial
@@ -33,7 +34,7 @@ function twinState(d) {
   return st;
 }
 
-function drawPool(S) {
+export function drawPool(S) {
   const d = S.pool; if (!d) return;
   const L = d.live, sp = d.settings, linked = d.linked || !!L;
   ['poolSched', 'poolAuto', 'poolSeason', 'poolSeasonNote'].forEach(id => $(id).hidden = !linked);
@@ -74,6 +75,7 @@ function drawDial(S) {
     $('dcKwh').innerHTML = m === 'now' ? `${C.kwhPerDay} <i>kWh/day</i>` : m === 'rec' ? `${P.kwhPerDay} <i>kWh/day</i>` : `${C.kwhPerDay} → ${P.kwhPerDay} <i>kWh/day</i>`;
     const mo = v => (S.guest ? veil('$•••/mo') : `${money(v)}/mo`);
     $('dcSub').innerHTML = m === 'now' ? `${C.hours} h · ${mo(C.costPerMonth)} · ${C.onSolarPct}% on solar` : m === 'rec' ? `${P.hours + P.boostHours} h · ${mo(P.costPerMonth)} · ${P.onSolarPct}% on solar` : 'outer: now · inner: recommended';
+    { const c = confChip(d.conf?.kwhPerDay, modelOf(S.models, 'pool.kwhDay')); if (c) $('dcSub').insertAdjacentHTML('beforeend', '<br>' + c); }   // r-learning: trust in the kWh/day figure
     $('schNow').hidden = m !== 'now'; $('schRec').hidden = m === 'now'; document.querySelectorAll('#schMode button').forEach(b => b.classList.toggle('on', b.dataset.m === m)); };
   $('schMode').onclick = e => { const b = e.target.closest('button'); if (b) set(b.dataset.m); };
   // Now: what each program costs
