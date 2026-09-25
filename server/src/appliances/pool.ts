@@ -5,8 +5,13 @@ import { localDay, addDays } from '../tesla/client.js';
 import type { Appliance, ApplianceSummary } from './index.js';
 import { autopilot, type Mode } from './autopilot.js';
 
-export type PoolSettings = { gallons: number; filterRpm: number; boostRpm: number; poolCircuit: number; boostCircuit: number; featureCircuits: number[]; autopilot: Mode };
-const DEFAULTS: PoolSettings = { gallons: 15000, filterRpm: 1500, boostRpm: 2400, poolCircuit: 6, boostCircuit: 8, featureCircuits: [5], autopilot: 'suggest' };
+export type PoolSettings = { gallons: number; spaGallons: number; designGpm: number; filterRpm: number; boostRpm: number; poolCircuit: number; boostCircuit: number; featureCircuits: number[]; autopilot: Mode; uv: boolean;
+  heaterBtu: number; propaneUsdPerGal: number; loads: Record<string, number> };
+// From the construction plan: 14,995 gal pool, ~1,000 gal spa, designed for 120 GPM; Ultra UV sanitizer; 400k BTU propane heater;
+// other circuits' draws (W): 1.5 HP blower, 500 W pool light, 100 W spa light, ~60 W UV lamp while the pump runs.
+const DEFAULTS: PoolSettings = { gallons: 14995, spaGallons: 1000, designGpm: 120, filterRpm: 1500, boostRpm: 2400, poolCircuit: 6, boostCircuit: 8, featureCircuits: [5], autopilot: 'suggest', uv: true,
+  heaterBtu: 400_000, propaneUsdPerGal: 3.0, loads: { '2': 1100, '3': 500, '4': 100 } };
+const UV_W = 60;
 // Typical pool-water temperature by month for central Texas (°F): used only for the season table; the live plan uses the real reading.
 const WATER_BY_MONTH = [55, 57, 62, 70, 78, 84, 88, 88, 84, 75, 65, 58];
 const FREEZE_CIRCUIT = 132; // ScreenLogic's virtual "freeze protection" pump circuit
@@ -30,8 +35,8 @@ export function powerModel(measured: Array<{ rpm: number; watts: number }>) {
     return Math.max(20, Math.min(3200, near.watts * (rpm / near.rpm) ** 3));
   };
 }
-/** Flow in GPM at a given RPM (no flow meter on this pump): typical IntelliFlo on residential plumbing, ~45 GPM at 1500 RPM. */
-export const gpmAt = (rpm: number, gpmAt1500 = 45) => gpmAt1500 * rpm / 1500;
+/** Flow in GPM at a given RPM (no flow meter on this pump): scaled from the plan's design point (120 GPM at full speed), ~52 GPM at 1500 RPM. */
+export const gpmAt = (rpm: number, designGpm = 120) => designGpm * rpm / 3450;
 
 /* ---------- schedules → hourly RPM profile ---------- */
 type Sched = { circuitId: number; start: number; stop: number };
@@ -60,9 +65,9 @@ export function planFor(o: { waterTemp: number; solarKw: number[]; settings: Poo
   const { waterTemp: t, settings: s, W } = o;
   // how much water to move: at least one turnover, more when warm (algae pressure and use), less when cold; and the 1 h per 10 °F rule of thumb
   const turnovers = t >= 85 ? 1.25 : t >= 70 ? 1 : t >= 60 ? .75 : .6;
-  const turnoverH = s.gallons * turnovers / (gpmAt(s.filterRpm) * 60);
+  const turnoverH = s.gallons * turnovers / (gpmAt(s.filterRpm, s.designGpm) * 60);
   const hours = o.force?.hours ?? Math.min(12, Math.max(4, Math.round(Math.max(turnoverH, t / 10))));
-  const boostH = o.force?.boost ?? (t >= 70 ? 1 : 0);
+  const boostH = o.force?.boost ?? ((s.uv ? t >= 85 : t >= 70) ? 1 : 0); // with UV sanitizing the flow, long low runs matter more than boosts
   // put the run where the sun is: the contiguous window with the most solar
   let best = 8, bestSum = -1;
   for (let st = 5; st + hours <= 20; st++) { const sum = o.solarKw.slice(st, st + hours).reduce((a, v) => a + v, 0); if (sum > bestSum) { bestSum = sum; best = st; } }
@@ -72,9 +77,9 @@ export function planFor(o: { waterTemp: number; solarKw: number[]; settings: Poo
     { circuitId: s.poolCircuit, start: start * 60, stop: stop * 60, rpm: s.filterRpm, name: o.names.get(s.poolCircuit) ?? 'Pool', why: `${hours} h of filtration at ${s.filterRpm.toLocaleString()} RPM, ${Math.round(turnovers * 100) / 100}× turnover of ${s.gallons.toLocaleString()} gal, while the panels are producing` }];
   if (boostAt != null) schedules.push({ circuitId: s.boostCircuit, start: boostAt * 60, stop: boostAt * 60 + 60, rpm: s.boostRpm, name: o.names.get(s.boostCircuit) ?? 'High Speed', why: `a one-hour skim boost at ${s.boostRpm.toLocaleString()} RPM at the sunniest hour, for surface debris and pollen` });
   const speeds = new Map(schedules.map(x => [x.circuitId, x.rpm]));
-  const prof = hourlyRpm(schedules, speeds), kwh = dayKwh(prof, W);
+  const prof = hourlyRpm(schedules, speeds), kwh = dayKwh(prof, W) + (s.uv ? hoursOn(prof) * UV_W / 1000 : 0);
   return { month: o.month, waterTemp: t, turnovers, hours, boostHours: boostH, start, stop, boostAt, schedules, kwhPerDay: Math.round(kwh * 10) / 10,
-    costPerMonth: Math.round(kwh * 30.4 * o.rate), onSolarPct: onSolarPct(prof, W, o.solarKw), turnoverPerDay: Math.round(hours * gpmAt(s.filterRpm) * 60 / s.gallons * 100) / 100, hourly: prof };
+    costPerMonth: Math.round(kwh * 30.4 * o.rate), onSolarPct: onSolarPct(prof, W, o.solarKw), turnoverPerDay: Math.round(hours * gpmAt(s.filterRpm, s.designGpm) * 60 / s.gallons * 100) / 100, hourly: prof, uvKwh: s.uv ? Math.round(hoursOn(prof) * UV_W) / 1000 : 0 };
 }
 
 /* ---------- storage ---------- */
@@ -105,7 +110,13 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   const speeds = new Map((snap?.pump?.circuits ?? []).map(c => [c.circuitId, c.isRpm ? c.speed : 0]));
   const pumpCircuits = new Set(speeds.keys()); pumpCircuits.delete(FREEZE_CIRCUIT);
   const current = (snap?.schedules ?? []).filter(s => pumpCircuits.has(s.circuitId)).map(s => ({ ...s, rpm: speeds.get(s.circuitId) ?? 0, name: names.get(s.circuitId) ?? `Circuit ${s.circuitId}` }));
-  const prof = hourlyRpm(current, speeds), kwh = dayKwh(prof, W);
+  const prof = hourlyRpm(current, speeds), kwh = dayKwh(prof, W) + (settings.uv ? hoursOn(prof) * UV_W / 1000 : 0);
+  // the other circuits (blower, lights) and the UV lamp: integrated from readings taken while the app was open (gaps capped at 10 min)
+  const rd = await q<{ ts: string; hour: number; running: boolean; circuits: number[] }>(`SELECT ts::text, hour::int, running, circuits FROM pool_readings WHERE site_id = $1 AND day = $2 ORDER BY ts`, [siteId, localDay()]);
+  const extraHourly = Array(24).fill(0); let extraKwh = 0;
+  for (let i = 1; i < rd.length; i++) { const dtH = Math.min(600_000, Number(rd[i].ts) - Number(rd[i - 1].ts)) / 3600_000; const w = (rd[i - 1].circuits ?? []).reduce((a, c) => a + (settings.loads[String(c)] ?? 0), 0) + (rd[i - 1].running && settings.uv ? UV_W : 0); extraHourly[rd[i - 1].hour] += w * dtH / 1000; extraKwh += w * dtH / 1000; }
+  const extraNowW = snap ? snap.circuits.filter(c => c.on).reduce((a, c) => a + (settings.loads[String(c.id)] ?? 0), 0) + (snap.pump?.running && settings.uv ? UV_W : 0) : 0;
+  const lightH = await q<{ h: number }>(`SELECT COUNT(*)::int h FROM pool_readings WHERE site_id = $1 AND day >= $2 AND circuits ?| array['3','4']`, [siteId, addDays(localDay(), -30)]);
   const waterTemp = snap?.bodies[0]?.temp ?? WATER_BY_MONTH[month];
   const plan = planFor({ waterTemp, solarKw, settings, W, rate, month, names });
   const seasons = [[11, 'Dec–Feb'], [2, 'Mar–May'], [5, 'Jun–Aug'], [8, 'Sep–Nov']].map(([m, label]) => {
@@ -115,12 +126,17 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   });
   // today's estimate from the schedule model, up to now, plus the running measured watts if the pump is on
   const hourNow = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }).format(new Date())) % 24;
-  const todayKwh = prof.slice(0, hourNow).reduce((a, h) => a + W(h.rpm) * h.frac, 0) / 1000;
+  const todayKwh = prof.slice(0, hourNow).reduce((a, h) => a + (W(h.rpm) + (settings.uv ? UV_W : 0)) * h.frac, 0) / 1000 + extraKwh;
   const home = await q<{ kwh: number }>(`SELECT (SUM(home_wh) / 1000.0)::float8 kwh FROM energy WHERE site_id = $1 AND day = $2`, [siteId, localDay()]);
   const applied = await kv.get<any>(`${siteId}:pool:applied`) ?? null;
   const auto = await autopilot(siteId, { settings, mode: settings.autopilot, W, rate, names, snap, waterTemp, currentHours: hoursOn(prof), act: !!opts.act }).catch(e => ({ error: e.message as string }));
   const pending = await kv.get<any>(`${siteId}:pool:pending`) ?? null;
-  return { id: 'pool', autopilot: auto, pending, name: 'Pool pump', linked: configured() && !!snap, error, settings, snapshot: snap,
+  // a spa session: heat from the spa's current temperature to its set point with the propane heater, pump at spa speed, blower on
+  const spaTemp = snap?.bodies?.[1]?.temp ?? null, spaSet = snap?.bodies?.[1]?.setPoint ?? null, rise = spaTemp != null && spaSet != null ? Math.max(0, spaSet - spaTemp) : null;
+  const btu = rise != null ? settings.spaGallons * 8.34 * rise : null, heatMin = btu != null ? Math.round(btu / (settings.heaterBtu * .82) * 60) : null, propaneGal = btu != null ? Math.round(btu / .82 / 91_500 * 100) / 100 : null;
+  const spaRpm = speeds.get(1) ?? 3190, spaSession = { spaGallons: settings.spaGallons, spaTemp, spaSet, riseF: rise, heatMinutes: heatMin, propaneGal, propaneUsd: propaneGal != null ? Math.round(propaneGal * settings.propaneUsdPerGal * 100) / 100 : null,
+    pumpWattsAtSpa: Math.round(W(spaRpm)), blowerWatts: settings.loads['2'] ?? 0, electricUsdPerHour: Math.round((W(spaRpm) + (settings.loads['2'] ?? 0) + (settings.loads['4'] ?? 0)) / 1000 * rate * 100) / 100 };
+  return { id: 'pool', autopilot: auto, pending, extras: { hourlyToday: extraHourly.map(v => Math.round(v * 1000) / 1000), todayKwh: Math.round(extraKwh * 100) / 100, nowW: extraNowW, loads: settings.loads, uvW: settings.uv ? UV_W : 0, lightReadings30d: lightH[0]?.h ?? 0 }, spaSession, name: 'Pool pump', linked: configured() && !!snap, error, settings, snapshot: snap,
     live: snap?.pump ? { watts: snap.pump.watts, rpm: snap.pump.rpm, running: snap.pump.running, gpm: snap.pump.gpm, at: snap.at, waterTemp, airTemp: snap.airTemp, freezeMode: snap.freezeMode,
       on: snap.circuits.filter(c => c.on).map(c => c.name), activeRpm: Math.max(0, ...snap.circuits.filter(c => c.on).map(c => speeds.get(c.id) ?? 0)) } : null,
     model: { measured: await measuredPoints(siteId), curve: [1000, 1500, 1800, 2400, 3000, 3450].map(r => ({ rpm: r, watts: Math.round(W(r)) })) },
