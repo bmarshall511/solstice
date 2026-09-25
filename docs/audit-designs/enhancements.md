@@ -50,7 +50,7 @@ Tags such as **[A]**, **[B]** and **[judge]** mark where each idea came from.
 
 | Fact | Consequence |
 |---|---|
-| PEC is a flat-rate co-op. The learned tariff is import ≈ $0.106/kWh all-in and export credit ≈ $0.072/kWh; these public rates are already the fallback constants in `app.ts`. There is no TOU and no VPP. | ERCOT prices never reach the bill. They are an outage-risk and grid-citizenship signal. TOU-aware reserve arbitrage is **dropped** (both candidates agree). |
+| PEC is a flat-rate co-op. The learned tariff is import ≈ $0.XX/kWh all-in and export credit ≈ $0.XX/kWh; these rates come only from parsed bills (the code has no fallback rate). There is no TOU and no VPP. | ERCOT prices never reach the bill. They are an outage-risk and grid-citizenship signal. TOU-aware reserve arbitrage is **dropped** (both candidates agree). |
 | ~76 kWh/day, and solar covers ~49%. The Powerwalls rarely reach 100% (`drawAlerts`). | The lever is moving load into the solar curve and out of the night, which is what the pool and AC Autopilots do. Value comes from plans being *seen, approved and verified*. |
 | The pool schedule changed on 2026-09-24. Using the measured pump curve (153 W @1,500 RPM, 287 W @1,800, log-log above), the old schedule was ≈20–26 kWh/day (Waterfall 12a–5a @3,400 ≈ 13.7 kWh; High Speed 12p–6p @3,000 ≈ 10.6 kWh; Pool at 1,800 ≈ 1.7 kWh). The new one is ≈2.3 kWh/day. | This is the largest saving in the house, and nothing yet *proves* it. Hence the realized-savings ledger (D1b). |
 | In Suggest mode, a plan nobody sees never runs. | Notifications are the enabler: "tomorrow's pool plan is waiting" and "pre-cool day, approve?" (N2). |

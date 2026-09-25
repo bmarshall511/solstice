@@ -77,11 +77,11 @@ export function renderStatic(S) {
   // today's totals
   $('tSol').innerHTML = kwh(today.solar); $('tHome').innerHTML = kwh(today.home);
   $('tImp').innerHTML = kwh(today.import); $('tExp').innerHTML = kwh(today.export);
-  const rate = S.tariff?.importRateAllIn ?? .1064;
+  const rate = S.tariff?.importRateAllIn, credit = S.tariff?.exportCredit;
   $('tSolE').textContent = S.yieldK && S.gtiToday != null ? `${Math.round(today.solar / (S.yieldK * S.gtiToday) * 100) || 0}% of what today's sun allows` : 'so far today';
   $('tSelf').textContent = today.home ? `${Math.round((1 - today.import / today.home) * 100)}% from solar + battery` : '—';
-  $('tImpE').textContent = today.import != null ? `≈ $${(today.import * rate).toFixed(2)} at PEC rates` : '—';
-  $('tExpE').textContent = today.export != null ? `≈ $${(today.export * (S.tariff?.exportCredit ?? .0719)).toFixed(2)} credit` : '—';
+  $('tImpE').textContent = today.import != null ? rate != null ? `≈ $${(today.import * rate).toFixed(2)} at PEC rates` : 'rate unknown' : '—';
+  $('tExpE').textContent = today.export != null ? credit != null ? `≈ $${(today.export * credit).toFixed(2)} credit` : 'rate unknown' : '—';
 
   // status chips
   const stale = S.now?.health?.stale;
@@ -124,7 +124,7 @@ export function renderWeather(S) {
   const when = t => `${new Date(t + ':00').toLocaleDateString('en-US', { weekday: 'short' })} ${clock12(+t.slice(11, 13))}`;
   const reserveHits = P.filter(p => p.soc <= (site.reservePct ?? 20) / 100 + .005);
   $('fcTxt').innerHTML = `${fc.full ? `Powerwalls should be <b style="color:var(--batt)">full by ${when(fc.full)}</b>. ` : `Powerwalls peak around <b style="color:var(--batt)">${Math.round(peakBatt.soc * 100)}%</b> (${when(peakBatt.t)}); your home uses most of the solar as it's made. `}` +
-    `${reserveHits.length ? `They'll sit at the reserve for about ${reserveHits.length} of the next 48 hours, so ` : ''}you'll buy about <b style="color:var(--grid)">${Math.round(fc.importKwh)} kWh</b> from PEC over the next two days (≈ $${(fc.importKwh * (S.tariff?.importRateAllIn ?? .1064)).toFixed(0)}).`;
+    `${reserveHits.length ? `They'll sit at the reserve for about ${reserveHits.length} of the next 48 hours, so ` : ''}you'll buy about <b style="color:var(--grid)">${Math.round(fc.importKwh)} kWh</b> from PEC over the next two days (${S.tariff ? `≈ $${(fc.importKwh * S.tariff.importRateAllIn).toFixed(0)}` : 'rate unknown'}).`;
   const rainy = w.daily.precipitation_probability_max.slice(w.daily.time.indexOf(now), w.daily.time.indexOf(now) + 3).reduce((a, b) => Math.max(a, b ?? 0), 0);
   $('wxSum').innerHTML = rainy > 40 ? `There's a ${rainy}% chance of rain in the next few days. Storm Watch will top up the Powerwalls if a storm is forecast.` : 'No storms expected, so Storm Watch stays on standby.';
 }

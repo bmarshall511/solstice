@@ -84,7 +84,7 @@ import * as THREE from 'three';
 /* ---------- tokens, formatting ---------- */
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const COL = { solar: css('--solar') || '#ffc15e', grid: css('--grid') || '#c4a2ff', batt: css('--batt') || '#4ef0a6', home: css('--home') || '#6cc4ff', ac: css('--ac') || '#ff9e66', rest: css('--rest') || '#8d93a8' };
-const RATE = { import: .1064, export: .0719 };          // sample "your rate" for the $ readout only
+const RATE = { import: .1, export: .05 };              // placeholder "your rate" for the $ readout only
 const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const f1 = v => { if (v >= 100) return Math.round(v).toLocaleString('en-US'); const r = Math.round(v * 10) / 10; return Number.isInteger(r) ? String(r) : r.toFixed(1); };

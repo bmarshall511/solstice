@@ -58,7 +58,7 @@ function drawCleaning(S, rows, exp) {
   $('cleanBadge').className = 'badge' + (score > 35 ? '' : ' g');
   $('clLoss').textContent = loss == null ? '—' : loss < .02 ? 'on par' : `−${Math.round(loss * 100)}%`;
   const avgSolar = rows.slice(-14).reduce((a, r) => a + r.solar, 0) / Math.min(14, rows.length), lostKwh = loss ? avgSolar * loss / (1 - loss) : 0;
-  $('clCost').textContent = loss ? `≈ ${lostKwh.toFixed(1)} kWh/day · $${(lostKwh * 30 * (S.tariff?.importRateAllIn ?? .1064)).toFixed(0)}/mo` : '—';
+  $('clCost').textContent = loss ? `≈ ${lostKwh.toFixed(1)} kWh/day · ${S.tariff ? `$${(lostKwh * 30 * S.tariff.importRateAllIn).toFixed(0)}` : '—'}/mo` : '—';
   const w = S.wx, today = localDate();
   if (w) { const t = w.daily.time, p = w.daily.precipitation_sum, pp = w.daily.precipitation_probability_max, ti = t.indexOf(today);
     let li = -1; for (let i = ti - 1; i >= 0; i--) if ((p[i] ?? 0) >= 2) { li = i; break; }

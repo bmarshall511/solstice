@@ -2,13 +2,15 @@ import { pdfToLayoutText } from './pdf.js';
 import { q } from './db.js';
 
 export type Charge = { label: string; kwh: number | null; rate: number | null; amount: number };
+/** The rates read off a bill. The only source of rates in the app (see tariff.ts). */
+export type Tariff = { importRate: number; importRateAllIn: number; exportCredit: number | null; fixedMonthly: number | null; discounts: number; franchisePct: number | null };
 export type Bill = {
   utility: string; billDate: string; dueDate: string | null;
   period: { from: string; to: string; days: number };
   deliveredKwh: number; receivedKwh: number; total: number;
   charges: Charge[];
   meters?: Array<Record<string, unknown>>;
-  tariff: { importRate: number; importRateAllIn: number; exportCredit: number | null; fixedMonthly: number | null; discounts: number; franchisePct: number | null };
+  tariff: Tariff | null; // null for a bill saved without parsed rates
   comparison?: { thisMonthKwh: number | null; lastMonthKwh: number | null; lastYearKwh: number | null; avgDailyKwh: number | null; lastYearCost: number | null; avgTempF: number | null };
   checks?: { lineItemsSumToTotal: boolean; registersConsistent: boolean };
 };
