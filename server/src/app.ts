@@ -2,10 +2,12 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { q, one, kv, migrate } from './db.js';
 import { config } from './config.js';
-import { hashPassword, verifyPassword, startSession, endSession, currentUser, requireUser, requireSite, tooManyAttempts, recordAttempt, signState, verifyState, multiUser } from './auth.js';
+import { hashPassword, verifyPassword, startSession, endSession, currentUser, requireUser, requireSite, tooManyAttempts, recordAttempt, signState, verifyState, multiUser,
+  requireOwner, ownerKey, checkOwnerKey, ownerSession, startOwnerSession, endOwnerSession, endOtherOwnerSessions, listOwnerSessions, ownerAttemptLimited, clientIp,
+  signOwnerState, consumeOwnerState } from './auth.js';
 import { authorizeUrl, exchangeCode } from './tesla/auth.js';
 import { teslaFor, localDay, addDays } from './tesla/client.js';
-import { refreshLive, refreshSiteInfo, syncSite, saveEnergyRows, saveSoe } from './sync.js';
+import { refreshLive, refreshSiteInfo, syncSite } from './sync.js';
 import { listBills, parsePecPdf, saveBill, type Bill } from './bills.js';
 import { reconcile } from './reconcile.js';
 import { SOLAR, warrantedDcPct, systemYear } from './system.js';
@@ -20,6 +22,12 @@ app.disable('x-powered-by');
 app.set('trust proxy', true);
 app.use(async (_req, _res, next) => { try { await migrate(); next(); } catch (e) { next(e); } });
 
+/* Owner gate: every /api and /auth route needs the owner cookie, reads included, except the few listed in auth.ts
+ * (OPEN_ROUTES: the owner unlock, /api/auth/me, the bearer-protected crons and the state-verified OAuth callbacks). */
+if (!ownerKey()) console.warn('[solstice] OWNER_KEY is not set (or is shorter than 32 characters). Failing closed: every /api and /auth route except /api/auth/me, the crons and the OAuth callbacks answers 401. Set OWNER_KEY in .env / Vercel env, then open /#owner=<key> once per device.');
+app.use('/api', requireOwner);
+app.use('/auth', requireOwner);
+
 const wrap = (fn: (req: Request, res: Response) => Promise<unknown>) => (req: Request, res: Response, next: NextFunction) => fn(req, res).catch(next);
 const K = (col: string) => `ROUND((SUM(${col}) / 1000.0)::numeric, 2)::float8`;
 const kwhCols = `${K('solar_wh')} solar, ${K('home_wh')} home, ${K('import_wh')} import, ${K('export_wh')} export, ${K('charge_wh')} charge, ${K('discharge_wh')} discharge`;
@@ -28,9 +36,10 @@ const site = (req: Request) => req.siteId!;
 
 /* ======================= accounts ======================= */
 app.get('/api/auth/me', wrap(async (req, res) => {
-  if (!multiUser()) { // single-owner mode: no accounts, just the connected site
+  if (!multiUser()) { // single-owner mode: no accounts; a non-owner learns the mode and nothing else
+    if (!(await ownerSession(req, res))) return res.json({ mode: 'single', owner: false });
     const s = await one<{ id: string; name: string }>('SELECT id, name FROM sites WHERE tesla_account_id IS NOT NULL ORDER BY created_at LIMIT 1');
-    return res.json({ mode: 'single', user: null, site: s ?? null });
+    return res.json({ mode: 'single', owner: true, user: null, site: s ?? null });
   }
   const user = await currentUser(req);
   const users = Number((await one<{ n: string }>('SELECT COUNT(*) n FROM users'))!.n);
@@ -39,18 +48,22 @@ app.get('/api/auth/me', wrap(async (req, res) => {
   res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role }, site: s ?? null, needsSetup: false });
 }));
 
-/** First run: create the owner account with a one-time SETUP_TOKEN, and claim any data migrated from the local install. */
-app.post('/api/auth/setup', express.json(), wrap(async (req, res) => {
-  const { token, email, password, name } = req.body ?? {};
-  if (!process.env.SETUP_TOKEN || token !== process.env.SETUP_TOKEN) return res.status(403).json({ error: 'Invalid setup link' });
-  if (Number((await one<{ n: string }>('SELECT COUNT(*) n FROM users'))!.n) > 0) return res.status(409).json({ error: 'Already set up. Sign in instead.' });
-  if (!/^\S+@\S+\.\S+$/.test(email ?? '') || String(password ?? '').length < 10) return res.status(400).json({ error: 'Use a valid email and a password of at least 10 characters.' });
-  const u = (await one<{ id: number }>(`INSERT INTO users (email, name, password_hash, role) VALUES ($1, $2, $3, 'owner') RETURNING id`, [String(email).toLowerCase(), name ?? null, await hashPassword(password)]))!;
-  await q('UPDATE tesla_accounts SET user_id = $1 WHERE user_id IS NULL', [u.id]);
-  await q('UPDATE sites SET user_id = $1 WHERE user_id IS NULL', [u.id]);
-  await startSession(req, res, u.id);
+/* ---------- owner identity (single-owner mode): OWNER_KEY → an owner_sessions row + the solstice_owner cookie ---------- */
+const FAIL_MS = 500; // every failed unlock answers after the same delay, so response time says nothing about the key
+app.post('/api/auth/owner', express.text({ type: () => true, limit: '4kb' }), wrap(async (req, res) => {
+  const t0 = Date.now();
+  const fail = async (status: number, error: string) => { await new Promise(r => setTimeout(r, Math.max(0, t0 + FAIL_MS - Date.now()))); res.status(status).json({ error }); };
+  if (!ownerKey()) return fail(503, 'owner_key_not_configured');
+  if (ownerAttemptLimited(clientIp(req))) return fail(429, 'too_many_attempts');
+  let key = ''; try { key = String(JSON.parse(String(req.body || '{}'))?.key ?? ''); } catch { /* a malformed body is a wrong key */ }
+  if (!checkOwnerKey(key)) return fail(401, 'invalid_owner_key');
+  await startOwnerSession(req, res);
   res.json({ ok: true });
 }));
+/** Sign this device out; sign every other device out; list the owner's devices (for the later devices sheet). Owner-only. */
+app.post('/api/auth/signout', wrap(async (req, res) => { await endOwnerSession(req, res); res.json({ ok: true }); }));
+app.post('/api/auth/signout-others', wrap(async (req, res) => res.json({ ok: true, signedOut: await endOtherOwnerSessions(req) })));
+app.get('/api/auth/devices', wrap(async (req, res) => res.json(await listOwnerSessions(req))));
 
 app.post('/api/auth/signup', express.json(), wrap(async (req, res) => {
   if (process.env.ALLOW_SIGNUPS !== 'true') return res.status(403).json({ error: 'Sign-ups are closed' });
@@ -77,7 +90,7 @@ app.post('/api/auth/logout', wrap(async (req, res) => { await endSession(req, re
 
 /* ======================= Tesla connection ======================= */
 app.get('/auth/login', wrap(async (req, res) => {
-  if (!multiUser()) return res.redirect(authorizeUrl(signState(0)));
+  if (!multiUser()) return res.redirect(authorizeUrl(signOwnerState('tesla', 10 * 60_000))); // owner-only route (requireOwner)
   const user = await currentUser(req);
   if (!user) return res.redirect('/?signin=1');
   res.redirect(authorizeUrl(signState(user.id)));
@@ -89,7 +102,7 @@ app.get('/auth/callback', wrap(async (req, res) => {
   const uid = verifyState(state ?? '');
   let ownerId: number | null = null;
   if (multiUser()) { const user = await currentUser(req); if (!uid || !user || user.id !== uid) return res.redirect('/?tesla_error=Sign-in+expired.+Try+again.'); ownerId = user.id; }
-  else if (uid !== 0) return res.redirect('/?tesla_error=Sign-in+expired.+Try+again.');
+  else if (!(await consumeOwnerState(state ?? '', 'tesla'))) return res.redirect('/?tesla_error=Sign-in+expired.+Try+again.');
   const accountId = await exchangeCode(code, ownerId);
   const products = await teslaFor(accountId).products();
   for (const p of products.filter(p => p.energy_site_id)) {
@@ -109,25 +122,6 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
   for (const s of sites) out[s.id] = await syncSite(s.id, Math.floor(50_000 / sites.length)).catch(e => ({ error: e.message }));
   await q(`DELETE FROM readings WHERE ts < $1`, [Date.now() - 3 * 864e5]); // live snapshots are short-lived; history lives in `energy`
   res.json(out);
-}));
-
-/* ======================= one-time import from the local install (protected by SETUP_TOKEN) ======================= */
-app.post('/api/admin/import', express.json({ limit: '25mb' }), wrap(async (req, res) => {
-  if (!process.env.SETUP_TOKEN || req.headers.authorization !== `Bearer ${process.env.SETUP_TOKEN}`) return res.status(401).json({ error: 'unauthorized' });
-  const { kind, siteId, rows, site } = req.body ?? {};
-  if (kind === 'site') {
-    const a = site.tokens, existing = await one<{ id: number }>('SELECT id FROM tesla_accounts WHERE user_id IS NULL ORDER BY id LIMIT 1');
-    const acct = existing ? (await q('UPDATE tesla_accounts SET access_token=$2, refresh_token=$3, expires_at=$4, scope=$5 WHERE id=$1 RETURNING id', [existing.id, a.access_token, a.refresh_token, a.expires_at, a.scope ?? null]))[0].id
-      : (await one<{ id: number }>('INSERT INTO tesla_accounts (user_id, access_token, refresh_token, expires_at, scope) VALUES (NULL,$1,$2,$3,$4) RETURNING id', [a.access_token, a.refresh_token, a.expires_at, a.scope ?? null]))!.id;
-    await q(`INSERT INTO sites (id, user_id, tesla_account_id, name, info, info_at) VALUES ($1, NULL, $2, $3, $4, now())
-      ON CONFLICT (id) DO UPDATE SET tesla_account_id = excluded.tesla_account_id, info = excluded.info, info_at = now()`, [siteId, acct, site.info?.site_name ?? 'Home', JSON.stringify(site.info ?? {})]);
-  } else if (kind === 'energy') await saveEnergyRows(siteId, rows);
-  else if (kind === 'soe') await saveSoe(siteId, rows);
-  else if (kind === 'outages') for (const e of rows) await q('INSERT INTO backup_events VALUES ($1,$2,$3,$4) ON CONFLICT (site_id, ts) DO UPDATE SET duration_s = excluded.duration_s', [siteId, e.ts, e.epoch, e.duration_s]);
-  else if (kind === 'bills') for (const b of rows) await saveBill(siteId, b);
-  else if (kind === 'days') await q(`INSERT INTO synced_days SELECT $1, 'day', unnest($2::text[]) ON CONFLICT DO NOTHING`, [siteId, rows]);
-  else return res.status(400).json({ error: 'unknown kind' });
-  res.json({ ok: true, kind, n: rows?.length ?? 1 });
 }));
 
 /* ======================= everything below needs a signed-in user ======================= */
@@ -254,6 +248,7 @@ app.post('/api/bills', express.json({ limit: '1mb' }), wrap(async (req, res) => 
   const b = req.body as Partial<Bill>;
   if (!b.billDate || !b.period?.from || !b.period?.to || b.deliveredKwh == null || b.total == null) return res.status(400).json({ error: 'billDate, period, deliveredKwh and total are required' });
   const fallback = (await listBills(site(req))).at(-1)?.tariff;
+  // saveBill stores only toStoredBill's fields, whatever else the body carries (the PEC account number, a file name…)
   await saveBill(site(req), { utility: 'PEC', dueDate: null, receivedKwh: 0, charges: [], ...b,
     tariff: b.tariff ?? fallback ?? { importRate: .102346, importRateAllIn: .1064, exportCredit: .071921, fixedMonthly: 32.5, discounts: -2.5, franchisePct: .0396 } } as Bill);
   res.json({ saved: b.billDate });
@@ -399,9 +394,9 @@ app.get('/api/cron/nest', wrap(async (req, res) => {
   res.json(out);
 }));
 /* ---------- Google (Nest) OAuth ---------- */
-app.get('/auth/google', (req, res) => { if (!nestConfigured()) return res.status(503).send('Nest is not configured'); res.redirect(nestAuthorizeUrl(signState(0, 60 * 60_000))); }); // Google's permissions page can take a while
+app.get('/auth/google', (req, res) => { if (!nestConfigured()) return res.status(503).send('Nest is not configured'); res.redirect(nestAuthorizeUrl(signOwnerState('nest', 60 * 60_000))); }); // owner-only; Google's permissions page can take a while
 app.get('/auth/google/callback', wrap(async (req, res) => {
-  if (verifyState(String(req.query.state ?? '')) == null) return res.redirect('/?nest_error=bad+state');
+  if (!(await consumeOwnerState(String(req.query.state ?? ''), 'nest'))) return res.redirect('/?nest_error=bad+state');
   try { await nestExchangeCode(String(req.query.code)); await readNest(); res.redirect('/?nest=linked'); } catch (e: any) { console.error('nest link', e); res.redirect('/?nest_error=' + encodeURIComponent(e.message)); }
 }));
 
