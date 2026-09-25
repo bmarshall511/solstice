@@ -10,6 +10,14 @@ async function call(path, opts) {
   return j;
 }
 const get = path => call(path);
+/** The two unlocks answer 401 for a wrong key or link, which is not "this device lost its cookie": no onUnauthorized here.
+ *  Rejects with `status` (and the server's `reason`, for links). */
+async function unlock(path, body) {
+  const r = await fetch(`/api/${path}`, { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(j.error ?? `${path}: HTTP ${r.status}`), { status: r.status, reason: j.reason ?? null });
+  return j;
+}
 const send = (method, path, body) => call(path, { method, headers: { 'Content-Type': 'application/json' }, body: body == null ? undefined : JSON.stringify(body) });
 
 export const api = {
@@ -34,14 +42,14 @@ export const api = {
   deleteBill: date => call(`bills/${date}`, { method: 'DELETE' }),
   sync: () => send('POST', 'sync'),
   me: () => get('auth/me'),
-  owner: key => send('POST', 'auth/owner', { key }),
+  owner: key => unlock('auth/owner', { key }),
   /** Trade a share-link token for the guest cookie. Rejects with `reason` ('unknown' | 'revoked' | 'expired') on a bad link. */
-  guest: async token => {
-    const r = await fetch('/api/auth/guest', { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw Object.assign(new Error(j.error ?? `auth/guest: HTTP ${r.status}`), { reason: j.reason ?? null });
-    return j;
-  },
+  guest: token => unlock('auth/guest', { token }),
+  /** Forget the share link on this device (clears the guest cookie). */
+  leave: () => unlock('auth/leave', {}),
+  devices: () => get('auth/devices'),
+  signOutDevice: id => send('POST', `auth/devices/${encodeURIComponent(id)}/signout`),
+  signOutOthers: () => send('POST', 'auth/signout-others'),
   preview: on => send('POST', 'auth/preview', { on }),
   shares: () => get('share'),
   createShare: (label, expiresIn) => send('POST', 'share', { label, expiresIn }),

@@ -3,6 +3,7 @@ import { WMO, WICON } from '../lib/weather.js';
 import { forecast48 } from '../lib/model.js';
 import { roadModel } from '../lib/road48data.js';
 import { createRoad48, webgl2 } from '../scenes/road48.js';
+import { veil } from '../lib/frost.js';
 
 /** How the current flows split between sources and sinks (Tesla reports only the four totals). */
 function splitFlows(r) {
@@ -65,7 +66,7 @@ export function renderLive(S) {
 /* ---------- things that change every few minutes ---------- */
 export function renderStatic(S) {
   const site = S.now?.site ?? {}, today = S.now?.today ?? {};
-  $('siteLine').textContent = `Home · ${site.batteryCount ?? 2} Powerwalls`;
+  $('siteLine').textContent = S.guest ? `${S.ownerName}'s home` : `Home · ${site.batteryCount ?? 2} Powerwalls`;
   $('pwModel').textContent = site.batteries?.length ? `${site.batteries.length} × ${site.batteries[0].name} · ${site.capacityKwh} kWh` : '—';
   if (!$('pwUnits').children.length && site.batteries?.length)
     $('pwUnits').innerHTML = site.batteries.map((b, i) => `<div class="pwu"><i></i><b class="pwres" style="bottom:${site.reservePct ?? 20}%"></b><span>PW ${i + 1}</span><em>${b.kwh} kWh · ${b.kw} kW</em></div>`).join('');
@@ -82,8 +83,8 @@ export function renderStatic(S) {
   const rate = S.tariff?.importRateAllIn, credit = S.tariff?.exportCredit;
   $('tSolE').textContent = S.yieldK && S.gtiToday != null ? `${Math.round(today.solar / (S.yieldK * S.gtiToday) * 100) || 0}% of what today's sun allows` : 'so far today';
   $('tSelf').textContent = today.home ? `${Math.round((1 - today.import / today.home) * 100)}% from solar + battery` : '—';
-  $('tImpE').textContent = today.import != null ? rate != null ? `≈ $${(today.import * rate).toFixed(2)} at PEC rates` : 'rate unknown' : '—';
-  $('tExpE').textContent = today.export != null ? credit != null ? `≈ $${(today.export * credit).toFixed(2)} credit` : 'rate unknown' : '—';
+  $('tImpE').innerHTML = today.import != null ? S.guest ? `≈ ${veil('$•.••')} at PEC rates` : rate != null ? `≈ $${(today.import * rate).toFixed(2)} at PEC rates` : 'rate unknown' : '—';
+  $('tExpE').innerHTML = today.export != null ? S.guest ? `≈ ${veil('$•.••')} credit` : credit != null ? `≈ $${(today.export * credit).toFixed(2)} credit` : 'rate unknown' : '—';
 
   // status chips
   const stale = S.now?.health?.stale;
@@ -127,7 +128,7 @@ export function renderWeather(S) {
   const when = t => `${new Date(t + ':00').toLocaleDateString('en-US', { weekday: 'short' })} ${clock12(+t.slice(11, 13))}`;
   const reserveHits = P.filter(p => p.soc <= (site.reservePct ?? 20) / 100 + .005);
   $('fcTxt').innerHTML = `${fc.full ? `Powerwalls should be <b style="color:var(--batt)">full by ${when(fc.full)}</b>. ` : `Powerwalls peak around <b style="color:var(--batt)">${Math.round(peakBatt.soc * 100)}%</b> (${when(peakBatt.t)}); your home uses most of the solar as it's made. `}` +
-    `${reserveHits.length ? `They'll sit at the reserve for about ${reserveHits.length} of the next 48 hours, so ` : ''}you'll buy about <b style="color:var(--grid)">${Math.round(fc.importKwh)} kWh</b> from PEC over the next two days (${S.tariff ? `≈ $${(fc.importKwh * S.tariff.importRateAllIn).toFixed(0)}` : 'rate unknown'}).`;
+    `${reserveHits.length ? `They'll sit at the reserve for about ${reserveHits.length} of the next 48 hours, so ` : ''}you'll buy about <b style="color:var(--grid)">${Math.round(fc.importKwh)} kWh</b> from PEC over the next two days (${S.guest ? `≈ ${veil('$•••')}` : S.tariff ? `≈ $${(fc.importKwh * S.tariff.importRateAllIn).toFixed(0)}` : 'rate unknown'}).`;
   // the 3D road (scenes/road48.js, mockup l-forecast48) replaces the chart; the SVG above stays as the fallback without WebGL2
   const gl = webgl2(); $('fc48').style.display = gl ? '' : 'block'; $('road48').hidden = $('road48Tip').hidden = !gl;
   roadArgs = { fc, w, when, soc0: S.live.soc / 100, capKwh: site.capacityKwh || 27, maxKw: site.maxPowerKw || 10, reservePct: site.reservePct ?? 20 };

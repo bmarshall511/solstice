@@ -15,6 +15,9 @@ import { drawSettings, openRawData } from './views/settings.js';
 import { initAppliances, poolTwin } from './views/appliances.js';
 import { initAc, thermalTwin, drawAc } from './views/ac.js';
 import { createDayRing } from './scenes/dayring.js';
+import { explainOnTap } from './lib/frost.js';
+import { fillGuestBill } from './views/guest.js';
+import { initShare, applyRole, refreshSharing, showGate, markWelcome, pendingWelcome, ensurePreviewChrome } from './views/share.js';
 
 /* Owner link (https://<app>/#owner=<OWNER_KEY>) or share link (https://<app>/#s=<token>): take the secret and strip it from
    the address bar before anything else in this module runs, so it never lingers in history or bookmarks. boot() trades it
@@ -26,7 +29,7 @@ let ownerLink = null, guestLink = null;
 addEventListener('hashchange', () => { if (/^#(owner|s)=/.test(location.hash)) location.reload(); });
 
 /** All app state lives here; views read from it. */
-const S = { calm: matchMedia('(prefers-reduced-motion: reduce)').matches, preview: false, guest: false };
+const S = { calm: matchMedia('(prefers-reduced-motion: reduce)').matches, preview: false, guest: false, asGuest: false, ownerName: 'The owner' };
 const safe = fn => (...a) => { try { return fn(...a); } catch (e) { console.error(e); } };
 const isOn = id => $(id).classList.contains('on');
 
@@ -42,7 +45,7 @@ async function loadNow() {
 async function loadHistory() {
   const [daily, monthly, gridDays, records, outages, overnight, reconcile, profile] = await Promise.all([
     api.daily(400), api.monthly(13), api.gridDays(30), api.records(), api.outages(), api.overnight(60), api.reconcile(), api.profile(14)]);
-  Object.assign(S, { daily, monthly, gridDays, records, outages, overnight, reconcile: reconcile.map(billRow) });
+  Object.assign(S, { daily, monthly, gridDays, records, outages, overnight, reconcile: reconcile.map(b => billRow(b, daily)) });
   S.tariff = S.reconcile.findLast(r => r.tariff?.importRateAllIn > 0)?.tariff ?? null; // learned from the newest parsed bill (server: currentTariff); null = rate unknown
   S.profile = Array.from({ length: 24 }, (_, h) => profile.hours.find(x => x.hour === h)?.home ?? 2);
   computeModel();
@@ -54,14 +57,14 @@ async function loadHistory() {
 }
 
 /** A guest's bills arrive as a skeleton (month, period, kWh bought and sent, whether the meter matched Tesla). Give the bill
-    views the owner's row shape with every private value null, so they print "—" as they do for an unknown rate. */
-function billRow(b) {
+    views the owner's row shape with every private value null; the views draw a veil where the owner sees dollars. */
+function billRow(b, daily) {
   if (b.pec) return b;
-  return { billDate: `${b.month}-01`, period: b.period ?? { from: null, to: null, days: null }, total: null, tariff: null, charges: [],
+  return fillGuestBill({ billDate: `${b.month}-01`, period: b.period ?? { from: null, to: null, days: null }, total: null, tariff: null, charges: [],
     pec: { deliveredKwh: b.deliveredKwh, receivedKwh: b.receivedKwh, lastYearKwh: null },
     tesla: { days: 0, solarKwh: null, homeKwh: null, importKwh: null, exportKwh: null, chargeKwh: null, dischargeKwh: null }, lastYear: null,
     coverage: 1, importGapPct: null, checks: [{ id: 'meter', ok: !!b.checks?.meterMatchesTesla, label: 'Meter matches Tesla', detail: '' }],
-    solarShareOfHome: null, withoutSolarCost: null };
+    solarShareOfHome: null, withoutSolarCost: null }, daily);   // then Tesla's kWh for the same dates, from the guest's own history
 }
 
 /** Weather, NWS and the sun need the site's coordinates, which come with /api/settings at boot; ask again if that call failed. */
@@ -148,7 +151,12 @@ $('scrim').onclick = closeSheet;
 document.addEventListener('click', e => { if (e.target.closest('[data-addbill]')) openBillSheet(S, () => loadHistory()); });
 $('openData').onclick = openRawData;
 addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); if (e.key === 'd' && !S.guest && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) openRawData(); });
-$('calmSw').classList.toggle('on', S.calm); $('calmSw').onclick = () => { S.calm = !S.calm; $('calmSw').classList.toggle('on', S.calm); api.saveSettings({ calm: S.calm }).catch(() => {}); };
+/* Calm mode: the owner's is a setting; a guest's lives on the device (it cannot write settings). html[data-calm] stills the veils. */
+const guestCalm = () => { try { const v = localStorage.getItem('solstice:calm'); return v == null ? null : v === '1'; } catch { return null; } };
+const setCalm = on => { S.calm = on; $('calmSw').classList.toggle('on', on); document.documentElement.toggleAttribute('data-calm', on); };
+setCalm(S.calm);
+$('calmSw').onclick = () => { setCalm(!S.calm);
+  if (S.guest && !S.asGuest) { try { localStorage.setItem('solstice:calm', S.calm ? '1' : '0'); } catch { /* storage off */ } } else api.saveSettings({ calm: S.calm }).catch(() => {}); };
 $('signOut').onclick = async () => { await api.logout().catch(() => {}); location.reload(); };
 $('outSw').onclick = () => { S.preview = !S.preview; S.previewSince = Date.now(); $('outSw').classList.toggle('on', S.preview); updateOutage(); renderLive(S); };
 
@@ -265,35 +273,36 @@ function showAuth(mode, opts = {}) {
     } catch (err) { $('authErr').textContent = err.message; $('authBtn').disabled = false; }
   };
 }
-/* Single-owner mode without the owner cookie: every API call answers 401 and the app stays locked.
-   PLACEHOLDER pending its own design approval (share-view design §2.7, mockup q-share): it reuses the existing sign-in
-   overlay (.auth / .authcard) as-is, with no new CSS and no new components. */
-function showLocked(error = '') {
-  $('auth').hidden = false; $('connectBtn').hidden = true;
-  $('authForm').hidden = true; $('authForm').style.display = 'none';   // `.authcard form{display:grid}` outranks [hidden]
-  $('authTitle').textContent = 'Solstice is private';
-  $('authSub').textContent = 'Open your owner link on this device.';
-  $('authErr').textContent = error;
-}
+/* Single-owner mode without the owner cookie: every API call answers 401 and the app stays locked behind the "Solstice is
+   private" card (paste a share link, or "I'm the owner" and the key); a link that was turned off or has expired gets its own
+   card (views/share.js showGate, mockup q-share frame 6). */
 let started = false, multi = false, unlocking = !!(ownerLink || guestLink), rechecking = false;
-const linkError = reason => ({ revoked: 'This link was turned off.', expired: 'This link has expired.' })[reason] ?? '';
+const lockOut = (reason, error = '') => (reason === 'revoked' || reason === 'expired' ? showGate('off', { reason }) : showGate('private', { error }));
 // Any 401 locks the app in single-owner mode (while a link is being redeemed, boot() decides). A guest's 401 is either an
-// owner-only route (nothing to do) or a link that was just revoked or expired: /api/auth/me says which. MULTI_USER: as before.
+// owner-only route (nothing to do) or a link that was just revoked or expired: /api/auth/me says which. The owner previewing
+// as a guest gets the same 401s for owner-only reads, and stays. MULTI_USER: as before.
 setUnauthorized(() => {
   if (multi) { if (started) showAuth('login'); return; }
-  if (unlocking) return;
-  if (!S.guest) return showLocked();
+  if (unlocking || !started || S.asGuest) return;   // before boot() knows the role, it decides which card to show
+  if (!S.guest) return lockOut();
   if (rechecking) return; rechecking = true;
-  api.me().then(m => { if (m.owner) location.reload(); else if (!m.guest) showLocked(linkError(m.reason)); }).catch(() => {}).finally(() => { rechecking = false; });
+  api.me().then(m => { if (m.owner) location.reload(); else if (!m.guest) lockOut(m.reason); }).catch(() => {}).finally(() => { rechecking = false; });
 });
 
 /* Guests (and the owner previewing as one) never see a control that writes: Apply, Restore, Autopilot modes, Home/Away,
    settings edits, bill upload and removal, cleaning logs, link/unlink, raw data and the CSV. The server refuses all of
-   those to a guest anyway. `hidden` alone loses to classes that set display (.row, .link, .primary, .seg2), hence the
-   inline display:none, as showLocked does for the form. Views re-render with innerHTML, so an observer re-applies it. */
-const OWNER_CONTROLS = '[data-addbill], #billDue, #billDueNow, #openData, a[href="/api/export.csv"], #calmSw, #alertPrefs, #signOut, #connectBtn, #autoMode, #acMode, #acPresence, #acLinkBtn, #poolApply, #poolRestore, #applyTomorrow, #logClean, button#cleaned, #undoClean, #acApply, #billRemove';
-const hideOwnerControls = () => document.querySelectorAll(OWNER_CONTROLS).forEach(el => { if (el.style.display !== 'none') { el.hidden = true; el.style.display = 'none'; } });
-function guestMode() { S.guest = true; hideOwnerControls(); new MutationObserver(hideOwnerControls).observe(document.body, { childList: true, subtree: true }); }
+   those to a guest anyway. The CSS block q-share hides them (and every [data-owner]) under html[data-role=guest] or
+   html[data-as=guest], so views that re-render stay covered and the owner's own view returns when a preview ends. */
+/** Every view's data again, as the role now stands (the Frost wipe waits for the main reads). */
+async function reloadAll() {
+  const prefs = await api.settings().catch(() => null);
+  if (prefs) S.location = setSiteLocation(prefs.location);
+  initAppliances(S); initAc(S); $('rPv').dispatchEvent(new Event('input'));
+  await Promise.allSettled([loadNow(), loadHistory(), loadExternal(), loadWeather()]);
+  if (isOn('v-hist')) safe(drawHistoryChart)(S);
+}
+initShare(S, { reload: reloadAll });
+explainOnTap(toast, () => S.ownerName);
 
 async function boot() {
   const params = new URLSearchParams(location.search);
@@ -306,21 +315,22 @@ async function boot() {
     // Views that loaded while this device had no cookie got 401s; reload once so everything starts with the cookie.
     if (ok) return location.reload();
   }
-  let guestLinkError = '';
+  let guestLinkError = null;
   if (guestLink) {   // a share link opened on this device: trade the token for the guest cookie, then start clean
     const err = await api.guest(guestLink).then(() => null, e => e);
     unlocking = false;
-    if (!err) return location.reload();
-    guestLinkError = linkError(err.reason) || 'That link didn’t work on this device.';
+    if (!err) { await markWelcome(guestLink); return location.reload(); }   // the welcome card shows after the reload, once
+    guestLinkError = err;
   }
   let me;
   try { me = await api.me(); } catch { $('authErr').textContent = 'Can’t reach the Solstice server.'; return showAuth('login'); }
   multi = me.mode !== 'single';
   if (me.mode === 'single') {           // no accounts: the owner cookie opens straight to the connected site
     document.querySelectorAll('.acct').forEach(el => el.hidden = true);
-    if (me.guest) guestMode();          // a share link (or the owner previewing as a guest): read-only, no controls
+    if (me.guest) applyRole({ guest: true, preview: !!me.preview, ownerName: me.ownerName, expiresAt: me.expiresAt ?? null });   // read-only, no controls
     else {
-      if (!me.owner) return showLocked(guestLinkError || (ownerLink ? 'That owner link didn’t work on this device.' : linkError(me.reason)));
+      if (!me.owner) return guestLinkError ? lockOut(guestLinkError.reason, 'That link didn’t work on this device.')
+        : lockOut(me.reason, ownerLink ? 'That owner link didn’t work on this device.' : '');
       if (!me.site) return showAuth('connect');
     }
   } else {
@@ -331,7 +341,13 @@ async function boot() {
   started = true;
   const prefs = await api.settings().catch(() => ({}));
   S.location = setSiteLocation(prefs.location);  // exact coordinates + ZIP from the server env; weather, NWS and the sun wait for them
-  if (typeof prefs.calm === 'boolean') { S.calm = prefs.calm; $('calmSw').classList.toggle('on', S.calm); }
+  if (typeof prefs.calm === 'boolean') S.calm = prefs.calm;
+  else if (S.guest && !S.asGuest) { const c = guestCalm(); if (c != null) S.calm = c; }   // a guest keeps Calm mode on this device
+  setCalm(S.calm);
+  if (!S.guest) { S.ownerName = typeof prefs.ownerName === 'string' && prefs.ownerName.trim() ? prefs.ownerName.trim() : 'The owner'; refreshSharing(); }
+  if (S.asGuest) { ensurePreviewChrome(); applyRole({ guest: true, preview: true, ownerName: S.ownerName }); }   // a preview survives a reload (the server's flag lasts an hour)
+  const welcome = S.guest && !S.asGuest ? pendingWelcome() : null;
+  if (welcome) showGate('welcome', { welcomeKey: welcome });
   const every = (ms, fn) => { const run = () => fn().catch(e => console.warn(e.message)); run(); setInterval(run, ms); };
   every(30_000, loadNow);                 // live status (the server asks Tesla at most every ~25 s)
   every(5 * 60_000, loadHistory);
