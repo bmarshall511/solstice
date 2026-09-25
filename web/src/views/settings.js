@@ -1,5 +1,6 @@
 import { $, niceDate, ago } from '../lib/util.js';
 import { api } from '../lib/api.js';
+import { veil } from '../lib/frost.js';
 import { backupError, httpCode } from './insights.js';
 
 const PREFS = [['outage', 'var(--out)', '⚡', 'Grid outage started or ended'], ['lowBatt', 'var(--solar)', '↓', 'Battery low during an outage', 'Below 30%'],
@@ -34,8 +35,8 @@ export function drawSettings(S) {
     row('var(--solar)', '☀', 'Solar', site.solar ? `${site.solar.panels} × ${site.solar.module} · Enphase IQ7XS microinverters` : '30 panels', site.solar ? `${site.solar.dcKw} kW DC · ${site.solar.acKw} kW AC` : '—') +
     row('var(--warn)', '⛨', 'Backup reserve', 'Set in the Tesla app', `${site.reservePct ?? '—'}%`) +
     row('var(--grid)', '⚙', 'Operating mode', site.mode === 'autonomous' ? 'Time-Based Control' : '', site.mode ?? '—') +
-    row('var(--home)', '$', 'Utility', t ? `$${t.importRateAllIn}/kWh all-in · ${t.exportCredit != null ? `$${t.exportCredit}` : '—'}/kWh export credit` : 'Add a bill to learn your rates', 'PEC') +
-    row('var(--mute)', '⌂', 'Installed', `Gateway firmware ${site.firmware?.split(' ')[0] ?? '—'}`, site.installed ? niceDate(site.installed.slice(0, 10), { month: 'short', year: 'numeric' }) : '—');
+    row('var(--home)', '$', 'Utility', S.guest ? `${veil('$•.••••/kWh')} all-in · ${veil('$•.••••/kWh')} export credit` : t ? `$${t.importRateAllIn}/kWh all-in · ${t.exportCredit != null ? `$${t.exportCredit}` : '—'}/kWh export credit` : 'Add a bill to learn your rates', 'PEC') +
+    row('var(--mute)', '⌂', 'Installed', S.guest ? '' : `Gateway firmware ${site.firmware?.split(' ')[0] ?? '—'}`, site.installed ? niceDate(site.installed.slice(0, 10), { month: 'short', year: 'numeric' }) : '—');
   const prefs = load();
   $('alertPrefs').innerHTML = PREFS.map(([k, c, i, title, sub]) => `<div class="row" style="--c:${c}"><div class="ri">${i}</div><div class="rt">${title}${sub ? `<small>${sub}</small>` : ''}</div><div class="sw ${prefs[k] === false ? '' : 'on'}" data-pref="${k}"></div></div>`).join('');
   document.querySelectorAll('[data-pref]').forEach(el => el.onclick = () => { prefs[el.dataset.pref] = el.classList.toggle('on'); api.saveSettings({ alerts: prefs }).catch(() => {}); });

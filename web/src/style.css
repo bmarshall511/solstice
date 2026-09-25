@@ -1,5 +1,5 @@
 :root{
-  --bg:#05060a; --text:#f2f4f8; --dim:rgba(242,244,248,.62); --mute:rgba(242,244,248,.38);
+  --bg:#05060a; --text:#f2f4f8; --dim:rgba(242,244,248,.62); --mute:rgba(242,244,248,.5);
   --glass:rgba(255,255,255,.055); --glass-b:rgba(255,255,255,.11);
   --solar:#ffc15e; --batt:#4ef0a6; --home:#6cc4ff; --grid:#c4a2ff; --warn:#ff7a66; --out:#ff5a4e;
   --r-lg:26px; --r-md:20px; --ease:cubic-bezier(.2,.8,.2,1);
@@ -136,7 +136,7 @@ body.out .orbtxt p b{color:var(--solar)}
 .mini{display:block;width:100%;margin-top:6px}
 
 /* 3D production landscape */
-.land{position:relative;height:320px;margin:10px -16px 0;touch-action:none}
+.land{position:relative;height:320px;margin:10px -16px 0;touch-action:pan-y}
 .land canvas{display:block}
 .landtip{margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(0,0,0,.28);border:1px solid var(--glass-b);font:12px "JetBrains Mono";color:var(--dim);min-height:40px;line-height:1.5}
 .landtip b{color:var(--solar);font-weight:500}
@@ -145,7 +145,7 @@ body.out .orbtxt p b{color:var(--solar)}
 .lax.w{color:var(--warn)}
 
 /* panels view */
-.roof3d{position:relative;height:300px;margin:6px -16px 0;touch-action:none;border-radius:0;overflow:hidden}
+.roof3d{position:relative;height:300px;margin:6px -16px 0;touch-action:pan-y;border-radius:0;overflow:hidden}
 .roof3d canvas{display:block}
 .roofhud{position:absolute;left:12px;top:10px;z-index:2;padding:6px 10px;border-radius:12px;background:rgba(8,10,16,.55);border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(8px);font:11px 'JetBrains Mono';color:#fff;line-height:1.5;pointer-events:none}
 .chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:5px 10px;border-radius:999px;background:rgba(108,196,255,.12);color:var(--home);border:1px solid rgba(108,196,255,.3)}
@@ -333,7 +333,7 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .panel{display:none}.panel.on{display:block;animation:in .4s var(--ease)}
 .seg2{display:flex;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid var(--glass-b)}.seg2 button{all:unset;cursor:pointer;font-size:11px;font-weight:600;padding:5px 10px;border-radius:999px;color:var(--dim)}.seg2 button.on{background:rgba(78,240,166,.18);color:var(--text)}
 /* Day Ring */
-.ring3d{position:relative;height:330px;margin:10px -16px 0;border-radius:20px;overflow:hidden;touch-action:none}
+.ring3d{position:relative;height:330px;margin:10px -16px 0;border-radius:20px;overflow:hidden;touch-action:pan-y}
 .ring3d canvas{display:block;width:100%;height:100%}
 .readout{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;width:170px}
 .readout b{display:block;font:300 30px Manrope;letter-spacing:-.02em;line-height:1}
@@ -404,3 +404,181 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .tlab{position:absolute;right:12px;top:10px;text-align:right;font:500 11px "JetBrains Mono";color:var(--text);background:rgba(0,0,0,.35);padding:6px 9px;border-radius:10px;line-height:1.5;pointer-events:none}
 .comfort{position:relative;height:170px;margin-top:10px}.comfort svg{display:block;width:100%;height:100%}
 .presence{margin-top:12px;justify-content:center}.presence button{flex:1;text-align:center;padding:8px 10px}
+
+/* o-year-ring — History → Year: "Your year" card (mockup o-year-ring). Same 330 px as .ring3d, but it sits on a scrolling tab, so vertical swipes must scroll */
+#yrCard{overflow:hidden}
+.yr3d{touch-action:pan-y}
+.yr3d .labs{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.yr3d .labs .lax{position:absolute;left:0;top:0;will-change:transform}
+.yr3d .labs .lax.cur{color:var(--text)}
+.yr3d .hint{left:12px;top:10px;right:auto;bottom:auto;max-width:calc(100% - 24px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:rgba(255,193,94,.7)}
+.readout.yr{top:168px;width:170px}
+.readout.yr b{font-size:28px}
+.readout.yr small{margin-top:3px;white-space:nowrap}
+.readout.yr small:first-of-type{margin-top:6px}
+.readout.yr .s{color:var(--solar)}.readout.yr .hm{color:var(--home)}.readout.yr .im{color:var(--grid)}.readout.yr .bt{color:var(--batt)}.readout.yr .ot{color:var(--out)}
+.readout.yr .open{pointer-events:auto;display:inline-block;margin-top:8px;font:600 11.5px Manrope;color:var(--solar);cursor:pointer;text-decoration:none;padding:3px 6px;border-radius:8px}
+.readout.yr .open:focus-visible{outline:2px solid var(--solar)}
+.legend.yl{justify-content:flex-start;gap:6px 12px;margin-top:10px}
+.legend.yl i.bar{border-radius:2px;width:4px;height:10px;vertical-align:-1px}
+.legend.yl i.tk{border-radius:1px;width:10px;height:3px;vertical-align:2px}
+.legend.yl i.gh{border-radius:0;width:12px;height:0;border-top:1.5px dashed rgba(255,193,94,.55);vertical-align:3px}
+.legend.yl i.hd{border-radius:1px;width:2px;height:10px;background:rgba(255,255,255,.7);vertical-align:-1px}
+#yrNote{margin-top:10px}
+/* end o-year-ring */
+
+/* m-flows ------------------------------------------------------------------------------------------------------------------
+   History → "Where every kWh went" (mockups/m-flows.html, approved; web/src/scenes/flows.js). Scoped to the card, except the two
+   tokens: --ac and --rest are the Day Ring's existing AC and "rest" colours (design §2), used nowhere else yet. */
+:root{--ac:#ff9e66;--rest:#8d93a8}
+.flows .h.fh{flex-wrap:wrap;gap:4px 8px}
+.flows .h .ro{flex-basis:100%;font-size:12.5px;color:var(--dim)}
+.flows .h .ro b{font:500 12.5px "JetBrains Mono";color:var(--text)}
+.flows .flow3d{height:300px;touch-action:pan-y;cursor:pointer}
+.flows .flow3d .labs{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.flows .flow3d .labs>div{position:absolute;left:0;top:0;will-change:transform}
+.flows .flow3d .lbl3d .n{font:500 11px "JetBrains Mono";color:var(--text)}
+.flows .flow3d .lbl3d.e{padding:3px 7px}
+.flows .flow3d .lbl3d.on{border-color:rgba(255,255,255,.4);color:var(--text)}
+.flows .flow3d .lax{line-height:1.2}
+.flows .legend{justify-content:flex-start;margin-top:8px}
+.flows .landtip b{color:var(--text)}
+.flows .kv{margin-top:12px}
+/* end m-flows */
+
+/* l-forecast48 */
+/* Next 48 hours road on Now (mockups/l-forecast48.html, scenes/road48.js); the SVG chart is only the no-WebGL2 fallback */
+/* --rest: defined once, in the m-flows block */
+.road{height:260px;touch-action:pan-y;cursor:grab;outline:none;background:radial-gradient(120% 90% at 25% 100%,rgba(108,196,255,.06),rgba(0,0,0,.16))}
+.road:active{cursor:grabbing}
+.road .hud{top:10px;bottom:auto}
+.road .rl{position:absolute;left:0;top:0;padding:2px 6px;border-radius:7px;background:rgba(8,10,16,.62);border:1px solid rgba(255,255,255,.08);pointer-events:none;display:none;will-change:transform}
+.landtip .ph{color:var(--mute)}
+#fc48{display:none}
+/* end l-forecast48 */
+
+/* n-outage */
+/* Outage readiness card (Insights → Home, mockup n-outage); every rule is scoped to the card */
+.card.outage{overflow:hidden}
+.outage .o3d{height:330px;touch-action:pan-y;background:#05070d}
+.outage .o3d canvas{position:absolute;inset:0;touch-action:pan-y}
+.outage .o3d .roofhud{max-width:calc(100% - 24px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.outage .o3d .roofhud span{display:block;color:var(--dim)}
+.outage .o3d .hlbl,.outage .o3d .hlead{will-change:left,top}
+.outage .o3d .hlbl.dark b{color:var(--mute)}
+.outage .hbtns{display:flex;gap:6px;align-items:center;flex:none}
+.outage button.chip{cursor:pointer;font-family:inherit}
+.outage button.chip.on{background:rgba(255,90,78,.14);border-color:rgba(255,90,78,.4);color:#ffd0cb}
+.outage .seg2.wide{margin-top:10px}.outage .seg2.wide button{flex:1 1 auto;text-align:center}
+.outage .ochips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.outage .rung{min-width:0}.outage .rung small{font:10.5px "JetBrains Mono";color:var(--mute);margin-left:6px;white-space:nowrap}
+.outage .rung i{display:block;height:3px;border-radius:2px;margin-top:5px;background:var(--c);transition:width .6s var(--ease),opacity .3s}
+.outage .kv .off{opacity:.35;text-decoration:line-through}
+.outage .kv .off i{opacity:.4}
+.outage .wkhead b{min-width:0}
+/* end n-outage */
+
+/* q-share */
+/* Share view (approved mockups/q-share.html; docs/audit-designs/share-view.md §4): the Frost veil and locked cards, the guest
+   chip and badges, the owner's Sharing sheets, the link-open cards on the .auth overlay, and the Frost wipe into and out of
+   "Preview as a guest". Guests are html[data-role=guest]; the owner previewing is html[data-as=guest]. */
+:root{--frost:rgba(8,10,16,.45);--frost-blur:14px;--veil:rgba(242,244,248,.32);--lock:rgba(242,244,248,.55)}
+/* inline veil: shape-preserving decoy text, never a real value */
+.veil{display:inline-flex;align-items:center;gap:5px;font-family:"JetBrains Mono";font-weight:500;color:var(--veil);letter-spacing:.1em;white-space:nowrap;
+  position:relative;overflow:hidden;border-radius:6px;padding:0 3px;background:rgba(255,255,255,.06);filter:blur(.8px);cursor:help;animation:veilin .3s var(--ease) both}
+.veil::before{content:"";flex:none;width:8px;height:10px;border:1.5px solid var(--lock);border-radius:2px;box-shadow:inset 0 -5px 0 var(--lock)} /* padlock */
+.veil::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.16),transparent);transform:translateX(-100%);animation:sweep 5.5s 1.5s infinite}
+.veil.wait{animation-play-state:paused}   /* under the Frost wipe until the clear passes it */
+@keyframes veilin{from{opacity:0;filter:blur(6px)}}
+/* locked card: frosted glass over a deterministic skeleton, same height as the owner's card */
+.card.locked{position:relative;overflow:hidden;cursor:help}
+.card.locked>*:not(.h):not(.lock){filter:blur(6px) saturate(.5);opacity:.5;pointer-events:none;user-select:none}
+.card.locked::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--frost);backdrop-filter:blur(var(--frost-blur));-webkit-backdrop-filter:blur(var(--frost-blur))}
+.card.locked>.h{position:relative;z-index:3}
+.card.locked .lock{position:absolute;inset:0;z-index:2;display:grid;place-content:center;gap:6px;text-align:center;font-size:12.5px;color:var(--dim)}
+.card.locked .lock b{display:block;font-size:14px;color:var(--text);font-weight:600}
+.card.locked .lock i{width:26px;height:26px;border-radius:9px;margin:0 auto 4px;display:grid;place-items:center;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);font-style:normal}
+.skl{display:block;height:9px;border-radius:5px;background:rgba(255,255,255,.16)}
+.kv .skl{margin-top:3px}.kv b .skl{margin-left:auto}
+/* guests and the owner's preview: owner-only UI is not rendered (the server refuses all of it anyway) */
+html[data-role=guest] [data-owner],html[data-as=guest] [data-owner]{display:none!important}
+html:not([data-role=guest]):not([data-as=guest]) [data-guest]{display:none!important}
+html[data-role=guest] :is([data-addbill],#billDue,#billDueNow,#openData,a[href="/api/export.csv"],#alertPrefs,#signOut,#connectBtn,#autoMode,#acMode,#acPresence,#acLinkBtn,#poolApply,#poolRestore,#poolShow,#applyTomorrow,#logClean,button#cleaned,#undoClean,#acApply,#acShow,#billRemove,.card.flows,.card.outage),
+html[data-as=guest] :is([data-addbill],#billDue,#billDueNow,#openData,a[href="/api/export.csv"],#alertPrefs,#signOut,#connectBtn,#autoMode,#acMode,#acPresence,#acLinkBtn,#poolApply,#poolRestore,#poolShow,#applyTomorrow,#logClean,button#cleaned,#undoClean,#acApply,#acShow,#billRemove,.card.flows,.card.outage){display:none!important}
+.chipx.guest{background:rgba(255,255,255,.08);border-color:var(--glass-b);color:var(--text)}
+.chipx.guest i{--c:#f2f4f8;box-shadow:0 0 8px rgba(242,244,248,.6)}
+html[data-as=guest] .phone{border-color:rgba(255,255,255,.32)}
+html[data-calm] .veil::after,html[data-calm] .veil{animation:none}
+/* Share sheet, devices sheet */
+.lbl{display:block;font-size:11px;color:var(--dim);margin:14px 0 6px}
+.seg2.exp button{flex:1;text-align:center}
+.lnk{margin-top:14px;padding:12px;border-radius:16px;background:rgba(0,0,0,.3);border:1px solid var(--glass-b)}
+.lnk code{display:block;font:12px "JetBrains Mono";color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lnk .lb{display:flex;gap:8px;flex-wrap:wrap}.lnk .lb .link{margin-top:10px;padding:7px 14px}
+.qr{display:block;width:180px;height:180px;margin:12px auto 0;border-radius:12px}
+.lrow{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-top:1px solid var(--glass-b)}
+.lrow:first-of-type{border-top:none}
+.lrow .lm{flex:1;min-width:0;font-size:12px;color:var(--dim);line-height:1.45}
+.lrow .lm b{display:block;font-size:13.5px;color:var(--text);font-weight:600}
+.lrow .lm em{font-style:normal;color:var(--mute)}
+.link.rvk{margin:0;flex:none;padding:6px 12px;font-size:12px;color:#ffb3aa;background:rgba(255,90,78,.1);border-color:rgba(255,90,78,.35)}
+.lrow.off{opacity:.45}.lrow.off .link{display:none}
+/* the link-open cards (welcome, private, turned off) on the .auth overlay */
+#gate{transition:opacity .4s var(--ease),backdrop-filter .4s var(--ease),-webkit-backdrop-filter .4s var(--ease)}
+#gate.gone{opacity:0;backdrop-filter:blur(0);-webkit-backdrop-filter:blur(0);pointer-events:none}
+.authcard .ln{margin-top:12px;font:500 12px "JetBrains Mono";color:var(--text)}
+.authcard .fine{margin-top:12px;line-height:1.5}
+.authcard .olink{all:unset;cursor:pointer;display:block;margin:16px auto 0;font-size:12px;color:var(--mute);text-decoration:underline;text-underline-offset:3px}
+.authcard form[hidden]{display:none}
+.authcard .err:empty{display:none}
+.authlogo.off{filter:grayscale(1) brightness(.8);box-shadow:none}
+html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.side){visibility:hidden}   /* nothing behind these two: no data, no site name */
+/* Preview as a guest: the Frost wipe and the pill */
+.frostwipe{position:absolute;inset:0;z-index:40;border-radius:inherit;pointer-events:none;visibility:hidden;
+  background:linear-gradient(180deg,rgba(242,244,248,.09),rgba(242,244,248,.04));
+  clip-path:circle(0 at var(--x) var(--y));backdrop-filter:blur(0);-webkit-backdrop-filter:blur(0)}
+.frostwipe.run{visibility:visible;pointer-events:auto}
+.gpill{position:absolute;left:50%;top:12px;z-index:41;display:flex;align-items:center;gap:10px;padding:6px 6px 6px 14px;border-radius:999px;white-space:nowrap;
+  background:rgba(24,26,34,.95);border:1px solid rgba(255,255,255,.32);box-shadow:0 20px 40px rgba(0,0,0,.4);font-size:12.5px;font-weight:600;
+  transform:translate(-50%,-160%);transition:transform .5s var(--ease)}
+.gpill.show{transform:translate(-50%,0)}
+.gpill i{width:7px;height:7px;border-radius:50%;background:#f2f4f8;box-shadow:0 0 8px rgba(242,244,248,.7)}
+.gpill .link{margin:0;padding:5px 12px;font-size:12px}
+@media (max-width:900px){
+  .gpill{top:calc(env(safe-area-inset-top) + 8px)}
+  html[data-as=guest] .screen{padding-top:calc(env(safe-area-inset-top) + 58px)}
+}
+/* end q-share */
+
+/* k-home-twin ---------------------------------------------------------------------------------------------------------------
+   Now → Energy flow card as the whole-home twin (approved mockup mockups/k-home-twin.html). The canvas stays 370 px and the live
+   framing is today's; the replay row, appliance chips and the since-midnight readout sit under it. Keep this block last. */
+/* --ac and --rest: defined once, in the m-flows block */
+.card.twin{overflow:hidden}
+.card.twin .house{margin:12px -16px 0;border-radius:0}
+.twin .house-canvas{touch-action:pan-y}
+.twin .hlbl{transform:none}
+.twin .hlbl b i.s{color:rgba(255,255,255,.72);font-weight:500}
+.twin .hlbl.link{pointer-events:auto;cursor:pointer}
+.twin .hlbl.edge-l small::before{content:"‹ "}.twin .hlbl.edge-r small::after{content:" ›"}
+.twin .hlead{transform-origin:0 0}
+.twin .house.nodata .hlbl{opacity:.35}
+.twinhud{right:12px;font-size:10.5px}
+.twinhud[hidden]{display:none}
+.twinhud .s{font:500 11px/1.45 Manrope,system-ui,sans-serif;color:rgba(242,244,248,.86);margin-top:3px}
+.twinhud em{font:normal 500 10px "JetBrains Mono";color:rgba(242,244,248,.5)}
+.twinhud .cov{display:inline-block;margin-left:4px;padding:0 6px;border-radius:999px;border:1px solid rgba(255,122,102,.42);color:#ffc3b8;font:500 9.5px/15px "JetBrains Mono";vertical-align:1px;white-space:nowrap}
+.twin-row{grid-template-columns:34px minmax(0,1fr) 56px auto;gap:10px;height:34px;margin-top:12px}
+.twin-row .play{all:unset;box-sizing:border-box;cursor:pointer;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--glass);border:1px solid var(--glass-b);color:var(--text);font-size:11px}
+.twin-row .play:focus-visible,.twin-row .livep:focus-visible{outline:2px solid rgba(108,196,255,.6);outline-offset:2px}
+.twin-row .tm{text-align:right}
+.twin-row .livep{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--glass);border:1px solid var(--glass-b);color:var(--dim)}
+.twin-row .livep i{width:6px;height:6px;border-radius:50%;background:var(--mute)}
+.twin-row .livep.on{background:rgba(78,240,166,.14);border-color:rgba(78,240,166,.45);color:var(--text)}
+.twin-row .livep.on i{background:var(--batt);box-shadow:0 0 8px var(--batt)}
+.twin .circ span.p.on{background:rgba(108,196,255,.13);border-color:rgba(108,196,255,.42);color:var(--text)}
+.twin .circ span.a.on{background:rgba(255,158,102,.13);border-color:rgba(255,158,102,.42);color:var(--text)}
+.twin .circ span.b.chg{background:rgba(78,240,166,.13);border-color:rgba(78,240,166,.42);color:var(--text)}
+.twin .circ span.b.dis{background:rgba(255,193,94,.13);border-color:rgba(255,193,94,.42);color:var(--text)}
+.twin .landtip{min-height:58px;overflow-wrap:anywhere}
+/* end k-home-twin */

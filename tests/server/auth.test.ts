@@ -173,10 +173,13 @@ describe('crons keep their bearer check and need no cookie', () => {
     const auth = { authorization: `Bearer ${CRON}` };
     const sync = await call('/api/cron/sync', { headers: auth });
     expect(sync.status).toBe(200);
-    expect(await sync.json()).toEqual({ s: { mocked: true } });
-    const nest = await call('/api/cron/nest', { headers: auth });
+    // the nightly sync, then the learning layer's nightly job for the site (server/src/learn/nightly.ts)
+    expect(await sync.json()).toEqual({ s: { mocked: true }, 'learn:s': expect.objectContaining({ errors: [] }) });
+    // the 5-minute cron decides by the clock what is due (sampling.ts): pin it to a due tick, 10:00 CDT in cooling season
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.parse('2026-07-15T15:00:00Z') });
+    const nest = await call('/api/cron/nest', { headers: auth }).finally(() => vi.useRealTimers());
     expect(nest.status).toBe(200);
-    expect(await nest.json()).toEqual({ skipped: 'nest not linked' });
+    expect(await nest.json()).toEqual({ s: { nest: { skipped: 'nest not linked' }, pool: { skipped: 'pool not configured' } } });
     for (const headers of [{ authorization: 'Bearer wrong' }, {}] as Array<Record<string, string>>) {
       const r = await call('/api/cron/sync', { headers });
       expect(r.status).toBe(401);

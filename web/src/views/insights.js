@@ -1,5 +1,8 @@
 import { $, niceDate, localDate, addDays, svgText, path, ago, money } from '../lib/util.js';
 import { api } from '../lib/api.js';
+import { mountOutageCard } from './outage.js';
+import { veil } from '../lib/frost.js';
+import { guestPlan } from './guest.js';
 
 /* ---------- alert cards ---------- */
 export function drawAlerts(S) {
@@ -12,8 +15,8 @@ export function drawAlerts(S) {
   if (S.perf?.loss > .08) card('var(--warn)', '☀', `Solar output ${Math.round(S.perf.loss * 100)}% low`, 'last 7 clear days', 'Compared with the same sunlight this time last year. An even loss like this usually means dust or pollen.', '<button class="link" data-go="v-roof">See your panels →</button>');
   const N = S.overnight ?? [];
   if (N.length > 20) { const recent = N.slice(-7).reduce((a, n) => a + n.kw, 0) / 7, base = N.slice(-37, -7).map(n => n.kw).sort((a, b) => a - b), med = base[Math.floor(base.length / 2)];
-    if (recent > med * 1.15 && recent - med > .15) card('var(--solar)', '◐', `Overnight usage up ${Math.round((recent / med - 1) * 100)}%`, '7 nights', `Your 1–5 AM average went from ${(med * 1000).toFixed(0)} W to ${(recent * 1000).toFixed(0)} W, about ${S.tariff ? `$${((recent - med) * 24 * 30 * S.tariff.importRateAllIn / 6).toFixed(0)}` : '—'}/month if it's always-on. Nights are hotter too, so some of this may be AC.`); }
-  if (S.pool?.extras?.lightReadings30d > 0) card('var(--solar)', '💡', 'Pool lights are 600 W of incandescent', 'from the plan', `The AmeriLite pool (500 W) and spa (100 W) lights cost about ${S.tariff ? `$${(0.6 * S.tariff.importRateAllIn).toFixed(2)}` : '—'} an hour. LED replacements draw about a tenth of that and change colour.`);
+    if (recent > med * 1.15 && recent - med > .15) card('var(--solar)', '◐', `Overnight usage up ${Math.round((recent / med - 1) * 100)}%`, '7 nights', `Your 1–5 AM average went from ${(med * 1000).toFixed(0)} W to ${(recent * 1000).toFixed(0)} W, about ${S.guest ? veil('$••') : S.tariff ? `$${((recent - med) * 24 * 30 * S.tariff.importRateAllIn / 6).toFixed(0)}` : '—'}/month if it's always-on. Nights are hotter too, so some of this may be AC.`); }
+  if (S.pool?.extras?.lightReadings30d > 0) card('var(--solar)', '💡', 'Pool lights are 600 W of incandescent', 'from the plan', `The AmeriLite pool (500 W) and spa (100 W) lights cost about ${S.guest ? veil('$•.••') : S.tariff ? `$${(0.6 * S.tariff.importRateAllIn).toFixed(2)}` : '—'} an hour. LED replacements draw about a tenth of that and change colour.`);
   const D = (S.daily ?? []).slice(-30).filter(d => d.socMax != null);
   if (D.length > 10) { const full = D.filter(d => d.socMax >= 99).length;
     card('var(--batt)', '▮', full < 5 ? 'Your Powerwalls rarely fill up' : 'Powerwalls are cycling well', '30 days', full < 5
@@ -33,6 +36,7 @@ export function initPlanner(S) {
     const q = { panels: +$('rPv').value, powerwalls: +$('rPw').value, extra: +$('rUse').value };
     $('aPv').textContent = '+' + q.panels; $('aPw').textContent = '+' + q.powerwalls; $('aUse').textContent = `+${q.extra} kWh`;
     const r = await api.whatif(q).catch(() => null); if (!r) return;
+    if (S.guest) return guestPlan(S, r, q);   // no dollars for guests: the kWh-only planner (views/guest.js)
     $('aPvS').textContent = q.panels ? `${r.panels + q.panels} panels · roughly $${(q.panels * r.assumptions.panelW * 2.75 / 1000).toFixed(1)}k (assumes ${r.assumptions.panelW} W modules)` : `Today: ${r.panels} × ${r.panelWdc} W SunPower · ${r.kwpNow} kW DC`;
     $('aPwS').textContent = q.powerwalls ? `${2 + q.powerwalls} Powerwalls · ${27 + q.powerwalls * 13.5} kWh · roughly $${(q.powerwalls * 11.5).toFixed(1)}k` : 'Today: 2 × Powerwall 2 · 27 kWh';
     const B = r.baseline, U = r.upgraded, k = v => v >= 1000 ? (v / 1000).toFixed(1) + ' MWh' : Math.round(v) + ' kWh';
@@ -51,12 +55,15 @@ export function initPlanner(S) {
       `Another Powerwall would save about ${money(pw.savesPerYear)}, because today's batteries only reach full on ${pw.baseline.batteryFullDays} days a year, so there's rarely any surplus to store. ` +
       `Extra batteries would mainly buy outage time: about ${pw.backupHoursEvening.upgraded} h of evening backup instead of ${pw.backupHoursEvening.now} h.` : '';
     $('planFine').textContent = `Replays ${r.days} days of your real 5-minute data (as-built replay: ${k(B.importKwh)} bought vs ${k(r.actual.importKwh)} actually bought). Prices are placeholders: $2.75/W for panels, $11.5k per Powerwall, your PEC rate of ${r.assumptions.tariff ? `$${r.assumptions.tariff.importRateAllIn}/kWh and ${r.assumptions.tariff.exportCredit != null ? `$${r.assumptions.tariff.exportCredit}` : '—'}/kWh export credit` : '— (rate unknown)'}. No federal credit (it ended with 2025 installs).`;
-    const s = r.system;
+    const s = r.system?.veiled ? null : r.system; // a guest gets { veiled: true }: no price, loan or payback
     $('sysPay').innerHTML = s ? `<b>Your system so far.</b> Without solar or Powerwalls, the last 12 months would have cost ${money(r.noSystem.netCost)} in PEC energy instead of ${money(B.netCost)}: it saves about ${money(s.savesPerYear)} a year. ` +
       `You paid $${(s.priceUsd / 1000).toFixed(1)}k${s.taxCreditPct ? ` before the ${s.taxCreditPct}% federal credit, about $${(s.netUsd / 1000).toFixed(1)}k after` : ''}${s.monthlyPayment ? `, financed over ${s.loanYears} years at ${s.loanRatePct}% (about $${s.monthlyPayment}/month)` : ''}. ` +
       (s.paybackYears ? `At today's rates that pays back in about ${s.paybackYears} years; it's ${s.yearsSinceInstall} years old now${s.paybackYears > s.yearsSinceInstall ? `, so roughly ${Math.max(0, Math.round((s.paybackYears - s.yearsSinceInstall) * 10) / 10)} years to go` : ' and already paid for itself in energy'}.` : '') : '';
   }
 }
+
+/* ---------- outage readiness: the first card on Home, above Heat & your AC (views/outage.js, mockup n-outage) ---------- */
+export const initOutage = S => mountOutageCard(S, $('ip-home'));
 
 /* ---------- AC vs heat ---------- */
 export function drawAC(S) {
@@ -76,7 +83,7 @@ export function drawAC(S) {
   res.forEach(p => { const flag = p === worst && worst.res > 12; o += `<circle cx="${X(p.t)}" cy="${Y(p.u)}" r="${flag ? 5 : 3}" fill="${flag ? '#ff7a66' : p.date >= recent ? 'rgba(108,196,255,.9)' : 'rgba(108,196,255,.3)'}"><title>${p.date}: ${p.u.toFixed(0)} kWh at ${Math.round(p.t)}°</title></circle>`; });
   o += svgText(30, 168, `daily high →  ·  home kWh/day ↑  ·  ${pts.length} hot days (bright = last 60)`, { size: 8.5, font: 'Manrope' });
   $('acChart').innerHTML = o;
-  $('acTxt').innerHTML = `Each extra degree of daily high adds about <b style="color:var(--text)">${slope.toFixed(1)} kWh</b> a day, mostly air conditioning. That's about ${S.tariff ? `$${(slope * 30 * S.tariff.importRateAllIn).toFixed(0)}` : '—'} a month per degree. ` +
+  $('acTxt').innerHTML = `Each extra degree of daily high adds about <b style="color:var(--text)">${slope.toFixed(1)} kWh</b> a day, mostly air conditioning. That's about ${S.guest ? veil('$••') : S.tariff ? `$${(slope * 30 * S.tariff.importRateAllIn).toFixed(0)}` : '—'} a month per degree. ` +
     (worst.res > 12 ? `<b style="color:var(--warn)">${niceDate(worst.date)}</b> used ${Math.round(worst.res)} kWh more than normal for a ${Math.round(worst.t)}° day. That could be guests, laundry or the pool heater. If days like that become common, get the AC checked.` : 'Usage has tracked the temperature normally.');
 }
 

@@ -3,8 +3,10 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import { q, one, kv, migrate } from './db.js';
 import { config } from './config.js';
 import { hashPassword, verifyPassword, startSession, endSession, currentUser, requireUser, requireSite, tooManyAttempts, recordAttempt, signState, verifyState, multiUser,
-  requireOwner, ownerKey, checkOwnerKey, ownerSession, startOwnerSession, endOwnerSession, endOtherOwnerSessions, listOwnerSessions, ownerAttemptLimited, clientIp,
-  signOwnerState, consumeOwnerState } from './auth.js';
+  ownerKey, checkOwnerKey, startOwnerSession, endOwnerSession, endOtherOwnerSessions, endOwnerSessionById, listOwnerSessions, ownerAttemptLimited, guestAttempts, clientIp,
+  signOwnerState, consumeOwnerState, setCookie, readCookie } from './auth.js';
+import { gate, presenceHidden, setPreview, PREVIEW_COOKIE } from './access.js';
+import { createShare, listShares, revokeShare, revokeAllShares, redeemShare, pruneShares, guestMaxAge, EXPIRY, DEFAULT_EXPIRY, LABEL_MAX, GUEST_COOKIE } from './share.js';
 import { authorizeUrl, exchangeCode } from './tesla/auth.js';
 import { teslaFor, localDay, addDays } from './tesla/client.js';
 import { refreshLive, refreshSiteInfo, syncSite } from './sync.js';
@@ -17,18 +19,30 @@ import { appliances, comingSoon } from './appliances/index.js';
 import { poolDetail, applyPlan, restorePrevious } from './appliances/pool.js';
 import { readPool } from './appliances/screenlogic.js';
 import { acDetail, acTick } from './appliances/ac.js';
-import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, nestLinked, readNest } from './appliances/nest.js';
+import { applianceDay } from './appliances/day.js';
+import { cronTick } from './appliances/sampling.js';
+import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest } from './appliances/nest.js';
+import { pvsRouter } from './pvs.js';
+import { flowsFor, FlowsInputError } from './flows.js';
+import { outageDetail } from './outage.js';
+
+import { runLearn } from './learn/nightly.js';
+import { learnRouter } from './learn/api.js';
+import { confidenceMap } from './learn/confidence.js';
 
 export const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', true);
+// Nothing this app serves may be cached by a browser, proxy or CDN, or reused for a request with other cookies (owner, guest).
+app.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); res.vary('Cookie'); next(); });
 app.use(async (_req, _res, next) => { try { await migrate(); next(); } catch (e) { next(e); } });
 
-/* Owner gate: every /api and /auth route needs the owner cookie, reads included, except the few listed in auth.ts
- * (OPEN_ROUTES: the owner unlock, /api/auth/me, the bearer-protected crons and the state-verified OAuth callbacks). */
+/* The gate (access.ts): the owner cookie opens every /api and /auth route, reads included; a guest share-link cookie opens
+ * only the allow-listed reads, each through its redaction view (redact.ts); anonymous gets OPEN_ROUTES only (the two unlocks,
+ * /api/auth/me, the bearer-protected crons and the state-verified OAuth callbacks). */
 if (!ownerKey()) console.warn('[solstice] OWNER_KEY is not set (or is shorter than 32 characters). Failing closed: every /api and /auth route except /api/auth/me, the crons and the OAuth callbacks answers 401. Set OWNER_KEY in .env / Vercel env, then open /#owner=<key> once per device.');
-app.use('/api', requireOwner);
-app.use('/auth', requireOwner);
+app.use('/api', gate);
+app.use('/auth', gate);
 
 const wrap = (fn: (req: Request, res: Response) => Promise<unknown>) => (req: Request, res: Response, next: NextFunction) => fn(req, res).catch(next);
 const K = (col: string) => `ROUND((SUM(${col}) / 1000.0)::numeric, 2)::float8`;
@@ -39,7 +53,15 @@ const site = (req: Request) => req.siteId!;
 /* ======================= accounts ======================= */
 app.get('/api/auth/me', wrap(async (req, res) => {
   if (!multiUser()) { // single-owner mode: no accounts; a non-owner learns the mode and nothing else
-    if (!(await ownerSession(req, res))) return res.json({ mode: 'single', owner: false });
+    // A guest (or the owner previewing as one) learns that it is a guest; never the link's private label. It also gets the
+    // name the owner chose to show on invites and its own link's expiry (null: never, or the owner's preview), for the
+    // welcome card, the "Shared by" chip and the Settings "Shared with you" row.
+    if (req.guestView) return res.json({ mode: 'single', owner: false, guest: true, label: null, ownerName: await inviteName(),
+      expiresAt: req.guestShareLookup?.expiresAt ?? null, ...(req.preview ? { preview: true } : {}) });
+    if (req.role !== 'owner') {
+      const reason = req.guestShareLookup?.state;   // a guest cookie whose link was revoked or has expired
+      return res.json({ mode: 'single', owner: false, ...(reason === 'revoked' || reason === 'expired' ? { reason } : {}) });
+    }
     const s = await one<{ id: string; name: string }>('SELECT id, name FROM sites WHERE tesla_account_id IS NOT NULL ORDER BY created_at LIMIT 1');
     return res.json({ mode: 'single', owner: true, user: null, site: s ?? null });
   }
@@ -60,12 +82,62 @@ app.post('/api/auth/owner', express.text({ type: () => true, limit: '4kb' }), wr
   let key = ''; try { key = String(JSON.parse(String(req.body || '{}'))?.key ?? ''); } catch { /* a malformed body is a wrong key */ }
   if (!checkOwnerKey(key)) return fail(401, 'invalid_owner_key');
   await startOwnerSession(req, res);
+  if (readCookie(req, PREVIEW_COOKIE)) setPreview(res, false);   // opening the owner link always brings back the owner's own view
   res.json({ ok: true });
 }));
 /** Sign this device out; sign every other device out; list the owner's devices (for the later devices sheet). Owner-only. */
 app.post('/api/auth/signout', wrap(async (req, res) => { await endOwnerSession(req, res); res.json({ ok: true }); }));
 app.post('/api/auth/signout-others', wrap(async (req, res) => res.json({ ok: true, signedOut: await endOtherOwnerSessions(req) })));
 app.get('/api/auth/devices', wrap(async (req, res) => res.json(await listOwnerSessions(req))));
+/** Owner only: sign one other device out (the devices sheet), by the short id the list shows. This device signs out with /signout. */
+app.post('/api/auth/devices/:id/signout', wrap(async (req, res) => {
+  const r = await endOwnerSessionById(req, String(req.params.id));
+  if (r === 'current') return res.status(400).json({ error: 'this_device' });
+  if (!r) return res.status(404).json({ error: 'no such device' });
+  res.json({ ok: true, id: req.params.id });
+}));
+/** Anyone: forget the share link on this device (the guest's "Leave"). Clears the guest cookie; the link itself stays live. */
+app.post('/api/auth/leave', (_req, res) => { setCookie(res, GUEST_COOKIE, '', 0); res.json({ ok: true }); });
+
+/** The name guests see on invites ("Name shown on invites", owner settings `ownerName`): trimmed, printable, at most 40 characters. */
+async function inviteName() {
+  const n = (await kv.get<Record<string, any>>('settings:owner'))?.ownerName;
+  const clean = typeof n === 'string' ? n.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 40) : '';
+  return clean || 'The owner';
+}
+
+/* ---------- guest share links (share.ts): the owner creates, lists and revokes; anyone may open one ---------- */
+/** Trade a share token (from the #s=<token> fragment) for the solstice_guest cookie, which lives until the link expires. */
+app.post('/api/auth/guest', express.text({ type: () => true, limit: '4kb' }), wrap(async (req, res) => {
+  const ip = clientIp(req);
+  if (guestAttempts.limited(ip)) return res.status(429).json({ error: 'too_many_attempts' });
+  let token = ''; try { token = String(JSON.parse(String(req.body || '{}'))?.token ?? ''); } catch { /* a malformed body is an unknown link */ }
+  const r = await redeemShare(token.trim(), String(req.headers['user-agent'] ?? ''));
+  if (!r.ok) { guestAttempts.failed(ip); return res.status(401).json({ error: 'invalid_share', reason: r.reason }); }
+  setCookie(res, GUEST_COOKIE, token.trim(), guestMaxAge(r.expiresAt));
+  res.json({ ok: true, guest: true, expiresAt: r.expiresAt });
+}));
+/** Owner only: see the app exactly as a guest would (reads only) for the next hour, or stop. */
+app.post('/api/auth/preview', express.json(), wrap(async (req, res) => {
+  const on = req.body?.on;
+  if (typeof on !== 'boolean') return res.status(400).json({ error: 'on must be true or false' });
+  setPreview(res, on);
+  res.json({ ok: true, preview: on });
+}));
+/** Owner only: a new link. The token is in this response and nowhere else; only its SHA-256 is stored. */
+app.post('/api/share', express.json(), wrap(async (req, res) => {
+  const label = typeof req.body?.label === 'string' ? req.body.label.trim() : '', expiresIn = req.body?.expiresIn ?? DEFAULT_EXPIRY;
+  if (!label || label.length > LABEL_MAX) return res.status(400).json({ error: `label is required (at most ${LABEL_MAX} characters)` });
+  if (typeof expiresIn !== 'string' || !Object.hasOwn(EXPIRY, expiresIn)) return res.status(400).json({ error: `expiresIn must be one of ${Object.keys(EXPIRY).join(', ')}` });
+  const s = await createShare(label, expiresIn), fragment = `#s=${s.token}`;
+  res.json({ ...s, fragment, url: `${req.protocol}://${req.get('host')}/${fragment}` });
+}));
+app.get('/api/share', wrap(async (_req, res) => res.json(await listShares())));
+app.post('/api/share/revoke-all', wrap(async (_req, res) => res.json({ ok: true, revoked: await revokeAllShares() })));
+app.post('/api/share/:id/revoke', wrap(async (req, res) => {
+  if (!(await revokeShare(String(req.params.id)))) return res.status(404).json({ error: 'no live link with that id' });
+  res.json({ ok: true, id: req.params.id });
+}));
 
 app.post('/api/auth/signup', express.json(), wrap(async (req, res) => {
   if (process.env.ALLOW_SIGNUPS !== 'true') return res.status(403).json({ error: 'Sign-ups are closed' });
@@ -121,10 +193,19 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
   if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'unauthorized' });
   const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL');
   const out: Record<string, unknown> = {};
+  const t0 = Date.now();
   for (const s of sites) out[s.id] = await syncSite(s.id, Math.floor(50_000 / sites.length), { nightly: true }).catch(e => ({ error: e.message }));
   await q(`DELETE FROM readings WHERE ts < $1`, [Date.now() - 3 * 864e5]); // live snapshots are short-lived; history lives in `energy`
+  await pruneShares().catch(e => console.error('[solstice] pruning share links', e)); // revoked/expired links leave the owner's list after 30 days
+
+  // learning layer (server/src/learn/nightly.ts): score yesterday's predictions, trims, anomalies, today's predictions; skips what won't fit by 55 s
+  for (const s of sites) out[`learn:${s.id}`] = await runLearn(s.id, { deadline: t0 + 55_000 }).catch(e => ({ error: e.message }));
   res.json(out);
 }));
+
+/* ---------- per-panel data from the SunPower PVS6 (server/src/pvs.ts; owner-only like every /api route, no Tesla site needed) ----------
+ *  POST /api/pvs/readings (the LAN relay, scripts/pvs-relay.mjs) · GET /api/pvs/day?date=YYYY-MM-DD · GET /api/pvs/latest */
+app.use('/api/pvs', pvsRouter);
 
 /* ======================= everything below needs a signed-in user ======================= */
 app.use('/api', requireUser);
@@ -193,6 +274,12 @@ app.get('/api/day', wrap(async (req, res) => {
     totals: await one(`SELECT ${kwhCols} FROM energy WHERE site_id = $1 AND day = $2`, [id, date]) });
 }));
 
+/** History "Where every kWh went": seven paths for a day or the 30 days ending on `date`, with pool/AC and "unaccounted" (flows.ts). */
+app.get('/api/flows', wrap(async (req, res) => {
+  try { res.json(await flowsFor(site(req), String(req.query.range ?? 'day'), req.query.date == null ? undefined : String(req.query.date), await settingsFor(req))); }
+  catch (e) { if (e instanceof FlowsInputError) return res.status(400).json({ error: e.message }); throw e; }
+}));
+
 app.get('/api/daily', wrap(async (req, res) => {
   const id = site(req), days = Math.min(800, Number(req.query.days ?? 30)), from = addDays(localDay(), -days + 1);
   res.json(await q(`SELECT e.day date, ${kwhCols}, s.mn "socMin", s.mx "socMax" FROM energy e
@@ -208,7 +295,8 @@ app.get('/api/monthly', wrap(async (req, res) => {
 app.get('/api/profile', wrap(async (req, res) => {
   const days = Number(req.query.days ?? 14), to = localDay(), from = addDays(to, -days);
   res.json({ days, hours: await q(`SELECT hour::int, (SUM(home_wh) / 1000.0 / $4)::float8 home, (SUM(solar_wh) / 1000.0 / $4)::float8 solar
-    FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY hour ORDER BY hour`, [site(req), from, to, days]) });
+    FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY hour ORDER BY hour`, [site(req), from, to, days]),
+    conf: await confidenceMap(site(req), ['fc48.solar', 'fc48.home', 'fc48.soc']) }); // learning layer: trust in the 48-hour forecast built on this profile
 }));
 
 app.get('/api/grid-days', wrap(async (req, res) => {
@@ -238,6 +326,8 @@ app.get('/api/records', wrap(async (req, res) => {
 }));
 
 app.get('/api/outages', wrap(async (req, res) => res.json(await q('SELECT ts, duration_s FROM backup_events WHERE site_id = $1 ORDER BY epoch DESC', [site(req)]))));
+/** Outage readiness (Insights → Home): backup hours, the load ladder, the island simulation, 12 months of outages, storm state. Read-only. */
+app.get('/api/outage', wrap(async (req, res) => res.json(await outageDetail(site(req), await settingsFor(req)))));
 app.get('/api/site', wrap(async (req, res) => { const info = await siteInfo(site(req)); res.json({ summary: summary(info), raw: info ?? null }); }));
 
 /* ---------- bills ---------- */
@@ -321,12 +411,13 @@ app.get('/api/whatif', wrap(async (req, res) => {
 /* ---------- appliances: pool pump (ScreenLogic), AC next ---------- */
 const rateFor = async (id: string) => (await currentTariff(id))?.importRateAllIn ?? null; // null: costs unknown until a bill is parsed
 app.get('/api/appliances', wrap(async (req, res) => {
-  const id = site(req), settings = await settingsFor(req), rate = await rateFor(id);
+  const id = site(req), settings = presenceHidden(req, await settingsFor(req)), rate = await rateFor(id);
   const list = await Promise.all(appliances.filter(a => a.available()).map(a => a.summary(id, settings, rate).catch(e => ({ id: a.id, name: a.name, status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message }))));
-  if (nestConfigured()) list.push(await acDetail(id, settings, rate, await acSlope(id)).then(d => ({ id: 'ac', name: 'AC', status: d.linked ? 'linked' as const : 'estimated' as const, watts: d.state?.hvac === 'COOLING' ? Math.round(d.learned.acKw * 1000) : 0, kwhPerDay: d.todayKwh, savesPerMonth: d.plan.costSavedMonth })).catch(e => ({ id: 'ac', name: 'AC', status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message })));
+  if (nestConfigured()) list.push(await acDetail(id, settings, rate, await acSlope(id)).then(d => ({ id: 'ac', name: 'AC', status: d.linked ? 'linked' as const : 'estimated' as const, watts: d.state?.hvac === 'COOLING' ? Math.round(d.learned.acKw * 1000) : 0, kwhPerDay: d.todayKwh, savesPerMonth: null })).catch(e => ({ id: 'ac', name: 'AC', status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message })));
   res.json([...list, ...comingSoon()]);
 }));
-app.get('/api/appliances/pool', wrap(async (req, res) => res.json(await poolDetail(site(req), await settingsFor(req), await rateFor(site(req)), { fresh: req.query.fresh === '1' }))));
+// ?fresh=1 forces a device read: the owner's only (a guest's reads come from the 60 s cache, whatever it asks)
+app.get('/api/appliances/pool', wrap(async (req, res) => res.json(await poolDetail(site(req), await settingsFor(req), await rateFor(site(req)), { fresh: !req.guestView && req.query.fresh === '1' }))));
 /** Writes the smarter schedule to ScreenLogic: replaces the pump programs' schedules and speeds, keeps everything else (lights, spa, freeze protection). */
 app.post('/api/appliances/pool/apply', wrap(async (req, res) => {
   const id = site(req), d = await poolDetail(id, await settingsFor(req), await rateFor(id), { fresh: true });
@@ -373,7 +464,14 @@ async function acSlope(id: string) {
   await kv.set(`${id}:ac:slope`, { at: Date.now(), slope: Math.max(.5, Math.min(6, slope || 2.5)) });
   return Math.max(.5, Math.min(6, slope || 2.5));
 }
-app.get('/api/appliances/ac', wrap(async (req, res) => { const id = site(req); res.json(await acDetail(id, await settingsFor(req), await rateFor(id), await acSlope(id), { fresh: req.query.fresh === '1' })); }));
+app.get('/api/appliances/ac', wrap(async (req, res) => { const id = site(req); res.json(await acDetail(id, presenceHidden(req, await settingsFor(req)), await rateFor(id), await acSlope(id), { fresh: !req.guestView && req.query.fresh === '1' })); }));
+/** The Now card's whole-home twin: one Chicago day hour by hour (energy, pool, AC) from the database only; never reads ScreenLogic or Nest. */
+app.get('/api/appliances/day', wrap(async (req, res) => {
+  const date = String(req.query.date ?? localDay());
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+  res.set('Cache-Control', date < localDay() ? 'private, max-age=86400' : 'no-store');
+  res.json(await applianceDay(site(req), date, req.user ? req.user.settings ?? {} : undefined));
+}));
 /** Approve today's plan: the 5-minute cron then applies each setpoint step at its hour. */
 app.post('/api/appliances/ac/apply', wrap(async (req, res) => { const id = site(req); await kv.set(`${id}:ac:plan`, { date: localDay(), approved: true, lastStepHour: null }); res.json(await acTick(id, await settingsFor(req), await rateFor(id), await acSlope(id))); }));
 app.post('/api/appliances/ac/settings', express.json(), wrap(async (req, res) => {
@@ -386,13 +484,19 @@ app.post('/api/appliances/ac/settings', express.json(), wrap(async (req, res) =>
   const id = site(req); if (patch.presence) { const rec = await kv.get<any>(`${id}:ac:plan`); if (rec) { rec.lastStepHour = null; await kv.set(`${id}:ac:plan`, rec); } await acTick(id, await settingsFor(req), await rateFor(id), await acSlope(id)).catch(() => {}); }
   res.json({ ok: true, ac: next });
 }));
-/** Every 5 minutes: sample Nest (feeds the AC kW learning) and apply due plan steps. */
+/* ---------- learning layer: GET /api/models (the model report), POST /api/appliances/ac/untrim (server/src/learn/api.ts) ---------- */
+app.use('/api', learnRouter);
+/**
+ * Fires every 5 minutes; sampling.ts decides what is due. Nest (with acTick: AC learning and due plan steps) every 5 minutes 10:00–22:00
+ * in cooling season, every 15 minutes otherwise; a read-only pool read every 15 minutes of scheduled pump hours plus 02:00 and 05:00.
+ * A tick with nothing due answers without touching the database.
+ */
 app.get('/api/cron/nest', wrap(async (req, res) => {
   if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'unauthorized' });
-  if (!nestConfigured() || !(await nestLinked())) return res.json({ skipped: 'nest not linked' });
-  const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL'), out: Record<string, unknown> = {};
-  for (const s of sites) { const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; out[s.id] = await acTick(s.id, settings, await rateFor(s.id), await acSlope(s.id)).catch(e => ({ error: e.message })); }
-  res.json(out);
+  res.json(await cronTick(Date.now(), {
+    sites: async () => (await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL')).map(s => s.id),
+    acTick: async id => acTick(id, await kv.get<Record<string, any>>('settings:owner') ?? {}, await rateFor(id), await acSlope(id)),
+  }));
 }));
 /* ---------- Google (Nest) OAuth ---------- */
 app.get('/auth/google', (req, res) => { if (!nestConfigured()) return res.status(503).send('Nest is not configured'); res.redirect(nestAuthorizeUrl(signOwnerState('nest', 60 * 60_000))); }); // owner-only; Google's permissions page can take a while

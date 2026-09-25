@@ -20,8 +20,9 @@ describe('AC planFor', () => {
     const p = plan();
     expect(steps(p)).toEqual([[7, 76], [11, 74], [16, 78], [20, 76], [22, 76]]);
     expect([p.precool, p.precoolFrom, p.precoolTo, p.coastFrom, p.coastTo]).toEqual([true, 11, 16, 16, 20]);
-    // pinned to today's formula (owner question 22 asks to replace it)
-    expect([p.kwhSaved, p.costSavedMonth]).toEqual([.6, 2]);
+    // the learning layer's two figures (owner question 22; learn/ac.ts acSavings): slope 2.5 kWh/°F over 12 cooling hours is
+    // 0.208 kWh per °F-hour; 2° below the 76° middle for 11–16 is 2.1 kWh shifted onto solar, 2° above it for 16–20 is 1.7 kWh avoided
+    expect([p.shiftedKwh, p.eveningAvoidedKwh, p.control]).toEqual([2.1, 1.7, false]);
     expect(p.why).toEqual([
       'Pre-cool to 74° from 11:00 to 16:00 while the panels peak (6 kWh/m² of sun, high 96°)',
       'Coast to 78° until 20:00 so the batteries carry a lighter evening',
@@ -30,7 +31,7 @@ describe('AC planFor', () => {
   });
 
   it('17: the plan keeps the shape web/src/views/ac.js reads', () => {
-    expect(Object.keys(plan())).toEqual(['date', 'steps', 'precool', 'precoolFrom', 'precoolTo', 'coastFrom', 'coastTo', 'high', 'sunKwhM2', 'kwhSaved', 'costSavedMonth', 'why']);
+    expect(Object.keys(plan())).toEqual(['date', 'steps', 'precool', 'precoolFrom', 'precoolTo', 'coastFrom', 'coastTo', 'high', 'sunKwhM2', 'shiftedKwh', 'eveningAvoidedKwh', 'control', 'why']);
   });
 
   it('18: a heat wave (high 101, peak at 14:00) starts the pre-cool step at 11:00', () => {
@@ -39,11 +40,13 @@ describe('AC planFor', () => {
     expect(p.coastTo).toBe(21);
     expect(p.why[2]).toBe('Heat wave: pre-cool starts at 11:00 so the system never falls behind');
   });
-  // BUG-8 · today the step moves to 11:00 but precoolFrom stays 12 and the text says "from 12:00 to 17:00".
-  it.fails('BUG-8: in a heat wave precoolFrom and the text agree with the 11:00 step', () => {
+  // BUG-8 · fixed: the step moved to 11:00 but precoolFrom stayed 12 and the text said "from 12:00 to 17:00". The pre-cool
+  // window now starts at 11:00 on a heat-wave day, so the step, precoolFrom, the text and the savings use the same hours.
+  it('BUG-8: in a heat wave precoolFrom and the text agree with the 11:00 step', () => {
     const p = plan({ high: 101, hourlySun: sun14 });
     expect(p.precoolFrom).toBe(11);
     expect(p.why[0]).toContain('from 11:00');
+    expect(p.precoolTo).toBe(17);   // the old kWh/cost savings fields were replaced by shiftedKwh/eveningAvoidedKwh in the learning layer
   });
 
   it('19: no pre-cool on a mild day, a cloudy day or a humid day', () => {
@@ -53,7 +56,7 @@ describe('AC planFor', () => {
     expect(plan({ sunKwhM2: 4 }).why).toEqual(['Cloudy: no solar surplus to pre-cool with']);
     const humid = plan({ humidity: 65 });
     expect(humid.why).toEqual(['Humidity 65%: no coast, holding 76°']);
-    expect([mild.precool, humid.precool, mild.kwhSaved]).toEqual([false, false, 0]);
+    expect([mild.precool, humid.precool, mild.shiftedKwh, mild.eveningAvoidedKwh]).toEqual([false, false, 0, 0]);
   });
   it('19: the boundary (high 88, sun 4.5 kWh/m²) pre-cools', () => {
     expect(plan({ high: 88, sunKwhM2: 4.5 }).precool).toBe(true);
@@ -62,18 +65,24 @@ describe('AC planFor', () => {
   it('20: marked away holds the away setpoint all day', () => {
     const p = plan({ settings: { presence: 'away' } });
     expect(p.steps).toEqual([{ hour: 0, coolF: 80, why: 'marked away' }]);
-    expect([p.precool, p.coastTo, p.kwhSaved]).toEqual([false, 21, 0]);
+    expect([p.precool, p.coastTo, p.shiftedKwh, p.eveningAvoidedKwh]).toEqual([false, 21, 0, 0]);
     expect(p.why).toEqual(['Away: holding 80° until you mark Home']);
     expect(stepAt(p, 5).coolF).toBe(80);
   });
   it('20: a narrow band (72–73, night 70–72) stays inside the band and never claims negative savings', () => {
     const p = plan({ settings: { band: { homeLo: 72, homeHi: 73, nightLo: 70, nightHi: 72 } } });
     expect(steps(p)).toEqual([[7, 73], [11, 72], [16, 73], [20, 73], [22, 72]]);
-    expect(p.kwhSaved).toBe(0);
+    expect([p.shiftedKwh, p.eveningAvoidedKwh]).toEqual([1, 0]); // 1° of pre-cool for 5 h; the coast can't rise above 73°
   });
   it('20: savings scale with the heat-model slope', () => {
     const p = plan({ slope: 4 });
-    expect([p.kwhSaved, p.costSavedMonth]).toEqual([1, 3]);
+    expect([p.shiftedKwh, p.eveningAvoidedKwh]).toEqual([3.3, 2.7]);
+  });
+  it('a control day (learning layer) plans the plain comfort band on a pre-cool day and says why', () => {
+    const p = planFor({ date: '2026-07-15', high: 96, sunKwhM2: 6, hourlySun: sun13, settings: AC, acKw: 2.016, slope: 2.5, rate: .1064, humidity: null, control: true });
+    expect(steps(p)).toEqual([[7, 76], [21, 76], [22, 76]]);
+    expect([p.precool, p.control, p.shiftedKwh, p.eveningAvoidedKwh]).toEqual([false, true, 0, 0]);
+    expect(p.why).toEqual(['Control day: holding the comfort band (1 in 5 hot, sunny days) so Solstice can measure what pre-cooling saves']);
   });
 });
 

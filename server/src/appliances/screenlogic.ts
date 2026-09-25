@@ -27,8 +27,14 @@ export async function withUnit<T>(fn: (c: UnitConnection) => Promise<T>): Promis
   try { return await fn(c); } finally { await c.closeAsync().catch(() => {}); }
 }
 
-export async function readPool(): Promise<PoolSnapshot> {
-  return withUnit(async c => {
+/**
+ * Read-only status: versions, equipment state, circuits, pump status and schedules. No command here changes the controller.
+ * Uses the 8000 ms netTimeout (Pentair's dispatcher can take longer than the library's 2.5 s default). `run` opens the
+ * ScreenLogic session (tests pass a fake).
+ */
+export async function readPool(run: typeof withUnit = withUnit): Promise<PoolSnapshot> {
+  return run(async c => {
+    (c as any).netTimeout = 8000;
     const [ver, st, ctl, cfg, sched] = await Promise.all([c.getVersionAsync(), c.equipment.getEquipmentStateAsync(), c.equipment.getControllerConfigAsync(),
       c.equipment.getEquipmentConfigurationAsync(), c.schedule.getScheduleDataAsync(0)]);
     const on = new Map(st.circuitArray.map((x: any) => [x.id, !!x.state]));

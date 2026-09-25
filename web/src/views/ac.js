@@ -1,6 +1,7 @@
 import { $, money, niceDate, localDate, localHour } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { createThermalTwin } from '../scenes/thermaltwin.js';
+import { veil, nameStart } from '../lib/frost.js';
 
 /* AC (Insights → Appliances): thermal twin with a day scrubber, today's plan vs Nest, Autopilot, Home/Away, and the Nest link. */
 let twin = null, scrubT = null;
@@ -32,12 +33,12 @@ export function drawAc(S) {
     $('acLab').innerHTML = `indoor ${(live && st?.indoorF != null ? st.indoorF : p.T).toFixed(1)}°<br>outdoor ${Math.round(p.o)}°<br>sun ${Math.round(sunH[Math.min(23, Math.floor(hh))] * 100)}%`;
     $('acScrubT').textContent = `${hm(Math.round(hh * 4) / 4)}${live ? ' · now' : ''}`; };
   const sc = $('acScrub'); sc.value = now; sc.oninput = () => { scrubT = +sc.value; show(Math.abs(scrubT - now) < .2 ? null : scrubT); }; show(null);
-  const rt = d.runtime;
+  const rt = d.runtime, source = d.learned.source ?? (d.learned.coolKw != null ? 'measured' : 'estimated'); // a guest's copy leaves out `source`; the server's own rule
   $('acStats').innerHTML = `<div class="stat"><small>Today</small><b>${d.todayKwh} kWh${d.shareOfHomePct != null ? ` · ${d.shareOfHomePct}%` : ''}</b></div><div class="stat"><small>Run time</small><b>${Math.floor(rt.minutes / 60)} h ${rt.minutes % 60} m${rt.duty != null ? ` · ${rt.duty}% duty` : ''}</b></div>
-    <div class="stat"><small>AC draw · ${d.learned.source}</small><b>${d.learned.acKw.toFixed(1)} kW${d.learned.samples ? ` · ${d.learned.samples} steps` : ''}</b></div><div class="stat"><small>Indoor · humidity</small><b>${st?.indoorF ?? '—'}° · ${st?.humidity ?? '—'}%</b></div>`;
+    <div class="stat"><small>AC draw · ${source}</small><b>${d.learned.acKw.toFixed(1)} kW${d.learned.samples ? ` · ${d.learned.samples} steps` : ''}</b></div><div class="stat"><small>Indoor · humidity</small><b>${st?.indoorF ?? '—'}° · ${st?.humidity ?? '—'}%</b></div>`;
   $('acPresence').innerHTML = `<button class="${d.settings.presence === 'home' ? 'on' : ''}" data-p="home">Home</button><button class="${d.settings.presence === 'away' ? 'on' : ''}" data-p="away">Away · ${d.settings.awayF}°</button>`;
   $('acPresence').onclick = async e => { const b = e.target.closest('button'); if (!b || b.dataset.p === d.settings.presence) return; await api.acSettings({ presence: b.dataset.p }).catch(err => alert(err.message)); await loadAc(S); };
-  $('acNote').innerHTML = `${d.equipment.airHandler} · ${d.equipment.heat} · ${d.equipment.outdoor}. AC power is ${d.learned.source === 'measured' ? 'measured from the step in Tesla’s home load when Nest starts and stops cooling' : 'estimated from your heat model until Nest has been sampled for a few days'}.${d.error ? ` <span style="color:var(--warn)">Last read failed: ${d.error}</span>` : ''}`;
+  $('acNote').innerHTML = `${d.equipment.airHandler} · ${d.equipment.heat} · ${d.equipment.outdoor}. AC power is ${source === 'measured' ? 'measured from the step in Tesla’s home load when Nest starts and stops cooling' : 'estimated from your heat model until Nest has been sampled for a few days'}.${d.error ? ` <span style="color:var(--warn)">Last read failed: ${d.error}</span>` : ''}`;
   if (!linked) { $('acLinkBtn').href = '/auth/google'; $('acLinkTxt').textContent = d.configured ? 'Sign in with Google and share the thermostat with Solstice.' : 'Google Device Access is not configured yet (NEST_PROJECT_ID, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET).'; return; }
   drawPlan(S, sim, outdoor, sunH); drawAuto(S);
 }
@@ -54,7 +55,9 @@ function drawPlan(S, sim, outdoor, sunH) {
   svg.innerHTML = o;
   const b = d.settings.band;
   $('acBand').textContent = `${b.homeLo}°–${b.homeHi}° home · ${b.nightLo}°–${b.nightHi}° night · away ${d.settings.awayF}°`;
-  $('acDeltas').innerHTML = `<div><small>AC electricity</small><b>${P.kwhSaved ? '−' + P.kwhSaved + ' kWh' : '0 kWh'}</b><span>per day</span></div><div><small>Cost</small><b>${P.costSavedMonth == null ? '—' : P.costSavedMonth ? '−' + money(P.costSavedMonth) : '$0'}</b><span>per month</span></div>
+  // kwhSaved/costSavedMonth left the plan with the learning layer (now shiftedKwh/eveningAvoidedKwh + conf); both cells read —
+  // until the r-learning mockup's savings card replaces this row
+  $('acDeltas').innerHTML = `<div><small>AC electricity</small><b>—</b><span>per day</span></div><div><small>Cost</small><b>${S.guest ? veil() : P.costSavedMonth == null ? '—' : P.costSavedMonth ? '−' + money(P.costSavedMonth) : '$0'}</b><span>per month</span></div>
     <div><small>Today</small><b>${Math.round(P.high)}°</b><span>${Number(P.sunKwhM2).toFixed(1)} kWh/m² sun<br>${P.precool ? 'pre-cool day' : 'hold the band'}</span></div><div><small>Warmest indoor</small><b>${Math.max(...P.steps.map(s => s.coolF))}°</b><span>${P.precool ? `${hm(P.coastFrom)}–${hm(P.coastTo)}` : 'all day'}</span></div>`;
   const why = P.why.map((w, i) => `<div><i>${['☀', '▮', '°', '⏱', '⚡'][i % 5]}</i><b>${i === 0 ? 'Today' : 'Also'}</b><p>${w}.</p></div>`).concat([
     `<div><i>°</i><b>Every degree counts</b><p>Your heat model says about ${(S.acSlope ?? 2.5).toFixed(1)} kWh a day per degree of daily high, so each degree of setpoint is worth roughly ${((S.acSlope ?? 2.5) * .6).toFixed(1)} kWh on a hot day.</p></div>`,
@@ -63,18 +66,19 @@ function drawPlan(S, sim, outdoor, sunH) {
   $('acWhy').innerHTML = why.join(''); $('acDots').innerHTML = why.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('');
   const rs = $('acWhy'); rs.onscroll = () => { const i = Math.round(rs.scrollLeft / (rs.children[0].offsetWidth + 10)); [...$('acDots').children].forEach((x, k) => x.classList.toggle('on', k === i)); };
   $('acSteps').innerHTML = P.steps.map(s => `<span>${hm(s.hour)} · ${s.why}</span><b>${s.coolF}°</b>`).join('');
-  $('acActions').innerHTML = d.applied?.approved ? `<p class="fine" style="margin-top:10px">Today's plan is approved: Solstice sets each step at its hour${d.applied.lastStepHour != null ? ` (last step ${hm(d.applied.lastStepHour)})` : ''}.</p>` : `<button class="primary" id="acApply">Apply today's plan to Nest</button><button class="link" id="acShow">Show the steps instead</button>`;
+  $('acActions').innerHTML = S.guest ? `<p class="fine" style="margin-top:12px;text-align:center">${nameStart(S.ownerName)} approves changes from their own devices.</p>` : d.applied?.approved ? `<p class="fine" style="margin-top:10px">Today's plan is approved: Solstice sets each step at its hour${d.applied.lastStepHour != null ? ` (last step ${hm(d.applied.lastStepHour)})` : ''}.</p>` : `<button class="primary" id="acApply">Apply today's plan to Nest</button><button class="link" id="acShow">Show the steps instead</button>`;
   const show = $('acShow'); if (show) show.onclick = () => { const el = $('acSteps'); el.style.display = el.style.display === 'none' ? 'grid' : 'none'; };
   const apply = $('acApply'); if (apply) apply.onclick = async () => { if (!confirm(`Let Solstice set the thermostat through today?\n\n${P.steps.map(s => `• ${hm(s.hour)}: ${s.coolF}° (${s.why})`).join('\n')}\n\nOnly the cooling setpoint changes, never outside ${d.settings.band.homeLo}–${Math.max(d.settings.band.homeHi, d.settings.awayF)}°, at most ${d.settings.maxStepF}° per step. Mark Away or change the mode in the Nest app at any time.`)) return; apply.textContent = 'Applying…'; try { await api.acApply(); await loadAc(S); } catch (e) { alert(e.message); apply.textContent = "Apply today's plan to Nest"; } };
 }
 function drawAuto(S) {
   const d = S.ac, s = d.settings;
   document.querySelectorAll('#acMode button').forEach(b => b.classList.toggle('on', b.dataset.m === s.autopilot));
+  $('acAutoBadge').textContent = `Autopilot · ${{ off: 'Off', suggest: 'Suggest', auto: 'Auto' }[s.autopilot] ?? s.autopilot}`; $('acAutoBadge').className = `badge${s.autopilot === 'off' ? '' : ' g'}`;   // a guest's static badge
   $('acMode').onclick = async e => { const b = e.target.closest('button'); if (!b || b.dataset.m === s.autopilot) return; if (b.dataset.m === 'auto' && !confirm('Auto mode sets the cooling setpoint through each day without asking, always inside your comfort band. Turn it on?')) return; await api.acSettings({ autopilot: b.dataset.m }).catch(err => alert(err.message)); await loadAc(S); };
   $('acStatus').innerHTML = `<i class="${s.autopilot === 'off' ? 'off' : ''}"></i><span>${s.autopilot === 'off' ? 'Off. Suggest plans each day and waits for you; Auto applies the steps itself.' : `${s.autopilot === 'auto' ? 'Applies' : 'Suggests'} each day's plan from the 6 AM forecast, samples Nest every 5 minutes, never leaves your comfort band, never touches heating mode`}</span></div>`;
   const P = d.plan, st = d.state, ring = (v, l, f, c) => { const C = 2 * Math.PI * 17; return `<div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="${c}" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="${C * Math.max(0, Math.min(1, f))} ${C}" transform="rotate(-90 22 22)"/></svg><b>${v}</b><small>${l}</small></div>`; };
   const soc = S.live?.soc ?? null;
-  $('acSignals').innerHTML = ring(`${Math.round(P.high)}°`, 'high', P.high / 105, '#ff9e66') + ring(P.sunKwhM2, 'sun', P.sunKwhM2 / 8, '#ffc15e') + ring(s.presence, 'presence', s.presence === 'home' ? 1 : .2, '#4ef0a6') + ring(soc != null ? Math.round(soc) + '%' : '—', 'battery', (soc ?? 0) / 100, '#6cc4ff') + ring(st?.humidity != null ? st.humidity + '%' : '—', 'rh', (st?.humidity ?? 0) / 100, '#c4a2ff') + ring(S.ercot?.condition ?? '—', 'ercot', S.ercot?.eea ? .9 : .15, '#8d93a8');
+  $('acSignals').innerHTML = ring(`${Math.round(P.high)}°`, 'high', P.high / 105, '#ff9e66') + ring(P.sunKwhM2, 'sun', P.sunKwhM2 / 8, '#ffc15e') + ring(s.presence ?? '—', 'presence', s.presence === 'home' ? 1 : .2, '#4ef0a6') + ring(soc != null ? Math.round(soc) + '%' : '—', 'battery', (soc ?? 0) / 100, '#6cc4ff') + ring(st?.humidity != null ? st.humidity + '%' : '—', 'rh', (st?.humidity ?? 0) / 100, '#c4a2ff') + ring(S.ercot?.condition ?? '—', 'ercot', S.ercot?.eea ? .9 : .15, '#8d93a8');
   const days = d.week, X = i => 12 + i * 42; let o = ''; days.forEach((x, i) => { const px = X(i), tm = i === 0, hh = Math.max(4, (x.high - 70) / 35 * 56); o += `${tm ? `<rect x="${px - 2}" y="4" width="34" height="102" rx="8" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.1)"/>` : ''}<rect x="${px + 7}" y="${84 - hh}" width="16" height="${hh}" rx="4" fill="#ff9e66" opacity="${tm ? 1 : .7}"/>${x.precool ? `<rect x="${px + 7}" y="${84 - hh - 4 - x.depth * 6}" width="16" height="${x.depth * 6}" rx="3" fill="#4ef0a6"/>` : ''}<text x="${px + 15}" y="${84 - hh - 8 - (x.precool ? x.depth * 6 : 0)}" text-anchor="middle" fill="#f2f4f8" font-size="9.5" font-family="JetBrains Mono">${x.high}°</text><text x="${px + 15}" y="100" text-anchor="middle" fill="rgba(242,244,248,${tm ? .9 : .5})" font-size="9.5" font-family="Manrope">${new Date(x.date + 'T12:00').toLocaleDateString('en-US', { weekday: 'short' })}</text>`; });
   $('acWeek').innerHTML = o;
   $('acTomorrow').textContent = days[1] ? `Tomorrow ${days[1].high}° · ${days[1].precool ? `pre-cool ${days[1].depth}°` : 'hold the band'}` : '';

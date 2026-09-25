@@ -3,7 +3,6 @@ import * as THREE from 'three';
 /** Full-screen aurora whose colours follow the energy mix; turns to embers during an outage. */
 export function createAurora(canvas) {
   const r = new THREE.WebGLRenderer({ canvas });
-  r.setPixelRatio(Math.min(devicePixelRatio, 1.5));
   const scene = new THREE.Scene(), cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const U = { uT: { value: 0 }, uRes: { value: new THREE.Vector2() }, uMix: { value: new THREE.Vector3(1, 0, 0) }, uOut: { value: 0 } };
   scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({ uniforms: U,
@@ -28,7 +27,15 @@ export function createAurora(canvas) {
       c*=1.-.35*length(v-.5);
       gl_FragColor=vec4(c,1.);
     }` })));
-  const resize = () => { r.setSize(innerWidth, innerHeight, false); U.uRes.value.set(innerWidth, innerHeight); };
+  // The canvas shows at its intrinsic size (drawing buffer in CSS px), so at ratio k it covers k × the viewport from the top-left.
+  // Under 768 px it is only ever seen through the full-screen .phone's 34 px backdrop blur: draw at 0.5× DPR there and pin the
+  // CSS box to the size ratio k gives, so the picture and its crop stay exactly as before. Desktop keeps k and its intrinsic size.
+  const resize = () => {
+    const k = Math.min(devicePixelRatio, 1.5), phone = innerWidth < 768;
+    r.setPixelRatio(phone ? Math.min(devicePixelRatio, .5) : k); r.setSize(innerWidth, innerHeight, false);
+    canvas.style.width = phone ? `${Math.floor(innerWidth * k)}px` : ''; canvas.style.height = phone ? `${Math.floor(innerHeight * k)}px` : '';
+    U.uRes.value.set(innerWidth, innerHeight);
+  };
   resize(); addEventListener('resize', resize);
   const target = new THREE.Vector3(1, 0, 0);
   return {

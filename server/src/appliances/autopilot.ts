@@ -6,6 +6,7 @@ import { planFor, applyPlan, planWrite, type Plan, type PoolSettings } from './p
 import type { PoolSnapshot } from './screenlogic.js';
 import { siteLocation } from '../site.js';
 import { guardPoolWrite } from './guards.js';
+import { logPoolPlan } from '../learn/hooks.js';
 
 export type Mode = 'off' | 'suggest' | 'auto';
 type Daily = { date: string; high: number; rainMm: number; rainPct: number; sunKwhM2: number; hourlySun: number[] };
@@ -27,9 +28,9 @@ export async function forecast(): Promise<Daily[]> {
   return days;
 }
 
-/** Days in the last week with the spa, jets, blower or lights seen on (a proxy for swimming). */
+/** Days in the last week with the spa, jets, blower or lights seen on (a proxy for swimming). `circuits` holds numbers, so match on their text (`?|` only matches string elements). */
 export async function useDays(siteId: string) {
-  const r = await q<{ n: number }>(`SELECT COUNT(DISTINCT day)::int n FROM pool_readings WHERE site_id = $1 AND day >= $2 AND circuits ?| array['1','2','3','4','7']`, [siteId, addDays(localDay(), -7)]);
+  const r = await q<{ n: number }>(`SELECT COUNT(DISTINCT day)::int n FROM pool_readings WHERE site_id = $1 AND day >= $2 AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(circuits) c WHERE c = ANY(array['1','2','3','4','7']))`, [siteId, addDays(localDay(), -7)]);
   return r[0]?.n ?? 0;
 }
 const pollenFor = (month: number): Signals['pollen'] => [2, 3].includes(month) ? 'high' : [1, 4, 11].includes(month) ? 'medium' : 'low';
@@ -37,7 +38,7 @@ const pollenFor = (month: number): Signals['pollen'] => [2, 3].includes(month) ?
 /** One day's plan: the season plan, then the day's adjustments. Returns the plan and why. */
 export function planDay(o: { day: Daily; prev?: Daily; heatDays: number; useYesterday: boolean; waterTemp: number; settings: PoolSettings; W: (r: number) => number; rate: number | null; names: Map<number, string>; pollen: Signals['pollen'] }) {
   const why: string[] = [];
-  const base = planFor({ waterTemp: o.waterTemp, solarKw: o.day.hourlySun.map(v => v * 9.45 * .8), settings: o.settings, W: o.W, rate: o.rate, month: new Date(o.day.date).getMonth(), names: o.names });
+  const base = planFor({ waterTemp: o.waterTemp, solarKw: o.day.hourlySun.map(v => v * 9.45 * .8), settings: o.settings, W: o.W, rate: o.rate, month: Number(o.day.date.slice(5, 7)) - 1, names: o.names });
   let hours = base.hours, boost = base.boostHours;
   const rainy = (o.prev?.rainMm ?? 0) >= 5 || (o.day.rainMm >= 5 && o.day.rainPct >= 60);
   if (rainy) { hours += 1; boost = 1; why.push(`+1 h and a skim boost: ${(o.prev?.rainMm ?? 0) >= 5 ? 'rain yesterday' : 'rain likely'} brings debris`); }
@@ -48,7 +49,7 @@ export function planDay(o: { day: Daily; prev?: Daily; heatDays: number; useYest
   if (o.waterTemp < 70 && hours > 4) { hours -= 1; why.push('−1 h: water below 70°F'); }
   if (o.day.sunKwhM2 < 3 && o.day.hourlySun.some(v => v > 0)) why.push('cloudy: the run follows the brightest hours');
   hours = Math.min(12, Math.max(4, hours));
-  const plan = hours === base.hours && boost === base.boostHours ? base : planFor({ waterTemp: o.waterTemp, solarKw: o.day.hourlySun.map(v => v * 9.45 * .8), settings: o.settings, W: o.W, rate: o.rate, month: new Date(o.day.date).getMonth(), names: o.names, force: { hours, boost } });
+  const plan = hours === base.hours && boost === base.boostHours ? base : planFor({ waterTemp: o.waterTemp, solarKw: o.day.hourlySun.map(v => v * 9.45 * .8), settings: o.settings, W: o.W, rate: o.rate, month: Number(o.day.date.slice(5, 7)) - 1, names: o.names, force: { hours, boost } });
   return { plan, why };
 }
 
@@ -56,9 +57,9 @@ export type AutopilotState = { mode: Mode; nextRunAt: string; signals: Signals; 
 
 export async function autopilot(siteId: string, o: { settings: PoolSettings; mode: Mode; W: (r: number) => number; rate: number | null; names: Map<number, string>; snap: PoolSnapshot | null; waterTemp: number; currentHours: number; act: boolean }): Promise<AutopilotState> {
   const days = await forecast(), today = localDay(), ti = days.findIndex(d => d.date === today);
-  const use = await useDays(siteId), pollen = pollenFor(new Date().getMonth());
+  const use = await useDays(siteId), pollen = pollenFor(Number(today.slice(5, 7)) - 1); // Chicago month, not the host's
   const heatDaysAt = (i: number) => { let n = 0; for (let k = i; k >= 0 && days[k].high >= 95; k--) n++; return n; };
-  const yesterdayUsed = !!(await q(`SELECT 1 FROM pool_readings WHERE site_id = $1 AND day = $2 AND circuits ?| array['1','2','3','4','7'] LIMIT 1`, [siteId, addDays(today, -1)])).length;
+  const yesterdayUsed = !!(await q(`SELECT 1 FROM pool_readings WHERE site_id = $1 AND day = $2 AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(circuits) c WHERE c = ANY(array['1','2','3','4','7'])) LIMIT 1`, [siteId, addDays(today, -1)])).length;
   const week = [], plans: Array<ReturnType<typeof planDay>> = [];
   for (let i = ti + 1; i < Math.min(days.length, ti + 8); i++) {
     const p = planDay({ day: days[i], prev: days[i - 1], heatDays: heatDaysAt(i), useYesterday: i === ti + 1 && yesterdayUsed, waterTemp: o.waterTemp, settings: o.settings, W: o.W, rate: o.rate, names: o.names, pollen });
@@ -66,6 +67,7 @@ export async function autopilot(siteId: string, o: { settings: PoolSettings; mod
   }
   const tmr = days[ti + 1], tomorrow = { date: tmr.date, plan: plans[0].plan, why: plans[0].why };
   const signals: Signals = { waterTemp: o.waterTemp, sunKwhM2: Math.round(tmr.sunKwhM2 * 10) / 10, sunPct: Math.round(Math.min(1, tmr.sunKwhM2 / 8) * 100), high: Math.round(tmr.high), heatDays: heatDaysAt(ti + 1), rainPct: tmr.rainPct, rainMm: tmr.rainMm, rainYesterdayMm: days[ti - 1]?.rainMm ?? 0, useDays: use, pollen };
+  if (o.act) await logPoolPlan(siteId, { mode: o.mode, date: tomorrow.date, plan: tomorrow.plan, signals, settings: o.settings }); // learning layer: tomorrow's kWh
   const log = await kv.get<AutopilotState['log']>(`${siteId}:pool:autolog`) ?? [];
   const cleaned = await q<{ day: string }>(`SELECT day FROM events WHERE site_id = $1 AND type = 'filter_cleaned' ORDER BY day DESC LIMIT 1`, [siteId]);
   const since = cleaned[0]?.day ?? (log.at(-1)?.day ?? today), daysSince = Math.max(0, Math.round((Date.parse(today) - Date.parse(since)) / 864e5));

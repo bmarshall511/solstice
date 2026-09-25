@@ -31,6 +31,7 @@
     <p class="err" id="authErr"></p>
   </div>
 </div>
+<div class="auth" id="gate" hidden><div class="authcard" id="gateCard" role="dialog" aria-modal="true" aria-live="polite"></div></div>
 <div class="stage">
   <aside class="side">
     <div class="k">Solstice · Home</div>
@@ -43,7 +44,8 @@
         <span>History stored</span><b id="sideDays">—</b>
         <span>PEC bills</span><b id="sideBills">—</b>
       </div>
-      <p>Owner view. Press <b>D</b> for raw data.</p>
+      <p data-owner>Owner view. Press <b>D</b> for raw data.</p>
+      <p data-guest>Shared view · live data yes, money no.</p>
     </div>
   </aside>
 
@@ -59,6 +61,7 @@
           <div class="wx" id="wxtop"><b>--°</b>…</div>
         </div>
         <div class="chips" id="chips">
+          <div class="chipx guest" id="chipGuest" data-guest><i></i>Shared by the owner · live</div>
           <div class="chipx" id="chipGw"><i></i>Powerwalls</div>
           <div class="chipx" id="chipNws"><i style="--c:var(--mute)"></i>Weather alerts…</div>
           <div class="chipx" id="chipErcot"><i style="--c:var(--mute)"></i>ERCOT…</div>
@@ -76,13 +79,18 @@
         </div>
         <div class="story" id="story">—</div>
 
-        <div class="card">
+        <div class="card twin">
           <div class="h"><b>Energy flow</b><span id="flowNote">live</span></div>
-          <div class="house" id="house"></div>
+          <div class="house" id="house"><div class="roofhud twinhud" hidden></div></div>
+          <div class="scrub twin-row"><button class="play" aria-label="Play the day">▶</button><input type="range" min="0" max="24" step="0.0833" value="0" aria-label="Time of day"><span class="tm">—</span><button class="livep on"><i></i>Live</button></div>
+          <div class="circ"><span class="p">Pool —</span><span class="a">AC —</span><span class="b">PW —</span></div>
+          <div class="landtip">Since midnight…</div>
         </div>
 
         <div class="card">
           <div class="h"><b>Next 48 hours</b><span>your usage + Open-Meteo</span></div>
+          <div class="ring3d road" id="road48" aria-label="Next 48 hours road. Drag sideways to move through time, tap an hour for its numbers."><div class="hud">—</div></div>
+          <div class="landtip" id="road48Tip"><span class="ph">Tap any hour on the road for its numbers.</span></div>
           <svg class="mini" id="fc48" viewBox="0 0 310 150"></svg>
           <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--home)"></i>Home</span><span><i style="background:var(--batt)"></i>Battery %</span></div>
           <p id="fcTxt" style="margin-top:10px">Waiting for the forecast…</p>
@@ -135,6 +143,26 @@
           <div class="land" id="land"></div>
           <div class="legend" style="justify-content:flex-start;margin-top:6px"><span>kWh/hr<span class="ramp"></span></span><span style="color:var(--warn)">▌ below the weather model</span></div>
           <div class="landtip" id="landTip">Each bar is one hour of solar production. Red rows are days that came in more than 10% below what the sunlight should have produced.</div>
+        </div>
+
+        <div class="card" id="yrCard" hidden>
+          <div class="h"><b>Your year</b><span>drag · tap a day</span></div>
+          <div class="ring3d yr3d" id="yr">
+            <div class="labs" id="yrLabs"></div>
+            <div class="hint" id="yrHint">last year shown where data exists</div>
+            <div class="readout yr" id="yrRead"><b>—</b><small>loading…</small></div>
+          </div>
+          <div class="legend yl">
+            <span><i class="bar" style="background:var(--solar)"></i>Solar</span>
+            <span><i class="bar" style="background:var(--home);opacity:.6"></i>Home</span>
+            <span><i class="bar" style="background:var(--grid)"></i>From PEC</span>
+            <span><i class="tk" style="background:var(--batt)"></i>Full battery</span>
+            <span><i style="background:var(--out)"></i>Outage</span>
+            <span><i class="gh"></i>Last year</span>
+            <span><i class="hd"></i>Today</span>
+          </div>
+          <div class="two" id="yrStats"></div>
+          <p class="fine" id="yrNote">Bars share one scale, so solar, home and PEC heights compare directly.</p>
         </div>
 
         <div class="sect">Powerwall patterns</div>
@@ -260,7 +288,7 @@
             </div>
           </div>
           <div class="card auto" id="poolAuto" hidden>
-            <div class="h"><b>Autopilot</b><span class="seg2" id="autoMode"><button data-m="off">Off</button><button data-m="suggest">Suggest</button><button data-m="auto">Auto</button></span></div>
+            <div class="h"><b>Autopilot</b><span class="seg2" id="autoMode"><button data-m="off">Off</button><button data-m="suggest">Suggest</button><button data-m="auto">Auto</button></span><span class="badge g" id="autoBadge" data-guest>Autopilot</span></div>
             <div class="status" id="autoStatus"></div>
             <div class="signals" id="autoSignals"></div>
             <div class="wkhead"><span>Next 7 days</span><b id="autoTomorrow"></b></div>
@@ -292,7 +320,7 @@
               <div id="acActions"></div>
             </div>
             <div class="card auto" id="acAuto" hidden>
-              <div class="h"><b>Autopilot</b><span class="seg2" id="acMode"><button data-m="off">Off</button><button data-m="suggest">Suggest</button><button data-m="auto">Auto</button></span></div>
+              <div class="h"><b>Autopilot</b><span class="seg2" id="acMode"><button data-m="off">Off</button><button data-m="suggest">Suggest</button><button data-m="auto">Auto</button></span><span class="badge g" id="acAutoBadge" data-guest>Autopilot</span></div>
               <div class="status" id="acStatus"></div>
               <div class="signals" id="acSignals"></div>
               <div class="wkhead"><span>Next 7 days</span><b id="acTomorrow"></b></div>
@@ -339,10 +367,15 @@
 
       <!-- ================= SETTINGS ================= -->
       <section class="view" id="v-set">
-        <div class="hello"><div><h3>Settings</h3><p>Solstice · your home, live</p></div></div>
+        <div class="hello"><div><h3>Settings</h3><p><span data-owner>Solstice · your home, live</span><span data-guest id="setGuestSub">Shared by the owner</span></p></div></div>
+        <div class="sect" data-guest>Shared with you</div>
+        <div class="group" data-guest>
+          <div class="row" style="--c:#e6e8ee"><div class="ri">◐</div><div class="rt"><span id="sharedBy">Shared by the owner</span><small id="sharedExp">—</small></div></div>
+          <div class="row tap" style="--c:var(--out)" id="leaveRow" tabindex="0"><div class="ri">⇠</div><div class="rt">Leave<small>Forget this link on this device</small></div><div class="chev">›</div></div>
+        </div>
         <div class="sect">Connections</div>
         <div class="group">
-          <div class="row" style="--c:#e82127"><div class="ri">T</div><div class="rt">Tesla Fleet API<small id="setTesla">—</small><small id="setTeslaBk" style="color:var(--warn);display:none"></small></div><div class="rv" id="setTeslaV">—</div></div>
+          <div class="row" style="--c:#e82127" data-owner><div class="ri">T</div><div class="rt">Tesla Fleet API<small id="setTesla">—</small><small id="setTeslaBk" style="color:var(--warn);display:none"></small></div><div class="rv" id="setTeslaV">—</div></div>
           <div class="row" style="--c:var(--home)"><div class="ri">☁</div><div class="rt">Open-Meteo weather<small><span id="setZip">—</span> · tilt 27° · facing 244°</small></div><div class="rv" id="setWx">—</div></div>
           <div class="row" style="--c:#6cc4ff"><div class="ri">≈</div><div class="rt">Pentair ScreenLogic<small id="setPool">pool &amp; spa</small></div><div class="rv" id="setPoolV">—</div></div>
           <div class="row" style="--c:#ff9e66"><div class="ri">◐</div><div class="rt">Google Nest<small id="setNest">thermostat</small></div><div class="rv" id="setNestV">—</div></div>
@@ -356,11 +389,18 @@
           <a class="row tap" style="--c:var(--home);color:inherit;text-decoration:none" href="/api/export.csv"><div class="ri">⇩</div><div class="rt">Export CSV<small>Every 5-minute reading</small></div><div class="chev">›</div></a>
           <div class="row" style="--c:var(--grid)"><div class="ri">✦</div><div class="rt">Calm mode<small>Less motion; follows your system setting</small></div><div class="sw" id="calmSw"></div></div>
         </div>
-        <div class="sect">Alerts · in app</div>
+        <div class="sect" data-owner>Alerts · in app</div>
         <div class="group" id="alertPrefs"></div>
         <div class="sect acct">Account</div>
         <div class="group acct">
           <div class="row" style="--c:var(--home)"><div class="ri">@</div><div class="rt"><span id="acctEmail">—</span><small>Signed in</small></div><button class="link" id="signOut" style="margin:0">Sign out</button></div>
+        </div>
+        <div class="sect" data-owner>Sharing</div>
+        <div class="group" data-owner>
+          <div class="row tap" style="--c:var(--home)" id="shareRow" tabindex="0"><div class="ri">⇗</div><div class="rt">Share this app</div><div class="rv" id="shareCount">—</div><div class="chev">›</div></div>
+          <div class="row" style="--c:#e6e8ee"><div class="ri">◐</div><div class="rt">Preview as a guest<small>see what they see</small></div><div class="sw" id="guestSw" role="switch" aria-checked="false" aria-label="Preview as a guest" tabindex="0"></div></div>
+          <div class="row tap" style="--c:var(--solar)" id="nameRow" tabindex="0"><div class="ri">@</div><div class="rt">Name shown on invites</div><div class="rv" id="nameVal">The owner</div><div class="chev">›</div></div>
+          <div class="row tap" style="--c:var(--grid)" id="devRow" tabindex="0"><div class="ri">▣</div><div class="rt"><span id="devN">Owner devices</span><small>sign out others</small></div><div class="chev">›</div></div>
         </div>
         <div class="sect">Preview</div>
         <div class="group">

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { touchOrbit } from '../lib/touchorbit.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { niceDate, clock12 } from '../lib/util.js';
 
@@ -15,7 +16,7 @@ export function createLandscape(host, tip) {
     host.appendChild(renderer.domElement);
     labels = new CSS2DRenderer(); Object.assign(labels.domElement.style, { position: 'absolute', inset: 0, pointerEvents: 'none' }); host.appendChild(labels.domElement);
     scene = new THREE.Scene(); camera = new THREE.PerspectiveCamera(36, 1, .1, 300); camera.position.set(22, 22, 30);
-    controls = new OrbitControls(camera, renderer.domElement); Object.assign(controls, { enableDamping: true, enableZoom: false, enablePan: false, maxPolarAngle: Math.PI * .45, autoRotate: true, autoRotateSpeed: .5 });
+    controls = new OrbitControls(camera, renderer.domElement); Object.assign(controls, { enableDamping: true, enableZoom: false, enablePan: false, maxPolarAngle: Math.PI * .45, autoRotate: true, autoRotateSpeed: .5 }); touchOrbit(controls);
     controls.target.set(0, 1, 0);
     scene.add(new THREE.HemisphereLight(0x9fc0ff, 0x0b0d12, .7)); const k = new THREE.DirectionalLight(0xffffff, 1.2); k.position.set(10, 30, 20); scene.add(k);
     const gh = new THREE.GridHelper(40, 40, 0x2a2f3a, 0x1a1e26); gh.material.transparent = true; gh.material.opacity = .5; scene.add(gh);
