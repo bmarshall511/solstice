@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Solstice · Expand the 3D cards</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* page scaffolding for the mockup only */
+html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+body{background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.col{width:100%;max-width:393px;margin:0 auto;padding:28px 0 60px}
+.intro{padding:0 20px}
+.intro .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.intro h2{font-size:30px;line-height:1.1;font-weight:300;letter-spacing:-.02em;margin-bottom:12px}
+.intro p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.frame{margin-top:34px}
+.frame>.sect{margin:0 20px 10px}
+.pagepad{padding:0 20px}
+.cap{margin:12px 20px 0;padding:12px 14px;border-radius:16px;background:rgba(0,0,0,.25);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.55}
+.cap b{color:var(--text);font-weight:600}
+.cap p+p{margin-top:6px}
+.cap .new{color:var(--batt)}
+.cap .same{color:var(--mute)}
+.rules{margin:34px 20px 0}
+.rules h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:10px}
+.rules ul{list-style:none;display:grid;gap:8px}
+.rules li{font-size:12.5px;color:var(--dim);line-height:1.55;padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b)}
+.rules li b{color:var(--text);font-weight:600}
+.rules code{font:11.5px "JetBrains Mono";color:var(--text)}
+
+/* the card as it is today (copied from the app / l-forecast48) */
+.card{overflow:hidden}
+.road{height:260px;touch-action:pan-y;cursor:grab;outline:none;background:radial-gradient(120% 90% at 25% 100%,rgba(108,196,255,.06),rgba(0,0,0,.16))}
+.road:active{cursor:grabbing}
+.road .hud{top:10px;bottom:auto}
+.rl{position:absolute;left:0;top:0;padding:2px 6px;border-radius:7px;background:rgba(8,10,16,.62);border:1px solid rgba(255,255,255,.08);pointer-events:none;display:none;will-change:transform}
+.landtip .ph{color:var(--mute)}
+.land{overflow:hidden}
+
+/* ---------- NEW: the expand control (sits on the scene's top-right corner, so the header row does not change) ---------- */
+.xbtn{all:unset;cursor:pointer;position:absolute;top:8px;right:10px;z-index:3;width:30px;height:30px;border-radius:10px;display:grid;place-items:center;
+  background:rgba(8,10,16,.55);border:1px solid var(--glass-b);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);color:var(--text)}
+.xbtn svg{width:15px;height:15px}
+.xbtn:active{transform:scale(.94)}
+.xbtn:focus-visible{outline:2px solid var(--home);outline-offset:2px}
+
+/* ---------- NEW: the full-screen sheet (in the app: position:fixed; inset:0 over the tab bar) ---------- */
+.dev{position:relative;width:100%;height:760px;overflow:hidden;background:#05060a}
+@media (min-width:394px){.dev{border-radius:44px;border:1px solid rgba(255,255,255,.14)}}
+.xs-sb{position:absolute;left:0;right:0;top:0;height:47px;display:flex;align-items:center;justify-content:space-between;padding:4px 30px 0;font:600 14px Manrope;color:var(--text);z-index:4}
+.xs-sb i{display:inline-block;width:24px;height:11px;border-radius:3px;border:1px solid rgba(255,255,255,.55);position:relative}
+.xs-sb i::after{content:'';position:absolute;inset:1.5px;right:7px;border-radius:1.5px;background:var(--text)}
+.xs-scene{position:absolute;left:0;right:0;top:47px;bottom:0;touch-action:none;cursor:grab;outline:none;
+  background:radial-gradient(120% 70% at 30% 80%,rgba(108,196,255,.07),rgba(0,0,0,0) 70%),#06070c}
+.xs-scene:active{cursor:grabbing}
+.xs-scene canvas{display:block;width:100%;height:100%}
+.xs-top{position:absolute;left:10px;right:10px;top:55px;z-index:3;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 14px;border-radius:18px;
+  background:rgba(14,16,24,.62);border:1px solid var(--glass-b);backdrop-filter:blur(20px) saturate(150%);-webkit-backdrop-filter:blur(20px) saturate(150%)}
+.xs-top .t{flex:1;min-width:0}
+.xs-top .t b{display:block;font-size:15px;font-weight:600;line-height:1.2}
+.xs-top .t span{display:block;font:500 11px "JetBrains Mono";color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.xs-close{all:unset;cursor:pointer;flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.09);border:1px solid var(--glass-b)}
+.xs-close svg{width:14px;height:14px}
+.xs-hint{position:absolute;left:50%;top:118px;transform:translateX(-50%);z-index:3;white-space:nowrap;font:500 10.5px "JetBrains Mono";color:var(--text);
+  padding:6px 11px;border-radius:999px;background:rgba(8,10,16,.66);border:1px solid var(--glass-b);pointer-events:none;transition:opacity .6s var(--ease)}
+.xs-hint.gone{opacity:0}
+.xs-tools{position:absolute;right:12px;z-index:3;display:flex;align-items:center;gap:6px}
+.xs-zoom{font:500 10.5px "JetBrains Mono";color:var(--dim);padding:5px 8px;border-radius:999px;background:rgba(8,10,16,.62);border:1px solid var(--glass-b)}
+.xs-reset{all:unset;cursor:pointer;width:34px;height:34px;border-radius:12px;display:grid;place-items:center;background:rgba(8,10,16,.62);border:1px solid var(--glass-b);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);transition:opacity .2s}
+.xs-reset svg{width:16px;height:16px}
+.xs-reset[disabled]{opacity:.35;cursor:default}
+.xs-dock{position:absolute;left:10px;right:10px;bottom:0;z-index:3;padding:10px 12px 30px;border-radius:20px 20px 0 0;
+  background:rgba(14,16,24,.7);border:1px solid var(--glass-b);border-bottom:none;backdrop-filter:blur(20px) saturate(150%);-webkit-backdrop-filter:blur(20px) saturate(150%)}
+.xs-dock .legend{justify-content:flex-start;margin:0 0 8px}
+.xs-dock .landtip{margin-top:0;min-height:58px;background:rgba(0,0,0,.32)}
+.xs-home{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:rgba(255,255,255,.7);z-index:4}
+.xs-scene .rl{z-index:1}
+.xs-scene .lax{font-size:10px}
+.replay{all:unset;cursor:pointer;color:var(--home);font-weight:600}
+</style></head><body>
+<div class="col">
+
+  <div class="intro">
+    <div class="k">Mockup s · Expand the 3D cards</div>
+    <h2>Open the scene full screen.</h2>
+    <p>An expand button on the Next 48 hours road (Now) and the Production landscape (History) opens that scene in a full-screen sheet. In the sheet you pinch to zoom, pan with two fingers, drive or rotate with one finger, and tap for the readout. The close button takes you back to the page. The cards keep their current design.</p>
+  </div>
+
+  <!-- ================= Frame 1 ================= -->
+  <div class="frame">
+    <div class="sect">Frame 1 · Now · the card with its expand control</div>
+    <div class="pagepad">
+      <div class="card">
+        <div class="h"><b>Next 48 hours</b><span>your usage + Open-Meteo</span></div>
+        <div class="ring3d road" id="road1" aria-label="Next 48 hours road. Drag sideways to move through time, tap an hour for its numbers."><div class="hud">—</div>
+          <button class="xbtn" aria-label="Open Next 48 hours full screen" data-goto="f2"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5h3.5V6M6 13.5H2.5V10M13.5 2.5 9.3 6.7M2.5 13.5l4.2-4.2"/></svg></button>
+        </div>
+        <div class="landtip" id="tip1"><span class="ph">Tap any hour on the road for its numbers.</span></div>
+        <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--home)"></i>Home</span><span><i style="background:var(--batt)"></i>Battery %</span></div>
+        <p class="fcs" style="margin-top:10px"></p>
+      </div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> one 30 px glass button with an expand icon and no text, in the road's top-right corner. It sits where the header meets the scene, so the title and subtitle row stays the same. It has an aria-label and a focus ring. It is inside the scene, so tapping it never starts a drive and never picks an hour.</p>
+      <p><b class="same">Unchanged:</b> title, subtitle, HUD, road, lanes, labels, readout, legend, sentence, the 260 px height and every gesture on the card (drag sideways to drive, drag up or down to scroll, tap for an hour). Labels keep out of the button's 40 × 40 px corner.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 2 ================= -->
+  <div class="frame" id="f2">
+    <div class="sect">Frame 2 · the road's sheet, as it opens</div>
+    <div class="dev" id="dev2">
+      <div class="xs-sb"><span>10:00</span><i></i></div>
+      <div class="xs-scene" id="road2" tabindex="0" aria-label="Next 48 hours, full screen. Pinch to zoom, two fingers to pan, drag to drive, tap an hour for its numbers."></div>
+      <div class="xs-top"><div class="t"><b>Next 48 hours</b><span class="xhud">—</span></div>
+        <button class="xs-close" aria-label="Close full screen"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2.5 2.5l9 9M11.5 2.5l-9 9"/></svg></button></div>
+      <div class="xs-hint">pinch to zoom · two fingers to pan · drag to drive</div>
+      <div class="xs-tools"><span class="xs-zoom">1.0×</span><button class="xs-reset" aria-label="Reset view" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 8a5.2 5.2 0 1 0 1.6-3.8"/><path d="M2.5 2.2v3h3"/></svg></button></div>
+      <div class="xs-dock">
+        <div class="legend"><span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--home)"></i>Home</span><span><i style="background:var(--batt)"></i>Battery %</span><span><i style="background:var(--out)"></i>Reserve</span></div>
+        <div class="landtip"><span class="ph">Tap any hour on the road for its numbers.</span></div>
+      </div>
+      <div class="xs-home"></div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> a sheet that covers the whole screen and the tab bar. The scene fills everything below the status-bar safe area. The slim glass top bar holds the card title, the HUD line (moved up from the scene's corner) and a close button. The one-line hint shows as the sheet opens and fades after 3 s (<button class="replay" data-replay="dev2">replay</button>). The zoom chip and the reset-view button sit above the docked readout; reset is dimmed while the view is already the default. The dock adds a Reserve key for the dashed line, which the card doesn't need.</p>
+      <p><b class="same">Unchanged:</b> the scene itself: same lanes, colours, floor shading, schedule strip, markers, labels (up to 6 here instead of 4, because there is room) and the same readout text. The sheet opens at the card's current drive position with its tapped hour.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 3 ================= -->
+  <div class="frame" id="f3">
+    <div class="sect">Frame 3 · zoomed into Wednesday afternoon</div>
+    <div class="dev" id="dev3">
+      <div class="xs-sb"><span>10:01</span><i></i></div>
+      <div class="xs-scene" id="road3" tabindex="0" aria-label="Next 48 hours, full screen. Pinch to zoom, two fingers to pan, drag to drive, tap an hour for its numbers."></div>
+      <div class="xs-top"><div class="t"><b>Next 48 hours</b><span class="xhud">—</span></div>
+        <button class="xs-close" aria-label="Close full screen"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2.5 2.5l9 9M11.5 2.5l-9 9"/></svg></button></div>
+      <div class="xs-hint gone">pinch to zoom · two fingers to pan · drag to drive</div>
+      <div class="xs-tools"><span class="xs-zoom">1.0×</span><button class="xs-reset" aria-label="Reset view"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 8a5.2 5.2 0 1 0 1.6-3.8"/><path d="M2.5 2.2v3h3"/></svg></button></div>
+      <div class="xs-dock">
+        <div class="legend"><span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--home)"></i>Home</span><span><i style="background:var(--batt)"></i>Battery %</span><span><i style="background:var(--out)"></i>Reserve</span></div>
+        <div class="landtip"><span class="ph">Tap any hour on the road for its numbers.</span></div>
+      </div>
+      <div class="xs-home"></div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> zoomed in with a pinch and panned to Wednesday afternoon with two fingers. When zoomed, the HUD shows the hour at the centre of the view, how far ahead it is, and the zoom level. Reset view is lit and eases back to the opening view. The tapped hour (Wed 3 PM) is lit on the floor, and its numbers fill the docked readout.</p>
+      <p><b class="same">Unchanged:</b> the readout wording and fields are the card's own: solar, home, Powerwalls, grid, pool rpm, AC window and rain. Tomorrow's planned windows are still drawn as outlines.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 4 ================= -->
+  <div class="frame" id="f4">
+    <div class="sect" style="margin:0 24px 10px">Production landscape</div>
+    <div class="pagepad">
+      <div class="card">
+        <div class="h"><b>Last 30 days × 24 hours</b><span>drag · tap a bar</span></div>
+        <div class="land" id="land4">
+          <button class="xbtn" aria-label="Open Production landscape full screen" data-goto="f5"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5h3.5V6M6 13.5H2.5V10M13.5 2.5 9.3 6.7M2.5 13.5l4.2-4.2"/></svg></button>
+        </div>
+        <div class="legend" style="justify-content:flex-start;margin-top:6px"><span>kWh/hr<span class="ramp"></span></span><span style="color:var(--warn)">▌ below the weather model</span></div>
+        <div class="landtip" id="tip4">Each bar is one hour of solar production. Red rows are days that came in more than 10% below what the sunlight should have produced.</div>
+      </div>
+    </div>
+    <div class="cap">
+      <p style="margin-top:0"><b>Frame 4 · History · the landscape card with its expand control</b></p>
+      <p><b class="new">New:</b> the same 30 px glass expand button in the scene's top-right corner. Tapping it opens the sheet, stops the card's auto-rotate and never selects a bar.</p>
+      <p><b class="same">Unchanged:</b> header, 320 px scene, auto-rotate, sideways-drag orbit, vertical scroll, tap-a-bar readout, legend and intro text.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 5 ================= -->
+  <div class="frame" id="f5">
+    <div class="sect">Frame 5 · the landscape's sheet, a day tapped</div>
+    <div class="dev" id="dev5">
+      <div class="xs-sb"><span>10:02</span><i></i></div>
+      <div class="xs-scene" id="land5" tabindex="0" aria-label="Production landscape, full screen. Pinch to zoom, two fingers to pan, drag to rotate, tap a bar for its numbers."></div>
+      <div class="xs-top"><div class="t"><b>Last 30 days × 24 hours</b><span class="xhud">—</span></div>
+        <button class="xs-close" aria-label="Close full screen"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2.5 2.5l9 9M11.5 2.5l-9 9"/></svg></button></div>
+      <div class="xs-hint gone">pinch to zoom · two fingers to pan · drag to rotate</div>
+      <div class="xs-tools"><span class="xs-zoom">1.0×</span><button class="xs-reset" aria-label="Reset view"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 8a5.2 5.2 0 1 0 1.6-3.8"/><path d="M2.5 2.2v3h3"/></svg></button></div>
+      <div class="xs-dock">
+        <div class="legend"><span>kWh/hr<span class="ramp"></span></span><span style="color:var(--warn)">▌ below the weather model</span></div>
+        <div class="landtip" id="tip5">Each bar is one hour of solar production.</div>
+      </div>
+      <div class="xs-home"></div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> the landscape fills the screen and opens at the card's current angle, zoomed out so all 30 rows fit on a tall screen. Auto-rotate stays off in the sheet. Here it is zoomed in and panned to a red day, with the 1 PM bar tapped. The sheet labels every fifth day, plus the tapped day, where the card labels four. One finger rotates and can also tilt, within the card's limit that stops at 81° from overhead, so you never look from underneath. Two fingers pan and pinch. The hint says "drag to rotate" in place of "drag to drive".</p>
+      <p><b class="same">Unchanged:</b> the bars, colour ramp, red underperforming days, date and hour labels and the readout text. The tapped bar turns white, as on the card.</p>
+    </div>
+  </div>
+
+  <div class="rules">
+    <h3>Interaction rules</h3>
+    <ul>
+      <li><b>Zoom limits.</b> Road: 1× (the opening view) to 4×. Landscape: 1× (all 30 days fit) to 6×. Pinch, the mouse wheel and <code>+</code>/<code>−</code> all zoom toward the point under the fingers or cursor. Panning is clamped so the road or grid can never leave the screen. Road: from 3 h before now to the last hour, and from the floor to the top of the battery wall. Landscape: the target stays over the grid.</li>
+      <li><b>One finger vs two in the sheet.</b> The sheet has no page behind it to scroll, so its scene uses <code>touch-action:none</code>. One finger drives the road sideways through time, or rotates the landscape. When a second finger lands, the one-finger drive or rotate stops at once and that touch becomes a pinch plus pan around the midpoint of the two fingers. Lifting one finger does not restart the drive. A new drive needs all fingers up first, so the view never jumps. A tap counts only if the finger moved less than 6 px and no second finger touched down.</li>
+      <li><b>Cards stay as they are.</b> On the cards, one finger still drives the road or orbits the landscape sideways, and vertical drags still scroll the page. Pinch still belongs to the browser there. The page's touch helper (<code>lib/touchorbit.js</code>: <code>touchIntent</code>, <code>touchOrbit</code>) is not changed. The road sheet uses its own pointer handler. The landscape sheet uses OrbitControls' own touch mapping (one finger rotate, two fingers dolly plus pan) and never calls <code>touchOrbit</code>.</li>
+      <li><b>Open and close.</b> Close with the × button, Escape, or the browser/OS back gesture (the sheet adds one history entry). The sheet opens at the card's position and tapped hour or bar. On close it hands back the drive position and the tapped item. Zoom and pan are not handed back, because the card never zooms. While the sheet is open, the card stops rendering and the page stops scrolling. On close, the sheet's WebGL context is disposed, so only one scene renders at a time.</li>
+      <li><b>Reduced motion and Calm.</b> With Calm on, or the system's reduce-motion setting, the sheet appears and disappears with no slide, the view jumps with no easing (zoom, pan, drive and reset), the hint disappears after 3 s with no fade, and the landscape never auto-rotates. Otherwise the sheet slides up in 240 ms, and drive, zoom and reset ease with the card's existing damping.</li>
+      <li><b>Hint.</b> It shows every time the sheet opens and goes away after 3 s or at the first touch, whichever comes first. It is never a blocking overlay; it has <code>pointer-events:none</code>.</li>
+      <li><b>Keyboard.</b> Arrows drive or rotate, <code>+</code>/<code>−</code> zoom, <code>0</code> resets the view, Escape closes, and focus returns to the expand button.</li>
+    </ul>
+    <p class="fine" style="margin-top:14px">Illustrative data only (a Tuesday at 10 AM with the Powerwalls at 57%, and a synthetic 30-day landscape). No prices, bills or location. Every frame is a live three.js render you can also try with a mouse: drag to drive or rotate, scroll to zoom, right-drag to pan.</p>
+  </div>
+</div>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const V3 = THREE.Vector3;
+const css = getComputedStyle(document.documentElement);
+const tok = n => new THREE.Color(css.getPropertyValue(n).trim() || '#8d93a8');
+const PAL = { solar: tok('--solar'), batt: tok('--batt'), home: tok('--home'), grid: tok('--grid'), warn: tok('--warn'), out: tok('--out'), rest: new THREE.Color('#8d93a8'), white: new THREE.Color(1, 1, 1) };
+
+/* ================= road data (same synthetic 48 h as l-forecast48) ================= */
+const RAW = [[5.65,2.25,0.692,0,0.08,4,1500],[6.32,2.25,0.836,0,0.08,4,1500],[6.63,3.8,0.935,0,0.08,4,1500],[6.56,3.8,1,-0.91,0.08,4,1500],[6.1,4.21,1,-1.89,0.08,4,2400],[4.89,3.8,1,-1.09,0.2,4,1500],[3.73,3.8,0.997,0,0.25,4,1500],[2.8,2.2,1,-0.51,0.08,4,1500],[1.28,1.9,0.976,0,0.08,4,1500],[0,1.75,0.907,0,0.08,4,0],[0,1.75,0.839,0,0.08,4,0],[0,2.05,0.759,0,0.08,4,0],[0,1.81,0.689,0,0.08,4,0],[0,1.81,0.618,0,0.08,4,0],[0,1.58,0.557,0,0.08,6,0],[0,1.58,0.495,0,0.08,6,0],[0,1.58,0.433,0,0.08,6,0],[0,1.58,0.372,0,0.08,6,0],[0,1.58,0.31,0,0.08,6,0],[0,1.58,0.249,0,0.08,6,0],[0.32,1,0.222,0,0.08,6,0],[1.9,1,0.254,0,0.08,6,0],[2.08,1,0.292,0,0.7,6,0],[2.57,2.1,0.308,0,0.8,6,0],[3.48,2.25,0.351,0,0.7,6,1500],[5.46,2.25,0.464,0,0.3,6,1500],[6.63,3.8,0.564,0,0.08,6,1500],[6.56,3.8,0.661,0,0.08,6,1500],[6.1,3.8,0.741,0,0.08,6,1500],[5.28,4.21,0.779,0,0.08,6,2400],[3.98,2.2,0.842,0,0.15,22,1500],[1.9,1.56,0.854,0,0.6,44,1500],[0.63,1.56,0.817,0,0.9,62,1500],[0,1.41,0.762,0,0.75,46,0],[0,1.41,0.707,0,0.5,24,0],[0,1.45,0.651,0,0.35,12,0],[0,1.35,0.598,0,0.08,6,0],[0,1.35,0.545,0,0.08,6,0],[0,1.12,0.502,0,0.08,4,0],[0,1.12,0.458,0,0.08,4,0],[0,1.12,0.414,0,0.08,4,0],[0,1.12,0.371,0,0.08,4,0],[0,1.12,0.327,0,0.08,4,0],[0,1.12,0.283,0,0.08,4,0],[0.32,1,0.257,0,0.08,4,0],[1.9,1,0.289,0,0.08,4,0],[3.37,1,0.372,0,0.08,4,0],[4.65,2.1,0.462,0,0.08,4,0]];
+const START_H = 10, SOC0 = .573, RESERVE = .20, CAP = 27, DAYS = ['Tue', 'Wed', 'Thu'];
+const P = RAW.map(([s, h, soc, g, c, pop, rpm], k) => { const H = START_H + k; return { k, s, h, soc, g, c, pop, rpm, day: DAYS[Math.floor(H / 24)], hh: H % 24 }; });
+const clock = (hh, m = 0) => `${hh % 12 || 12}${m ? ':' + String(m).padStart(2, '0') : ''} ${hh < 12 ? 'AM' : 'PM'}`;
+const when = (k, m = 0) => `${P[k].day} ${clock(P[k].hh, m)}`;
+const WIN = [
+  { kind: 'pool',  day: 0, a: 0,  b: 9,  label: 'pool · 10 AM–7 PM' },
+  { kind: 'boost', day: 0, a: 4,  b: 5 },
+  { kind: 'pre',   day: 0, a: 2,  b: 7,  label: 'pre-cool · 12–5 PM' },
+  { kind: 'coast', day: 0, a: 8,  b: 11, label: 'coast · 6–9 PM' },
+  { kind: 'pool',  day: 1, a: 24, b: 33, label: 'pool plan · 10 AM–7 PM', plan: true },
+  { kind: 'boost', day: 1, a: 29, b: 30, plan: true },
+  { kind: 'pre',   day: 1, a: 26, b: 30, label: 'pre-cool plan · 12–4 PM', plan: true },
+  { kind: 'coast', day: 1, a: 31, b: 35, label: 'coast plan · 5–9 PM', plan: true },
+];
+const acAt = k => { const w = WIN.find(w => (w.kind === 'pre' || w.kind === 'coast') && k >= w.a && k < w.b); return w ? (w.kind === 'pre' ? 'pre-cool' : 'coast') : ''; };
+const kFull = P.findIndex(p => p.soc > .995);
+const fullMin = Math.round((1 - (kFull ? P[kFull - 1].soc : SOC0)) * CAP / .95 / (P[kFull].s - P[kFull].h) * 60);
+const xFull = kFull + fullMin / 60;
+let kLow = 2; P.forEach((p, k) => { if (k > 1 && p.soc < P[kLow].soc) kLow = k; });
+const importKwh = P.reduce((a, p) => a + Math.max(0, p.g), 0);
+const FULL_TXT = `full by ${when(kFull, fullMin)}`, LOW_TXT = `lowest ${Math.round(P[kLow].soc * 100)}% · ${when(kLow)}`;
+const kRain = P.findIndex(p => p.pop >= 50);
+document.querySelectorAll('.fcs').forEach(p => p.innerHTML = `Powerwalls should be <b style="color:var(--batt)">${FULL_TXT}</b>. Overnight they reach their <b style="color:var(--warn)">${LOW_TXT}</b>, above the ${RESERVE * 100}% reserve, so you'll buy about <b style="color:var(--grid)">${Math.round(importKwh)} kWh</b> from the grid over the next two days.`);
+const readout = k => { const p = P[k];
+  const g = p.g > .05 ? `grid ${p.g.toFixed(1)} kW` : p.g < -.05 ? `export ${(-p.g).toFixed(1)} kW` : 'grid 0';
+  return [`<b>${when(k)}</b>`, `solar ${p.s.toFixed(1)} kW`, `home ${p.h.toFixed(1)} kW`, `Powerwalls ${Math.round(p.soc * 100)}%`, g,
+    p.rpm ? `pool ${p.rpm.toLocaleString('en-US')} rpm` : 'pool off', acAt(k), p.pop >= 30 ? `rain ${p.pop}%` : ''].filter(Boolean).join(' · '); };
+const CSSVAR = { pool: 'var(--home)', pre: 'var(--batt)', coast: 'var(--grid)' };
+
+/* ================= the road (card mode = l-forecast48 exactly; sheet mode adds zoom + pan) ================= */
+function createRoad(el, { sheet = false, d0 = 0, tapK = null, z0 = 1, ty0 = 0, hudEl = null, tip = null, tools = null, keepOut = [], homeD = d0 } = {}) {
+  const DMAX = 34, DAY2_AT = 14, MAX_LABELS = sheet ? 6 : 4;
+  let W = el.clientWidth, H = el.clientHeight;
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); renderer.setSize(W, H); el.prepend(renderer.domElement);
+  const scene = new THREE.Scene();
+  // card: the app's camera. sheet: same direction, a wider lens and a higher eye so the portrait screen is filled by road, not sky
+  const TGT = new V3(15, 1.3, 0), OFF = new V3(-22, 3.4, 6).multiplyScalar(1.22);
+  const S_TGT = new V3(10.5, 1, 0), S_OFF = new V3(-19, 12.5, 8);
+  const cam = new THREE.PerspectiveCamera(sheet ? 50 : 34, W / H, .1, 140);
+  const m4 = new THREE.Matrix4(), q0 = new THREE.Quaternion();
+
+  const floor = new THREE.InstancedMesh(new THREE.PlaneGeometry(.94, 4.1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial(), 48);
+  const tileCol = P.map(p => { const night = p.hh < 7 || p.hh >= 20, dusk = p.hh === 7 || p.hh === 19;
+    return PAL.rest.clone().multiplyScalar((night ? .025 : dusk ? .045 : .09) * (1 - .6 * Math.max(0, p.c - .08) / .92)); });
+  P.forEach((p, k) => { m4.makeTranslation(k + .5, 0, .35); floor.setMatrixAt(k, m4); floor.setColorAt(k, tileCol[k]); });
+  floor.instanceColor.needsUpdate = true; scene.add(floor);
+
+  function ribbon(xs, ys, z, col, bot, opacity, order) {
+    const n = xs.length, pos = new Float32Array(n * 6), cc = new Float32Array(n * 6), idx = [], b = col.clone().multiplyScalar(bot);
+    for (let i = 0; i < n; i++) { pos.set([xs[i], 0, z, xs[i], ys[i], z], i * 6); cc.set([b.r, b.g, b.b, col.r, col.g, col.b], i * 6); if (i < n - 1) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); } }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(cc, 3)); g.setIndex(idx);
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false }));
+    m.renderOrder = order; scene.add(m); return m;
+  }
+  const lx = [0, ...P.map(p => p.k + .5), 48];
+  const laneY = f => [f(P[0]), ...P.map(f), f(P[47])];
+  const sY = laneY(p => .25 * p.s), hY = laneY(p => .25 * p.h);
+  const socPts = [[0, SOC0]]; P.forEach((p, k) => { if (k === kFull && xFull < k + 1) socPts.push([xFull, 1]); socPts.push([k + 1, p.soc]); });
+  const socX = socPts.map(p => p[0]), socY = socPts.map(p => 2.5 * p[1]);
+  const socWall = ribbon(socX, socY, -1.2, PAL.batt, .1, .55, 2);
+  const homeLane = ribbon(lx, hY, 0, PAL.home, .6, .35, 3);
+  const solarLane = ribbon(lx, sY, 1.2, PAL.solar, .3, .62, 4);
+  const res = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new V3(0, 2.5 * RESERVE, -1.2), new V3(48, 2.5 * RESERVE, -1.2)]), new THREE.LineDashedMaterial({ color: PAL.out, dashSize: .35, gapSize: .25 }));
+  res.computeLineDistances(); res.renderOrder = 5; scene.add(res);
+
+  const ROW = { pool: [2.02, 2.26], boost: [2.05, 2.23], pre: [1.72, 1.94], coast: [1.72, 1.94] }, KCOL = { pool: PAL.home, boost: PAL.home, pre: PAL.batt, coast: PAL.grid };
+  const gut = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial(), WIN.length);
+  const LP = [], LC = []; const seg = (a, b, c) => { LP.push(...a, ...b); LC.push(c.r, c.g, c.b, c.r, c.g, c.b); };
+  const boxEdges = (x0, x1, y0, y1, z0, z1, c) => { const X = [x0, x1], Y = [y0, y1], Z = [z0, z1];
+    for (const y of Y) for (const z of Z) seg([x0, y, z], [x1, y, z], c);
+    for (const x of X) for (const z of Z) seg([x, y0, z], [x, y1, z], c);
+    for (const x of X) for (const y of Y) seg([x, y, z0], [x, y, z1], c); };
+  WIN.forEach((w, i) => { const [z0, z1] = ROW[w.kind], hgt = w.kind === 'boost' ? .24 : .1, c = KCOL[w.kind];
+    m4.compose(new V3((w.a + w.b) / 2, hgt / 2, (z0 + z1) / 2), q0, new V3(w.b - w.a - .06, hgt, z1 - z0)); gut.setMatrixAt(i, m4);
+    gut.setColorAt(i, c.clone().multiplyScalar(w.plan ? .1 : w.kind === 'boost' ? 1 : .6));
+    if (w.plan) boxEdges(w.a + .03, w.b - .03, 0, hgt + .004, z0, z1, c); });
+  gut.instanceColor.needsUpdate = true; gut.renderOrder = 1; scene.add(gut);
+  for (let i = 0; i < lx.length - 1; i++) seg([lx[i], hY[i], 0], [lx[i + 1], hY[i + 1], 0], PAL.home);
+  for (let i = 0; i < socX.length - 1; i++) seg([socX[i], socY[i], -1.2], [socX[i + 1], socY[i + 1], -1.2], PAL.batt);
+  seg([0, 0, -1.2], [0, 2.95, -1.2], PAL.white); seg([0, .01, -1.75], [0, .01, 2.4], PAL.white);
+  const mid = PAL.rest.clone().multiplyScalar(.22);
+  P.forEach(p => { if (p.hh === 0) seg([p.k, .012, -1.75], [p.k, .012, 2.4], mid); });
+  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(LP, 3)); lg.setAttribute('color', new THREE.Float32BufferAttribute(LC, 3));
+  const lines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ vertexColors: true })); lines.renderOrder = 6; scene.add(lines);
+  const sph = new THREE.InstancedMesh(new THREE.SphereGeometry(.17, 16, 12), new THREE.MeshBasicMaterial(), 2);
+  m4.makeTranslation(xFull, 2.5, -1.2); sph.setMatrixAt(0, m4); sph.setColorAt(0, PAL.batt);
+  m4.makeTranslation(kLow + 1, 2.5 * P[kLow].soc, -1.2); sph.setMatrixAt(1, m4); sph.setColorAt(1, PAL.warn);
+  sph.instanceColor.needsUpdate = true; sph.renderOrder = 7; scene.add(sph);
+
+  /* labels: projected, clamped, de-overlapped; kept out of the expand button's corner (card) or the bars and dock (sheet) */
+  const hud = hudEl || el.querySelector('.hud');
+  const LBL = [
+    { txt: FULL_TXT, at: [xFull, 2.5, -1.2], color: 'var(--batt)', on: () => true },
+    { txt: LOW_TXT, at: [kLow + 1, 2.5 * P[kLow].soc, -1.2], w: true, on: () => true },
+    ...['pre', 'pool', 'coast'].flatMap(kind => WIN.filter(w => w.kind === kind).map(w => ({
+      txt: w.label, at: [kind === 'pool' ? w.a + 1.5 : (w.a + w.b) / 2, .12, (ROW[kind][0] + ROW[kind][1]) / 2], color: CSSVAR[kind],
+      on: (d, span) => sheet ? true : (w.day === 1) === (d >= DAY2_AT) }))),
+    ...(kRain >= 0 ? [{ txt: `☂ rain ${P[kRain].pop}%`, at: [kRain + .5, 2.2, .6], color: 'var(--dim)', on: () => true }] : []),
+  ];
+  LBL.forEach(l => { const e = document.createElement('div'); e.className = 'lax rl' + (l.w ? ' w' : ''); if (l.color) e.style.color = l.color; e.textContent = l.txt; el.appendChild(e); l.el = e; });
+  const measure = () => LBL.forEach(l => { l.el.style.display = 'block'; l.bw = l.el.offsetWidth; l.bh = l.el.offsetHeight; l.el.style.display = 'none'; });
+  measure(); document.fonts?.ready.then(() => { measure(); kick(); });
+  const pv = new V3(), cv = new V3();
+  const band = () => sheet ? [keepOut.top ?? 4, H - (keepOut.bottom ?? 4)] : [4, H - 4];
+  const blocked = (sheet ? [] : [{ x: W - 44, y: 0, w: 44, h: 42 }]);
+  function placeLabels(d) {
+    const placed = [...blocked.map(b => ({ ...b }))], [yTop, yBot] = band(); let n = 0;
+    for (const l of LBL) {
+      let show = false;
+      if (n < MAX_LABELS && l.on(d)) {
+        pv.set(...l.at); cv.copy(pv).applyMatrix4(cam.matrixWorldInverse); pv.project(cam);
+        const px = (pv.x + 1) / 2 * W, py = (1 - pv.y) / 2 * H;
+        if (cv.z < -.2 && px > -6 && px < W + 6 && py > yTop && py < yBot) {
+          let x = clamp(px - l.bw / 2, 4, W - 4 - l.bw), y = clamp(py - l.bh - 6, yTop, yBot - l.bh), ok = true;
+          for (let i = 0; i < 5; i++) { const hit = placed.find(r => x < r.x + r.w + 2 && x + l.bw + 2 > r.x && y < r.y + r.h + 2 && y + l.bh + 2 > r.y);
+            if (!hit) break; y = hit.y - l.bh - 3; if (y < yTop || i === 4) { ok = false; break; } }
+          if (ok) { show = true; n++; placed.push({ x, y, w: l.bw, h: l.bh }); l.el.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`; }
+        }
+      }
+      l.el.style.display = show ? 'block' : 'none';
+    }
+  }
+
+  /* tap readout */
+  const tipEl = tip || el.nextElementSibling; let sel = null;
+  const HI = PAL.solar.clone().multiplyScalar(.28);
+  function select(k) { if (sel != null) floor.setColorAt(sel, tileCol[sel]); sel = k; floor.setColorAt(k, HI); floor.instanceColor.needsUpdate = true; tipEl.innerHTML = readout(k); kick(); }
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  function tap(e) { const r = el.getBoundingClientRect(); ndc.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1); ray.setFromCamera(ndc, cam);
+    const f = ray.intersectObject(floor)[0]; if (f) return select(f.instanceId);
+    const h = ray.intersectObjects([solarLane, homeLane, socWall])[0]; if (h) select(clamp(Math.floor(h.point.x), 0, 47)); }
+
+  /* view state: d = drive (hours), z = zoom, ty = vertical pan. Card: z and ty stay at 1 and 0. */
+  const Z_MAX = 4, TY = [-.6, 1.6];
+  const home = { d: homeD, z: 1, ty: 0 };
+  let d = d0, dT = d0, z = z0, zT = z0, ty = ty0, tyT = ty0;
+  const dLim = () => sheet ? [-3, 44] : [0, DMAX];
+  const setD = v => { const [a, b] = dLim(); dT = clamp(v, a, b); };
+  // visible world width at the target, at zoom 1 (for pan and zoom-to-point in sheet mode)
+  const span1 = () => 2 * S_OFF.length() * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * cam.aspect;
+  function zoomAt(f, sx, sy) {   // f: zoom factor, (sx, sy): screen point in px to keep under the fingers
+    const zn = clamp(zT * f, 1, Z_MAX); if (zn === zT) return;
+    const k = 1 / zT - 1 / zn;
+    setD(dT + (sx / W - .5) * span1() * k);
+    tyT = clamp(tyT - (sy / H - .5) * span1() / cam.aspect * k * .6, TY[0], TY[1]);
+    zT = zn; kick();
+  }
+  function panBy(dx, dy) { setD(dT - dx * span1() / W / zT); tyT = clamp(tyT + dy * span1() / cam.aspect / H / zT * .6, TY[0], TY[1]); kick(); }
+
+  if (!sheet) {
+    /* ---------- card: exactly l-forecast48 (horizontal drag drives, vertical scrolls, tap reads) ---------- */
+    let st = null;
+    el.addEventListener('pointerdown', e => { if (e.button || e.target.closest('.xbtn')) return; st = { x: e.clientX, y: e.clientY, d: dT, id: e.pointerId, moved: false, drive: false }; });
+    el.addEventListener('pointermove', e => { if (!st || e.pointerId !== st.id) return; const dx = e.clientX - st.x, dy = e.clientY - st.y;
+      if (!st.moved && Math.hypot(dx, dy) > 6) { st.moved = true; if (Math.abs(dx) > Math.abs(dy)) { st.drive = true; try { el.setPointerCapture(e.pointerId); } catch {} } }
+      if (st.drive) { setD(st.d - dx * 24 / W); kick(); } });
+    el.addEventListener('pointerup', e => { if (st && !st.moved) tap(e); st = null; });
+    el.addEventListener('pointercancel', () => { st = null; });
+  } else {
+    /* ---------- sheet: 1 finger drives, 2 fingers pinch + pan, taps read; the page's touch helper is not involved ---------- */
+    const pts = new Map(); let one = null, two = null, multi = false;
+    const mid = () => { const [a, b] = [...pts.values()]; return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, dist: Math.hypot(a.x - b.x, a.y - b.y) }; };
+    const local = e => { const r = el.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    el.addEventListener('pointerdown', e => {
+      hideHint();
+      if (e.button === 2) { one = { x: e.clientX, y: e.clientY, pan: true, id: e.pointerId }; el.setPointerCapture(e.pointerId); return; }
+      if (e.button) return;
+      pts.set(e.pointerId, local(e)); try { el.setPointerCapture(e.pointerId); } catch {}
+      if (pts.size === 1 && !multi) one = { x: e.clientX, y: e.clientY, d: dT, id: e.pointerId, moved: false };
+      else { one = null; multi = true; two = mid(); }   // a second finger: the drive stops, pinch + pan take over
+    });
+    el.addEventListener('pointermove', e => {
+      if (one?.pan && e.pointerId === one.id) { panBy(e.clientX - one.x, e.clientY - one.y); one.x = e.clientX; one.y = e.clientY; return; }
+      if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, local(e));
+      if (pts.size >= 2 && two) { const m = mid(); if (two.dist > 0) zoomAt(m.dist / two.dist, m.x, m.y); panBy(m.x - two.x, m.y - two.y); two = m; return; }
+      if (one && e.pointerId === one.id) { const dx = e.clientX - one.x, dy = e.clientY - one.y;
+        if (!one.moved && Math.hypot(dx, dy) > 6) one.moved = true;
+        if (one.moved) { setD(one.d - dx * 24 / W / zT); kick(); } }
+    });
+    const up = e => { if (one?.pan) { one = null; return; }
+      if (one && e.pointerId === one.id && !one.moved && !multi && e.type === 'pointerup') tap(e);
+      pts.delete(e.pointerId); if (pts.size < 2) two = null; if (!pts.size) { multi = false; one = null; } };
+    el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+    el.addEventListener('contextmenu', e => e.preventDefault());
+    el.addEventListener('wheel', e => { e.preventDefault(); hideHint(); const p = local(e); zoomAt(Math.exp(-e.deltaY * .0015), p.x, p.y); }, { passive: false });
+    el.addEventListener('keydown', e => {
+      if (e.key === '+' || e.key === '=') zoomAt(1.25, W / 2, H / 2); else if (e.key === '-') zoomAt(.8, W / 2, H / 2); else if (e.key === '0') reset(); else return; e.preventDefault(); });
+  }
+  el.tabIndex = 0; el.addEventListener('keydown', e => { if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { setD(dT + (e.key === 'ArrowRight' ? 3 : -3)); kick(); e.preventDefault(); } });
+
+  function reset() { dT = home.d; zT = home.z; tyT = home.ty; kick(); }
+  const hintEl = sheet ? el.parentElement.querySelector('.xs-hint') : null;
+  function hideHint() { hintEl?.classList.add('gone'); }
+  if (tools) tools.querySelector('.xs-reset').onclick = reset;
+
+  /* the hour at the centre of the view (for the zoomed HUD) */
+  const floorPlane = new THREE.Plane(new V3(0, 1, 0), 0), hitP = new V3();
+  function centreHour() { const [a, b] = band(); ray.setFromCamera(ndc.set(0, 1 - (a + b) / H), cam); return ray.ray.intersectPlane(floorPlane, hitP) ? clamp(Math.floor(hitP.x), 0, 47) : null; }
+
+  let visible = false, raf = 0, last = 0;
+  function kick() { if (!raf) raf = requestAnimationFrame(loop); }
+  function loop(t) { raf = 0; if (!visible) return; const dt = last ? Math.min(.05, (t - last) / 1000) : .016; last = t;
+    const a = 1 - Math.exp(-dt * 8), snap = (v, T) => Math.abs(T - v) < .003 ? T : v;
+    if (calm) { d = dT; z = zT; ty = tyT; } else { d = snap(d + (dT - d) * a, dT); z = snap(z + (zT - z) * a, zT); ty = snap(ty + (tyT - ty) * a, tyT); }
+    if (!sheet) { cam.position.set(TGT.x + OFF.x + d, TGT.y + OFF.y, TGT.z + OFF.z); cam.lookAt(TGT.x + d, TGT.y, TGT.z); }
+    else { const T = new V3(S_TGT.x + d, S_TGT.y + ty, S_TGT.z); cam.position.copy(T).addScaledVector(S_OFF, 1 / z); cam.lookAt(T); }
+    cam.updateMatrixWorld();
+    renderer.render(scene, cam); placeLabels(d);
+    const k = clamp(Math.round(d), 0, 47);
+    if (!sheet || z < 1.05) hud.textContent = `${when(k)}${k === 0 ? ' · now · ← drag to drive →' : ` · +${k} h`}`;
+    else { const c = centreHour(); hud.textContent = `${c == null ? '' : `around ${when(c)} · +${c} h · `}${z.toFixed(1)}×`; }
+    if (tools) { tools.querySelector('.xs-zoom').textContent = `${zT.toFixed(1)}×`; tools.querySelector('.xs-reset').disabled = Math.abs(zT - 1) < .01 && Math.abs(dT - home.d) < .01 && Math.abs(tyT) < .01; }
+    if (d !== dT || z !== zT || ty !== tyT) kick(); else last = 0; }
+  new IntersectionObserver(([en]) => { visible = en.isIntersecting; if (visible) kick(); }, { rootMargin: '160px 0px' }).observe(el);
+  addEventListener('resize', () => { W = el.clientWidth; H = el.clientHeight; renderer.setSize(W, H); cam.aspect = W / H; cam.updateProjectionMatrix(); kick(); });
+  if (tapK != null) select(tapK);
+  kick();
+}
+
+/* ================= landscape data: 30 synthetic days × 24 hours (illustrative) ================= */
+let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const LD = (() => {
+  const dates = [], solar = [], ratios = [], base = Date.UTC(2026, 7, 26);
+  const cloudy = { 4: .62, 9: .8, 10: .7, 17: .55, 22: .74, 26: .83 };
+  for (let di = 0; di < 30; di++) {
+    const day = new Date(base + di * 864e5).toISOString().slice(0, 10); dates.push(day);
+    const f = cloudy[di] ?? (.93 + rnd() * .09), row = [];
+    for (let h = 0; h < 24; h++) { const x = (h + .5 - 13.3) / 3.3, clear = h < 7 || h > 19 ? 0 : 7.4 * Math.exp(-x * x / 2) * (1 - di * .002);
+      const dip = cloudy[di] && h >= 11 && h <= 16 ? .55 + rnd() * .4 : 1; row.push(Math.max(0, clear * f * dip + (clear > .2 ? (rnd() - .5) * .25 : 0))); }
+    solar.push(row); ratios.push(cloudy[di] ? cloudy[di] * .95 : .92 + rnd() * .1);
+  }
+  return { dates, solar, ratios };
+})();
+const niceDate = (day, opts = { month: 'short', day: 'numeric' }) => new Date(day + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', ...opts });
+const clock12 = h => { h = ((h % 24) + 24) % 24; return `${(h + 11) % 12 + 1}:00 ${h < 12 ? 'AM' : 'PM'}`; };
+
+/* ================= the landscape (scene set-up copied from web/src/scenes/landscape.js) ================= */
+function createLand(host, tip, { sheet = false, pick = null, view = null, hudEl = null, tools = null, keepOut = null } = {}) {
+  const SX = .9, SZ = 1.05, HS = .55;
+  const ramp = [0x1b2a4a, 0x3a6bd6, 0xffc15e, 0xfff1c9].map(c => new THREE.Color(c)), warn = new THREE.Color(0xff5a4e);
+  const rampAt = t => { t = Math.max(0, Math.min(.999, t)) * 3; const i = Math.floor(t); return ramp[i].clone().lerp(ramp[i + 1], t - i); };
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  host.prepend(renderer.domElement);
+  const labels = new CSS2DRenderer(); Object.assign(labels.domElement.style, { position: 'absolute', inset: 0, pointerEvents: 'none' }); host.appendChild(labels.domElement);
+  if (keepOut) labels.domElement.style.clipPath = `inset(${keepOut.top}px 0 ${keepOut.bottom}px 0)`;   // sheet: labels never sit under the bars
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(36, 1, .1, 300);
+  // sheet: same angle as the card, pulled back so all 30 rows fit the tall screen (zoom 1×)
+  const HOME_POS = sheet ? new V3(22, 22, 30).multiplyScalar(1.62) : new V3(22, 22, 30);
+  camera.position.copy(HOME_POS);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  if (!sheet) { Object.assign(controls, { enableDamping: true, enableZoom: false, enablePan: false, maxPolarAngle: Math.PI * .45, autoRotate: !calm, autoRotateSpeed: .5 });
+    // card: touchOrbit(controls) from lib/touchorbit.js, unchanged (sideways drag orbits, vertical drag scrolls the page)
+    controls.touches.ONE = controls.touches.TWO = null; renderer.domElement.style.touchAction = 'pan-y'; }
+  else Object.assign(controls, { enableDamping: !calm, enableZoom: true, enablePan: true, screenSpacePanning: true, maxPolarAngle: Math.PI * .45, autoRotate: false,
+    minDistance: HOME_POS.length() / 6, maxDistance: HOME_POS.length(), touches: { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN } });
+  controls.target.set(0, 1, 0);
+  const HOME_T = controls.target.clone();
+  scene.add(new THREE.HemisphereLight(0x9fc0ff, 0x0b0d12, .7)); const k = new THREE.DirectionalLight(0xffffff, 1.2); k.position.set(10, 30, 20); scene.add(k);
+  const gh = new THREE.GridHelper(40, 40, 0x2a2f3a, 0x1a1e26); gh.material.transparent = true; gh.material.opacity = .5; scene.add(gh);
+
+  const { dates, solar, ratios } = LD, D = dates.length, peak = Math.max(1, ...solar.flat());
+  const bars = new THREE.InstancedMesh(new THREE.BoxGeometry(.72, 1, .86).translate(0, .5, 0), new THREE.MeshStandardMaterial({ roughness: .35, metalness: .15 }), D * 24);
+  scene.add(bars); const meta = [];
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), ps = new THREE.Vector3();
+  dates.forEach((date, di) => solar[di].forEach((v, h) => { const i = di * 24 + h, kwh = v ?? 0;
+    const c = rampAt(kwh / peak); if (ratios[di] != null && ratios[di] < .9 && kwh > .2) c.lerp(warn, .55); bars.setColorAt(i, c);
+    meta[i] = { date, h, kwh, ratio: ratios[di], x: (h - 11.5) * SX, z: (di - D / 2 + .5) * SZ, y: Math.max(.04, kwh * HS * 8 / peak) };
+    ps.set(meta[i].x, 0, meta[i].z); sc.set(1, meta[i].y, 1); m4.compose(ps, q, sc); bars.setMatrixAt(i, m4); }));
+  const lab = (t, p, c = '') => { const e = document.createElement('div'); e.className = 'lax ' + c; e.textContent = t; const o = new CSS2DObject(e); o.position.copy(p); scene.add(o); };
+  [['6a', 6], ['12p', 12], ['6p', 18]].forEach(([t, h]) => lab(t, new V3((h - 11.5) * SX, 0, D / 2 * SZ + 1.4)));
+  const dayIdx = sheet ? [0, 5, 10, 15, 20, 25, D - 1] : [0, Math.floor(D / 3), Math.floor(D * 2 / 3), D - 1];
+  if (sheet && pick != null && !dayIdx.includes(Math.floor(pick / 24))) dayIdx.push(Math.floor(pick / 24));   // sheet: the tapped day is always labelled
+  dayIdx.forEach(di => lab(niceDate(dates[di]), new V3(12.4 * SX + 1.2, 0, (di - D / 2 + .5) * SZ), ratios[di] != null && ratios[di] < .9 ? 'w' : ''));
+
+  let sel = -1; const selC = new THREE.Color();
+  function select(i) {
+    if (sel >= 0) bars.setColorAt(sel, selC); sel = i; bars.getColorAt(sel, selC); bars.setColorAt(sel, new THREE.Color(0xffffff)); bars.instanceColor.needsUpdate = true;
+    const m = meta[i];
+    tip.innerHTML = `${niceDate(m.date, { weekday: 'short', month: 'short', day: 'numeric' })} · ${clock12(m.h)}–${clock12(m.h + 1)}<br><b>${m.kwh.toFixed(2)} kWh</b> produced${m.ratio != null ? ` · that day ran at ${Math.round(m.ratio * 100)}% of what its sunlight should give` : ''}`;
+    controls.autoRotate = false;
+  }
+  const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(); let down = null, touches = 0;
+  renderer.domElement.addEventListener('pointerdown', e => { touches++; down = touches > 1 ? null : [e.clientX, e.clientY]; if (sheet) host.parentElement.querySelector('.xs-hint')?.classList.add('gone'); });
+  const lift = () => { touches = Math.max(0, touches - 1); };
+  renderer.domElement.addEventListener('pointercancel', lift);
+  renderer.domElement.addEventListener('pointerup', e => { lift();
+    if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;
+    const r = host.getBoundingClientRect(); mouse.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
+    ray.setFromCamera(mouse, camera); const hit = ray.intersectObject(bars)[0]; if (hit) select(hit.instanceId); });
+
+  // sheet: keep the target over the grid, show zoom, reset
+  const zoomOf = () => HOME_POS.distanceTo(HOME_T) / camera.position.distanceTo(controls.target);
+  if (sheet) {
+    controls.addEventListener('change', () => { const t = controls.target; t.x = clamp(t.x, -11, 11); t.y = clamp(t.y, 0, 5); t.z = clamp(t.z, -16, 16); });
+    tools.querySelector('.xs-reset').onclick = () => { controls.target.copy(HOME_T); camera.position.copy(HOME_POS); controls.update(); };
+    host.addEventListener('keydown', e => { if (e.key === '0') tools.querySelector('.xs-reset').click(); });
+  }
+  if (view) { controls.target.set(...view.target); camera.position.set(...view.pos); }
+  if (pick != null) select(pick);
+
+  function resize() { const r = host.getBoundingClientRect(); if (!r.width) return; renderer.setSize(r.width, r.height); labels.setSize(r.width, r.height); camera.aspect = r.width / r.height; camera.updateProjectionMatrix(); }
+  new ResizeObserver(resize).observe(host); resize();
+  let visible = false;
+  new IntersectionObserver(([en]) => visible = en.isIntersecting, { rootMargin: '160px 0px' }).observe(host);
+  (function loop() { requestAnimationFrame(loop); if (!visible) return; controls.update(); renderer.render(scene, camera); labels.render(scene, camera);
+    if (sheet) { const z = zoomOf(); tools.querySelector('.xs-zoom').textContent = `${z.toFixed(1)}×`;
+      tools.querySelector('.xs-reset').disabled = z < 1.01 && controls.target.distanceTo(HOME_T) < .05;
+      hudEl.textContent = `${niceDate(dates[0])} – ${niceDate(dates[D - 1])} · ${z < 1.05 ? 'all 30 days' : z.toFixed(1) + '×'}`; } })();
+}
+
+/* ================= mount the frames ================= */
+const sheetBits = id => { const dev = document.getElementById(id); return { dev, hud: dev.querySelector('.xhud'), tip: dev.querySelector('.xs-dock .landtip'), tools: dev.querySelector('.xs-tools') }; };
+function placeTools(dev) { const dock = dev.querySelector('.xs-dock'), tools = dev.querySelector('.xs-tools'); tools.style.bottom = (dock.offsetHeight + 10) + 'px'; }
+['dev2', 'dev3', 'dev5'].forEach(id => placeTools(document.getElementById(id)));
+const keep = dev => { const top = dev.querySelector('.xs-top'), dock = dev.querySelector('.xs-dock'), tools = dev.querySelector('.xs-tools');
+  return { top: top.offsetTop + top.offsetHeight - 47 + 6, bottom: dock.offsetHeight + tools.offsetHeight + 16 }; };
+
+createRoad(document.getElementById('road1'), { d0: 0 });
+{ const b = sheetBits('dev2'); createRoad(document.getElementById('road2'), { sheet: true, d0: 0, hudEl: b.hud, tip: b.tip, tools: b.tools, keepOut: keep(b.dev) }); }
+{ const b = sheetBits('dev3'); createRoad(document.getElementById('road3'), { sheet: true, d0: 15.5, homeD: 0, z0: 2.1, ty0: -.2, tapK: 29, hudEl: b.hud, tip: b.tip, tools: b.tools, keepOut: keep(b.dev) }); }
+createLand(document.getElementById('land4'), document.getElementById('tip4'));
+{ const b = sheetBits('dev5'); const di = 22, h = 13;
+  const bx = (h - 11.5) * .9, bz = (di - 15 + .5) * 1.05;
+  createLand(document.getElementById('land5'), b.tip, { sheet: true, pick: di * 24 + h, hudEl: b.hud, tools: b.tools, keepOut: keep(b.dev),
+    view: { target: [bx, 1, bz], pos: [bx + 9, 26, bz + 13] } }); }
+
+/* hint: fades after 3 s once the sheet is on screen (instantly with reduced motion) */
+function armHint(dev) { const h = dev.querySelector('.xs-hint'); h.classList.remove('gone'); setTimeout(() => h.classList.add('gone'), 3000); }
+new IntersectionObserver(es => es.forEach(en => { if (en.isIntersecting && !en.target.dataset.armed) { en.target.dataset.armed = 1; armHint(en.target); } }), { threshold: .6 }).observe(document.getElementById('dev2'));
+document.querySelectorAll('[data-replay]').forEach(b => b.onclick = () => armHint(document.getElementById(b.dataset.replay)));
+document.querySelectorAll('[data-goto]').forEach(b => b.onclick = e => { e.stopPropagation(); document.getElementById(b.dataset.goto).scrollIntoView({ behavior: calm ? 'auto' : 'smooth' }); });
+</script>
+</body></html>
