@@ -10,7 +10,7 @@ const hm = h => `${Math.floor(h) % 12 || 12}${h % 1 ? ':' + String(Math.round((h
 /** A simple indoor model for the scrubber: the house drifts toward outdoor at ~0.6°F/h per 10°F difference, the AC pulls it to the setpoint. */
 function simulateDay(d, outdoor) {
   const st = d.state, steps = d.plan.steps, sp = h => [...steps].reverse().find(s => s.hour <= h)?.coolF ?? st?.coolF ?? 75;
-  const out = [], sun = d.week?.[0] ? null : null; let T = st?.indoorF ?? 75;
+  const out = []; let T = st?.indoorF ?? 75;
   for (let h = 0; h <= 24; h += .25) { const o = outdoor[Math.min(23, Math.floor(h))] ?? 90, set = sp(h); const drift = (o - T) * .06 * .25; T += drift; const cooling = T > set + .3; if (cooling) T = Math.max(set, T - .9 * .25); out.push({ h, T: Math.round(T * 10) / 10, set, cooling, o }); }
   return out;
 }
@@ -82,4 +82,4 @@ function drawAuto(S) {
 }
 let timer;
 export function initAc(S) { loadAc(S); clearInterval(timer); timer = setInterval(() => loadAc(S), 3 * 60_000); }
-export async function loadAc(S) { S.ac = await api.ac().catch(e => ({ error: e.message, configured: false, linked: false })); if (S.ac.plan) drawAc(S); else { $('acBadge').textContent = 'Not set up'; $('acLink').hidden = false; $('acLinkTxt').textContent = S.ac.error ?? 'Nest is not configured.'; } }
+async function loadAc(S) { S.ac = await api.ac().catch(e => ({ error: e.message, configured: false, linked: false })); if (S.ac.plan) drawAc(S); else { $('acBadge').textContent = 'Not set up'; $('acLink').hidden = false; $('acLinkTxt').textContent = S.ac.error ?? 'Nest is not configured.'; } }

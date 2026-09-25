@@ -9,7 +9,6 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
  */
 const C = { cyan: 0x6cc4ff, green: 0x4ef0a6, purple: 0xc4a2ff, gold: 0xffc15e, heat: 0xff7a4a, white: 0xffffff };
 const lerp = (a, b, k) => a + (b - a) * k;
-const rrect = (w, h, r) => { const s = new THREE.Shape(); s.moveTo(-w / 2 + r, -h / 2); s.lineTo(w / 2 - r, -h / 2); s.absarc(w / 2 - r, -h / 2 + r, r, -Math.PI / 2, 0, false); s.lineTo(w / 2, h / 2 - r); s.absarc(w / 2 - r, h / 2 - r, r, 0, Math.PI / 2, false); s.lineTo(-w / 2 + r, h / 2); s.absarc(-w / 2 + r, h / 2 - r, r, Math.PI / 2, Math.PI, false); s.lineTo(-w / 2, -h / 2 + r); s.absarc(-w / 2 + r, -h / 2 + r, r, Math.PI, Math.PI * 1.5, false); return s; };
 const glass = (c, op = .10) => new THREE.MeshPhysicalMaterial({ color: c, transparent: true, opacity: op, roughness: .15, metalness: 0, emissive: c, emissiveIntensity: .08, side: THREE.DoubleSide, depthWrite: false });
 const edges = (geo, c, op = .9) => new THREE.LineSegments(new THREE.EdgesGeometry(geo, 20), new THREE.LineBasicMaterial({ color: c, transparent: true, opacity: op }));
 const waterMat = () => new THREE.ShaderMaterial({ transparent: true, depthWrite: false, uniforms: { uT: { value: 0 }, uGlow: { value: 0 }, uFlow: { value: 0 }, uSize: { value: new THREE.Vector2(1, 1) } },

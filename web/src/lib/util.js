@@ -9,8 +9,8 @@ export const money2 = v => v == null ? '—' : `${v < 0 ? '−' : ''}$${Math.abs
 export const ago = ms => { const s = Math.round((Date.now() - ms) / 1000); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`; };
 
 /* Site-local time (America/Chicago) */
-export const TZ = 'America/Chicago';
-export const localParts = (d = new Date()) => Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(d).map(p => [p.type, p.value]));
+const TZ = 'America/Chicago';
+const localParts = (d = new Date()) => Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(d).map(p => [p.type, p.value]));
 export const localDate = (d = new Date()) => { const p = localParts(d); return `${p.year}-${p.month}-${p.day}`; };
 export const localHour = (d = new Date()) => { const p = localParts(d); return +p.hour + +p.minute / 60; };
 export const addDays = (day, n) => new Date(Date.parse(day + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);

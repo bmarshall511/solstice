@@ -1,5 +1,5 @@
 /** Called when the server says we're not signed in (set by main.js). */
-export let onUnauthorized = () => {};
+let onUnauthorized = () => {};
 export const setUnauthorized = fn => { onUnauthorized = fn; };
 async function call(path, opts) {
   const r = await fetch(`/api/${path}`, { credentials: 'same-origin', ...opts });
@@ -22,7 +22,6 @@ export const api = {
   records: () => get('records'),
   outages: () => get('outages'),
   site: () => get('site'),
-  bills: () => get('bills'),
   reconcile: () => get('reconcile'),
   ercot: () => get('ercot'),
   status: () => get('status'),

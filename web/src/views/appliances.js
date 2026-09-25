@@ -32,7 +32,7 @@ function twinState(d) {
   return st;
 }
 
-export function drawPool(S) {
+function drawPool(S) {
   const d = S.pool; if (!d) return;
   const L = d.live, sp = d.settings, linked = d.linked || !!L;
   ['poolSched', 'poolAuto', 'poolSeason', 'poolSeasonNote'].forEach(id => $(id).hidden = !linked);

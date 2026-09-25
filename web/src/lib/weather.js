@@ -17,10 +17,3 @@ export const archive = (from, to) => fetch(`https://archive-api.open-meteo.com/v
   `&hourly=global_tilted_irradiance&daily=temperature_2m_max,temperature_2m_mean,precipitation_sum`).then(r => r.json());
 
 export const nwsAlerts = () => fetch(`https://api.weather.gov/alerts/active?point=${LAT},${LON}`).then(r => r.json()).then(j => j.features?.map(f => f.properties) ?? []);
-
-/** Index hourly arrays by local date → hour. */
-export function hourlyIndex(w) {
-  const idx = {};
-  w.hourly.time.forEach((t, i) => { const d = t.slice(0, 10), h = +t.slice(11, 13); (idx[d] ??= [])[h] = i; });
-  return idx;
-}

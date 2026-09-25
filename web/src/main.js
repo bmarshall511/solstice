@@ -1,5 +1,5 @@
 import './style.css';
-import { $, localDate, localHour, addDays, toast, fmtDur, ago, niceDate } from './lib/util.js';
+import { $, localDate, localHour, addDays, toast, ago, niceDate } from './lib/util.js';
 import { api, setUnauthorized } from './lib/api.js';
 import { forecast, archive, nwsAlerts } from './lib/weather.js';
 import { learnYield } from './lib/model.js';
@@ -7,7 +7,7 @@ import { createAurora } from './scenes/aurora.js';
 import { createOrb } from './scenes/orb.js';
 import { createLandscape } from './scenes/landscape.js';
 import { createHomeView } from './scenes/home.js';
-import { buildFlow, renderLive, renderStatic, renderWeather } from './views/now.js';
+import { renderLive, renderStatic, renderWeather } from './views/now.js';
 import { initHistory, drawHistoryChart, landscapeData, drawSocHeat, drawRecords, drawOutages, drawBills, openBillSheet } from './views/history.js';
 import { initPanels, drawPerformance, roofHud } from './views/panels.js';
 import { drawAlerts, initPlanner, drawAC, drawOvernight, drawHealth } from './views/insights.js';
@@ -130,7 +130,7 @@ $('outSw').onclick = () => { S.preview = !S.preview; S.previewSince = Date.now()
 /* ---------------- scenes + loop ---------------- */
 const house = createHomeView($('house'), 'flow');
 const aurora = createAurora($('aurora')), orb = createOrb($('orb')), land = createLandscape($('land'), $('landTip')), roof = createHomeView($('roof'), 'sun');
-buildFlow(); initHistory(S); initPanels(S); initPlanner(S); initAppliances(S); initAc(S);
+initHistory(S); initPanels(S); initPlanner(S); initAppliances(S); initAc(S);
 let applSel = 'pool';
 $('applStrip').onclick = e => { const a = e.target.closest('.app'); if (!a || !a.dataset.id || a.classList.contains('dim')) return; applSel = a.dataset.id; document.querySelectorAll('#applStrip .app').forEach(x => x.classList.toggle('on', x === a)); $('applPool').hidden = applSel !== 'pool'; $('applAc').hidden = applSel !== 'ac'; poolTwin()?.resize(); thermalTwin()?.resize(); if (applSel === 'ac') safe(drawAc)(S); };
 
@@ -146,7 +146,7 @@ const dayRing = createDayRing($('dayRing'), (h, d) => {
 S.ringMode = 'now'; S.onPool = () => safe(drawDayRing)();
 $('drModes').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.ringMode = b.dataset.m; document.querySelectorAll('#drModes button').forEach(x => x.classList.toggle('on', x === b)); drawDayRing(); };
 /** Today's hourly loads: pool from the schedule model, AC from the heat model, the rest from Tesla's home load. */
-export function drawDayRing() {
+function drawDayRing() {
   const day = S.today; if (!day || !day.buckets?.length) return;
   const home = Array(24).fill(0), solar = Array(24).fill(0);
   day.buckets.forEach(b => { const h = Math.floor(b.t); if (h < 24) { home[h] += b.home / 12; solar[h] += b.solar / 12; } });
@@ -170,7 +170,7 @@ export function drawDayRing() {
 $('planMore').onclick = () => { $('cmp').hidden = !$('cmp').hidden; $('planFine').hidden = $('cmp').hidden; };
 
 let HIDDEN = false; document.addEventListener('visibilitychange', () => HIDDEN = document.hidden);
-let last = performance.now(), T = 0, tick = 0, hudTick = 0;
+let last = performance.now(), T = 0, hudTick = 0;
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(.05, (now - last) / 1000); last = now;
