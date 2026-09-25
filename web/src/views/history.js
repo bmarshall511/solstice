@@ -1,4 +1,4 @@
-import { $, fmtDur, clock12, niceDate, localDate, addDays, svgText, path, money, money2, toast } from '../lib/util.js';
+import { $, clamp, fmtDur, clock12, niceDate, localDate, addDays, svgText, path, money, money2, toast } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { yearRingCard, yearModel } from '../scenes/yearring.js';
 import { createFlowsCard, mountFlows } from '../scenes/flows.js';
@@ -23,7 +23,7 @@ async function drawDay(S) {
     return `<path d="${path([...pts, ...back])}Z" fill="${color}" fill-opacity="${op}" stroke="${color}" stroke-width="1.2"/>`; };
   o += area('home', '#6cc4ff', .18) + area('solar', '#ffc15e', .38);
   if (d.soe.length) o += `<path d="${path(d.soe.map(p => pol(p.t, r0 + p.soc / 100 * rs)))}" fill="none" stroke="#4ef0a6" stroke-width="2" style="filter:drop-shadow(0 0 4px #4ef0a6)"/>`;
-  const t = d.totals, self = t.home ? Math.round((1 - t.import / t.home) * 100) : 0;
+  const t = d.totals, self = t.home ? Math.round(clamp(1 - t.import / t.home, 0, 1) * 100) : 0;
   o += svgText(0, -4, `${self}%`, { size: 28, fill: '#f2f4f8', anchor: 'middle', font: 'Manrope', weight: 300 }) + svgText(0, 15, 'solar + battery', { size: 10.5, fill: 'rgba(242,244,248,.5)', anchor: 'middle', font: 'Manrope' });
   svg.innerHTML = o;
   $('hleg').innerHTML = `<span><i style="background:var(--solar)"></i>Solar kW</span><span><i style="background:var(--home)"></i>Home kW</span><span><i style="background:var(--batt)"></i>Battery %</span>`;

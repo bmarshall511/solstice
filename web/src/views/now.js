@@ -1,4 +1,4 @@
-import { $, fmtDur, clock12, hourLabel, kwh, localHour, localDate, svgText, path } from '../lib/util.js';
+import { $, clamp, fmtDur, clock12, hourLabel, kwh, localHour, localDate, svgText, path } from '../lib/util.js';
 import { WMO, WICON } from '../lib/weather.js';
 import { forecast48 } from '../lib/model.js';
 import { roadModel } from '../lib/road48data.js';
@@ -54,7 +54,7 @@ export function renderLive(S) {
   $('pwState').dataset.s = r.batteryKw < -.05 ? 'c' : r.batteryKw > .05 ? 'd' : 'i';
   $('pwStored').textContent = `≈ ${(r.soc / 100 * cap).toFixed(1)} of ${cap} kWh stored`;
   $('pwTTl').textContent = r.batteryKw > .05 ? (out ? 'Time to empty' : `Time to reserve (${reserve}%)`) : 'Time to full';
-  $('pwTT').textContent = r.batteryKw < -.05 ? fmtDur(toFull) : r.batteryKw > .05 ? fmtDur(toEmpty) : r.soc > 99 ? 'Full' : '—';
+  $('pwTT').textContent = r.batteryKw < -.05 ? fmtDur(toFull) : r.batteryKw > .05 ? fmtDur(toEmpty) : r.soc > 99 ? 'Full' : 'Standing by';
   $('pwBackup').textContent = net <= .05 ? 'Solar covering it' : fmtDur(Math.max(0, r.soc) / 100 * cap * .95 / net);
   $('pwMode').textContent = out ? 'Backup (islanded)' : ({ autonomous: 'Time-Based Control', self_consumption: 'Self-Powered', backup: 'Backup-only' }[site.mode] ?? site.mode ?? '—');
   document.querySelectorAll('.pwu').forEach(el => { el.style.setProperty('--v', r.soc / 100); el.classList.toggle('chg', r.batteryKw < -.05); el.classList.toggle('dis', r.batteryKw > .05); });
@@ -82,8 +82,8 @@ export function renderStatic(S) {
   $('tSol').innerHTML = kwh(today.solar); $('tHome').innerHTML = kwh(today.home);
   $('tImp').innerHTML = kwh(today.import); $('tExp').innerHTML = kwh(today.export);
   const rate = S.tariff?.importRateAllIn, credit = S.tariff?.exportCredit;
-  $('tSolE').textContent = S.yieldK && S.gtiToday != null ? `${Math.round(today.solar / (S.yieldK * S.gtiToday) * 100) || 0}% of what today's sun allows` : 'so far today';
-  $('tSelf').textContent = today.home ? `${Math.round((1 - today.import / today.home) * 100)}% from solar + battery` : '—';
+  $('tSolE').textContent = S.yieldK && S.gtiToday != null && today.solar >= .5 ? `${Math.round(today.solar / (S.yieldK * S.gtiToday) * 100) || 0}% of what today's sun allows` : 'so far today';
+  $('tSelf').textContent = today.home ? `${Math.round(clamp(1 - today.import / today.home, 0, 1) * 100)}% from solar + battery` : '—';
   $('tImpE').innerHTML = today.import != null ? S.guest ? `≈ ${veil('$•.••')} at PEC rates` : rate != null ? `≈ $${(today.import * rate).toFixed(2)} at PEC rates` : 'rate unknown' : '—';
   $('tExpE').innerHTML = today.export != null ? S.guest ? `≈ ${veil('$•.••')} credit` : credit != null ? `≈ $${(today.export * credit).toFixed(2)} credit` : 'rate unknown' : '—';
 

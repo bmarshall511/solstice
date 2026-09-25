@@ -585,11 +585,14 @@ export function createHomeView(host, mode = 'flow', opts = {}) {
   }
   const hits = (b, list) => list.some(o => o && b.x < o.x + o.w + 3 && b.x + b.w + 3 > o.x && b.y < o.y + o.h + 3 && b.y + b.h + 3 > o.y);
   function layout() {
-    const Wc = sz.w, Hc = sz.h, placed = [hudM.rect];
+    const Wc = sz.w, Hc = sz.h, placed = [hudM.rect], wires = []; // wires: the energy labels' leaders, which later energy labels keep clear of (F6)
     for (const k of KEYS) {
       const m = meta[k], el = els[k], ld = leads[k];
       v.copy(H.anchors[k]).project(camera);
-      const ax = (v.x + 1) / 2 * Wc, ay = (1 - v.y) / 2 * Hc, off = v.z > 1 || ax < 0 || ax > Wc || ay < 0 || ay > Hc;
+      // F6 (mockup j-ui-fixes): the four energy labels stay 8 px inside the card and keep a leader to an anchor just past the side edge;
+      // the twin's POOL and AC labels keep their 4 px margin and edge pinning
+      const energy = k !== 'pool' && k !== 'ac', mx = energy ? 8 : 4;
+      const ax = (v.x + 1) / 2 * Wc, ay = (1 - v.y) / 2 * Hc, off = v.z > 1 || ay < 0 || ay > Hc || (!energy && (ax < 0 || ax > Wc)) || (energy && (ax < -Wc / 2 || ax > Wc * 1.5));
       const pL = PREF.live[k], pT = PREF.twin[k], dx = pL[0] + (pT[0] - pL[0]) * st.k, dy = pL[1] + (pT[1] - pL[1]) * st.k;
       let box, edge = '';
       if (off) { // anchor outside the canvas: pin the label to that edge (clamped), no leader
@@ -598,16 +601,17 @@ export function createHomeView(host, mode = 'flow', opts = {}) {
         for (let i = 0; i < 12 && hits(box, placed); i++) box.y = clampN(box.y + 14, 6, Hc - m.h - 6);
       } else {
         const cands = dy < 0 ? [dy, dy - 22, dy - 44, 24, 46, 68] : [dy, dy + 22, dy + 44, -40, -62, -84];
-        for (const cy of cands) { const b = { x: clampN(ax + dx - m.w / 2, 4, Wc - 4 - m.w), y: cy < 0 ? ay + cy - m.h : ay + cy, w: m.w, h: m.h };
-          if (b.y < 4 || b.y + b.h > Hc - 4 || hits(b, placed)) continue; box = b; break; }
-        if (!box) box = { x: clampN(ax + dx - m.w / 2, 4, Wc - 4 - m.w), y: clampN(dy < 0 ? ay + dy - m.h : ay + dy, 4, Hc - 4 - m.h), w: m.w, h: m.h };
+        for (const cy of cands) { const b = { x: clampN(ax + dx - m.w / 2, mx, Wc - mx - m.w), y: cy < 0 ? ay + cy - m.h : ay + cy, w: m.w, h: m.h };
+          if (b.y < 4 || b.y + b.h > Hc - 4 || hits(b, energy ? placed.concat(wires) : placed)) continue; box = b; break; }
+        if (!box) box = { x: clampN(ax + dx - m.w / 2, mx, Wc - mx - m.w), y: clampN(dy < 0 ? ay + dy - m.h : ay + dy, 4, Hc - 4 - m.h), w: m.w, h: m.h };
       }
       if (m.edge !== edge) { tog(el, 'edge-l', edge === 'l'); tog(el, 'edge-r', edge === 'r'); m.edge = edge; m.dirty = true; }
       el.style.left = box.x.toFixed(1) + 'px'; el.style.top = box.y.toFixed(1) + 'px';
       if (off) ld.style.display = 'none';
       else { const above = box.y + box.h / 2 < ay, ex = clampN(ax, box.x + 6, box.x + box.w - 6), ey = above ? box.y + box.h + 4 : box.y - 4, ddx = ex - ax, ddy = ey - ay, len = Math.hypot(ddx, ddy);
         if (len < 4) ld.style.display = 'none';
-        else { ld.style.display = ''; ld.style.left = ax.toFixed(1) + 'px'; ld.style.top = ay.toFixed(1) + 'px'; ld.style.height = len.toFixed(1) + 'px'; ld.style.transform = `rotate(${Math.atan2(-ddx, ddy).toFixed(4)}rad)`; } }
+        else { if (energy) wires.push({ x: Math.min(ax, ex), y: Math.min(ay, ey), w: Math.abs(ddx), h: Math.abs(ddy) });
+          ld.style.display = ''; ld.style.left = ax.toFixed(1) + 'px'; ld.style.top = ay.toFixed(1) + 'px'; ld.style.height = len.toFixed(1) + 'px'; ld.style.transform = `rotate(${Math.atan2(-ddx, ddy).toFixed(4)}rad)`; } }
       placed.push(box);
       if (el.style.visibility) { el.style.visibility = ''; ld.style.visibility = ''; }
     }

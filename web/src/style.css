@@ -43,7 +43,7 @@ body.out .island .ir{display:block}
 .hello h3{font-size:25px;font-weight:600;letter-spacing:-.02em}
 .hello p{font-size:13px;color:var(--dim);margin-top:2px;display:flex;align-items:center;gap:6px}
 .sync{width:6px;height:6px;border-radius:50%;background:var(--batt);box-shadow:0 0 8px var(--batt)}
-.wx{text-align:right;font-size:12.5px;color:var(--dim)}
+.wx{flex:none;white-space:nowrap;text-align:right;font-size:12.5px;color:var(--dim)}
 .wx b{display:block;font-size:22px;color:var(--text);font-weight:400}
 
 /* outage banner */
@@ -73,8 +73,10 @@ body.out .orbtxt p b{color:var(--solar)}
 
 /* cards */
 .card{background:var(--glass);border:1px solid var(--glass-b);border-radius:var(--r-lg);padding:16px;margin-top:12px;position:relative}
-.card .h{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--dim)}
-.card .h b{color:var(--text);font-weight:600;font-size:15px}
+.card .h{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12.5px;color:var(--dim)}
+.card .h b{flex:none;max-width:calc(100% - 82px);color:var(--text);font-weight:600;font-size:15px}
+.card .h>span{min-width:0;text-align:right}
+.card .h>.seg2{flex:none}.card .h:has(>.seg2)>b{flex:0 1 auto}
 .card p{font-size:13px;color:var(--dim);line-height:1.55;margin-top:8px}
 .badge{font-size:11px;font-weight:600;padding:4px 9px;border-radius:999px;background:rgba(255,122,102,.14);color:var(--warn);border:1px solid rgba(255,122,102,.3)}
 .badge.g{background:rgba(78,240,166,.12);color:var(--batt);border-color:rgba(78,240,166,.3)}
@@ -87,8 +89,10 @@ body.out .orbtxt p b{color:var(--solar)}
 
 /* stats row */
 .stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.stat{background:var(--glass);border:1px solid var(--glass-b);border-radius:18px;padding:12px 14px}
 .stat span{font-size:11.5px;color:var(--dim)}
-.stat b small{font-size:12px;color:var(--dim);margin-left:2px}
+.stat b{display:block;font:300 22px Manrope,system-ui,sans-serif;margin-top:2px;letter-spacing:-.02em}
+.stat b small{font:400 12px Manrope,system-ui,sans-serif;color:var(--dim);margin-left:2px;letter-spacing:0}
 .stat em{font-style:normal;font-size:11px;color:var(--batt)}
 
 /* weather hours */
@@ -150,6 +154,7 @@ body.out .orbtxt p b{color:var(--solar)}
 .cleanrow svg{flex:none}
 .cleanrow p{margin-top:0}
 /* status chips */
+.chips{display:flex;gap:6px;overflow-x:auto;margin:12px -20px 0;padding:0 20px;scrollbar-width:none}
 .chips::-webkit-scrollbar{display:none}
 .chipx{flex:none;display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:7px 11px;border-radius:999px;background:var(--glass);border:1px solid var(--glass-b);color:var(--dim)}
 .chipx i{width:6px;height:6px;border-radius:50%;background:var(--c,var(--batt));box-shadow:0 0 8px var(--c,var(--batt))}
@@ -321,9 +326,10 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .danger{all:unset;box-sizing:border-box;width:100%;cursor:pointer;display:block;text-align:center;margin-top:16px;padding:13px;border-radius:16px;background:rgba(255,90,78,.12);border:1px solid rgba(255,90,78,.4);color:#ffb3aa;font-weight:600;font-size:14px}
 
 /* ---------- Insights: sub-navigation, panels ---------- */
-.seg{position:sticky;top:0;z-index:5;display:flex;gap:4px;margin:14px -4px 0;padding:4px;border-radius:999px;background:rgba(8,10,16,.75);border:1px solid var(--glass-b);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+.seg{z-index:5;display:flex;gap:4px;margin:14px -4px 0;padding:4px;border-radius:999px;background:rgba(8,10,16,.75);border:1px solid var(--glass-b);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
 .seg button{all:unset;cursor:pointer;flex:1;text-align:center;font-size:12px;font-weight:600;padding:8px 0;border-radius:999px;color:var(--dim);transition:.2s}
 .seg button.on{background:rgba(255,255,255,.12);color:var(--text)}
+#insSeg{position:sticky;top:0}
 .panel{display:none}.panel.on{display:block;animation:in .4s var(--ease)}
 .seg2{display:flex;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid var(--glass-b)}.seg2 button{all:unset;cursor:pointer;font-size:11px;font-weight:600;padding:5px 10px;border-radius:999px;color:var(--dim)}.seg2 button.on{background:rgba(78,240,166,.18);color:var(--text)}
 /* Day Ring */
@@ -349,6 +355,7 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .hud{position:absolute;left:12px;bottom:10px;font:500 11px "JetBrains Mono";color:var(--text);background:rgba(0,0,0,.35);padding:6px 9px;border-radius:10px;line-height:1.5;pointer-events:none;max-width:calc(100% - 24px)}
 .lbl3d{font:11px Manrope;color:var(--dim);background:rgba(8,10,16,.55);border:1px solid var(--glass-b);padding:4px 8px;border-radius:10px;white-space:nowrap;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transform:translate(-50%,-100%)}
 .lbl3d b{display:block;font:500 11px "JetBrains Mono";color:var(--text)}.lbl3d.dim{opacity:.45}
+.lead3d{position:absolute;left:0;top:0;width:0;height:1px;background:rgba(255,255,255,.45);pointer-events:none}
 .circ{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .circ span{font-size:11.5px;font-weight:600;padding:7px 11px;border-radius:999px;background:var(--glass);border:1px solid var(--glass-b);color:var(--dim)}
 .circ span.on{background:rgba(78,240,166,.14);border-color:rgba(78,240,166,.45);color:var(--text)}
@@ -359,7 +366,7 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .dialc b{display:block;font:300 40px Manrope;letter-spacing:-.03em;line-height:1.05;margin-top:2px}.dialc b i{font:400 13px Manrope;color:var(--dim);font-style:normal}
 .dialc span{display:block;font:500 10px "JetBrains Mono";color:var(--dim);margin-top:4px;white-space:nowrap}
 .deltas{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.deltas div{padding:10px 12px;border-radius:14px;background:rgba(78,240,166,.07);border:1px solid rgba(78,240,166,.22);min-width:0}
-.deltas small{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:600}.deltas b{display:block;font:500 15px "JetBrains Mono";color:var(--batt);margin-top:4px;white-space:nowrap}.deltas span{display:block;font-size:11px;color:var(--dim);margin-top:2px;white-space:nowrap}
+.deltas small{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:600}.deltas b{display:block;font:500 15px "JetBrains Mono";color:var(--batt);margin-top:4px;white-space:normal}.deltas span{display:block;font-size:11px;color:var(--dim);margin-top:2px;white-space:nowrap}
 .reasons{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;margin:12px -16px 0;padding:0 16px}.reasons::-webkit-scrollbar{display:none}
 .reasons div{flex:0 0 78%;scroll-snap-align:start;padding:12px 14px;border-radius:18px;background:linear-gradient(160deg,rgba(255,255,255,.07),rgba(255,255,255,.03));border:1px solid var(--glass-b)}
 .reasons i{display:inline-flex;width:26px;height:26px;border-radius:9px;align-items:center;justify-content:center;font-style:normal;font-size:13px;background:rgba(255,193,94,.14);color:var(--solar);border:1px solid rgba(255,193,94,.3)}
@@ -369,8 +376,10 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 /* autopilot */
 .status{display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:12px;color:var(--dim);line-height:1.45}.status i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--batt);box-shadow:0 0 10px var(--batt);margin-top:5px;animation:blink 2s infinite}.status i.off{background:var(--mute);box-shadow:none;animation:none}.status b{color:var(--text)}
 .signals{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-top:14px}.signals div{text-align:center;min-width:0}.signals svg{display:block;width:100%}.signals b{display:block;font:500 10.5px "JetBrains Mono";margin-top:2px}.signals small{display:block;font-size:9px;color:var(--mute);letter-spacing:.06em;text-transform:uppercase}
+.card.auto{container-type:inline-size}
+@container (max-width:480px){.signals{grid-template-columns:repeat(3,1fr);gap:8px 4px}.signals svg{max-width:64px;margin:0 auto}.signals small{letter-spacing:.02em}}
 .wkhead{display:flex;justify-content:space-between;align-items:baseline;margin-top:16px;font-size:12px;color:var(--dim);gap:8px}.wkhead span{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;flex:none}.wkhead b{font:500 11px "JetBrains Mono";color:var(--text);text-align:right}
-.chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px -20px 0;overflow-x:auto;padding:0 20px;scrollbar-width:none}.chips span{font-size:11px;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);color:var(--dim)}
+.rules{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.rules span{font-size:11px;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);color:var(--dim)}
 .tline{margin-top:14px;position:relative;padding-left:18px}.tline:before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:1px;background:rgba(255,255,255,.12)}
 .tline div{position:relative;display:flex;gap:8px;font-size:12px;color:var(--dim);padding:5px 0;min-width:0}.tline i{position:absolute;left:-16px;top:10px;width:7px;height:7px;border-radius:50%;background:var(--batt);box-shadow:0 0 8px var(--batt)}.tline i.w{background:var(--solar);box-shadow:0 0 8px var(--solar)}
 .tline span{flex:none;width:44px;font:500 10.5px "JetBrains Mono";color:var(--mute);padding-top:1px}.tline p{margin:0;line-height:1.45;min-width:0}.tline em{font-style:normal;color:var(--batt);font:500 10.5px "JetBrains Mono";margin-left:6px}
@@ -385,9 +394,9 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .app.on i{background:var(--batt);box-shadow:0 0 8px var(--batt)}
 .app.dim{opacity:.55}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
-.stat{padding:10px 12px;border-radius:16px;background:rgba(0,0,0,.22);border:1px solid var(--glass-b)}
-.stat small{display:block;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:600}
-.stat b{display:block;font:500 13px "JetBrains Mono";margin-top:4px;word-break:break-word;letter-spacing:-.02em}
+:where(.two,.tiles) .stat{padding:10px 12px;border-radius:16px;background:rgba(0,0,0,.22);border:1px solid var(--glass-b)}
+:where(.two,.tiles) .stat small{display:block;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:600}
+:where(.two,.tiles) .stat b{display:block;font:500 13px "JetBrains Mono";margin-top:4px;word-break:break-word;letter-spacing:-.02em}
 
 /* ---------- AC ---------- */
 .scrub{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:center;margin-top:10px;font-size:12px;color:var(--dim)}.scrub span{font:500 11px "JetBrains Mono";color:var(--text);white-space:nowrap}

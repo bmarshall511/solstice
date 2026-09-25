@@ -83,7 +83,12 @@ function drawDial(S) {
     <p>${C.schedules.length ? 'When two pump programs overlap, the controller runs the faster one. Switch to <b style="color:var(--text)">Recommended</b> to see the fix.' : 'No pump schedules on the controller.'}</p>`;
   // Recommended: deltas, reasons, apply
   const dk = C.kwhPerDay - P.kwhPerDay, dc = C.costPerMonth == null || P.costPerMonth == null ? null : C.costPerMonth - P.costPerMonth, topNow = Math.max(0, ...C.schedules.map(s => s.rpm)), topRec = Math.max(0, ...P.schedules.map(s => s.rpm));
-  $('schDeltas').innerHTML = `<div><small>Electricity</small><b>${dk >= 0 ? '−' : '+'}${Math.abs(dk).toFixed(dk % 1 ? 1 : 0)} kWh</b><span>per day</span></div><div><small>Cost</small><b>${S.guest ? veil() : dc == null ? '—' : `${dc >= 0 ? '−' : '+'}$${Math.abs(dc)}`}</b><span>per month</span></div>
+  const applied = d.applied, appliedAt = applied && new Date(applied.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  // the recommended plan is already on the controller: one status tile instead of deltas against itself
+  const onPlan = !!applied?.plan?.schedules && applied.plan.schedules.length === P.schedules.length
+    && P.schedules.every(s => applied.plan.schedules.some(a => a.circuitId === s.circuitId && a.start === s.start && a.stop === s.stop && a.rpm === s.rpm));
+  $('schDeltas').innerHTML = onPlan ? `<div style="grid-column:1/-1"><small>You're on the recommended schedule</small><b>${P.hours} h at ${sp.filterRpm.toLocaleString()} RPM${P.boostHours ? ` + ${P.boostHours} h boost` : ''}</b><span>applied ${appliedAt} · ${P.kwhPerDay} kWh a day</span></div>`
+    : `<div><small>Electricity</small><b>${dk >= 0 ? '−' : '+'}${Math.abs(dk).toFixed(dk % 1 ? 1 : 0)} kWh</b><span>per day</span></div><div><small>Cost</small><b>${S.guest ? veil() : dc == null ? '—' : `${dc >= 0 ? '−' : '+'}$${Math.abs(dc)}`}</b><span>per month</span></div>
     <div><small>Turnover</small><b>${C.turnoverPerDay}× → ${P.turnoverPerDay}×</b><span>${P.turnoverPerDay >= 1 ? 'still one a day' : 'partial in winter'}</span></div><div><small>Top speed</small><b>${topNow.toLocaleString()} → ${topRec.toLocaleString()}</b><span>RPM</span></div>`;
   const Wc = d.model.curve, wAt = r => Wc.reduce((a, c) => Math.abs(c.rpm - r) < Math.abs(a.rpm - r) ? c : a).watts;
   const why = [['⚡', 'Speed³', `Power rises with the cube of RPM. ${topNow ? `${topNow.toLocaleString()} RPM draws ${(wAt(topNow) / 1000).toFixed(1)} kW, ` : ''}${sp.filterRpm.toLocaleString()} RPM draws ${(wAt(sp.filterRpm) / 1000).toFixed(2)} kW.`],
@@ -96,8 +101,9 @@ function drawDial(S) {
   $('schDots').innerHTML = why.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('');
   const rs = $('schWhy'); rs.onscroll = () => { const i = Math.round(rs.scrollLeft / (rs.children[0].offsetWidth + 10)); [...$('schDots').children].forEach((x, k) => x.classList.toggle('on', k === i)); };
   $('schSteps').innerHTML = P.schedules.map(s => `<span>${s.name} · speed</span><b>${s.rpm.toLocaleString()} RPM</b><span>${s.name} · schedule</span><b>${hm(s.start)}–${hm(s.stop)} every day</b>`).join('') + `<span>Other pump schedules</span><b>remove</b>`;
-  const applied = d.applied;
-  $('schActions').innerHTML = S.guest ? `<p class="fine" style="margin-top:12px;text-align:center">${nameStart(S.ownerName)} approves changes from their own devices.</p>` : applied ? `<p class="fine" style="margin-top:10px">Applied to ScreenLogic ${new Date(applied.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}. <button class="link" id="poolRestore" style="margin:0 0 0 6px;padding:4px 10px">Restore the previous schedule</button></p>`
+  $('schActions').innerHTML = S.guest ? `<p class="fine" style="margin-top:12px;text-align:center">${nameStart(S.ownerName)} approves changes from their own devices.</p>`
+    : onPlan ? `<p class="fine" style="margin-top:10px"><button class="link" id="poolRestore" style="margin:0;padding:4px 10px">Restore the previous schedule</button></p>`
+    : applied ? `<p class="fine" style="margin-top:10px">Applied to ScreenLogic ${appliedAt}. <button class="link" id="poolRestore" style="margin:0 0 0 6px;padding:4px 10px">Restore the previous schedule</button></p>`
     : `<button class="primary" id="poolApply">Apply to ScreenLogic</button><button class="link" id="poolShow">Show the settings instead</button>`;
   const show = $('poolShow'); if (show) show.onclick = () => { const el = $('schSteps'); el.style.display = el.style.display === 'none' ? 'grid' : 'none'; };
   const apply = $('poolApply'); if (apply) apply.onclick = async () => {

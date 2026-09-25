@@ -81,7 +81,9 @@ export function createPoolTwin(el) {
   const cone = (x, y, z, r) => { const c = new THREE.Mesh(new THREE.ConeGeometry(r, 1.2, 32, 1, true), new THREE.MeshBasicMaterial({ color: C.cyan, transparent: true, opacity: 0, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })); c.position.set(x, y, z); scene.add(c); return c; };
   const [cx2, cz2] = ftv(24, 9); P.conePool = cone(cx2, .62, cz2, 1.6); P.coneSpa = cone(sx, SH + .55, sz, .7);
   P.lightPool = new THREE.PointLight(C.cyan, 0, 8, 1.5); P.lightPool.position.set(cx2, .5, cz2); scene.add(P.lightPool);
-  const label = (x, y, z) => { const d = document.createElement('div'); d.className = 'lbl3d'; const o = new CSS2DObject(d); o.position.set(x, y, z); scene.add(o); return d; };
+  const tags = [], tv = new THREE.Vector3();
+  const label = (x, y, z) => { const d = document.createElement('div'); d.className = 'lbl3d'; const o = new CSS2DObject(d); o.position.set(x, y, z); scene.add(o);
+    const lead = document.createElement('div'); lead.className = 'lead3d'; el.insertBefore(lead, labels.domElement); tags.push({ d, o, lead }); return d; };
   P.lPump = label(px2 - .7, .75, pz2 - 1.1); P.lHeat = label(px2 - .6, 1.0, pz2 + 1.0); { const [lx2, lz2] = ftv(22, 14); P.lPool = label(lx2, .3, lz2); } P.lSpa = label(sx - .5, SH + .55, sz - .6); P.lFall = label(bx + .6, .85, bz - .5);
   renderer.domElement.addEventListener('pointerdown', () => ctl.autoRotate = false);
   const advance = (s, on, speed) => { s.material.opacity = lerp(s.material.opacity, on ? .95 : 0, .08); const a = s.geometry.attributes.position; for (let i = 0; i < s.userData.n; i++) { const p = s.userData.curve.getPointAt((t * speed * .25 + i / s.userData.n + s.userData.off) % 1); a.setXYZ(i, p.x, p.y, p.z); } a.needsUpdate = true; };
@@ -107,7 +109,13 @@ export function createPoolTwin(el) {
       P.lHeat.innerHTML = `Heater · propane<br><b>${ST.heater ? 'heating' : 'off'}${ST.spaSet ? ` · spa set ${ST.spaSet}°` : ''}</b>`; P.lHeat.classList.toggle('dim', !ST.heater);
       P.lFall.innerHTML = `24" sheer descent<br><b>${ST.waterfall ? 'on' : 'off'}</b>`; P.lFall.classList.toggle('dim', !ST.waterfall);
       P.lPool.innerHTML = `Pool · 14,995 gal<br><b>${ST.poolTemp != null ? ST.poolTemp + '°F' : '—'}</b>`; P.lSpa.innerHTML = `Spa · 1,000 gal<br><b>${ST.spaTemp != null ? ST.spaTemp + '°F' : '—'}${ST.jets ? ' · jets' : ''}${ST.blower ? ' · air' : ''}</b>`;
-      ctl.update(); renderer.render(scene, cam); labels.render(scene, cam); },
+      ctl.update(); renderer.render(scene, cam); labels.render(scene, cam);
+      // every label stays 8 px inside the twin; one moved in from the edge gets a 1 px leader back to its anchor
+      const { width: lw, height: lh } = labels.getSize(), ws = tags.map(g => g.d.offsetWidth);
+      tags.forEach((g, i) => { if (g.d.style.display === 'none') { g.lead.style.width = '0'; return; }
+        g.o.getWorldPosition(tv).project(cam); const x = (tv.x + 1) / 2 * lw, y = (1 - tv.y) / 2 * lh, cx = Math.max(8 + ws[i] / 2, Math.min(x, lw - 8 - ws[i] / 2));
+        if (cx !== x) g.d.style.transform = `translate(-50%, -50%) translate(${cx}px, ${y}px) rotate(0rad)`;
+        const edge = cx + Math.sign(x - cx) * ws[i] / 2; Object.assign(g.lead.style, { left: Math.min(x, edge) + 'px', top: y + 'px', width: Math.abs(x - edge) + 'px' }); }); },
     resize() { const w = el.clientWidth, h = el.clientHeight; if (!w || !h) return; renderer.setSize(w, h); labels.setSize(w, h); cam.aspect = w / h; cam.updateProjectionMatrix(); },
   };
 }

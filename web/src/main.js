@@ -11,7 +11,7 @@ import { renderLive, renderStatic, renderWeather } from './views/now.js';
 import { initHistory, drawHistoryChart, landscapeData, drawSocHeat, drawRecords, drawOutages, drawBills, openBillSheet } from './views/history.js';
 import { initPanels, drawPerformance, roofHud } from './views/panels.js';
 import { drawAlerts, initPlanner, drawAC, drawOvernight, drawHealth, initOutage } from './views/insights.js';
-import { drawSettings, openRawData } from './views/settings.js';
+import { drawSettings, drawConnections, openRawData } from './views/settings.js';
 import { initAppliances, poolTwin, drawPool } from './views/appliances.js';
 import { initAc, thermalTwin, drawAc } from './views/ac.js';
 import { initLearn } from './views/learn.js';
@@ -130,13 +130,16 @@ async function loadExternal() {
 let wasOut = null;
 function updateOutage() {
   const r = S.live, real = !!r && (r.gridStatus !== 'Active' || /off_grid/.test(r.islandStatus ?? '')) || !!S.now?.outage?.active;
-  S.outageActive = real || S.preview;
+  S.outageActive = real || S.preview; S.realOutage = real;
   if (wasOut !== null && S.outageActive !== wasOut) {
     if (S.outageActive) { toast('⚡', 'rgba(255,90,78,.25)', S.preview ? 'Outage preview' : 'Grid outage detected', `${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} · your Powerwalls took over`); go('v-now'); }
     else toast('✓', 'rgba(78,240,166,.2)', 'Grid restored', `Back on PEC. Your home never lost power.`);
   }
   wasOut = S.outageActive;
 }
+
+/** Outage preview: the house gets the islanded reading (nothing from PEC, the Powerwalls cover home − solar) so its four labels add up. */
+const flowReading = r => S.preview && !S.realOutage ? { ...r, gridKw: 0, batteryKw: r.homeKw - r.solarKw } : r;
 
 /* ---------------- navigation ---------------- */
 function go(v, anchor) {
@@ -192,7 +195,9 @@ const dayRing = createDayRing($('dayRing'), (h, d) => {
   if (h == null) ro.innerHTML = `<b>${Math.round(sum(d.rest) + sum(d.ac) + sum(d.pool))} kWh</b><small>${d.label}</small>${bd(Math.round(sum(d.pool)), Math.round(sum(d.ac)), Math.round(sum(d.rest)))}`;
   else ro.innerHTML = `<b>${(d.rest[h] + d.ac[h] + d.pool[h]).toFixed(1)} kWh</b><small>${h % 12 || 12}${h < 12 ? ' AM' : ' PM'} · solar ${d.solar[h].toFixed(1)} kWh</small>${bd(d.pool[h].toFixed(1), d.ac[h].toFixed(1), d.rest[h].toFixed(1))}`;
 });
-S.ringMode = 'now'; S.onPool = () => safe(drawDayRing)();
+/** Settings › Connections and Data health follow the latest sync, pool and Nest reads (health waits for its first /api/status). */
+const refreshStatus = () => { safe(drawConnections)(S); if ('status' in S) safe(drawHealth)(S, S.status); };
+S.ringMode = 'now'; S.onPool = () => { safe(drawDayRing)(); refreshStatus(); }; S.onAc = () => { safe(drawDayRing)(); refreshStatus(); };
 $('drModes').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.ringMode = b.dataset.m; document.querySelectorAll('#drModes button').forEach(x => x.classList.toggle('on', x === b)); drawDayRing(); };
 /** Today's hourly loads: pool from the schedule model, AC from the heat model, the rest from Tesla's home load. */
 function drawDayRing() {
@@ -213,7 +218,7 @@ function drawDayRing() {
   dayRing.setData({ rest, ac, pool, solar: sol, label }); dayRing.setHour(localHour());
   const tot = home.reduce((a, b) => a + b, 0), pk = pool.reduce((a, b) => a + b, 0);
   $('insToday').textContent = Math.round(tot);
-  $('drTxt').innerHTML = S.ringMode === 'now' ? (tot ? `The pool pump is about <b style="color:var(--text)">${Math.round(pk / tot * 100)}%</b> of today so far. AC is estimated from your heat model (about ${slope.toFixed(1)} kWh per degree over 80°F) until Nest is linked; everything else is what's left of Tesla's home load.` : 'Waiting for today’s data.')
+  $('drTxt').innerHTML = S.ringMode === 'now' ? (tot ? `The pool pump is about <b style="color:var(--text)">${Math.round(pk / tot * 100)}%</b> of today so far. ${S.ac?.linked && S.ac.learned ? `AC is measured through Nest and Tesla's load steps (${S.ac.learned.acKw.toFixed(1)} kW)` : `AC is estimated from your heat model (about ${slope.toFixed(1)} kWh per degree over 80°F) until Nest is linked`}; everything else is what's left of Tesla's home load.` : 'Waiting for today’s data.')
     : S.ringMode === 'pool' ? `With the smarter schedule the pump moves under the solar curve and drops to about <b style="color:var(--text)">${Math.round(pk)} kWh</b> a day, so nights are just the house idling and the Powerwalls reach the evening fuller.`
     : `Eight more panels lift the gold ribbon by a third. Midday surplus covers more of the AC ramp, and the planner says the batteries would fill on far more days.`;
 }
@@ -232,7 +237,7 @@ function frame(now) {
   if (isOn('v-now') && r) orb.render({ soc: r.soc, batteryKw: r.batteryKw, solarKw: r.solarKw, peakKw: S.peakKw ?? 9, maxKw: S.now?.site?.maxPowerKw || 10, out: S.outageActive, dt, t: T });
   if (isOn('v-now') && r && house) {
     const i = S.wx ? S.wx.hourly.time.indexOf(`${localDate()}T${String(Math.floor(localHour())).padStart(2, '0')}:00`) : -1;
-    S.twinReplay = house.render({ r, cloud: i >= 0 ? S.wx.hourly.cloud_cover[i] / 100 : .1, code: i >= 0 ? S.wx.hourly.weather_code[i] : 0, out: S.outageActive, peakKw: S.peakKw ?? 9, dt, t: T, calm: S.calm,
+    S.twinReplay = house.render({ r: flowReading(r), cloud: i >= 0 ? S.wx.hourly.cloud_cover[i] / 100 : .1, code: i >= 0 ? S.wx.hourly.weather_code[i] : 0, out: S.outageActive, peakKw: S.peakKw ?? 9, dt, t: T, calm: S.calm,
       day: S.applDay, wx: S.wx, pool: S.pool, ac: S.ac, reservePct: S.now?.site?.reservePct })?.replaying ?? false;
   }
   if (isOn('v-hist')) land.render(dt, S.calm);
@@ -375,10 +380,10 @@ async function boot() {
   loadArchive().catch(e => console.warn('archive', e.message));
   // keep history current: sync now, then every 5 min while open; keep going while there are missing days to backfill
   const sync = async () => { const r = await api.sync().catch(() => null); if (r?.filled || r?.done?.includes('lastHistory')) loadHistory().catch(() => {}); if (r?.remaining > 0) setTimeout(sync, 1500);
-    S.syncInfo = r; $('sideDays').textContent = r?.remaining ? `loading… ${r.remaining} days left` : $('sideDays').textContent; };
+    S.syncInfo = r; $('sideDays').textContent = r?.remaining ? `loading… ${r.remaining} days left` : $('sideDays').textContent; refreshStatus(); };
   if (!S.guest) { sync(); setInterval(sync, 5 * 60_000); } // syncing is a write: the owner's device keeps history current
-  setInterval(async () => { const s = await api.status().catch(() => null); safe(drawHealth)(S, s); }, 60_000);
-  api.status().then(s => safe(drawHealth)(S, s)).catch(() => {});
+  setInterval(async () => { const s = await api.status().catch(() => null); S.status = s; safe(drawHealth)(S, s); }, 60_000);
+  api.status().then(s => { S.status = s; safe(drawHealth)(S, s); }).catch(() => {});
 }
 boot();
 
