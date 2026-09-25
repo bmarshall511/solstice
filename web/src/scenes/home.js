@@ -128,7 +128,7 @@ export function createHomeView(host, mode = 'flow') {
   const els = {}, lines = {}, lift = { solar: -40, home: -54, pw: 24, grid: -34 }, names = { solar: 'SOLAR', home: 'HOME', pw: 'POWERWALL · 2×', grid: 'PEC GRID' };
   if (mode === 'flow') for (const k of Object.keys(H.anchors)) {
     const el = document.createElement('div'); el.className = `hlbl ${lift[k] > 0 ? 'below' : ''}`; el.innerHTML = `<small>${names[k]}</small><b>—</b>`; host.appendChild(el); els[k] = el;
-    const l = document.createElement('div'); l.className = 'hlead'; host.appendChild(l); lines[k] = l;
+    const l = document.createElement('div'); l.className = 'hlead'; l.style.transformOrigin = 'top'; host.appendChild(l); lines[k] = l;
   }
   let pathDay = null, pathObjs = [];
   function drawSunPath(dayStart) {
@@ -195,9 +195,20 @@ export function createHomeView(host, mode = 'flow') {
 
       controls.autoRotate = mode === 'sun' && !calm && controls.autoRotate;
       controls.update(); renderer.render(scene, camera); css.render(scene, camera);
-      if (mode === 'flow') { const rect = canvas.getBoundingClientRect();
-        for (const [k, p] of Object.entries(H.anchors)) { v.copy(p).project(camera); const x = (v.x + 1) / 2 * rect.width, y = (1 - v.y) / 2 * rect.height, dy = lift[k];
-          els[k].style.left = x + 'px'; els[k].style.top = (y + dy) + 'px'; lines[k].style.left = x + 'px'; lines[k].style.height = Math.abs(dy) - 4 + 'px'; lines[k].style.top = (dy > 0 ? y : y + dy + 4) + 'px'; } }
+      if (mode === 'flow') { const rect = canvas.getBoundingClientRect(), L = {};
+        for (const k of Object.keys(H.anchors)) L[k] = { w: els[k].offsetWidth, h: els[k].offsetHeight }; // read every size before moving anything
+        for (const [k, p] of Object.entries(H.anchors)) { v.copy(p).project(camera); const o = L[k];
+          o.x = (v.x + 1) / 2 * rect.width; o.y = (1 - v.y) / 2 * rect.height; o.dy = lift[k]; o.ty = o.y + o.dy;
+          o.lx = Math.max(8 + o.w / 2, Math.min(o.x, rect.width - 8 - o.w / 2)); } // every label stays 8 px inside the card
+        const box = o => ({ l: o.lx - o.w / 2, r: o.lx + o.w / 2, t: o.dy > 0 ? o.ty : o.ty - o.h, b: o.dy > 0 ? o.ty + o.h : o.ty });
+        const lead = o => ({ l: Math.min(o.x, o.lx), r: Math.max(o.x, o.lx), t: Math.min(o.y, o.dy > 0 ? o.ty - 4 : o.ty + 4), b: Math.max(o.y, o.dy > 0 ? o.ty - 4 : o.ty + 4) });
+        for (const [k, o] of Object.entries(L)) { if (o.lx === o.x) continue; // a label moved in from the edge must not sit on another label or its leader
+          for (const [j, n] of Object.entries(L)) { if (j === k) continue;
+            for (const ob of [box(n), lead(n)]) { const a = box(o); if (a.l < ob.r + 4 && a.r > ob.l - 4 && a.t < ob.b + 4 && a.b > ob.t - 4) o.ty += o.dy > 0 ? ob.b + 4 - a.t : ob.t - 4 - a.b; } } }
+        for (const [k, o] of Object.entries(L)) { const l = lines[k];
+          els[k].style.left = o.lx + 'px'; els[k].style.top = o.ty + 'px';
+          if (o.lx === o.x && o.ty === o.y + o.dy) { l.style.transform = ''; l.style.left = o.x + 'px'; l.style.height = Math.abs(o.dy) - 4 + 'px'; l.style.top = (o.dy > 0 ? o.y : o.ty + 4) + 'px'; }
+          else { const ly = o.dy > 0 ? o.ty - 4 : o.ty + 4; l.style.left = o.lx + 'px'; l.style.top = ly + 'px'; l.style.height = Math.hypot(o.x - o.lx, o.y - ly) + 'px'; l.style.transform = `rotate(${Math.atan2(o.lx - o.x, o.y - ly)}rad)`; } } }
       return { el: sp.el, az: sp.az, inc: Math.acos(Math.max(-1, Math.min(1, H.panelNormal.dot(sd)))) / RAD };
     },
   };
