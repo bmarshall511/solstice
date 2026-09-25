@@ -23,7 +23,10 @@ export function drawConnections(S) {
   $('setPool').textContent = `pool & spa${p?.snapshot?.at ? ` · read ${ago(p.snapshot.at)}` : ''}`;
   $('setPoolV').innerHTML = !p ? '—' : p.error ? off('Read failed') : p.linked ? on('Linked') : off('Not linked');
   $('setNest').textContent = a?.state ? `${/thermostat/i.test(name) ? name : `${name} thermostat`} · sampled ${ago(a.state.at)}` : 'thermostat';
-  $('setNestV').innerHTML = !a ? '—' : a.error ? off('Read failed') : a.linked ? on('Linked') : off(a.configured ? 'Not linked' : 'Not set up');
+  const nest = !a ? '—' : a.error ? off('Read failed') : a.linked ? on('Linked') : off(a.configured ? 'Not linked' : 'Not set up');
+  // Owner: Relink / Link through Google (the AC panel's Link Nest card only shows while unlinked). Guests keep the status text.
+  const relink = a?.configured ? `<a class="link" data-owner href="/auth/google">${a.linked ? 'Relink' : 'Link'}</a>` : '';
+  $('setNestV').innerHTML = !relink ? nest : a.error ? `${nest} ${relink}` : `<span data-guest>${nest}</span>${relink}`;
 }
 
 export function drawSettings(S) {
