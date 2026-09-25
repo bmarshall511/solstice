@@ -70,7 +70,7 @@ export function createPoolTwin(el) {
   P.conePool = cone(px, .62, pz, 2.4); P.coneSpa = cone(sx, 1.1, sz, 1.0);
   P.lightPool = new THREE.PointLight(C.cyan, 0, 8, 1.5); P.lightPool.position.set(px, .5, pz); scene.add(P.lightPool);
   const label = (x, y, z) => { const d = document.createElement('div'); d.className = 'lbl3d'; const o = new CSS2DObject(d); o.position.set(x, y, z); scene.add(o); return d; };
-  P.lPump = label(3.0, .85, -2.6); P.lHeat = label(5.35, 1.25, -2.6); P.lPool = label(px - 1.6, .3, pz + 1.2); P.lSpa = label(sx + .2, 1.0, sz + .9); P.lFall = label(-1.3, 1.55, -1.75);
+  P.lPump = label(2.6, .7, -2.9); P.lHeat = label(5.5, 1.6, -2.6); P.lPool = label(px - 1.6, .3, pz + 1.2); P.lSpa = label(sx + .2, 1.0, sz + .9); P.lFall = label(-1.3, 1.55, -1.75);
   renderer.domElement.addEventListener('pointerdown', () => ctl.autoRotate = false);
   const advance = (s, on, speed) => { s.material.opacity = lerp(s.material.opacity, on ? .95 : 0, .08); const a = s.geometry.attributes.position; for (let i = 0; i < s.userData.n; i++) { const p = s.userData.curve.getPointAt((t * speed * .25 + i / s.userData.n + s.userData.off) % 1); a.setXYZ(i, p.x, p.y, p.z); } a.needsUpdate = true; };
   const spread = (s, on, speed, w) => { s.material.opacity = lerp(s.material.opacity, on ? .9 : 0, .08); const a = s.geometry.attributes.position; for (let i = 0; i < s.userData.n; i++) { const p = s.userData.curve.getPointAt((t * speed + i * .618) % 1); a.setXYZ(i, p.x + (i / s.userData.n - .5) * w * 2, p.y, p.z + Math.sin(i * 3.1) * .05); } a.needsUpdate = true; };

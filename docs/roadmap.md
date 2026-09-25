@@ -57,7 +57,8 @@ Status legend: ✅ in the mockup · ◻︎ planned, not mocked · ⚠️ depends
 - ◻︎ Capital credits and co-op line items (PEC-specific)
 
 ### Insights and planning
-- ✅ **Appliances**: pool pump via Pentair ScreenLogic (live watts/RPM/water temp, cost of the current schedule, season-aware smarter schedule, apply/restore). ◻︎ AC via Nest in the same slots
+- ✅ Insights as four panels (Today · Appliances · Planner · Home) with a three.js **Day Ring** (hourly loads by pool / AC estimate / rest, solar ribbon, morph modes)
+- ✅ **Appliances**: pool & spa holographic flow twin driven by ScreenLogic circuits; 24-h schedule dial (now vs recommended, reasons, apply/restore); **Autopilot** (suggest/auto, nightly 8:15 PM cron, forecast + water temp + use + pollen signals, change log, D.E. filter run hours). ◻︎ AC via Nest in the same slots. ◻︎ circuit chips as controls
 - ✅ Outage readiness, solar low, overnight baseline drift, Powerwall health, tomorrow's forecast
 - ✅ **Heat and AC**: daily usage vs real daily high (60 days), kWh per degree, outlier days flagged
 - ✅ **What-if planner**: +panels, +Powerwalls, +daily usage → a full year simulated with PEC rates, cost, payback, backup hours, honest recommendation
