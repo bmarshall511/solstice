@@ -47,6 +47,7 @@ export const api = {
   poolApplyTomorrow: () => send('POST', 'appliances/pool/apply-tomorrow'),
   poolAutopilot: mode => send('POST', 'appliances/pool/autopilot', { mode }),
   ac: () => get('appliances/ac'),
+  applDay: date => get(`appliances/day?date=${date}`),
   acApply: () => send('POST', 'appliances/ac/apply'),
   acSettings: patch => send('POST', 'appliances/ac/settings', patch),
   saveSettings: patch => send('PUT', 'settings', patch),

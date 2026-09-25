@@ -26,7 +26,7 @@ export function renderLive(S) {
 
   // flows
   const f = splitFlows(r);
-  $('flowNote').textContent = out ? 'islanded · grid offline' : `live · ${new Date(r.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+  if (!S.twinReplay) $('flowNote').textContent = out ? 'islanded · grid offline' : `live · ${new Date(r.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
 
   // one-sentence story
   const share = r.homeKw > 0 ? Math.min(1, f.solHome / r.homeKw) : 0;
