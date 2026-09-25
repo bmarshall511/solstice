@@ -112,13 +112,16 @@ async function loadExternal() {
 let wasOut = null;
 function updateOutage() {
   const r = S.live, real = !!r && (r.gridStatus !== 'Active' || /off_grid/.test(r.islandStatus ?? '')) || !!S.now?.outage?.active;
-  S.outageActive = real || S.preview;
+  S.outageActive = real || S.preview; S.realOutage = real;
   if (wasOut !== null && S.outageActive !== wasOut) {
     if (S.outageActive) { toast('⚡', 'rgba(255,90,78,.25)', S.preview ? 'Outage preview' : 'Grid outage detected', `${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} · your Powerwalls took over`); go('v-now'); }
     else toast('✓', 'rgba(78,240,166,.2)', 'Grid restored', `Back on PEC. Your home never lost power.`);
   }
   wasOut = S.outageActive;
 }
+
+/** Outage preview: the house gets the islanded reading (nothing from PEC, the Powerwalls cover home − solar) so its four labels add up. */
+const flowReading = r => S.preview && !S.realOutage ? { ...r, gridKw: 0, batteryKw: r.homeKw - r.solarKw } : r;
 
 /* ---------------- navigation ---------------- */
 function go(v, anchor) {
@@ -194,7 +197,7 @@ function frame(now) {
   if (isOn('v-now') && r) orb.render({ soc: r.soc, batteryKw: r.batteryKw, solarKw: r.solarKw, peakKw: S.peakKw ?? 9, maxKw: S.now?.site?.maxPowerKw || 10, out: S.outageActive, dt, t: T });
   if (isOn('v-now') && r) {
     const i = S.wx ? S.wx.hourly.time.indexOf(`${localDate()}T${String(Math.floor(localHour())).padStart(2, '0')}:00`) : -1;
-    house.render({ r, cloud: i >= 0 ? S.wx.hourly.cloud_cover[i] / 100 : .1, code: i >= 0 ? S.wx.hourly.weather_code[i] : 0, out: S.outageActive, peakKw: S.peakKw ?? 9, dt, t: T, calm: S.calm });
+    house.render({ r: flowReading(r), cloud: i >= 0 ? S.wx.hourly.cloud_cover[i] / 100 : .1, code: i >= 0 ? S.wx.hourly.weather_code[i] : 0, out: S.outageActive, peakKw: S.peakKw ?? 9, dt, t: T, calm: S.calm });
   }
   if (isOn('v-hist')) land.render(dt, S.calm);
   if (isOn('v-ins') && insPanel === 'today') dayRing.render(dt, S.calm);
