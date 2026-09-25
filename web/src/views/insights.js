@@ -13,6 +13,7 @@ export function drawAlerts(S) {
   const N = S.overnight ?? [];
   if (N.length > 20) { const recent = N.slice(-7).reduce((a, n) => a + n.kw, 0) / 7, base = N.slice(-37, -7).map(n => n.kw).sort((a, b) => a - b), med = base[Math.floor(base.length / 2)];
     if (recent > med * 1.15 && recent - med > .15) card('var(--solar)', '◐', `Overnight usage up ${Math.round((recent / med - 1) * 100)}%`, '7 nights', `Your 1–5 AM average went from ${(med * 1000).toFixed(0)} W to ${(recent * 1000).toFixed(0)} W, about $${((recent - med) * 24 * 30 * (S.tariff?.importRateAllIn ?? .1064) / 6).toFixed(0)}/month if it's always-on. Nights are hotter too, so some of this may be AC.`); }
+  if (S.pool?.extras?.lightReadings30d > 0) card('var(--solar)', '💡', 'Pool lights are 600 W of incandescent', 'from the plan', `The AmeriLite pool (500 W) and spa (100 W) lights cost about $${(0.6 * (S.tariff?.importRateAllIn ?? .1064)).toFixed(2)} an hour. LED replacements draw about a tenth of that and change colour.`);
   const D = (S.daily ?? []).slice(-30).filter(d => d.socMax != null);
   if (D.length > 10) { const full = D.filter(d => d.socMax >= 99).length;
     card('var(--batt)', '▮', full < 5 ? 'Your Powerwalls rarely fill up' : 'Powerwalls are cycling well', '30 days', full < 5

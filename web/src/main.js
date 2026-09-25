@@ -149,7 +149,8 @@ export function drawDayRing() {
   day.buckets.forEach(b => { const h = Math.floor(b.t); if (h < 24) { home[h] += b.home / 12; solar[h] += b.solar / 12; } });
   const p = S.pool, curve = p?.model?.curve, W = r => r && curve ? curve.reduce((a, c) => Math.abs(c.rpm - r) < Math.abs(a.rpm - r) ? c : a).watts : 0;
   const hourly = src => Array.from({ length: 24 }, (_, h) => src?.[h] ? W(src[h].rpm) * src[h].frac / 1000 : 0);
-  const poolNow = hourly(p?.current?.hourly), pool = S.ringMode === 'pool' ? hourly(p?.plan?.hourly) : poolNow;
+  const extras = p?.extras?.hourlyToday ?? Array(24).fill(0);
+  const poolNow = hourly(p?.current?.hourly).map((v, h) => v + extras[h]), pool = S.ringMode === 'pool' ? hourly(p?.plan?.hourly).map((v, h) => v + extras[h]) : poolNow;
   const high = S.highs?.[localDate()], slope = S.acSlope ?? 2.5, acDay = high != null ? Math.max(0, (high - 80) * slope) : 0;
   const w = Array.from({ length: 24 }, (_, h) => Math.max(0, Math.sin((h - 8) / 15 * Math.PI)) ** 1.5), ws = w.reduce((a, b) => a + b, 0) || 1;
   const ac = w.map(v => Math.min(acDay * v / ws, Math.max(0, home[w.indexOf(v)] - poolNow[w.indexOf(v)])));

@@ -41,11 +41,14 @@ export function drawPool(S) {
   if (!twin) twin = createPoolTwin($('poolTwin'));
   const st = twinState(d); twin.set(st);
   const running = L?.running, names = (L?.on ?? []).filter(n => !/light/i.test(n));
-  $('poolHud').innerHTML = `${running ? (names.join(' + ') || 'Running') + ` · ${L.rpm.toLocaleString()} RPM · ${Math.round(L.watts)} W` : 'Pump off'}${st.heater ? ' · heater' : ''}${st.lights ? ' · lights' : ''}${L?.freezeMode ? ' · freeze mode' : ''}`;
+  const ex = d.extras ?? { nowW: 0, todayKwh: 0 };
+  $('poolHud').innerHTML = `${running ? (names.join(' + ') || 'Running') + ` · ${L.rpm.toLocaleString()} RPM · ${Math.round(L.watts)} W` : 'Pump off'}${ex.nowW ? ` · +${ex.nowW} W ${[st.blower ? 'blower' : '', st.lights ? 'lights' : '', running && d.settings.uv ? 'UV' : ''].filter(Boolean).join('/')}` : ''}${st.heater ? ' · heater' : ''}${L?.freezeMode ? ' · freeze mode' : ''}`;
   $('poolCirc').innerHTML = [['Pool', st.pool], ['Spa', st.spa], ['Waterfall', st.waterfall], ['Jets', st.jets], ['Air blower', st.blower], ['Heater', st.heater], ['Lights', st.lights]].map(([n, on]) => `<span class="${on ? 'on' : ''}">${n}</span>`).join('');
+  const ss = d.spaSession;
   $('poolStats').innerHTML = `<div class="stat"><small>Pump</small><b>${running ? `${Math.round(L.watts)} W · ${L.rpm.toLocaleString()} rpm` : 'off'}</b></div><div class="stat"><small>Today</small><b>${d.todayKwh} kWh${d.shareOfHomePct != null ? ` · ${d.shareOfHomePct}%` : ''}</b></div>
-    <div class="stat"><small>Pool · spa · air</small><b>${st.poolTemp ?? '—'}° · ${st.spaTemp ?? '—'}° · ${L?.airTemp ?? '—'}°</b></div><div class="stat"><small>Turnover</small><b>${d.current.turnoverPerDay}× a day</b></div>`;
-  $('poolNote').innerHTML = `IntelliFlo VSF on a Quad D.E. 80 filter, ${sp.gallons.toLocaleString()} gal. Streams follow the water: skimmer → pump → filter → heater → returns; green is the spa loop, purple the waterfall feed. Speed follows the pump's RPM.${d.model.measured.length ? ` Measured: ${d.model.measured.map(m => `${m.rpm}→${Math.round(m.watts)} W`).join(', ')}.` : ''}${d.error ? ` <span style="color:var(--warn)">Last read failed: ${d.error}</span>` : ''}`;
+    <div class="stat"><small>Pool · spa · air</small><b>${st.poolTemp ?? '—'}° · ${st.spaTemp ?? '—'}° · ${L?.airTemp ?? '—'}°</b></div><div class="stat"><small>Turnover</small><b>${d.current.turnoverPerDay}× a day</b></div>`
+    + (ss && ss.riseF != null ? `<div class="stat" style="grid-column:1/-1"><small>Spa session · ${ss.spaTemp}° → ${ss.spaSet}°</small><b>${ss.riseF ? `${ss.heatMinutes} min of propane · ${ss.propaneGal} gal ≈ $${ss.propaneUsd.toFixed(2)}` : 'already at temperature'} · then $${ss.electricUsdPerHour.toFixed(2)}/h pump + blower</b></div>` : '');
+  $('poolNote').innerHTML = `IntelliFlo VSF on a Quad D.E. 80 filter, ${sp.gallons.toLocaleString()} gal. Streams follow the water: skimmer → pump → filter → heater → returns; green is the spa loop, purple the sheer-descent feed. Speed follows the pump's RPM. Lights are 500 W + 100 W incandescent, the blower 1.1 kW, the UV lamp ~60 W while the pump runs.${d.model.measured.length ? ` Measured: ${d.model.measured.map(m => `${m.rpm}→${Math.round(m.watts)} W`).join(', ')}.` : ''}${d.error ? ` <span style="color:var(--warn)">Last read failed: ${d.error}</span>` : ''}`;
   drawDial(S); drawAutopilot(S);
   $('poolSeason').innerHTML = d.seasons.map(s => `<div class="${s.current ? 'cur' : ''}"><b>${s.kwhPerDay}</b>${s.label}</div>`).join('');
 }
@@ -80,9 +83,10 @@ function drawDial(S) {
     <div><small>Turnover</small><b>${C.turnoverPerDay}× → ${P.turnoverPerDay}×</b><span>${P.turnoverPerDay >= 1 ? 'still one a day' : 'partial in winter'}</span></div><div><small>Top speed</small><b>${topNow.toLocaleString()} → ${topRec.toLocaleString()}</b><span>RPM</span></div>`;
   const Wc = d.model.curve, wAt = r => Wc.reduce((a, c) => Math.abs(c.rpm - r) < Math.abs(a.rpm - r) ? c : a).watts;
   const why = [['⚡', 'Speed³', `Power rises with the cube of RPM. ${topNow ? `${topNow.toLocaleString()} RPM draws ${(wAt(topNow) / 1000).toFixed(1)} kW, ` : ''}${sp.filterRpm.toLocaleString()} RPM draws ${(wAt(sp.filterRpm) / 1000).toFixed(2)} kW.`],
-    ['↻', P.turnovers >= 1 ? 'One turnover' : 'A partial turnover', `${sp.gallons.toLocaleString()} gal at ~${Math.round(45 * sp.filterRpm / 1500)} GPM is ${(sp.gallons / (45 * sp.filterRpm / 1500 * 60)).toFixed(1)} h. At ${P.waterTemp}°F you get ${P.hours} h.${C.turnoverPerDay > 2 ? ` Today's schedule does it ${C.turnoverPerDay} times.` : ''}`],
+    ['↻', P.turnovers >= 1 ? 'One turnover' : 'A partial turnover', `${sp.gallons.toLocaleString()} gal at ~${Math.round(sp.designGpm * sp.filterRpm / 3450)} GPM is ${(sp.gallons / (sp.designGpm * sp.filterRpm / 3450 * 60)).toFixed(1)} h. At ${P.waterTemp}°F you get ${P.hours} h.${C.turnoverPerDay > 2 ? ` Today's schedule does it ${C.turnoverPerDay} times.` : ''}`],
     ['☀', 'Under the sun', `${hm(P.start * 60)}–${hm(P.stop * 60)} sits inside your solar curve, so the pump runs on free power and the Powerwalls reach evening fuller. Nothing overnight.`],
-    ['✦', 'Still clean', `${P.boostHours ? `A 1 h skim boost at ${hm(P.boostAt * 60)} for surface debris; ` : 'No boost needed in cool water; '}the robot handles the floor; the D.E. filter runs at lower pressure.`],
+    ['✦', 'Still clean', `${P.boostHours ? `A 1 h skim boost at ${hm(P.boostAt * 60)} for surface debris; ` : 'No boost needed; '}the robot handles the floor; the D.E. filter runs at lower pressure.`],
+    ['💧', 'UV works on flow', `Your Ultra UV unit only sanitizes water passing through it, so hours of steady flow do more than short fast runs, and chlorine demand stays lower. It draws about 60 W while the pump runs (${P.uvKwh ?? 0} kWh a day).`],
     ['🔒', 'Untouched', 'Freeze protection, spa, heater and lights. The waterfall stays a manual feature with its timer.']];
   $('schWhy').innerHTML = why.map(([i, b, p]) => `<div><i>${i}</i><b>${b}</b><p>${p}</p></div>`).join('');
   $('schDots').innerHTML = why.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('');
