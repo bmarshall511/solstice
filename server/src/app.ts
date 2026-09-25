@@ -3,7 +3,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import { q, one, kv, migrate } from './db.js';
 import { config } from './config.js';
 import { hashPassword, verifyPassword, startSession, endSession, currentUser, requireUser, requireSite, tooManyAttempts, recordAttempt, signState, verifyState, multiUser,
-  ownerKey, checkOwnerKey, startOwnerSession, endOwnerSession, endOtherOwnerSessions, listOwnerSessions, ownerAttemptLimited, guestAttempts, clientIp,
+  ownerKey, checkOwnerKey, startOwnerSession, endOwnerSession, endOtherOwnerSessions, endOwnerSessionById, listOwnerSessions, ownerAttemptLimited, guestAttempts, clientIp,
   signOwnerState, consumeOwnerState, setCookie, readCookie } from './auth.js';
 import { gate, presenceHidden, setPreview, PREVIEW_COOKIE } from './access.js';
 import { createShare, listShares, revokeShare, revokeAllShares, redeemShare, pruneShares, guestMaxAge, EXPIRY, DEFAULT_EXPIRY, LABEL_MAX, GUEST_COOKIE } from './share.js';
@@ -48,8 +48,11 @@ const site = (req: Request) => req.siteId!;
 /* ======================= accounts ======================= */
 app.get('/api/auth/me', wrap(async (req, res) => {
   if (!multiUser()) { // single-owner mode: no accounts; a non-owner learns the mode and nothing else
-    // A guest (or the owner previewing as one) learns that it is a guest; never the link's private label.
-    if (req.guestView) return res.json({ mode: 'single', owner: false, guest: true, label: null, ...(req.preview ? { preview: true } : {}) });
+    // A guest (or the owner previewing as one) learns that it is a guest; never the link's private label. It also gets the
+    // name the owner chose to show on invites and its own link's expiry (null: never, or the owner's preview), for the
+    // welcome card, the "Shared by" chip and the Settings "Shared with you" row.
+    if (req.guestView) return res.json({ mode: 'single', owner: false, guest: true, label: null, ownerName: await inviteName(),
+      expiresAt: req.guestShareLookup?.expiresAt ?? null, ...(req.preview ? { preview: true } : {}) });
     if (req.role !== 'owner') {
       const reason = req.guestShareLookup?.state;   // a guest cookie whose link was revoked or has expired
       return res.json({ mode: 'single', owner: false, ...(reason === 'revoked' || reason === 'expired' ? { reason } : {}) });
@@ -81,6 +84,22 @@ app.post('/api/auth/owner', express.text({ type: () => true, limit: '4kb' }), wr
 app.post('/api/auth/signout', wrap(async (req, res) => { await endOwnerSession(req, res); res.json({ ok: true }); }));
 app.post('/api/auth/signout-others', wrap(async (req, res) => res.json({ ok: true, signedOut: await endOtherOwnerSessions(req) })));
 app.get('/api/auth/devices', wrap(async (req, res) => res.json(await listOwnerSessions(req))));
+/** Owner only: sign one other device out (the devices sheet), by the short id the list shows. This device signs out with /signout. */
+app.post('/api/auth/devices/:id/signout', wrap(async (req, res) => {
+  const r = await endOwnerSessionById(req, String(req.params.id));
+  if (r === 'current') return res.status(400).json({ error: 'this_device' });
+  if (!r) return res.status(404).json({ error: 'no such device' });
+  res.json({ ok: true, id: req.params.id });
+}));
+/** Anyone: forget the share link on this device (the guest's "Leave"). Clears the guest cookie; the link itself stays live. */
+app.post('/api/auth/leave', (_req, res) => { setCookie(res, GUEST_COOKIE, '', 0); res.json({ ok: true }); });
+
+/** The name guests see on invites ("Name shown on invites", owner settings `ownerName`): trimmed, printable, at most 40 characters. */
+async function inviteName() {
+  const n = (await kv.get<Record<string, any>>('settings:owner'))?.ownerName;
+  const clean = typeof n === 'string' ? n.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 40) : '';
+  return clean || 'The owner';
+}
 
 /* ---------- guest share links (share.ts): the owner creates, lists and revokes; anyone may open one ---------- */
 /** Trade a share token (from the #s=<token> fragment) for the solstice_guest cookie, which lives until the link expires. */
