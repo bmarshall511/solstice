@@ -64,7 +64,7 @@ describe('mockups/ and docs/ hold no loan or price figures', () => {
   });
   // PRIV-1 · today mockups/g-insights.html shows the real net cost and loan payment. This flips when the privacy batch
   // replaces them with placeholders (git history still holds them; rewriting it is owner question 8).
-  it.fails('PRIV-1: mockups/g-insights.html has no loan or price figures', () => {
+  it('PRIV-1: mockups/g-insights.html has no loan or price figures', () => {
     expect(hits(['mockups/g-insights.html'], PRICE)).toEqual([]);
   });
 });
