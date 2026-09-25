@@ -59,7 +59,7 @@ Solstice is the owner's personal Tesla Powerwall + solar + pool + AC monitor. On
 ## Rendering mockups
 
 - Open mockups through the built-in browser's static server, not `file://` (relative stylesheet links break): `.claude/launch.json` defines `mockups` (python http.server on :8765) → `http://localhost:8765/mockups/<file>.html`, emulate 375–393 px, screenshot every frame, then reset the viewport.
-- Mockup names so far: a–i (earlier designs; g, h, i approved), j-ui-fixes, k–p visualizations, q-share, r-learning. Continue from s.
+- Mockup names so far: a–i (earlier designs; g, h, i approved), j-ui-fixes, k–p visualizations, q-share, r-learning, s-expand (all j–s approved and built). Continue from t.
 
 ## Working style the owner expects
 
