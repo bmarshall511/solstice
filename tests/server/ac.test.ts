@@ -46,7 +46,7 @@ describe('AC planFor', () => {
     const p = plan({ high: 101, hourlySun: sun14 });
     expect(p.precoolFrom).toBe(11);
     expect(p.why[0]).toContain('from 11:00');
-    expect([p.kwhSaved, p.costSavedMonth]).toEqual([.3, 1]);   // six pre-cool hours, not five: was [.6, 2]
+    expect(p.precoolTo).toBe(17);   // the old kWh/cost savings fields were replaced by shiftedKwh/eveningAvoidedKwh in the learning layer
   });
 
   it('19: no pre-cool on a mild day, a cloudy day or a humid day', () => {
