@@ -348,6 +348,7 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .strip{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;margin:12px -20px 0;padding:0 20px}
 .strip::-webkit-scrollbar{display:none}
 .strip .card{flex:0 0 250px;margin-top:0;padding:12px 14px;font-size:12.5px}
+.strip .card:only-child{flex:1 1 0}
 .strip .card .ins{display:flex;gap:10px}.strip .card .ic{display:none}.strip .card b{font-size:13px}.strip .card time{color:var(--mute);font-size:11px}.strip .card p{margin-top:3px;line-height:1.45}
 .strip .card .link{margin-top:8px;padding:6px 10px;font-size:11.5px}
 /* Pool twin */
