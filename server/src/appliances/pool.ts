@@ -145,7 +145,7 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   if (configured() && (opts.fresh || !snap || Date.now() - snap.at > 60_000)) {
     try { snap = await readPool(); await recordReading(siteId, snap); } catch (e: any) { error = e.message; }
   }
-  const W = powerModel(await measuredPoints(siteId)), solarKw = await solarProfile(siteId), month = new Date().getMonth();
+  const W = powerModel(await measuredPoints(siteId)), solarKw = await solarProfile(siteId), month = Number(localDay().slice(5, 7)) - 1; // Chicago month, not the host's
   const names = new Map((snap?.circuits ?? []).map(c => [c.id, c.name]));
   const { speeds, schedules: pumpSched } = pumpSchedules(snap);
   const current = pumpSched.map(s => ({ ...s, rpm: speeds.get(s.circuitId) ?? 0, name: names.get(s.circuitId) ?? `Circuit ${s.circuitId}` }));

@@ -170,8 +170,9 @@ describe('Autopilot planDay', () => {
       process.env.TZ = 'UTC';
       expect(day({ day: { date: '2026-10-01' } }).plan.month).toBe(9);
     });
-    // BUG-6 · today planDay reads the month with new Date('2026-10-01').getMonth(), which is 8 (September) under Chicago time.
-    it.fails('BUG-6: 2026-10-01 is October in any time zone', () => {
+    // BUG-6 · fixed: planDay read the month with new Date('2026-10-01').getMonth(), which is 8 (September) under Chicago time.
+    // It now reads the month from the date string.
+    it('BUG-6: 2026-10-01 is October in any time zone', () => {
       process.env.TZ = 'America/Chicago';
       expect(day({ day: { date: '2026-10-01' } }).plan.month).toBe(9);
     });

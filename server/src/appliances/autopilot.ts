@@ -37,7 +37,7 @@ const pollenFor = (month: number): Signals['pollen'] => [2, 3].includes(month) ?
 /** One day's plan: the season plan, then the day's adjustments. Returns the plan and why. */
 export function planDay(o: { day: Daily; prev?: Daily; heatDays: number; useYesterday: boolean; waterTemp: number; settings: PoolSettings; W: (r: number) => number; rate: number | null; names: Map<number, string>; pollen: Signals['pollen'] }) {
   const why: string[] = [];
-  const base = planFor({ waterTemp: o.waterTemp, solarKw: o.day.hourlySun.map(v => v * 9.45 * .8), settings: o.settings, W: o.W, rate: o.rate, month: new Date(o.day.date).getMonth(), names: o.names });
+  const base = planFor({ waterTemp: o.waterTemp, solarKw: o.day.hourlySun.map(v => v * 9.45 * .8), settings: o.settings, W: o.W, rate: o.rate, month: Number(o.day.date.slice(5, 7)) - 1, names: o.names });
   let hours = base.hours, boost = base.boostHours;
   const rainy = (o.prev?.rainMm ?? 0) >= 5 || (o.day.rainMm >= 5 && o.day.rainPct >= 60);
   if (rainy) { hours += 1; boost = 1; why.push(`+1 h and a skim boost: ${(o.prev?.rainMm ?? 0) >= 5 ? 'rain yesterday' : 'rain likely'} brings debris`); }
@@ -48,7 +48,7 @@ export function planDay(o: { day: Daily; prev?: Daily; heatDays: number; useYest
   if (o.waterTemp < 70 && hours > 4) { hours -= 1; why.push('−1 h: water below 70°F'); }
   if (o.day.sunKwhM2 < 3 && o.day.hourlySun.some(v => v > 0)) why.push('cloudy: the run follows the brightest hours');
   hours = Math.min(12, Math.max(4, hours));
-  const plan = hours === base.hours && boost === base.boostHours ? base : planFor({ waterTemp: o.waterTemp, solarKw: o.day.hourlySun.map(v => v * 9.45 * .8), settings: o.settings, W: o.W, rate: o.rate, month: new Date(o.day.date).getMonth(), names: o.names, force: { hours, boost } });
+  const plan = hours === base.hours && boost === base.boostHours ? base : planFor({ waterTemp: o.waterTemp, solarKw: o.day.hourlySun.map(v => v * 9.45 * .8), settings: o.settings, W: o.W, rate: o.rate, month: Number(o.day.date.slice(5, 7)) - 1, names: o.names, force: { hours, boost } });
   return { plan, why };
 }
 
@@ -56,7 +56,7 @@ export type AutopilotState = { mode: Mode; nextRunAt: string; signals: Signals; 
 
 export async function autopilot(siteId: string, o: { settings: PoolSettings; mode: Mode; W: (r: number) => number; rate: number | null; names: Map<number, string>; snap: PoolSnapshot | null; waterTemp: number; currentHours: number; act: boolean }): Promise<AutopilotState> {
   const days = await forecast(), today = localDay(), ti = days.findIndex(d => d.date === today);
-  const use = await useDays(siteId), pollen = pollenFor(new Date().getMonth());
+  const use = await useDays(siteId), pollen = pollenFor(Number(today.slice(5, 7)) - 1); // Chicago month, not the host's
   const heatDaysAt = (i: number) => { let n = 0; for (let k = i; k >= 0 && days[k].high >= 95; k--) n++; return n; };
   const yesterdayUsed = !!(await q(`SELECT 1 FROM pool_readings WHERE site_id = $1 AND day = $2 AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(circuits) c WHERE c = ANY(array['1','2','3','4','7'])) LIMIT 1`, [siteId, addDays(today, -1)])).length;
   const week = [], plans: Array<ReturnType<typeof planDay>> = [];

@@ -152,21 +152,27 @@ describe('poolDetail', () => {
   });
 
   describe('the last evening of a month in production (UTC)', () => {
-    // 2026-01-31 19:30 CST is already February in UTC. BUG-6 · today poolDetail and pollenFor read new Date().getMonth(),
-    // so from 18:00 CST (19:00 CDT) on the last day of every month the plan and the pollen signal use next month.
+    // 2026-01-31 19:30 CST is already February in UTC. BUG-6 · fixed: poolDetail and pollenFor read new Date().getMonth(), so
+    // from 18:00 CST (19:00 CDT) on the last day of every month the plan and the pollen signal used next month (February,
+    // 'medium'). They now read the Chicago date.
     const at = Date.parse('2026-02-01T01:30:00Z');
-    it.fails('BUG-6: the plan month and pollen follow the Chicago date', async () => {
+    it('BUG-6: the plan month and pollen follow the Chicago date', async () => {
       vi.setSystemTime(at); await seedForecast();
       const d = await poolDetail('p-monthend', {}, RATE);
       expect(d.plan.month).toBe(0);
       expect((d.autopilot as any).signals.pollen).toBe('low');
     });
-    it('BUG-6 (today): the plan says February with February pollen', async () => {
+    it('BUG-6 (fixed): the plan says January with January pollen until Chicago midnight, then February', async () => {
       vi.setSystemTime(at); await seedForecast();
       expect(localDay()).toBe('2026-01-31');
       const d = await poolDetail('p-monthend', {}, RATE);
-      expect(d.plan.month).toBe(1);
-      expect((d.autopilot as any).signals.pollen).toBe('medium');
+      expect(d.plan.month).toBe(0);
+      expect((d.autopilot as any).signals.pollen).toBe('low');
+      vi.setSystemTime(Date.parse('2026-02-01T06:30:00Z')); await seedForecast();   // 00:30 CST on February 1
+      expect(localDay()).toBe('2026-02-01');
+      const next = await poolDetail('p-monthend', {}, RATE);
+      expect(next.plan.month).toBe(1);
+      expect((next.autopilot as any).signals.pollen).toBe('medium');
     });
   });
 });
