@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Solstice PVS relay for launchd. Setup: scripts/README.md.
+
+  Copy to ~/Library/LaunchAgents/com.solstice.pvs-relay.plist and replace every /Users/YOUR_USER/... placeholder with a
+  real absolute path. launchd expands neither ~ nor $HOME and does not load nvm, so name the node binary itself
+  (`nvm which 22` prints it).
+
+  The relay keeps running and polls the PVS once per 5-minute clock bucket, holding the Solstice owner cookie in
+  memory. StartInterval 300 starts it again within 5 minutes whenever it has exited (a fatal error such as a refused
+  login, a crash, or after the Mac logs in). launchd skips an interval while the job is still running, so there is
+  never more than one copy. RunAtLoad starts it as soon as it is bootstrapped.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.solstice.pvs-relay</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/YOUR_USER/.nvm/versions/node/v22.X.Y/bin/node</string>
+    <string>/Users/YOUR_USER/PATH/TO/solstice/scripts/pvs-relay.mjs</string>
+    <string>/Users/YOUR_USER/.solstice/pvs.env</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StartInterval</key>
+  <integer>300</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/YOUR_USER/Library/Logs/solstice/pvs-relay.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/YOUR_USER/Library/Logs/solstice/pvs-relay.log</string>
+</dict>
+</plist>
