@@ -68,6 +68,12 @@ const SCHEMA = [
      PRIMARY KEY (site_id, bill_date))`,
   // Which days of history are fully stored, per kind ('energy' | 'soe').
   `CREATE TABLE IF NOT EXISTS synced_days (site_id text NOT NULL, kind text NOT NULL, day text NOT NULL, PRIMARY KEY (site_id, kind, day))`,
+  // Energy buckets stored for the day when it was marked (NULL on rows marked before this column existed).
+  `ALTER TABLE synced_days ADD COLUMN IF NOT EXISTS buckets int`,
+  // Tesla's per-path energy for each 5-minute bucket, Wh. NULL on rows stored before these columns existed, until the nightly back-fill reaches them.
+  `ALTER TABLE energy ADD COLUMN IF NOT EXISTS solar_home_wh real, ADD COLUMN IF NOT EXISTS solar_battery_wh real, ADD COLUMN IF NOT EXISTS solar_grid_wh real,
+     ADD COLUMN IF NOT EXISTS battery_home_wh real, ADD COLUMN IF NOT EXISTS battery_grid_wh real, ADD COLUMN IF NOT EXISTS grid_home_wh real,
+     ADD COLUMN IF NOT EXISTS grid_battery_wh real`,
   // User-logged events: panel cleanings, notes. Deletable (undo).
   `CREATE TABLE IF NOT EXISTS events (id serial PRIMARY KEY, site_id text NOT NULL, type text NOT NULL, day text NOT NULL, note text, created_at timestamptz NOT NULL DEFAULT now())`,
   `CREATE TABLE IF NOT EXISTS kv (key text PRIMARY KEY, value jsonb NOT NULL)`,

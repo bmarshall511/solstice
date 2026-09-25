@@ -45,3 +45,11 @@ export function localMidnight(day: string, timeZone = config.timeZone): Date {
 }
 export const localDay = (d = new Date()) => rfc3339(d).slice(0, 10);
 export const addDays = (d: string, n: number) => new Date(Date.parse(d + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+/**
+ * The window to ask Tesla for one local day: local midnight to one second before the next local midnight, so the DST-start day
+ * is 23 hours, the fall-back day 25 and every other day 24. It never ends after `now`, so today's window stops at the current time.
+ */
+export function dayWindow(day: string, now = Date.now()): { start: Date; end: Date } {
+  const start = localMidnight(day), next = localMidnight(addDays(day, 1));
+  return { start, end: new Date(Math.min(now, next.getTime() - 1000)) };
+}
