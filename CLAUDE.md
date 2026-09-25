@@ -7,7 +7,7 @@ Solstice is the owner's personal Tesla Powerwall + solar + pool + AC monitor. On
 1. **Two phases for any sizeable piece of work.** Phase 1 is read-only: audit, report, mockups. No app-code changes, no deploys, no writes to any device. Phase 2 builds only what the owner has approved, in batches of about five items, each verified on a live URL with screenshots before the next batch starts.
 2. **Mockup approval before building anything visual or any new feature.** Mockups are HTML in `mockups/` that link `../web/src/style.css`, rendered in the browser and sent to the owner, checked at phone width (393 px) for overflow. Answering the owner's questions is **not** approval. Wait for an explicit "approved" / "go ahead" on the mockup itself, then build exactly that.
 3. **Change only what is asked or approved.** A request to change one element means only that element; the rest of the screen stays identical. Never redesign surrounding UI, headers, lists or navigation.
-4. **Never write to ScreenLogic (pool) or Nest (thermostat) unless the owner explicitly asks in that same message.** Pool and AC Autopilot stay in Suggest unless the owner says otherwise. Reading is fine.
+4. **Never write to ScreenLogic (pool) or Nest (thermostat) yourself unless the owner explicitly asks in that same message.** Reading is fine. The owner chose **Auto** for both Pool and AC Autopilot on 2026-09-25 (that is the point of the feature); leave both settings alone and never flip them to Suggest or Off without being asked.
 5. **No user accounts, ever.** The `MULTI_USER` code path stays off. Secrets live in `.env` and Vercel env only. Nothing personal in git: no name, address, account numbers, bills, loan or price figures, or the install documents. `data/`, `secrets/`, `.env*`, `*.pem` (except the Fleet API public key) and `mockups/d-rooftop.html` are git-ignored on purpose. Real dollar figures for the system price, loan or payback must never appear in mockups or docs.
 6. **Phase 2 work happens on a branch with Vercel preview deployments.** Merge to `main` only after the owner has tried the preview and approved. Never force-push. Never drop or rewrite database tables.
 7. The owner wants Claude to handle secrets and setup steps for this private app (Vercel, Neon, GCP) itself rather than asking him to, but never asks for or types Tesla credentials or payment details.
@@ -47,7 +47,7 @@ Solstice is the owner's personal Tesla Powerwall + solar + pool + AC monitor. On
 - **Vercel CLI deploys upload the working directory**; without a `.vercelignore` that lists `.env*`, `secrets/`, `data/` and `mockups/d-rooftop.html`, those files ride along as deployment sources. Add it before the next deploy.
 - **Workflow resume caching** (Claude tooling): cached agent results key on call order as well as prompt/options, so stopping and resuming a workflow re-runs stages whose call order changed.
 - `learnAcKw` runs two un-indexed `energy` scans per thermostat transition on every AC read and every 5-minute cron tick; it will exceed the 60 s function limit within about two weeks of Nest history. Fixed in Batch 4 (one query, index on `energy(site_id, epoch)`, hourly cache).
-- Both Autopilots were found set to `auto` on the live site on 2026-09-25 (the AC log showed setpoint writes). Rule 4 says Suggest; confirm with the owner before touching either setting.
+- Both Autopilots run in `auto` by the owner's choice (confirmed 2026-09-25). Do not change either setting; the safety clamps in Phase 2 Batch 1 bound what they may write.
 
 ## Rendering mockups
 
