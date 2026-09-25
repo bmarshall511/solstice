@@ -222,7 +222,10 @@ describe('every guest-readable route', () => {
     const getRoutes = new Set(routes().filter(([m]) => m === 'GET').map(([, p]) => p.toLowerCase()));
     expect([...redact.GUEST_GET.keys()].filter(p => !getRoutes.has(p)), 'views for routes that do not exist').toEqual([]);
     const paths = ['/api/auth/me', ...redact.GUEST_GET.keys()];               // /api/auth/me is open, and built per role at the source
-    const ownerLeaky = new Set(['/api/auth/me', '/api/settings', '/api/now', '/api/status', '/api/reconcile', '/api/events', '/api/whatif', '/api/appliances', '/api/appliances/pool', '/api/appliances/ac']);
+    // /api/appliances is not in this set: since the learning layer the AC row's savesPerMonth is null at the source (no dollar
+    // savings figure), and the pool is not configured here, so the owner's list holds nothing private to plant. Its view is
+    // checked against a leaky body directly in RED-5c, and the guest's response still runs through the deny-list below.
+    const ownerLeaky = new Set(['/api/auth/me', '/api/settings', '/api/now', '/api/status', '/api/reconcile', '/api/events', '/api/whatif', '/api/appliances/pool', '/api/appliances/ac']);
     const report: Record<string, string[]> = {};
     for (const path of paths) {
       const asOwner = await getJson(urlFor(path), owner), asGuest = await getJson(urlFor(path), guest), asPreview = await getJson(urlFor(path), preview);
@@ -262,6 +265,17 @@ describe('every guest-readable route', () => {
     const ownerPool = await getJson('/api/appliances/pool', owner);
     expect(ownerPool.rate).toBeGreaterThan(0);                               // the seed's bill gives the owner a rate
     expect(ownerPool.current.costPerMonth).not.toBeNull();
+  });
+
+  it('RED-5c the /api/appliances view veils savings and error text, and drops every unnamed key, on a leaky body', () => {
+    const v = redact.GUEST_GET.get('/api/appliances')!;
+    const body = [{ id: 'pool', name: 'Pool pump', status: 'linked', watts: 900, kwhPerDay: 7.2, savesPerMonth: 12.5, source: 'ScreenLogic', serial: 'TEST-SERIAL-POOL' },
+      { id: 'ac', name: 'AC', status: 'estimated', watts: null, kwhPerDay: null, savesPerMonth: null, error: 'Nest: enterprises/test-project/devices/dev-test is unreachable' }];
+    expect(leaks(body).length, 'the body is leaky').toBeGreaterThan(0);
+    const out = v(body);
+    expect(leaks(out)).toEqual([]);
+    expect(out).toEqual([{ id: 'pool', name: 'Pool pump', status: 'linked', watts: 900, kwhPerDay: 7.2, savesPerMonth: null },
+      { id: 'ac', name: 'AC', status: 'estimated', watts: null, kwhPerDay: null, savesPerMonth: null, error: 'unavailable' }]);
   });
 });
 
@@ -318,7 +332,16 @@ describe('bills and the AC card', () => {
     expect(g.log).toEqual([{ at: expect.any(Number), day: today, text: 'Set 76° (morning, comfort band)' }]);
     expect(g.state).toEqual({ at: expect.any(Number), name: 'Thermostat', online: true, indoorF: 76, humidity: 45, mode: 'COOL', hvac: 'OFF', coolF: 80, heatF: null });
     expect(g.learned).not.toHaveProperty('source');
-    expect(g.plan.costSavedMonth).toBeNull();
+    // the learning layer replaced the dollar savings (costSavedMonth, gone at the source) with two kWh figures and their
+    // confidence tiers: kWh and tiers reach the guest; no money-named key is on the plan at all
+    expect(g.plan).not.toHaveProperty('costSavedMonth');
+    expect(g.plan).not.toHaveProperty('kwhSaved');
+    expect(Object.keys(g.plan).filter(k => /cost|usd|dollar|saves/i.test(k))).toEqual([]);
+    expect(g.plan).toMatchObject({ shiftedKwh: expect.any(Number), eveningAvoidedKwh: expect.any(Number), control: expect.any(Boolean),
+      conf: { shiftedKwh: expect.any(String), eveningAvoidedKwh: expect.any(String) } });
+    expect(g.plan.shiftedKwh).toBeGreaterThan(0);                           // a pre-cool day shifts cooling onto solar
+    expect(g.plan.trim ?? null).toBeNull();                                // no learned trim without three pre-cool days
+    expect(g.week.every((d: any) => typeof d.shiftedKwh === 'number' && typeof d.eveningAvoidedKwh === 'number' && !('kwhSaved' in d))).toBe(true);
     const reads = vi.mocked(nest.readNest).mock.calls.length;
     expect((await call('/api/appliances/ac?fresh=1', { cookie: guest })).status).toBe(200);
     expect((await call('/api/appliances/pool?fresh=1', { cookie: guest })).status).toBe(200);
@@ -358,6 +381,10 @@ describe('everything else is refused to guests', () => {
       expect(r.status, `${path} as ${cookie === guest ? 'guest' : 'preview'}`).toBe(401);
       expect(await r.json()).toEqual({ error: 'owner_required' });
     }
+    // routes on routers mounted with app.use (the learning layer's /api/models and the AC untrim) are not in routes(): check them by name
+    expect((await call('/api/models', { cookie: guest })).status).toBe(401);
+    expect((await call('/api/models', { cookie: preview })).status).toBe(401);
+    expect((await call('/api/appliances/ac/untrim', { cookie: guest, method: 'POST', json: {} })).status).toBe(401);
     // unknown paths (and case or slash variants of known ones) are refused too: the allow-list matches exact paths
     for (const path of ['/api/nope', '/api/site/', '/API/SITE', '/api/bills?x=1', '/api/now/extra']) expect((await call(path, { cookie: guest })).status, path).toBe(401);
     expect((await call('/API/Now/', { cookie: guest })).status).toBe(200);    // Express matches case-insensitively; so does the allow-list

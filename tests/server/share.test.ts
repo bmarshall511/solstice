@@ -211,7 +211,11 @@ describe('revoking and expiry', () => {
     await db.q(`UPDATE access_tokens SET revoked_at = now() - interval '40 days' WHERE id = $1`, [cron.id]);
     const sync = await call('/api/cron/sync', { headers: { authorization: `Bearer ${CRON}` } });
     expect(sync.status).toBe(200);
-    expect(await sync.json()).toEqual({ s: { mocked: true } });              // the cron's output is unchanged
+    // the cron's sync output is unchanged by the share cleanup; the learning layer adds its own `learn:<site>` report after the sync
+    const out = await sync.json();
+    expect(out.s).toEqual({ mocked: true });
+    expect(Object.keys(out).sort()).toEqual(['learn:s', 's']);
+    expect(out['learn:s']).not.toHaveProperty('error');
     expect(await row(cron.id)).toBeUndefined();
   });
 });

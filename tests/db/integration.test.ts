@@ -227,6 +227,10 @@ describe('AC Autopilot (acTick)', () => {
     expect([d.configured, d.linked]).toEqual([true, true]);
     expect(d.plan.steps.map(s => [s.hour, s.coolF])).toEqual([[7, 76], [11, 74], [15, 78], [19, 76], [22, 76]]);
     expect(d.currentStep).toMatchObject({ hour: 11, coolF: 74 });
+    // the plan fields the AC view reads (the band chart's windows and the savings card), plus the learning layer's additions
+    expect(d.plan).toMatchObject({ precool: true, precoolFrom: 11, precoolTo: 15, coastFrom: 15, coastTo: 19, control: false, trim: null,
+      shiftedKwh: expect.any(Number), eveningAvoidedKwh: expect.any(Number), conf: { shiftedKwh: 'estimated', eveningAvoidedKwh: 'estimated' } });
+    expect(d.plan).not.toHaveProperty('costSavedMonth');
     // tomorrow's pre-cool / coast window hours, for the Next 48 hours road
     expect(d.week[1]).toMatchObject({ date: '2026-09-26', precool: true, precoolFrom: 11, precoolTo: 15, coastFrom: 15, coastTo: 19 });
     expect(Object.keys(d.learned)).toEqual(['coolKw', 'heatKw', 'samples', 'heatSamples', 'acKw', 'source']);

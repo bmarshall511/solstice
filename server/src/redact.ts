@@ -112,6 +112,7 @@ const POOL: Rule = {
   seasons: [{ label: true, waterTemp: true, hours: true, boostHours: true, rpm: true, kwhPerDay: true, costPerMonth: 'veil', current: true }],
   solarKw: true, todayKwh: true, shareOfHomePct: true,
   applied: { at: true },
+  conf: { kwhPerDay: true },   // learning layer: the confidence tier of the kWh/day figures
 };
 /** Log lines and reasons that mention presence ("marked away", "until you mark Home") never reach a guest. */
 const noPresence = (v: unknown) => (typeof v === 'string' ? !/\b(away|home)\b/i.test(v) : true);
@@ -123,9 +124,14 @@ const AC: Rule = {
   learned: { coolKw: true, heatKw: true, samples: true, heatSamples: true, acKw: true },
   runtime: { minutes: true, duty: true }, todayKwh: true, shareOfHomePct: true,
   plan: { date: true, steps: [{ hour: true, coolF: true, why: true }], precool: true, precoolFrom: true, precoolTo: true, coastFrom: true, coastTo: true,
-    high: true, sunKwhM2: true, kwhSaved: true, costSavedMonth: 'veil', why: (w: unknown) => (Array.isArray(w) ? w.filter(x => typeof x === 'string' && noPresence(x)) : []) },
+    high: true, sunKwhM2: true, why: (w: unknown) => (Array.isArray(w) ? w.filter(x => typeof x === 'string' && noPresence(x)) : []),
+    // learning layer (learn/ac.ts): the two savings figures are kWh, so they pass, with their confidence tiers; whether today is a
+    // control day; a learned trim with its reason (indoor temperatures and times, no presence; filtered anyway, like `why`)
+    shiftedKwh: true, eveningAvoidedKwh: true, conf: { shiftedKwh: true, eveningAvoidedKwh: true }, control: true,
+    trim: { what: true, amount: true, unit: true, from: true, to: true, warmupFPerH: true, reason: (v: unknown) => (typeof v === 'string' && noPresence(v) ? v : null) } },
   currentStep: { hour: true, coolF: true, why: true },
-  week: [{ date: true, high: true, sunKwhM2: true, precool: true, depth: true, kwhSaved: true }],
+  week: [{ date: true, high: true, sunKwhM2: true, precool: true, depth: true, shiftedKwh: true, eveningAvoidedKwh: true,
+    precoolFrom: true, precoolTo: true, coastFrom: true, coastTo: true }],   // window hours: the Next 48 hours road draws them
   applied: { date: true, approved: true, lastStepHour: true },
   log: (l: unknown) => (Array.isArray(l) ? l.filter(x => noPresence(x?.text)).map(x => pick(x, log)) : []),
   outdoorF: true, hourlyOutdoor: true,
@@ -151,7 +157,7 @@ export const GUEST_GET: ReadonlyMap<string, View> = new Map<string, View>([
   ['/api/day', hourlyDay],
   ['/api/daily', view([{ date: true, ...kwh, socMin: true, socMax: true }])],
   ['/api/monthly', view([{ month: true, days: true, ...kwh }])],
-  ['/api/profile', view({ days: true, hours: [{ hour: true, home: true, solar: true }] })],
+  ['/api/profile', view({ days: true, hours: [{ hour: true, home: true, solar: true }], conf: { 'fc48.solar': true, 'fc48.home': true, 'fc48.soc': true } })],
   ['/api/grid-days', view({ dates: true, solar: true, soc: true })],
   ['/api/overnight', view([{ date: true, kw: true }])],
   ['/api/records', view({ bestSolarDay: { date: true, kwh: true }, biggestUsageDay: { date: true, kwh: true }, lowestImportDay: { date: true, kwh: true },
