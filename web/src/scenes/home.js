@@ -17,6 +17,7 @@ const THETA = Math.atan2(Math.sin(154 * RAD), -Math.cos(154 * RAD)); // local +z
 function tex(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; }
 
 function buildHouse() {
+  const edgeMats = [];
   const mat = (c, r = .8, m = .05) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m });
   const wall = mat(0x3b3f47), roofM = mat(0x2a2c32, .85, .05), trim = mat(0x4a4f58, .6);
   const panelMat = new THREE.MeshStandardMaterial({ roughness: .25, metalness: .55, emissive: 0x1a2a66, emissiveIntensity: 0, map: tex(256, 400, (x, w, h) => {
@@ -33,7 +34,7 @@ function buildHouse() {
     const A = [-w, 0, -l], B = [w, 0, -l], C = [w, 0, l], D = [-w, 0, l], R1 = [0, H, -r], R2 = [0, H, r];
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute([A, D, R2, A, R2, R1, B, R1, R2, B, R2, C, A, R1, B, D, C, R2].flat(), 3)); geo.computeVertexNormals();
     const roof = new THREE.Mesh(geo, roofMat.clone()); roof.material.side = THREE.DoubleSide; roof.material.flatShading = true; roof.position.y = wallH; roof.castShadow = roof.receiveShadow = true; grp.add(roof);
-    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .12 })); e.position.y = wallH; grp.add(e);
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .12 })); e.position.y = wallH; grp.add(e); edgeMats.push(e.material);
     return { grp, w };
   }
   const main = hip(W, L, WALL, TILT, wall, roofM, OH); g.add(main.grp);
@@ -43,7 +44,8 @@ function buildHouse() {
   const arr = new THREE.Group(); arr.position.set(-main.w, WALL, 0); arr.rotation.z = TILT; g.add(arr);
   // SunPower SPR-E19-320-AC modules: 1558 × 1046 mm, portrait (long side up the slope), 33 mm apart
   const pGeo = new THREE.BoxGeometry(1.558, .05, 1.046);
-  for (let r = 0; r < 3; r++) for (let c = 0; c < 10; c++) { const p = new THREE.Mesh(pGeo, panelMat); p.position.set(.9 + (r + .5) * 1.591, .09, 1.2 + (c - 4.5) * 1.079); p.castShadow = p.receiveShadow = true; arr.add(p); }
+  const panelEdge = new THREE.LineBasicMaterial({ color: 0x8fb8ff, transparent: true, opacity: .15 }); edgeMats.push(panelEdge);
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 10; c++) { const p = new THREE.Mesh(pGeo, panelMat); p.position.set(.9 + (r + .5) * 1.591, .09, 1.2 + (c - 4.5) * 1.079); p.castShadow = p.receiveShadow = true; arr.add(p); const e = new THREE.LineSegments(new THREE.EdgesGeometry(pGeo), panelEdge); e.position.copy(p.position); arr.add(e); }
 
   // windows on the west wall (north of the equipment), garage door on the south (driveway) end
   [-8.5, -5.5, 1.5, 4.5].forEach(z => { const w = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.2), winMat); w.rotation.y = -Math.PI / 2; w.position.set(-W / 2 - .02, 1.7, z); g.add(w);
@@ -80,7 +82,7 @@ function buildHouse() {
   const panelNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(arr.getWorldQuaternion(new THREE.Quaternion())).normalize();
   const local = (x, y, z) => g.localToWorld(new THREE.Vector3(x, y, z));
   const anchors = { solar: local(-4.4, 5.3, 1.2), home: local(-W / 2, 2.4, 4.5), pw: local(-W / 2 - .1, .3, 10.2), grid: local(X - 3, .05, 13) };
-  return { group: g, panelMat, winMat, pwLeds, flows, panelNormal, anchors, local };
+  return { group: g, panelMat, winMat, pwLeds, flows, panelNormal, anchors, local, edgeMats };
 }
 
 const sunVec = ({ el, az }, v = new THREE.Vector3()) => v.set(Math.sin(az * RAD) * Math.cos(el * RAD), Math.sin(el * RAD), -Math.cos(az * RAD) * Math.cos(el * RAD));
@@ -111,6 +113,9 @@ export function createHomeView(host, mode = 'flow') {
       vec2 uv=vD.xz/(vD.y+.25)*1.4+vec2(t*.02,0.);float cl=smoothstep(1.-cloud*.95,1.25-cloud*.6,fbm(uv*1.3))*smoothstep(0.,.25,vD.y);
       c=mix(c,mix(hor,vec3(.85,.88,.92),.35)*(.55+.6*max(0.,normalize(sunDir).y)),cl*.85);gl_FragColor=vec4(c,1.);}` })));
   const hemi = new THREE.HemisphereLight(0xbfd2ff, 0x2a2d34, .9); scene.add(hemi);
+  // after dark: cool moonlight from high in the north-east plus a soft fill from the viewer, so the roof, panels and equipment stay readable
+  const moon = new THREE.DirectionalLight(0x9fbcff, 0); moon.position.set(35, 55, -30); scene.add(moon, moon.target);
+  const nightFill = new THREE.DirectionalLight(0x8fa8d8, 0); scene.add(nightFill, nightFill.target);
   const sun = new THREE.DirectionalLight(0xfff0d8, 3); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -.0005; sun.shadow.normalBias = .04;
   Object.assign(sun.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, near: 1, far: 160 }); scene.add(sun, sun.target);
   // Now card: a soft fill from the viewer's side keeps the wall, wiring and equipment readable when the sun is behind the house
@@ -161,14 +166,16 @@ export function createHomeView(host, mode = 'flow') {
       sky.hor.value.copy(C.nightHor).lerp(C.duskHor, up).lerp(C.dayHor, high).lerp(C.grayHor, cloud * .7 * up);
       sky.sunDir.value.copy(sd); sky.glow.value.set(0xffd9a0).multiplyScalar(up * (1 - cloud * .75)); sky.cloud.value = cloud; sky.t.value = t;
       scene.fog.color.copy(sky.hor.value).multiplyScalar(.6);
-      sun.position.copy(sd).multiplyScalar(60); sun.intensity = 3.4 * Math.max(0, Math.min(1, sp.el / 8)) * (1 - cloud * .7); hemi.intensity = .25 + .75 * up;
+      sun.position.copy(sd).multiplyScalar(60); sun.intensity = 3.4 * Math.max(0, Math.min(1, sp.el / 8)) * (1 - cloud * .7); hemi.intensity = .55 + .45 * up;
+      moon.intensity = (1 - up) * 1.1 * (1 - cloud * .5); nightFill.intensity = (1 - up) * .7; nightFill.position.copy(camera.position); nightFill.target.position.copy(controls.target);
+      H.edgeMats.forEach(m => m.opacity = .12 + (1 - up) * .3);
       sunBall.position.copy(sd).multiplyScalar(160); sunBall.visible = mode === 'sun' && sp.el > -3;
       rain.material.opacity += ((code >= 51 ? .45 : 0) - rain.material.opacity) * dt * 2; if (code >= 51) rain.position.y = -((t * 22) % 30);
       if (mode === 'sun' && dayStart && pathDay !== dayStart) { pathDay = dayStart; drawSunPath(dayStart); }
 
       const solar = r?.solarKw ?? 0;
-      H.panelMat.emissive.copy(mode === 'sun' ? rampAt(solar / peakKw) : new THREE.Color(0x1a2a66));
-      H.panelMat.emissiveIntensity = mode === 'sun' ? .12 + solar / peakKw * .9 : solar / peakKw * .5;
+      H.panelMat.emissive.copy(mode === 'sun' ? rampAt(solar / peakKw).lerp(new THREE.Color(0x2d5bff), (1 - up) * .5) : new THREE.Color(0x1a2a66));
+      H.panelMat.emissiveIntensity = mode === 'sun' ? .12 + (1 - up) * .2 + solar / peakKw * .9 : (1 - up) * .15 + solar / peakKw * .5;
       H.winMat.emissiveIntensity = Math.min(1.6, (1 - up) * (.4 + (r?.homeKw ?? 1) / 4));
       if (r) H.pwLeds.forEach(l => l.material.color.set(r.batteryKw < -.05 ? 0x4ef0a6 : r.batteryKw > .05 ? 0xffc15e : 0x9aa3b0));
 
