@@ -1,6 +1,7 @@
 // Pentair ScreenLogic (EasyTouch/IntelliTouch) over Pentair's remote dispatcher, using node-screenlogic.
 // Serverless-friendly: every call opens a connection, does its work and closes. Credentials come from the environment only.
 import { RemoteLogin, UnitConnection } from 'node-screenlogic';
+import { guardPoolWrite, GuardRefusal, HEAT_CMD_UNCHANGED, type PoolGuardContext } from './guards.js';
 
 export type PoolSchedule = { id: number; circuitId: number; start: number; stop: number; dayMask: number; flags: number; heatCmd: number; heatSetPoint: number };
 export type PoolSnapshot = {
@@ -53,16 +54,23 @@ export type ScheduleWrite = { circuitId: number; start: number; stop: number; da
  * Write a plan safely: add the new schedules first, then set pump speeds, then remove the old schedules of the replaced circuits.
  * Pump speeds are addressed by the SLOT INDEX in the pump's circuit list (not the circuit id), and a slow acknowledgement is
  * verified against the pump status rather than treated as a failure. Returns what was removed (for restore).
+ * The safety guard (guards.ts) checks every circuit, speed and schedule before the controller is contacted; a refusal throws
+ * GuardRefusal and nothing is written. `run` opens the ScreenLogic session (tests pass a fake).
  */
-export async function writePoolPlan(opts: { pumpId: number; speeds: Array<{ circuitId: number; rpm: number }>; replaceCircuits: number[]; schedules: ScheduleWrite[] }) {
-  return withUnit(async c => {
+export async function writePoolPlan(opts: { pumpId: number; speeds: Array<{ circuitId: number; rpm: number }>; replaceCircuits: number[]; schedules: ScheduleWrite[]; guard: PoolGuardContext },
+  run: typeof withUnit = withUnit) {
+  // flags 0, heat command "don't change", set point 70: a schedule never touches the heater
+  const rows = opts.schedules.map(s => ({ circuitId: s.circuitId, start: s.start, stop: s.stop, dayMask: s.dayMask ?? 127, flags: 0, heatCmd: HEAT_CMD_UNCHANGED, heatSetPoint: 70 }));
+  const g = guardPoolWrite({ speeds: opts.speeds, replaceCircuits: opts.replaceCircuits, schedules: rows }, opts.guard);
+  if (!g.ok) throw new GuardRefusal('pool', g.reason);
+  return run(async c => {
     (c as any).netTimeout = 8000;
     const before = (await c.schedule.getScheduleDataAsync(0)).data as any[];
     const removed = before.filter(e => opts.replaceCircuits.includes(e.circuitId));
     const added: number[] = [];
-    for (const s of opts.schedules) {
+    for (const s of rows) {
       const id = (await c.schedule.addNewScheduleEventAsync(0)).val;
-      await c.schedule.setScheduleEventByIdAsync(id, s.circuitId, s.start, s.stop, s.dayMask ?? 127, 0, 4, 70);
+      await c.schedule.setScheduleEventByIdAsync(id, s.circuitId, s.start, s.stop, s.dayMask, s.flags, s.heatCmd, s.heatSetPoint);
       added.push(id);
     }
     const status = await c.pump.getPumpStatusAsync(opts.pumpId) as any;

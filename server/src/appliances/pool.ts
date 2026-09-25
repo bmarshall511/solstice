@@ -4,6 +4,7 @@ import { readPool, writePoolPlan, configured, type PoolSnapshot } from './screen
 import { localDay, addDays } from '../tesla/client.js';
 import type { Appliance, ApplianceSummary } from './index.js';
 import { autopilot, type Mode } from './autopilot.js';
+import { GuardRefusal, type PoolGuardContext } from './guards.js';
 
 export type PoolSettings = { gallons: number; spaGallons: number; designGpm: number; filterRpm: number; boostRpm: number; poolCircuit: number; boostCircuit: number; featureCircuits: number[]; autopilot: Mode; uv: boolean;
   heaterBtu: number; propaneUsdPerGal: number; loads: Record<string, number> };
@@ -148,11 +149,34 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
     rate, applied };
 }
 
+/* ---------- writes: every one goes through the safety guard (guards.ts) inside writePoolPlan ---------- */
+/**
+ * The pump circuits Autopilot manages: Pool, High Speed, and the Waterfall whose schedules it replaces. Fixed here rather than read
+ * from settings, so no setting can point a write at another circuit; the guard also refuses freeze, spa, spa-related, light and heater circuits.
+ */
+export const MANAGED_CIRCUITS: readonly number[] = [DEFAULTS.poolCircuit, DEFAULTS.boostCircuit, ...DEFAULTS.featureCircuits];
+/** What the guard needs to know about the controller, from a snapshot the caller already read (circuits, pump slots, RPM limits). */
+export const guardContext = (snap: PoolSnapshot): PoolGuardContext => ({ circuits: snap.circuits, pumpCircuits: (snap.pump?.circuits ?? []).map(c => c.circuitId),
+  minRpm: snap.pump?.minRpm, maxRpm: snap.pump?.maxRpm, managed: [...MANAGED_CIRCUITS] });
+/** The exact ScreenLogic write applyPlan sends for a plan, so Autopilot can check it with the guard first. The snapshot must have a pump. */
+export const planWrite = (plan: Plan, snap: PoolSnapshot, settings: PoolSettings) => ({ pumpId: snap.pump!.id, speeds: plan.schedules.map(s => ({ circuitId: s.circuitId, rpm: s.rpm })),
+  replaceCircuits: [settings.poolCircuit, settings.boostCircuit, ...settings.featureCircuits], schedules: plan.schedules.map(s => ({ circuitId: s.circuitId, start: s.start, stop: s.stop })), guard: guardContext(snap) });
+/** Add a line to the pool activity log (the Autopilot log on the Pool card). */
+async function logPool(siteId: string, text: string, delta?: string) {
+  const log = await kv.get<Array<{ at: number; day: string; text: string; delta?: string }>>(`${siteId}:pool:autolog`) ?? [];
+  log.unshift({ at: Date.now(), day: localDay(), text, delta });
+  await kv.set(`${siteId}:pool:autolog`, log.slice(0, 30));
+}
+/** writePoolPlan, with a guard refusal recorded in the pool activity log before it is rethrown. */
+async function guardedWrite(siteId: string, what: string, opts: Parameters<typeof writePoolPlan>[0]) {
+  try { return await writePoolPlan(opts); }
+  catch (e) { if (e instanceof GuardRefusal) await logPool(siteId, `Refused ${what}: ${e.reason}`, 'refused'); throw e; }
+}
+
 export async function applyPlan(siteId: string, plan: Plan, snap: PoolSnapshot, settings: PoolSettings) {
   if (!snap.pump) throw new Error('No pump found on the controller');
-  const replace = [settings.poolCircuit, settings.boostCircuit, ...settings.featureCircuits];
-  const r = await writePoolPlan({ pumpId: snap.pump.id, speeds: plan.schedules.map(s => ({ circuitId: s.circuitId, rpm: s.rpm })), replaceCircuits: replace,
-    schedules: plan.schedules.map(s => ({ circuitId: s.circuitId, start: s.start, stop: s.stop })) });
+  const w = planWrite(plan, snap, settings), replace = w.replaceCircuits;
+  const r = await guardedWrite(siteId, 'a pool schedule write', w);
   const record = { at: Date.now(), plan: { start: plan.start, stop: plan.stop, boostAt: plan.boostAt, schedules: plan.schedules }, removed: r.removed, added: r.added,
     previousSpeeds: snap.pump.circuits.filter(c => replace.includes(c.circuitId)) };
   await kv.set(`${siteId}:pool:applied`, record);
@@ -163,8 +187,8 @@ export async function applyPlan(siteId: string, plan: Plan, snap: PoolSnapshot, 
 export async function restorePrevious(siteId: string, snap: PoolSnapshot) {
   const rec = await kv.get<any>(`${siteId}:pool:applied`); if (!rec || !snap.pump) throw new Error('Nothing to restore');
   const circuits = [...new Set([...rec.removed.map((x: any) => x.circuitId), ...rec.plan.schedules.map((x: any) => x.circuitId)])] as number[];
-  await writePoolPlan({ pumpId: snap.pump.id, speeds: rec.previousSpeeds.map((c: any) => ({ circuitId: c.circuitId, rpm: c.speed })), replaceCircuits: circuits,
-    schedules: rec.removed.map((x: any) => ({ circuitId: x.circuitId, start: x.start, stop: x.stop, dayMask: x.dayMask })) });
+  await guardedWrite(siteId, 'the restore', { pumpId: snap.pump.id, speeds: rec.previousSpeeds.map((c: any) => ({ circuitId: c.circuitId, rpm: c.speed })), replaceCircuits: circuits,
+    schedules: rec.removed.map((x: any) => ({ circuitId: x.circuitId, start: x.start, stop: x.stop, dayMask: x.dayMask })), guard: guardContext(snap) });
   await kv.set(`${siteId}:pool:applied`, null as any);
   await kv.set(`${siteId}:pool:last`, null as any);
 }

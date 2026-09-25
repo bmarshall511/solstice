@@ -2,9 +2,10 @@
 // with guardrails. In "suggest" mode it stores the plan for the owner to approve; in "auto" it writes it to ScreenLogic itself.
 import { q, kv } from '../db.js';
 import { localDay, addDays } from '../tesla/client.js';
-import { planFor, applyPlan, type Plan, type PoolSettings } from './pool.js';
+import { planFor, applyPlan, planWrite, type Plan, type PoolSettings } from './pool.js';
 import type { PoolSnapshot } from './screenlogic.js';
 import { siteLocation } from '../site.js';
+import { guardPoolWrite } from './guards.js';
 
 export type Mode = 'off' | 'suggest' | 'auto';
 type Daily = { date: string; high: number; rainMm: number; rainPct: number; sunKwhM2: number; hourlySun: number[] };
@@ -73,7 +74,10 @@ export async function autopilot(siteId: string, o: { settings: PoolSettings; mod
     const applied = await kv.get<any>(`${siteId}:pool:applied`);
     const same = applied && applied.plan.start === tomorrow.plan.start && applied.plan.stop === tomorrow.plan.stop && applied.plan.boostAt === tomorrow.plan.boostAt;
     if (!same) {
-      if (o.mode === 'auto') { await applyPlan(siteId, tomorrow.plan, o.snap, o.settings); log.unshift({ at: Date.now(), day: today, text: `Tomorrow: ${tomorrow.plan.hours} h at ${o.settings.filterRpm.toLocaleString()} RPM${tomorrow.plan.boostHours ? ' + skim boost' : ''}. ${tomorrow.why.join('; ') || 'season plan'}`, delta: `${tomorrow.plan.kwhPerDay} kWh` }); }
+      // the safety guard checks the exact write first (managed pump circuits only, never freeze/spa/lights/heater, RPM in range)
+      const write = o.mode === 'auto' && o.snap.pump ? planWrite(tomorrow.plan, o.snap, o.settings) : null, g = write ? guardPoolWrite(write, write.guard) : null;
+      if (g && !g.ok) log.unshift({ at: Date.now(), day: today, text: `Refused tomorrow's plan: ${g.reason}`, delta: 'refused' });
+      else if (o.mode === 'auto') { await applyPlan(siteId, tomorrow.plan, o.snap, o.settings); log.unshift({ at: Date.now(), day: today, text: `Tomorrow: ${tomorrow.plan.hours} h at ${o.settings.filterRpm.toLocaleString()} RPM${tomorrow.plan.boostHours ? ' + skim boost' : ''}. ${tomorrow.why.join('; ') || 'season plan'}`, delta: `${tomorrow.plan.kwhPerDay} kWh` }); }
       else { pending = true; await kv.set(`${siteId}:pool:pending`, { date: tomorrow.date, plan: tomorrow.plan, why: tomorrow.why }); log.unshift({ at: Date.now(), day: today, text: `Suggested for tomorrow: ${tomorrow.plan.hours} h${tomorrow.plan.boostHours ? ' + boost' : ''}. ${tomorrow.why.join('; ') || 'season plan'}`, delta: 'waiting for you' }); }
       await kv.set(`${siteId}:pool:autolog`, log.slice(0, 30));
     }
