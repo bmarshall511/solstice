@@ -43,7 +43,7 @@ export function drawPool(S) {
   const running = L?.running, names = (L?.on ?? []).filter(n => !/light/i.test(n));
   const ex = d.extras ?? { nowW: 0, todayKwh: 0 };
   $('poolHud').innerHTML = `${running ? (names.join(' + ') || 'Running') + ` · ${L.rpm.toLocaleString()} RPM · ${Math.round(L.watts)} W` : 'Pump off'}${ex.nowW ? ` · +${ex.nowW} W ${[st.blower ? 'blower' : '', st.lights ? 'lights' : '', running && d.settings.uv ? 'UV' : ''].filter(Boolean).join('/')}` : ''}${st.heater ? ' · heater' : ''}${L?.freezeMode ? ' · freeze mode' : ''}`;
-  $('poolCirc').innerHTML = [['Pool', st.pool], ['Spa', st.spa], ['Waterfall', st.waterfall], ['Jets', st.jets], ['Air blower', st.blower], ['Heater', st.heater], ['Lights', st.lights]].map(([n, on]) => `<span class="${on ? 'on' : ''}">${n}</span>`).join('');
+  $('poolCirc').innerHTML = [['Pool', st.pool], ['Spa', st.spa], ['Sheer descent', st.waterfall], ['Jets', st.jets], ['Air blower', st.blower], ['Heater', st.heater], ['Lights', st.lights]].map(([n, on]) => `<span class="${on ? 'on' : ''}">${n}</span>`).join('');
   const ss = d.spaSession;
   $('poolStats').innerHTML = `<div class="stat"><small>Pump</small><b>${running ? `${Math.round(L.watts)} W · ${L.rpm.toLocaleString()} rpm` : 'off'}</b></div><div class="stat"><small>Today</small><b>${d.todayKwh} kWh${d.shareOfHomePct != null ? ` · ${d.shareOfHomePct}%` : ''}</b></div>
     <div class="stat"><small>Pool · spa · air</small><b>${st.poolTemp ?? '—'}° · ${st.spaTemp ?? '—'}° · ${L?.airTemp ?? '—'}°</b></div><div class="stat"><small>Turnover</small><b>${d.current.turnoverPerDay}× a day</b></div>`
