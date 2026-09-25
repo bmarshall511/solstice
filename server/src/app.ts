@@ -106,7 +106,7 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
   if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'unauthorized' });
   const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL');
   const out: Record<string, unknown> = {};
-  for (const s of sites) out[s.id] = await syncSite(s.id, Math.floor(50_000 / sites.length)).catch(e => ({ error: e.message }));
+  for (const s of sites) out[s.id] = await syncSite(s.id, Math.floor(50_000 / sites.length), { nightly: true }).catch(e => ({ error: e.message }));
   await q(`DELETE FROM readings WHERE ts < $1`, [Date.now() - 3 * 864e5]); // live snapshots are short-lived; history lives in `energy`
   res.json(out);
 }));
