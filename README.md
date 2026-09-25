@@ -15,6 +15,16 @@ npm start           # builds the web app and serves everything on http://localho
 - The server polls live status every 30 s, pulls 5-minute history every 5 min, and backfills past days on first connect.
 - Development: `npm run dev` (server, auto-restart) and `npm run web` (Vite on :5173 with hot reload, proxied to the server).
 
+### Site location
+
+The coordinates and ZIP are never in the code, because this repo and the web bundle are public. Set them in `.env` locally and in the Vercel project's environment variables. The server warns at startup if they are missing, and the web app gets them from `/api/settings`.
+
+```bash
+SITE_LAT=<latitude>     # decimal degrees; two decimals (about 1 km) is plenty
+SITE_LON=<longitude>    # decimal degrees, negative west of Greenwich
+SITE_ZIP=<zip>          # 5 digits, shown in Settings
+```
+
 ## What's in it
 
 | Tab | What it shows |

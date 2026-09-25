@@ -16,9 +16,22 @@ export const localHour = (d = new Date()) => { const p = localParts(d); return +
 export const addDays = (day, n) => new Date(Date.parse(day + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
 export const niceDate = (day, opts = { month: 'short', day: 'numeric' }) => new Date(day + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', ...opts });
 
-/* Sun position (NOAA approximation) for the site */
-export const LAT = LAT, LON = LON, RAD = Math.PI / 180;
-export function sunAt(date) {
+/* The site's location is not in the code (the repo and this bundle are public). The server reads SITE_LAT, SITE_LON and SITE_ZIP
+   from its env and sends them with /api/settings; main.js passes them to setSiteLocation() at boot, before weather loads. */
+export const RAD = Math.PI / 180;
+let site = null;
+/** Keep {lat, lon, zip} from the server. Returns it, or null when the server has no location. */
+export function setSiteLocation(loc) {
+  const ok = loc && typeof loc.lat === 'number' && typeof loc.lon === 'number' && isFinite(loc.lat) && isFinite(loc.lon);
+  site = ok ? { lat: loc.lat, lon: loc.lon, zip: loc.zip ?? null } : null;
+  return site;
+}
+export const siteLocation = () => site;
+
+/* Sun position (NOAA approximation) at the site. Until the location arrives it is a fixed daytime sun due south, a neutral placeholder. */
+export function sunAt(date, loc = site) {
+  if (!loc) return { el: 45, az: 180 };
+  const LAT = loc.lat, LON = loc.lon;
   const start = new Date(Date.UTC(date.getUTCFullYear(), 0, 0)), doy = Math.floor((date - start) / 864e5);
   const hr = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600, g = 2 * Math.PI / 365 * (doy - 1 + (hr - 12) / 24);
   const eqt = 229.18 * (.000075 + .001868 * Math.cos(g) - .032077 * Math.sin(g) - .014615 * Math.cos(2 * g) - .040849 * Math.sin(2 * g));

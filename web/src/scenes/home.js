@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { sunAt, RAD, hourLabel } from '../lib/util.js';
+import { sunAt, siteLocation, RAD, hourLabel } from '../lib/util.js';
 
 /*
  * One model of the real house, used in two views:
@@ -171,7 +171,7 @@ export function createHomeView(host, mode = 'flow') {
       H.edgeMats.forEach(m => m.opacity = .12 + (1 - up) * .3);
       sunBall.position.copy(sd).multiplyScalar(160); sunBall.visible = mode === 'sun' && sp.el > -3;
       rain.material.opacity += ((code >= 51 ? .45 : 0) - rain.material.opacity) * dt * 2; if (code >= 51) rain.position.y = -((t * 22) % 30);
-      if (mode === 'sun' && dayStart && pathDay !== dayStart) { pathDay = dayStart; drawSunPath(dayStart); }
+      if (mode === 'sun' && dayStart && pathDay !== dayStart && siteLocation()) { pathDay = dayStart; drawSunPath(dayStart); } // the path waits for the site's location
 
       const solar = r?.solarKw ?? 0;
       H.panelMat.emissive.copy(mode === 'sun' ? rampAt(solar / peakKw).lerp(new THREE.Color(0x2d5bff), (1 - up) * .5) : new THREE.Color(0x1a2a66));

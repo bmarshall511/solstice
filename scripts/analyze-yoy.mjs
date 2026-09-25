@@ -1,8 +1,11 @@
 // Year-over-year analysis for each PEC bill period: Tesla-measured flows vs. weather (Open-Meteo archive).
 // Separates "solar produced less" from "less sunshine" from "the house used more".
-// Usage: node --no-warnings scripts/analyze-yoy.mjs   (reads data/solstice.db and data/bills/*.json)
+// Usage: node --env-file=.env --no-warnings scripts/analyze-yoy.mjs   (reads data/solstice.db and data/bills/*.json; SITE_LAT/SITE_LON from .env)
 import { DatabaseSync } from 'node:sqlite';
 import { readdirSync, readFileSync } from 'node:fs';
+
+const { SITE_LAT: lat, SITE_LON: lon } = process.env;
+if (!lat || !lon) { console.error('Set SITE_LAT and SITE_LON (decimal degrees) in .env and run with --env-file=.env.'); process.exit(1); }
 
 const db = new DatabaseSync(new URL('../data/solstice.db', import.meta.url).pathname, { readOnly: true });
 const billsDir = new URL('../data/bills/', import.meta.url).pathname;
@@ -19,7 +22,7 @@ function tesla(from, to) {
 }
 
 async function weather(from, to) {
-  const url = `https://archive-api.open-meteo.com/v1/archive?latitude=LAT&longitude=LON&start_date=${from}&end_date=${addDays(to, -1)}` +
+  const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${from}&end_date=${addDays(to, -1)}` +
     `&hourly=global_tilted_irradiance,temperature_2m&daily=temperature_2m_max,temperature_2m_mean&tilt=27&azimuth=64&timezone=America%2FChicago&temperature_unit=fahrenheit`;
   const w = await (await fetch(url)).json();
   const gti = w.hourly.global_tilted_irradiance.reduce((a, v) => a + (v ?? 0), 0) / 1000; // kWh/m² on the panel plane
