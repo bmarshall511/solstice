@@ -18,6 +18,7 @@ import { poolDetail, applyPlan, restorePrevious } from './appliances/pool.js';
 import { readPool } from './appliances/screenlogic.js';
 import { acDetail, acTick } from './appliances/ac.js';
 import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, nestLinked, readNest } from './appliances/nest.js';
+import { outageDetail } from './outage.js';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -238,6 +239,8 @@ app.get('/api/records', wrap(async (req, res) => {
 }));
 
 app.get('/api/outages', wrap(async (req, res) => res.json(await q('SELECT ts, duration_s FROM backup_events WHERE site_id = $1 ORDER BY epoch DESC', [site(req)]))));
+/** Outage readiness (Insights → Home): backup hours, the load ladder, the island simulation, 12 months of outages, storm state. Read-only. */
+app.get('/api/outage', wrap(async (req, res) => res.json(await outageDetail(site(req), await settingsFor(req)))));
 app.get('/api/site', wrap(async (req, res) => { const info = await siteInfo(site(req)); res.json({ summary: summary(info), raw: info ?? null }); }));
 
 /* ---------- bills ---------- */

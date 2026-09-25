@@ -1,5 +1,6 @@
 import { $, niceDate, localDate, addDays, svgText, path, ago, money } from '../lib/util.js';
 import { api } from '../lib/api.js';
+import { mountOutageCard } from './outage.js';
 
 /* ---------- alert cards ---------- */
 export function drawAlerts(S) {
@@ -57,6 +58,9 @@ export function initPlanner(S) {
       (s.paybackYears ? `At today's rates that pays back in about ${s.paybackYears} years; it's ${s.yearsSinceInstall} years old now${s.paybackYears > s.yearsSinceInstall ? `, so roughly ${Math.max(0, Math.round((s.paybackYears - s.yearsSinceInstall) * 10) / 10)} years to go` : ' and already paid for itself in energy'}.` : '') : '';
   }
 }
+
+/* ---------- outage readiness: the first card on Home, above Heat & your AC (views/outage.js, mockup n-outage) ---------- */
+export const initOutage = S => mountOutageCard(S, $('ip-home'));
 
 /* ---------- AC vs heat ---------- */
 export function drawAC(S) {

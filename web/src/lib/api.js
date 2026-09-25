@@ -22,6 +22,7 @@ export const api = {
   overnight: days => get(`overnight?days=${days}`),
   records: () => get('records'),
   outages: () => get('outages'),
+  outage: () => get('outage'),
   site: () => get('site'),
   reconcile: () => get('reconcile'),
   ercot: () => get('ercot'),

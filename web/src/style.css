@@ -395,3 +395,24 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .tlab{position:absolute;right:12px;top:10px;text-align:right;font:500 11px "JetBrains Mono";color:var(--text);background:rgba(0,0,0,.35);padding:6px 9px;border-radius:10px;line-height:1.5;pointer-events:none}
 .comfort{position:relative;height:170px;margin-top:10px}.comfort svg{display:block;width:100%;height:100%}
 .presence{margin-top:12px;justify-content:center}.presence button{flex:1;text-align:center;padding:8px 10px}
+
+/* n-outage */
+/* Outage readiness card (Insights → Home, mockup n-outage); every rule is scoped to the card */
+.card.outage{overflow:hidden}
+.outage .o3d{height:330px;touch-action:pan-y;background:#05070d}
+.outage .o3d canvas{position:absolute;inset:0;touch-action:pan-y}
+.outage .o3d .roofhud{max-width:calc(100% - 24px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.outage .o3d .roofhud span{display:block;color:var(--dim)}
+.outage .o3d .hlbl,.outage .o3d .hlead{will-change:left,top}
+.outage .o3d .hlbl.dark b{color:var(--mute)}
+.outage .hbtns{display:flex;gap:6px;align-items:center;flex:none}
+.outage button.chip{cursor:pointer;font-family:inherit}
+.outage button.chip.on{background:rgba(255,90,78,.14);border-color:rgba(255,90,78,.4);color:#ffd0cb}
+.outage .seg2.wide{margin-top:10px}.outage .seg2.wide button{flex:1 1 auto;text-align:center}
+.outage .ochips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.outage .rung{min-width:0}.outage .rung small{font:10.5px "JetBrains Mono";color:var(--mute);margin-left:6px;white-space:nowrap}
+.outage .rung i{display:block;height:3px;border-radius:2px;margin-top:5px;background:var(--c);transition:width .6s var(--ease),opacity .3s}
+.outage .kv .off{opacity:.35;text-decoration:line-through}
+.outage .kv .off i{opacity:.4}
+.outage .wkhead b{min-width:0}
+/* end n-outage */
