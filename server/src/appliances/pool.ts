@@ -182,7 +182,7 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
       on: snap.circuits.filter(c => c.on).map(c => c.name), activeRpm: Math.max(0, ...snap.circuits.filter(c => c.on).map(c => speeds.get(c.id) ?? 0)) } : null,
     model: { measured: await measuredPoints(siteId), curve: [1000, 1500, 1800, 2400, 3000, 3450].map(r => ({ rpm: r, watts: Math.round(W(r)) })) },
     current: { schedules: current, hours: Math.round(hoursOn(prof) * 10) / 10, kwhPerDay: Math.round(kwh * 10) / 10, costPerMonth: usd(kwh * 30.4, rate), onSolarPct: onSolarPct(prof, W, solarKw),
-      turnoverPerDay: Math.round(prof.reduce((a, h) => a + h.slices.reduce((b, r) => b + gpmAt(r) * 15, 0), 0) / settings.gallons * 100) / 100, hourly: prof,
+      turnoverPerDay: Math.round(prof.reduce((a, h) => a + h.slices.reduce((b, r) => b + gpmAt(r, settings.designGpm) * 15, 0), 0) / settings.gallons * 100) / 100, hourly: prof,
       byProgram: current.map(s => { const p = hourlyRpm([s], speeds); return { name: s.name, rpm: s.rpm, start: s.start, stop: s.stop, kwhPerDay: Math.round(dayKwh(p, W) * 10) / 10 }; }) },
     plan, seasons, solarKw, todayKwh: Math.round(todayKwh * 10) / 10, todayCost: usd(todayKwh, rate, true), shareOfHomePct: home[0]?.kwh ? Math.round(todayKwh / home[0].kwh * 100) : null,
     rate, applied };

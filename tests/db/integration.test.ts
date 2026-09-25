@@ -121,14 +121,15 @@ describe('poolDetail', () => {
     expect(d.spaSession).toMatchObject({ spaTemp: 95, spaSet: 102, riseF: 7, heatMinutes: 11, propaneGal: .78, propaneUsd: 2.34, pumpWattsAtSpa: 2195, electricUsdPerHour: .36 });
   });
 
-  // BUG-7 · today current.turnoverPerDay uses the 120 GPM default whatever settings.designGpm says (latent: the default is 120).
-  it.fails('BUG-7: the current schedule’s turnover uses settings.designGpm', async () => {
+  // BUG-7 · fixed: current.turnoverPerDay used the 120 GPM default whatever settings.designGpm said (latent: the default is
+  // 120), so designGpm 100 reported 2 turnovers a day.
+  it('BUG-7: the current schedule’s turnover uses settings.designGpm', async () => {
     const d = await poolDetail('p-gpm', { pool: { designGpm: 100 } }, RATE);
     expect(d.current.turnoverPerDay).toBe(1.67);
   });
-  it('BUG-7 (today): designGpm 100 still reports the 120 GPM turnover', async () => {
-    const d = await poolDetail('p-gpm', { pool: { designGpm: 100 } }, RATE);
-    expect(d.current.turnoverPerDay).toBe(2);
+  it('BUG-7 (fixed): designGpm 100 reports 1.67 turnovers; the 120 GPM default still reports 2', async () => {
+    expect((await poolDetail('p-gpm', { pool: { designGpm: 100 } }, RATE)).current.turnoverPerDay).toBe(1.67);
+    expect((await poolDetail('p-gpm', {}, RATE)).current.turnoverPerDay).toBe(2);
   });
 
   describe('the season table highlights the current season', () => {
