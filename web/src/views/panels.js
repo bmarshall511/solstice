@@ -1,4 +1,4 @@
-import { $, niceDate, localDate, addDays, svgText, toast } from '../lib/util.js';
+import { $, niceDate, localDate, svgText, toast } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { WMO, WICON } from '../lib/weather.js';
 

@@ -2,29 +2,8 @@ import { $, fmtDur, clock12, hourLabel, kwh, localHour, localDate, svgText, path
 import { WMO, WICON } from '../lib/weather.js';
 import { forecast48 } from '../lib/model.js';
 
-/* ---------- live flow diagram ---------- */
-const FN = { sol: [165, 34], grid: [44, 125], home: [286, 125], pw: [165, 214] };
-const FL = {
-  solHome: ['M189 44 Q 262 58 276 101', '#ffc15e'], solPw: ['M165 60 L 165 188', '#ffc15e'], solGrid: ['M141 44 Q 68 58 54 101', '#ffc15e'],
-  pwHome: ['M189 204 Q 262 190 276 149', '#4ef0a6'], gridHome: ['M70 125 Q 165 96 260 125', '#c4a2ff'], gridPw: ['M54 149 Q 68 190 141 204', '#c4a2ff'],
-};
-export function buildFlow() {
-  if (!$('flow')) return; // Energy flow card now uses the 3D house (scenes/house.js)
-  let s = '';
-  for (const k in FL) s += `<path class="flbase" d="${FL[k][0]}"/>`;
-  for (const k in FL) s += `<path class="fl" id="fl-${k}" d="${FL[k][0]}" stroke="${FL[k][1]}" style="opacity:0"/>`;
-  const node = (k, x, y, c, icon, label) => `<g class="fn"><circle class="bg" cx="${x}" cy="${y}" r="24" stroke="${c}"/><circle cx="${x}" cy="${y}" r="24" fill="${c}" opacity=".12"/>
-    <text x="${x}" y="${y + 6}" font-size="17" fill="${c}">${icon}</text>
-    <text class="v" id="fv-${k}" x="${x}" y="${k === 'sol' ? y - 32 : y + 42}">—</text>${k === 'sol' ? '' : `<text class="l" x="${x}" y="${y + 56}">${label}</text>`}</g>`;
-  s += node('sol', ...FN.sol, '#ffc15e', '☀', 'SOLAR') + node('grid', ...FN.grid, '#c4a2ff', '⚡', 'PEC GRID') + node('home', ...FN.home, '#6cc4ff', '⌂', 'HOME') + node('pw', ...FN.pw, '#4ef0a6', '▮', 'POWERWALLS');
-  s += `<g class="gx"><circle cx="${FN.grid[0]}" cy="${FN.grid[1]}" r="24" fill="rgba(40,10,10,.9)" stroke="#ff5a4e" stroke-width="1.5"/>
-    <path d="M${FN.grid[0] - 9} ${FN.grid[1] - 9} l18 18 M${FN.grid[0] + 9} ${FN.grid[1] - 9} l-18 18" stroke="#ff5a4e" stroke-width="2.5" stroke-linecap="round"/></g>`;
-  $('flow').innerHTML = s;
-}
-function setFlow(k, kw) { const el = $('fl-' + k); const on = kw > .05; el.style.opacity = on ? Math.min(1, .45 + kw / 5) : 0; el.style.setProperty('--d', (1.9 - Math.min(1.4, kw / 6)).toFixed(2) + 's'); el.style.strokeWidth = (1.6 + Math.min(3, kw / 2.5)).toFixed(1); }
-
 /** How the current flows split between sources and sinks (Tesla reports only the four totals). */
-export function splitFlows(r) {
+function splitFlows(r) {
   const solHome = Math.min(r.solarKw, r.homeKw), rem = r.solarKw - solHome;
   const solPw = r.batteryKw < 0 ? Math.min(rem, -r.batteryKw) : 0, solGrid = Math.max(0, rem - solPw);
   const pwHome = Math.max(0, r.batteryKw), gridHome = Math.max(0, r.homeKw - solHome - pwHome), gridPw = r.batteryKw < 0 ? Math.max(0, -r.batteryKw - solPw) : 0;
@@ -47,12 +26,6 @@ export function renderLive(S) {
 
   // flows
   const f = splitFlows(r);
-  if ($('flow')) {
-    setFlow('solHome', f.solHome); setFlow('solPw', f.solPw); setFlow('solGrid', out ? 0 : f.solGrid); setFlow('pwHome', f.pwHome); setFlow('gridHome', out ? 0 : f.gridHome); setFlow('gridPw', out ? 0 : f.gridPw);
-    $('fv-sol').textContent = r.solarKw.toFixed(1) + ' kW'; $('fv-home').textContent = r.homeKw.toFixed(1) + ' kW';
-    $('fv-pw').textContent = `${Math.round(r.soc)}% · ${r.batteryKw < -.05 ? '+' : r.batteryKw > .05 ? '−' : ''}${Math.abs(r.batteryKw).toFixed(1)} kW`;
-    $('fv-grid').textContent = out ? 'Offline' : `${r.gridKw < -.05 ? '↑ ' : r.gridKw > .05 ? '↓ ' : ''}${Math.abs(r.gridKw).toFixed(1)} kW`;
-  }
   $('flowNote').textContent = out ? 'islanded · grid offline' : `live · ${new Date(r.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
 
   // one-sentence story
@@ -133,7 +106,7 @@ export function renderWeather(S) {
   $('wx12s').textContent = 'kW expected from your panels';
 
   if (!S.live || !S.yieldK || !S.profile) return;
-  const site = S.now.site, fc = forecast48({ w, idx: S.idx, startDate: now, startHour: h, soc0: S.live.soc, yieldK: S.yieldK, profile: S.profile,
+  const site = S.now.site, fc = forecast48({ w, startDate: now, startHour: h, soc0: S.live.soc, yieldK: S.yieldK, profile: S.profile,
     capKwh: site.capacityKwh || 27, maxKw: site.maxPowerKw || 10, reservePct: site.reservePct ?? 20 });
   const P = fc.points; if (!P.length) return;
   const maxKw = Math.max(4, ...P.map(p => Math.max(p.s, p.h))), X = k => 8 + k / 48 * 294, Yk = v => 118 - v / maxKw * 100, Ys = v => 118 - v * 100;

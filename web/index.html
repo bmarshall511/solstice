@@ -88,7 +88,7 @@
           <p id="fcTxt" style="margin-top:10px">Waiting for the forecast…</p>
         </div>
 
-        <div class="card" id="pwCard">
+        <div class="card">
           <div class="h"><b>Powerwall</b><span id="pwModel">—</span></div>
           <div class="pwtop"><div class="pwpct" id="pwPct">--%</div><div><div class="pwstate" id="pwState">—</div><div class="pwsub" id="pwStored">—</div></div></div>
           <div class="pwunits" id="pwUnits"></div>
@@ -199,7 +199,7 @@
           <svg class="mini" id="prChart" viewBox="0 0 310 150"></svg>
           <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Produced</span><span><i style="background:rgba(255,255,255,.25)"></i>Expected from sunlight</span></div>
           <p id="prTxt">—</p>
-          <div class="kv" id="warrKv">
+          <div class="kv">
             <span>Output at full sun · last 30 days · heat-corrected</span><b id="wrNow">—</b>
             <span>SunPower warranty floor · <span id="wrYear">year —</span></span><b id="wrFloor">—</b>
             <span>AC floor for the full 25 years</span><b id="wrAc">—</b>
@@ -230,7 +230,7 @@
         <div class="panel on" id="ip-today">
           <div class="card">
             <div class="h"><b>Your day in loads</b><span>drag to spin · tap an hour</span></div>
-            <div class="ring3d" id="dayRing"><div class="readout" id="drRead"><b>—</b><small>loading…</small></div><div class="hint" id="drHint"></div></div>
+            <div class="ring3d" id="dayRing"><div class="readout" id="drRead"><b>—</b><small>loading…</small></div><div class="hint"></div></div>
             <div class="modes" id="drModes"><button class="on" data-m="now">As built</button><button data-m="pool">Smarter pool</button><button data-m="panels">+8 panels</button></div>
             <div class="legend" style="margin-top:10px"><span><i style="background:#6cc4ff"></i>Pool pump</span><span><i style="background:#ff9e66"></i>AC (est.)</span><span><i style="background:#8d93a8"></i>Everything else</span><span><i style="background:#ffc15e"></i>Solar</span></div>
             <p id="drTxt">—</p>
@@ -242,7 +242,7 @@
         <div class="panel" id="ip-appl">
           <div class="apps" id="applStrip"></div>
           <div id="applPool">
-          <div class="card" id="poolLive"><div class="h"><b>Pool &amp; spa · live</b><span class="badge" id="poolBadge">connecting…</span></div>
+          <div class="card"><div class="h"><b>Pool &amp; spa · live</b><span class="badge" id="poolBadge">connecting…</span></div>
             <div class="ring3d pool3d" id="poolTwin"><div class="hud" id="poolHud">—</div></div>
             <div class="circ" id="poolCirc"></div>
             <div class="two" id="poolStats"></div>

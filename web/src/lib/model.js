@@ -12,7 +12,7 @@ export function learnYield(daily, gtiByDate) {
 }
 
 /** 48-hour forecast: forecast sunlight × learned yield vs your typical hourly usage, with the Powerwalls simulated. */
-export function forecast48({ w, idx, startDate, startHour, soc0, yieldK, profile, capKwh, maxKw, reservePct }) {
+export function forecast48({ w, startDate, startHour, soc0, yieldK, profile, capKwh, maxKw, reservePct }) {
   const out = []; let soc = soc0 / 100, full = null, low = { soc: 1, h: 0 };
   const rows = w.hourly.time.map((t, i) => ({ t, i })).filter(r => r.t >= `${startDate}T${String(Math.floor(startHour)).padStart(2, '0')}`).slice(0, 49);
   rows.forEach(({ t, i }, k) => {
