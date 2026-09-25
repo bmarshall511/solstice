@@ -411,7 +411,7 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .reasons i{display:inline-flex;width:26px;height:26px;border-radius:9px;align-items:center;justify-content:center;font-style:normal;font-size:13px;background:rgba(255,193,94,.14);color:var(--solar);border:1px solid rgba(255,193,94,.3)}
 .reasons b{display:block;margin-top:8px;font-size:13.5px}.reasons p{margin-top:4px;font-size:12.5px}
 .dots{display:flex;gap:5px;justify-content:center;margin-top:10px}.dots i{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.18)}.dots i.on{background:var(--solar)}
-.card .primary{display:block;text-align:center;margin-top:12px;padding:12px;border-radius:14px;background:var(--solar);color:#1a1200;font-weight:700;font-size:13px;cursor:pointer;border:none;width:100%}
+.card .primary{display:block;box-sizing:border-box;width:100%;text-align:center;margin-top:12px;padding:12px;border-radius:14px;background:var(--solar);color:#1a1200;font-weight:700;font-size:13px;cursor:pointer;border:none}
 /* autopilot */
 .status{display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:12px;color:var(--dim);line-height:1.45}.status i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--batt);box-shadow:0 0 10px var(--batt);margin-top:5px;animation:blink 2s infinite}.status i.off{background:var(--mute);box-shadow:none;animation:none}.status b{color:var(--text)}
 .signals{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-top:14px}.signals div{text-align:center;min-width:0}.signals svg{display:block;width:100%}.signals b{display:block;font:500 10.5px "JetBrains Mono";margin-top:2px}.signals small{display:block;font-size:9px;color:var(--mute);letter-spacing:.06em;text-transform:uppercase}
@@ -434,4 +434,3 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .stat{padding:10px 12px;border-radius:16px;background:rgba(0,0,0,.22);border:1px solid var(--glass-b)}
 .stat small{display:block;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:600}
 .stat b{display:block;font:500 13px "JetBrains Mono";margin-top:4px;word-break:break-word}
-.card .primary{display:block;text-align:center;margin-top:12px;padding:12px;border-radius:14px;background:var(--solar);color:#1a1200;font-weight:700;font-size:13px;cursor:pointer}
