@@ -16,7 +16,7 @@ export const poolTwin = () => twin;
 
 async function load(S) {
   const list = await api.appliances().catch(() => null);
-  if (list) $('applStrip').innerHTML = list.map(a => `<div class="app ${a.status === 'coming' ? 'dim' : 'on'}"><i></i>${a.name}${a.status === 'coming' ? ` · ${a.source}, next` : a.watts != null ? ` · ${Math.round(a.watts)} W` : ''}</div>`).join('');
+  if (list) { const cur = document.querySelector('#applStrip .app.on')?.dataset.id ?? 'pool'; $('applStrip').innerHTML = list.map(a => `<div class="app ${a.status === 'coming' ? 'dim' : a.id === cur ? 'on' : ''}" data-id="${a.id}"><i></i>${a.name}${a.status === 'coming' ? ` · ${a.source}, next` : a.watts != null ? ` · ${Math.round(a.watts)} W` : ''}</div>`).join(''); }
   const d = await api.pool().catch(e => ({ error: e.message })); S.pool = d;
   drawPool(S); S.onPool?.();
 }

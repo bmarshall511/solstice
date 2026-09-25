@@ -241,6 +241,7 @@
 
         <div class="panel" id="ip-appl">
           <div class="apps" id="applStrip"></div>
+          <div id="applPool">
           <div class="card" id="poolLive"><div class="h"><b>Pool &amp; spa · live</b><span class="badge" id="poolBadge">connecting…</span></div>
             <div class="ring3d pool3d" id="poolTwin"><div class="hud" id="poolHud">—</div></div>
             <div class="circ" id="poolCirc"></div>
@@ -271,6 +272,36 @@
           </div>
           <div class="season" id="poolSeason" hidden></div>
           <p class="fine" id="poolSeasonNote" hidden>kWh per day by season, the baseline Autopilot adjusts from each day’s data.</p>
+          </div>
+          <div id="applAc" hidden>
+            <div class="card"><div class="h"><b>AC · thermal twin</b><span class="badge" id="acBadge">—</span></div>
+              <div class="ring3d pool3d" id="acTwin"><div class="hud" id="acHud">—</div><div class="tlab" id="acLab"></div></div>
+              <div class="scrub"><span id="acScrubT">—</span><input type="range" id="acScrub" min="0" max="24" step=".25" value="12"><small>drag through today's plan</small></div>
+              <div class="two" id="acStats"></div>
+              <div class="seg2 presence" id="acPresence"></div>
+              <p class="fine" id="acNote" style="margin-top:8px"></p>
+            </div>
+            <div class="card" id="acLink" hidden><div class="h"><b>Link Nest</b><span>one-time</span></div><p id="acLinkTxt"></p><a class="primary" id="acLinkBtn" href="/auth/google">Sign in with Google</a></div>
+            <div class="card sched" id="acPlan" hidden>
+              <div class="h"><b>Today: Nest vs Solstice</b><span id="acBand" class="fine"></span></div>
+              <div class="comfort"><svg viewBox="0 0 353 170" id="acComfort"></svg></div>
+              <div class="legend" style="justify-content:flex-start"><span><i style="background:#ff9e66"></i>Outdoor</span><span><i style="background:rgba(255,255,255,.7)"></i>Indoor</span><span><i style="background:rgba(108,196,255,.6)"></i>Nest setpoint</span><span><i style="background:#4ef0a6"></i>Solstice plan</span><span><i style="background:rgba(255,193,94,.5)"></i>Solar</span></div>
+              <div class="deltas" id="acDeltas"></div>
+              <div class="reasons" id="acWhy"></div><div class="dots" id="acDots"></div>
+              <div class="kv" id="acSteps" style="display:none"></div>
+              <div id="acActions"></div>
+            </div>
+            <div class="card auto" id="acAuto" hidden>
+              <div class="h"><b>Autopilot</b><span class="seg2" id="acMode"><button data-m="off">Off</button><button data-m="suggest">Suggest</button><button data-m="auto">Auto</button></span></div>
+              <div class="status" id="acStatus"></div>
+              <div class="signals" id="acSignals"></div>
+              <div class="wkhead"><span>Next 7 days</span><b id="acTomorrow"></b></div>
+              <svg class="mini" viewBox="0 0 310 110" id="acWeek"></svg>
+              <div class="legend" style="justify-content:flex-start"><span><i style="background:#ff9e66"></i>High</span><span><i style="background:#4ef0a6"></i>Pre-cool depth</span></div>
+              <div class="chips"><span>comfort band</span><span>≤ 2° per step</span><span>pre-cool only on solar surplus</span><span>away target</span><span>night band</span><span>outage: hold coast</span><span>heat wave: start 11 AM</span><span>humidity ≥ 60%: no coast</span><span>heating: gentle only</span></div>
+              <div class="tline" id="acLog"></div>
+            </div>
+          </div>
         </div>
 
         <div class="panel" id="ip-plan">

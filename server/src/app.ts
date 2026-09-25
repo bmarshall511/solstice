@@ -12,6 +12,8 @@ import { SOLAR, warrantedDcPct, systemYear } from './system.js';
 import { appliances, comingSoon } from './appliances/index.js';
 import { poolDetail, applyPlan, restorePrevious } from './appliances/pool.js';
 import { readPool } from './appliances/screenlogic.js';
+import { acDetail, acTick } from './appliances/ac.js';
+import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, nestLinked, readNest } from './appliances/nest.js';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -325,7 +327,8 @@ const rateFor = async (id: string) => (await listBills(id)).at(-1)?.tariff?.impo
 app.get('/api/appliances', wrap(async (req, res) => {
   const id = site(req), settings = await settingsFor(req), rate = await rateFor(id);
   const list = await Promise.all(appliances.filter(a => a.available()).map(a => a.summary(id, settings, rate).catch(e => ({ id: a.id, name: a.name, status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message }))));
-  res.json([...list, ...comingSoon]);
+  if (nestConfigured()) list.push(await acDetail(id, settings, rate, await acSlope(id)).then(d => ({ id: 'ac', name: 'AC', status: d.linked ? 'linked' as const : 'estimated' as const, watts: d.state?.hvac === 'COOLING' ? Math.round(d.learned.acKw * 1000) : 0, kwhPerDay: d.todayKwh, savesPerMonth: d.plan.costSavedMonth })).catch(e => ({ id: 'ac', name: 'AC', status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message })));
+  res.json([...list, ...comingSoon()]);
 }));
 app.get('/api/appliances/pool', wrap(async (req, res) => res.json(await poolDetail(site(req), await settingsFor(req), await rateFor(site(req)), { fresh: req.query.fresh === '1' }))));
 /** Writes the smarter schedule to ScreenLogic: replaces the pump programs' schedules and speeds, keeps everything else (lights, spa, freeze protection). */
@@ -357,6 +360,50 @@ app.get('/api/cron/pool', wrap(async (req, res) => {
   res.json(out);
 }));
 app.post('/api/appliances/pool/restore', wrap(async (req, res) => { await restorePrevious(site(req), await readPool()); res.json({ ok: true }); }));
+
+/* ---------- appliances: AC via Nest ---------- */
+/** kWh per degree of daily high above 80°F, from the last 120 days: the heat model the app already shows on the Home panel. */
+async function acSlope(id: string) {
+  const cached = await kv.get<{ at: number; slope: number }>(`${id}:ac:slope`); if (cached && Date.now() - cached.at < 6 * 3600_000) return cached.slope;
+  const rows = await q<{ day: string; kwh: number }>(`SELECT day, (SUM(home_wh) / 1000.0)::float8 kwh FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day`, [id, addDays(localDay(), -120), localDay()]);
+  let highs = await kv.get<{ at: number; byDay: Record<string, number> }>('wx:highs');
+  if (!highs || Date.now() - highs.at > 12 * 3600_000) { // daily highs for the last 120 days from Open-Meteo's archive
+    const w = await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${process.env.SITE_LAT ?? 'LAT'}&longitude=${process.env.SITE_LON ?? 'LON'}&start_date=${addDays(localDay(), -120)}&end_date=${localDay()}&daily=temperature_2m_max&temperature_unit=fahrenheit&timezone=America%2FChicago`).then(r => r.json()).catch(() => null) as any;
+    highs = { at: Date.now(), byDay: Object.fromEntries((w?.daily?.time ?? []).map((d: string, i: number) => [d, w.daily.temperature_2m_max[i]])) }; await kv.set('wx:highs', highs);
+  }
+  const pts = rows.map(r => ({ t: highs!.byDay[r.day], u: r.kwh })).filter(p => p.t != null && p.t >= 80 && p.u > 5);
+  let slope = 2.5;
+  if (pts.length >= 10) { const mx = pts.reduce((a, p) => a + p.t, 0) / pts.length, my = pts.reduce((a, p) => a + p.u, 0) / pts.length; slope = pts.reduce((a, p) => a + (p.t - mx) * (p.u - my), 0) / pts.reduce((a, p) => a + (p.t - mx) ** 2, 0); }
+  await kv.set(`${id}:ac:slope`, { at: Date.now(), slope: Math.max(.5, Math.min(6, slope || 2.5)) });
+  return Math.max(.5, Math.min(6, slope || 2.5));
+}
+app.get('/api/appliances/ac', wrap(async (req, res) => { const id = site(req); res.json(await acDetail(id, await settingsFor(req), await rateFor(id), await acSlope(id), { fresh: req.query.fresh === '1' })); }));
+/** Approve today's plan: the 5-minute cron then applies each setpoint step at its hour. */
+app.post('/api/appliances/ac/apply', wrap(async (req, res) => { const id = site(req); await kv.set(`${id}:ac:plan`, { date: localDay(), approved: true, lastStepHour: null }); res.json(await acTick(id, await settingsFor(req), await rateFor(id), await acSlope(id))); }));
+app.post('/api/appliances/ac/settings', express.json(), wrap(async (req, res) => {
+  const cur = (await settingsFor(req)).ac ?? {}, patch = req.body ?? {}, next = { ...cur, ...patch, band: { ...(cur.band ?? {}), ...(patch.band ?? {}) } };
+  if (patch.autopilot && !['off', 'suggest', 'auto'].includes(patch.autopilot)) return res.status(400).json({ error: 'bad mode' });
+  if (patch.presence && !['home', 'away'].includes(patch.presence)) return res.status(400).json({ error: 'bad presence' });
+  if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ ac: next })]);
+  else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ac: next });
+  // marking away/home takes effect right away when the plan is approved or Autopilot is Auto
+  const id = site(req); if (patch.presence) { const rec = await kv.get<any>(`${id}:ac:plan`); if (rec) { rec.lastStepHour = null; await kv.set(`${id}:ac:plan`, rec); } await acTick(id, await settingsFor(req), await rateFor(id), await acSlope(id)).catch(() => {}); }
+  res.json({ ok: true, ac: next });
+}));
+/** Every 5 minutes: sample Nest (feeds the AC kW learning) and apply due plan steps. */
+app.get('/api/cron/nest', wrap(async (req, res) => {
+  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'unauthorized' });
+  if (!nestConfigured() || !(await nestLinked())) return res.json({ skipped: 'nest not linked' });
+  const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL'), out: Record<string, unknown> = {};
+  for (const s of sites) { const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; out[s.id] = await acTick(s.id, settings, await rateFor(s.id), await acSlope(s.id)).catch(e => ({ error: e.message })); }
+  res.json(out);
+}));
+/* ---------- Google (Nest) OAuth ---------- */
+app.get('/auth/google', (req, res) => { if (!nestConfigured()) return res.status(503).send('Nest is not configured'); res.redirect(nestAuthorizeUrl(signState(0))); });
+app.get('/auth/google/callback', wrap(async (req, res) => {
+  if (verifyState(String(req.query.state ?? '')) == null) return res.redirect('/?nest_error=bad+state');
+  try { await nestExchangeCode(String(req.query.code)); await readNest(); res.redirect('/?nest=linked'); } catch (e: any) { res.redirect('/?nest_error=' + encodeURIComponent(e.message)); }
+}));
 
 /* ---------- CSV export ---------- */
 app.get('/api/export.csv', wrap(async (req, res) => {

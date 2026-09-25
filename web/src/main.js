@@ -13,6 +13,7 @@ import { initPanels, drawPerformance, roofHud } from './views/panels.js';
 import { drawAlerts, initPlanner, drawAC, drawOvernight, drawHealth } from './views/insights.js';
 import { drawSettings, openRawData } from './views/settings.js';
 import { initAppliances, poolTwin } from './views/appliances.js';
+import { initAc, thermalTwin, drawAc } from './views/ac.js';
 import { createDayRing } from './scenes/dayring.js';
 
 /** All app state lives here; views read from it. */
@@ -129,7 +130,9 @@ $('outSw').onclick = () => { S.preview = !S.preview; S.previewSince = Date.now()
 /* ---------------- scenes + loop ---------------- */
 const house = createHomeView($('house'), 'flow');
 const aurora = createAurora($('aurora')), orb = createOrb($('orb')), land = createLandscape($('land'), $('landTip')), roof = createHomeView($('roof'), 'sun');
-buildFlow(); initHistory(S); initPanels(S); initPlanner(S); initAppliances(S);
+buildFlow(); initHistory(S); initPanels(S); initPlanner(S); initAppliances(S); initAc(S);
+let applSel = 'pool';
+$('applStrip').onclick = e => { const a = e.target.closest('.app'); if (!a || !a.dataset.id || a.classList.contains('dim')) return; applSel = a.dataset.id; document.querySelectorAll('#applStrip .app').forEach(x => x.classList.toggle('on', x === a)); $('applPool').hidden = applSel !== 'pool'; $('applAc').hidden = applSel !== 'ac'; poolTwin()?.resize(); thermalTwin()?.resize(); if (applSel === 'ac') safe(drawAc)(S); };
 
 /* ---------------- Insights: four panels + the Day Ring ---------------- */
 let insPanel = 'today';
@@ -183,7 +186,8 @@ function frame(now) {
   }
   if (isOn('v-hist')) land.render(dt, S.calm);
   if (isOn('v-ins') && insPanel === 'today') dayRing.render(dt, S.calm);
-  if (isOn('v-ins') && insPanel === 'appl') poolTwin()?.render(dt, S.calm);
+  if (isOn('v-ins') && insPanel === 'appl' && applSel === 'pool') poolTwin()?.render(dt, S.calm);
+  if (isOn('v-ins') && insPanel === 'appl' && applSel === 'ac') thermalTwin()?.render(dt, S.calm);
   if (isOn('v-roof')) {
     const d = new Date(), dayStart = Date.parse(`${localDate(d)}T00:00:00${new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', timeZoneName: 'longOffset' }).formatToParts(d).find(p => p.type === 'timeZoneName').value.replace('GMT', '') || 'Z'}`);
     hudTick += dt;

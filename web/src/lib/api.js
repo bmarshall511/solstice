@@ -45,6 +45,9 @@ export const api = {
   poolRestore: () => send('POST', 'appliances/pool/restore'),
   poolApplyTomorrow: () => send('POST', 'appliances/pool/apply-tomorrow'),
   poolAutopilot: mode => send('POST', 'appliances/pool/autopilot', { mode }),
+  ac: () => get('appliances/ac'),
+  acApply: () => send('POST', 'appliances/ac/apply'),
+  acSettings: patch => send('POST', 'appliances/ac/settings', patch),
   saveSettings: patch => send('PUT', 'settings', patch),
 };
 

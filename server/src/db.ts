@@ -72,6 +72,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS pool_readings (site_id text NOT NULL, ts bigint NOT NULL, day text NOT NULL, hour smallint NOT NULL, running boolean NOT NULL,
      watts real NOT NULL, rpm real NOT NULL, water_temp real, air_temp real, circuits jsonb NOT NULL DEFAULT '[]', PRIMARY KEY (site_id, ts))`,
   `CREATE INDEX IF NOT EXISTS pool_readings_site_day ON pool_readings(site_id, day)`,
+  `CREATE TABLE IF NOT EXISTS nest_readings (site_id text NOT NULL, ts bigint NOT NULL, day text NOT NULL, hour smallint NOT NULL, indoor_f real, humidity real, mode text, hvac text, cool_f real, heat_f real, eco boolean, PRIMARY KEY (site_id, ts))`,
+  `CREATE INDEX IF NOT EXISTS nest_readings_site_day ON nest_readings(site_id, day)`,
 ];
 
 let migrated: Promise<void> | null = null;
