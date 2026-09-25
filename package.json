@@ -10,6 +10,9 @@
     "server": "node --env-file=.env --no-warnings=ExperimentalWarning --import tsx server/src/index.ts",
     "dev": "node --env-file=.env --no-warnings=ExperimentalWarning --watch --import tsx server/src/index.ts",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run typecheck && npm test && npm run build",
     "bills": "node scripts/parse-pec-bill.mjs",
     "web": "vite --config web/vite.config.js",
     "build": "vite build --config web/vite.config.js",
@@ -33,6 +36,7 @@
     "@vercel/node": "^15.0.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vite": "^6.4.3"
+    "vite": "^6.4.3",
+    "vitest": "3.2.7"
   }
 }

@@ -27,7 +27,7 @@ export async function forecast(): Promise<Daily[]> {
 }
 
 /** Days in the last week with the spa, jets, blower or lights seen on (a proxy for swimming). */
-async function useDays(siteId: string) {
+export async function useDays(siteId: string) {
   const r = await q<{ n: number }>(`SELECT COUNT(DISTINCT day)::int n FROM pool_readings WHERE site_id = $1 AND day >= $2 AND circuits ?| array['1','2','3','4','7']`, [siteId, addDays(localDay(), -7)]);
   return r[0]?.n ?? 0;
 }
