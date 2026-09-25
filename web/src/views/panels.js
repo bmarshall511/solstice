@@ -1,4 +1,5 @@
-import { $, niceDate, localDate, svgText, toast } from '../lib/util.js';
+import { $, niceDate, localDate, localHour, svgText, toast } from '../lib/util.js';
+import { roofHours, sunSays } from '../lib/roofhours.js';
 import { api } from '../lib/api.js';
 import { WMO, WICON } from '../lib/weather.js';
 import { veil } from '../lib/frost.js';
@@ -52,6 +53,7 @@ function drawCleaning(S, rows, exp) {
   const clear = after.filter(r => S.gtiByDate[r.date] > 4.5).slice(-7);
   const ratio = clear.length ? clear.reduce((a, r) => a + r.solar / exp(r), 0) / clear.length : null;
   const loss = ratio == null ? null : Math.max(0, 1 - ratio), score = loss == null ? 0 : Math.round(Math.min(100, loss / .15 * 100));
+  S.dust = { score, loss };   // the Live roof's dust veil
   const r = 34, C = 2 * Math.PI * r, col = score > 60 ? '#ff7a66' : score > 35 ? '#ffc15e' : '#4ef0a6';
   $('cleanRing').innerHTML = `<circle cx="42" cy="42" r="${r}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="7"/><circle cx="42" cy="42" r="${r}" fill="none" stroke="${col}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${C * score / 100} ${C}" transform="rotate(-90 42 42)"/>
     <text x="42" y="44" text-anchor="middle" fill="#f2f4f8" font-size="20" font-family="Manrope" font-weight="300">${loss == null ? '—' : score}</text><text x="42" y="58" text-anchor="middle" fill="rgba(242,244,248,.5)" font-size="8.5" font-family="Manrope">dust score</text>`;
@@ -78,6 +80,8 @@ export function initPanels(S) { loadCleanings(S).then(() => drawPerformance(S));
 export function roofHud(S, info, now) {
   const w = S.wx, i = w ? w.hourly.time.indexOf(`${localDate(now)}T${String(new Date(now).toLocaleString('en-US', { timeZone: 'America/Chicago', hour: '2-digit', hourCycle: 'h23' })).padStart(2, '0')}:00`) : -1;
   const cc = i >= 0 ? w.hourly.cloud_cover[i] : null, code = i >= 0 ? w.hourly.weather_code[i] : 0, temp = i >= 0 ? w.hourly.temperature_2m[i] : null;
-  $('roofHud').innerHTML = `${now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} · ${info.el > 0 ? `☀ ${info.el.toFixed(0)}° up, ${info.az.toFixed(0)}°` : '☾ sun down'}<br>${WICON(code, info.el > 0)} ${WMO(code)}${cc != null ? ` · ${cc}% cloud` : ''}${temp != null ? ` · ${Math.round(temp)}°` : ''}${info.el > 0 ? `<br>sun hits the panels at ${Math.round(info.inc)}°` : ''}`;
-  return { cc: cc == null ? .1 : cc / 100, code };
+  const hours = roofHours(S.today, w, S.yieldK, localDate(now)), ss = sunSays(hours, localHour(now), S.live?.solarKw);   // mockup p-roof-veil
+  const say = !ss ? '' : ss.flat ? `<br><span class="x">flat-topping</span> at the microinverters' 9.45 kW` : `<br>sun says ${ss.sunKw.toFixed(1)} kW · panels <span class="x">${ss.panelKw.toFixed(1)} kW</span> (${ss.pct}%)`;
+  $('roofHud').innerHTML = `${now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} · ${info.el > 0 ? `☀ ${info.el.toFixed(0)}° up, ${info.az.toFixed(0)}°` : '☾ sun down'}<br>${WICON(code, info.el > 0)} ${WMO(code)}${cc != null ? ` · ${cc}% cloud` : ''}${temp != null ? ` · ${Math.round(temp)}°` : ''}${info.el > 0 ? `<br>sun hits the panels at ${Math.round(info.inc)}°` : ''}${say}`;
+  return { cc: cc == null ? .1 : cc / 100, code, hours };
 }

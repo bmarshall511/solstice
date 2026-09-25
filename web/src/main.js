@@ -175,6 +175,7 @@ async function loadApplDay() {
   try { S.applDay = await api.applDay(date); } catch (e) { S.applDayAt = 0; throw e; }
 }
 const aurora = createAurora($('aurora')), orb = createOrb($('orb')), land = createLandscape($('land'), $('landTip')), roof = createHomeView($('roof'), 'sun');
+$('roofBars').onclick = e => { const on = !S.roofBars; S.roofBars = on; e.currentTarget.classList.toggle('on', on); e.currentTarget.setAttribute('aria-pressed', on); $('roofBarsKey').classList.toggle('on', on); roof.setBars(on); };   // mockup p-roof-veil
 initHistory(S); initPanels(S); initPlanner(S); initAppliances(S); initAc(S);
 const outage = initOutage(S);
 let applSel = 'pool';
@@ -241,7 +242,7 @@ function frame(now) {
     const d = new Date(), dayStart = Date.parse(`${localDate(d)}T00:00:00${new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', timeZoneName: 'longOffset' }).formatToParts(d).find(p => p.type === 'timeZoneName').value.replace('GMT', '') || 'Z'}`);
     hudTick += dt;
     const info = roof.render({ r, now: d, dayStart, cloud: S.roofWx?.cc ?? .1, code: S.roofWx?.code ?? 0, out: S.outageActive, peakKw: S.peakKw ?? 9, dt, t: T, calm: S.calm });
-    if (hudTick > .5) { hudTick = 0; if (S.location) S.roofWx = roofHud(S, info, d); $('rfKw').textContent = r ? r.solarKw.toFixed(1) : '—'; }
+    if (hudTick > .5) { hudTick = 0; if (S.location) { S.roofWx = roofHud(S, info, d); roof.setHours(S.roofWx.hours); } roof.setDust(S.dust?.score); $('rfKw').textContent = r ? r.solarKw.toFixed(1) : '—'; }
   }
 }
 requestAnimationFrame(frame);

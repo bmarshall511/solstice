@@ -573,3 +573,14 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.side){visibili
 .twin .circ span.b.dis{background:rgba(255,193,94,.13);border-color:rgba(255,193,94,.42);color:var(--text)}
 .twin .landtip{min-height:58px;overflow-wrap:anywhere}
 /* end k-home-twin */
+
+/* p-roof-veil: Panels → Live roof, the "Hour bars" chip (off = glass, on = the app's default chip), its legend row, the hour labels
+   under the bars and the HUD's highlighted figure. */
+.chip.tog{cursor:pointer;margin-left:auto;background:var(--glass);border-color:var(--glass-b);color:var(--dim);font-family:Manrope,system-ui,sans-serif}
+.chip.tog i{width:6px;height:6px;border-radius:50%;background:var(--mute)}
+.chip.tog.on{background:rgba(108,196,255,.12);border-color:rgba(108,196,255,.3);color:var(--home)}
+.chip.tog.on i{background:var(--solar);box-shadow:0 0 6px var(--solar)}
+.legend.bl{display:none}.legend.bl.on{display:flex}
+.lax.hr{position:absolute;left:0;top:0;transform:translate(-50%,0);color:#ffe0a0;text-shadow:0 1px 4px #000;pointer-events:none;z-index:1;display:none}
+.roofhud .x{color:var(--solar)}
+/* end p-roof-veil */
