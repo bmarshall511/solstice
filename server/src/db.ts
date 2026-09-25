@@ -56,6 +56,9 @@ const SCHEMA = [
      site_id text NOT NULL, ts text NOT NULL, epoch bigint NOT NULL, day text NOT NULL, hour smallint NOT NULL,
      solar_wh real, home_wh real, import_wh real, export_wh real, charge_wh real, discharge_wh real, PRIMARY KEY (site_id, ts))`,
   `CREATE INDEX IF NOT EXISTS energy_site_day ON energy(site_id, day)`,
+  // Nearest-bucket lookups by time (AC kW learning). Two cold starts can race to build it; the loser's duplicate error is swallowed so
+  // the memoised migrate() never rejects for it.
+  `DO $$ BEGIN CREATE INDEX IF NOT EXISTS energy_site_epoch ON energy(site_id, epoch); EXCEPTION WHEN duplicate_table OR unique_violation THEN NULL; END $$`,
   `CREATE TABLE IF NOT EXISTS soe (site_id text NOT NULL, ts text NOT NULL, epoch bigint NOT NULL, day text NOT NULL, hour smallint NOT NULL, soe real NOT NULL, PRIMARY KEY (site_id, ts))`,
   `CREATE INDEX IF NOT EXISTS soe_site_day ON soe(site_id, day)`,
   `CREATE TABLE IF NOT EXISTS backup_events (site_id text NOT NULL, ts text NOT NULL, epoch bigint NOT NULL, duration_s int NOT NULL, PRIMARY KEY (site_id, ts))`,
