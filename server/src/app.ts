@@ -17,6 +17,7 @@ import { appliances, comingSoon } from './appliances/index.js';
 import { poolDetail, applyPlan, restorePrevious } from './appliances/pool.js';
 import { readPool } from './appliances/screenlogic.js';
 import { acDetail, acTick } from './appliances/ac.js';
+import { applianceDay } from './appliances/day.js';
 import { cronTick } from './appliances/sampling.js';
 import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest } from './appliances/nest.js';
 import { pvsRouter } from './pvs.js';
@@ -380,6 +381,13 @@ async function acSlope(id: string) {
   return Math.max(.5, Math.min(6, slope || 2.5));
 }
 app.get('/api/appliances/ac', wrap(async (req, res) => { const id = site(req); res.json(await acDetail(id, await settingsFor(req), await rateFor(id), await acSlope(id), { fresh: req.query.fresh === '1' })); }));
+/** The Now card's whole-home twin: one Chicago day hour by hour (energy, pool, AC) from the database only; never reads ScreenLogic or Nest. */
+app.get('/api/appliances/day', wrap(async (req, res) => {
+  const date = String(req.query.date ?? localDay());
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+  res.set('Cache-Control', date < localDay() ? 'private, max-age=86400' : 'no-store');
+  res.json(await applianceDay(site(req), date, req.user ? req.user.settings ?? {} : undefined));
+}));
 /** Approve today's plan: the 5-minute cron then applies each setpoint step at its hour. */
 app.post('/api/appliances/ac/apply', wrap(async (req, res) => { const id = site(req); await kv.set(`${id}:ac:plan`, { date: localDay(), approved: true, lastStepHour: null }); res.json(await acTick(id, await settingsFor(req), await rateFor(id), await acSlope(id))); }));
 app.post('/api/appliances/ac/settings', express.json(), wrap(async (req, res) => {
