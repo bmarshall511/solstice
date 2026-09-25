@@ -66,8 +66,8 @@ export async function tooManyAttempts(email: string) {
 export const recordAttempt = (email: string, ok: boolean) => q('INSERT INTO login_attempts (email, ok) VALUES ($1, $2)', [email, ok]);
 
 /** Stateless, signed OAuth `state` (serverless-safe): user id + expiry + nonce, HMAC'd with SESSION_SECRET. */
-export function signState(userId: number) {
-  const body = `${userId}.${Date.now() + 10 * 60_000}.${randomBytes(8).toString('hex')}`;
+export function signState(userId: number, ttlMs = 10 * 60_000) {
+  const body = `${userId}.${Date.now() + ttlMs}.${randomBytes(8).toString('hex')}`;
   return `${body}.${createHmac('sha256', secret()).update(body).digest('base64url')}`;
 }
 export function verifyState(state: string): number | null {

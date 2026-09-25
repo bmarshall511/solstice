@@ -243,6 +243,8 @@ setUnauthorized(() => { if (!started) return; showAuth('login'); });
 async function boot() {
   const params = new URLSearchParams(location.search);
   if (params.get('tesla_error')) toast('!', 'rgba(255,90,78,.25)', 'Tesla connection failed', params.get('tesla_error'));
+  if (params.get('nest_error')) toast('!', 'rgba(255,90,78,.25)', 'Nest link failed', params.get('nest_error'));
+  if (params.get('nest') === 'linked') toast('✓', 'rgba(78,240,166,.2)', 'Nest linked', 'Solstice can now see the thermostat. Open Insights → Appliances → AC.');
   let me;
   try { me = await api.me(); } catch { $('authErr').textContent = 'Can’t reach the Solstice server.'; return showAuth('login'); }
   if (me.mode === 'single') {           // no accounts yet: open straight to the connected site

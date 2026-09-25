@@ -399,10 +399,10 @@ app.get('/api/cron/nest', wrap(async (req, res) => {
   res.json(out);
 }));
 /* ---------- Google (Nest) OAuth ---------- */
-app.get('/auth/google', (req, res) => { if (!nestConfigured()) return res.status(503).send('Nest is not configured'); res.redirect(nestAuthorizeUrl(signState(0))); });
+app.get('/auth/google', (req, res) => { if (!nestConfigured()) return res.status(503).send('Nest is not configured'); res.redirect(nestAuthorizeUrl(signState(0, 60 * 60_000))); }); // Google's permissions page can take a while
 app.get('/auth/google/callback', wrap(async (req, res) => {
   if (verifyState(String(req.query.state ?? '')) == null) return res.redirect('/?nest_error=bad+state');
-  try { await nestExchangeCode(String(req.query.code)); await readNest(); res.redirect('/?nest=linked'); } catch (e: any) { res.redirect('/?nest_error=' + encodeURIComponent(e.message)); }
+  try { await nestExchangeCode(String(req.query.code)); await readNest(); res.redirect('/?nest=linked'); } catch (e: any) { console.error('nest link', e); res.redirect('/?nest_error=' + encodeURIComponent(e.message)); }
 }));
 
 /* ---------- CSV export ---------- */
