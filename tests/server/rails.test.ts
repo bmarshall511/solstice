@@ -36,7 +36,7 @@ describe('safety rails', () => {
   });
   it('ScreenLogic and Nest are unconfigured and their writes throw', async () => {
     expect([configured(), nestConfigured()]).toEqual([false, false]);
-    await expect(writePoolPlan({ pumpId: 1, speeds: [], replaceCircuits: [], schedules: [] })).rejects.toThrow('writePoolPlan in pure test');
-    await expect(setCool('dev-test', 78)).rejects.toThrow('setCool in pure test');
+    await expect(writePoolPlan({ pumpId: 1, speeds: [], replaceCircuits: [], schedules: [], guard: { circuits: [], pumpCircuits: [], managed: [] } })).rejects.toThrow('writePoolPlan in pure test');
+    await expect(setCool('dev-test', 78, 'auto')).rejects.toThrow('setCool in pure test');
   });
 });

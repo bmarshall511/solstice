@@ -1,7 +1,8 @@
 // Safety rails for every test file (docs/audit-designs/tests.md §3). No test run may reach ScreenLogic, Nest, Tesla or Neon.
 //  1. DATABASE_URL must be in-memory PGlite; anything else (Neon, a Postgres URL, a PGlite directory on disk) stops the run.
 //  2. Device, Tesla, Google, Neon and cron credentials are removed from process.env, so `configured()` / `nestConfigured()`
-//     are false unless a test mocks the module, and nothing can authenticate anywhere.
+//     are false unless a test mocks the module, and nothing can authenticate anywhere. OWNER_KEY is replaced with the
+//     synthetic TEST_OWNER_KEY below (never a real key), so API tests unlock the owner-only routes the way the app does.
 //  3. fetch is allowed only to the in-process Express app: 127.0.0.1 on a port a test registered after listening
 //     (so a local `npm run dev` on 127.0.0.1:8787, which may hold real credentials, is unreachable too). Any other URL
 //     throws, and is also recorded so the test fails even when app code swallows the error.
@@ -12,11 +13,14 @@ import { vi, beforeAll, afterEach } from 'vitest';
 const SAFE_DB = /^pglite:(memory:\/\/)?$/;
 const STRIP_PREFIX = /^(TESLA_|SCREENLOGIC_|NEST_|GOOGLE_|POSTGRES_|PG|NEON_|VERCEL_|OWNER_)/;
 const STRIP_KEYS = ['CRON_SECRET', 'SETUP_TOKEN', 'SESSION_SECRET', 'DATABASE_URL_UNPOOLED', 'MULTI_USER', 'ALLOW_SIGNUPS', 'SITE_LAT', 'SITE_LON'];
+/** A throwaway owner key for tests only (auth.ts needs at least 32 characters). */
+const TEST_OWNER_KEY = 'test-owner-key-synthetic-throwaway-0000000000';
 
 function rails() {
   const url = process.env.DATABASE_URL ?? '';
   if (!SAFE_DB.test(url)) throw new Error(`tests refuse to run against DATABASE_URL=${url.slice(0, 12)}… (only pglite:memory:// is allowed)`);
   for (const k of Object.keys(process.env)) if (STRIP_PREFIX.test(k) || STRIP_KEYS.includes(k)) delete process.env[k];
+  process.env.OWNER_KEY = TEST_OWNER_KEY;
 }
 rails();            // before any test module is imported
 beforeAll(rails);   // and again before the first test, in case a module set something at import time

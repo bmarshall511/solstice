@@ -54,7 +54,9 @@ beforeAll(async () => {
   await db.q(`INSERT INTO tesla_accounts (id, user_id, access_token, refresh_token, expires_at) VALUES (1, NULL, 'test-a', 'test-r', 0)`);
   await db.q(`INSERT INTO sites (id, user_id, tesla_account_id, name) VALUES ('s', NULL, 1, 'Test home')`);
   server = createServer(app).listen(0, '127.0.0.1'); await once(server, 'listening');
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const { port } = server.address() as AddressInfo;
+  (globalThis as any).__testServerPorts.add(port); // the fetch guard in tests/setup.ts allows only registered in-process servers
+  base = `http://127.0.0.1:${port}`;
 });
 afterAll(async () => { if (server) { server.close(); await once(server, 'close'); } });
 
@@ -122,7 +124,7 @@ describe('owner gate', () => {
     const cookie = cookieOf(r);
     expect((await call('/api/settings', { cookie })).status).toBe(200);
     expect((await call('/api/settings', { cookie, ...json({ calm: true }) })).status).toBe(200);
-    expect(await (await call('/api/settings', { cookie })).json()).toEqual({ calm: true });
+    expect(await (await call('/api/settings', { cookie })).json()).toEqual({ calm: true, location: null });   // GET adds the site location (none in tests)
     expect(await (await call('/api/auth/me', { cookie })).json()).toEqual({ mode: 'single', owner: true, user: null, site: { id: 's', name: 'Test home' } });
     const tampered = cookie.slice(0, -2) + (cookie.endsWith('AA') ? 'BB' : 'AA');
     expect((await call('/api/settings', { cookie: tampered })).status).toBe(401);
