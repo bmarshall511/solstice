@@ -57,6 +57,7 @@ Status legend: ✅ in the mockup · ◻︎ planned, not mocked · ⚠️ depends
 - ◻︎ Capital credits and co-op line items (PEC-specific)
 
 ### Insights and planning
+- ✅ **Appliances**: pool pump via Pentair ScreenLogic (live watts/RPM/water temp, cost of the current schedule, season-aware smarter schedule, apply/restore). ◻︎ AC via Nest in the same slots
 - ✅ Outage readiness, solar low, overnight baseline drift, Powerwall health, tomorrow's forecast
 - ✅ **Heat and AC**: daily usage vs real daily high (60 days), kWh per degree, outlier days flagged
 - ✅ **What-if planner**: +panels, +Powerwalls, +daily usage → a full year simulated with PEC rates, cost, payback, backup hours, honest recommendation
