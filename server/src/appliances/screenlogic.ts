@@ -50,21 +50,34 @@ export async function readPool(): Promise<PoolSnapshot> {
 
 export type ScheduleWrite = { circuitId: number; start: number; stop: number; dayMask?: number };
 /**
- * Replace the schedules of the given circuits and set pump speeds per circuit. Returns the schedules that were removed (for restore).
- * Only touches the circuits named; everything else on the controller is left alone.
+ * Write a plan safely: add the new schedules first, then set pump speeds, then remove the old schedules of the replaced circuits.
+ * Pump speeds are addressed by the SLOT INDEX in the pump's circuit list (not the circuit id), and a slow acknowledgement is
+ * verified against the pump status rather than treated as a failure. Returns what was removed (for restore).
  */
 export async function writePoolPlan(opts: { pumpId: number; speeds: Array<{ circuitId: number; rpm: number }>; replaceCircuits: number[]; schedules: ScheduleWrite[] }) {
   return withUnit(async c => {
+    (c as any).netTimeout = 8000;
     const before = (await c.schedule.getScheduleDataAsync(0)).data as any[];
     const removed = before.filter(e => opts.replaceCircuits.includes(e.circuitId));
-    for (const e of removed) await c.schedule.deleteScheduleEventByIdAsync(e.scheduleId);
-    for (const s of opts.speeds) await c.pump.setPumpSpeedAsync(opts.pumpId, s.circuitId, s.rpm, true);
     const added: number[] = [];
     for (const s of opts.schedules) {
       const id = (await c.schedule.addNewScheduleEventAsync(0)).val;
       await c.schedule.setScheduleEventByIdAsync(id, s.circuitId, s.start, s.stop, s.dayMask ?? 127, 0, 4, 70);
       added.push(id);
     }
+    const status = await c.pump.getPumpStatusAsync(opts.pumpId) as any;
+    const slots: Array<{ circuitId: number; speed: number }> = status.pumpCircuits;
+    for (const s of opts.speeds) {
+      const idx = slots.findIndex(x => x.circuitId === s.circuitId);
+      if (idx < 0) throw new Error(`Circuit ${s.circuitId} has no pump speed slot on the controller`);
+      if (slots[idx].speed === s.rpm) continue;
+      try { await c.pump.setPumpSpeedAsync(opts.pumpId, idx, s.rpm, true); }
+      catch (e: any) { // slow ack: check whether it took anyway
+        const now = ((await c.pump.getPumpStatusAsync(opts.pumpId)) as any).pumpCircuits[idx];
+        if (!now || now.speed !== s.rpm) throw new Error(`Pump speed for circuit ${s.circuitId} did not take (${e.message})`);
+      }
+    }
+    for (const e of removed) if (!added.includes(e.scheduleId)) await c.schedule.deleteScheduleEventByIdAsync(e.scheduleId);
     return { removed: removed.map(e => ({ id: e.scheduleId, circuitId: e.circuitId, start: hhmm(e.startTime), stop: hhmm(e.stopTime), dayMask: e.dayMask })), added };
   });
 }
