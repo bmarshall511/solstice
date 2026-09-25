@@ -1,8 +1,11 @@
 // Browser formatting and Chicago-time helpers (web/src/lib/util.js): design §8, case 30.
-// sunAt is checked against physics (equinox and solstice noon heights) using the module's own LAT, so no site
-// coordinates or location-derived angles are written into the tests.
-import { describe, it, expect } from 'vitest';
-import { fmtDur, clock12, hourLabel, money, money2, kwh, addDays, localDate, localHour, niceDate, sunAt, clamp, LAT } from '../../web/src/lib/util.js';
+// sunAt is checked against physics (equinox and solstice noon heights) at a synthetic location passed to setSiteLocation,
+// the way main.js passes the server's; it is not the site. It sits in the Central time zone, so the local-clock
+// east/south/west assertions hold, and every angle is asserted relative to its latitude.
+import { describe, it, expect, beforeAll } from 'vitest';
+import { fmtDur, clock12, hourLabel, money, money2, kwh, addDays, localDate, localHour, niceDate, sunAt, clamp, setSiteLocation } from '../../web/src/lib/util.js';
+
+const LAT = 35, LON = -90; // synthetic, round numbers
 
 describe('formatting', () => {
   it('30: fmtDur', () => {
@@ -54,6 +57,10 @@ describe('Chicago time', () => {
 });
 
 describe('sunAt', () => {
+  beforeAll(() => { expect(setSiteLocation({ lat: LAT, lon: LON, zip: null })).toEqual({ lat: LAT, lon: LON, zip: null }); });
+  it('30: before the location arrives it is a neutral placeholder sun (due south, 45° up)', () => {
+    expect(sunAt(new Date('2026-09-25T18:00:00Z'), null)).toEqual({ el: 45, az: 180 });
+  });
   const noonMax = day => {
     let best = -90;
     for (let m = 15 * 60; m <= 21 * 60; m++) best = Math.max(best, sunAt(new Date(Date.parse(`${day}T00:00:00Z`) + m * 60_000)).el);

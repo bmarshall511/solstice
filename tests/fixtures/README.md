@@ -6,8 +6,9 @@ This repository is public. Everything in `tests/fixtures/` is **hand-written and
   Tesla response, a real ScreenLogic or Nest reading, or a database dump.
 - No names, street addresses, ZIP codes, coordinates, account numbers, tokens, site ids or serial numbers. The meter
   number is `12345678`, device ids are `dev-test`, site ids are short labels like `s` or `site-auto`.
-- The PEC bill uses PEC's published tariff numbers only (the same fallback `server/src/app.ts` hard-codes). No
-  service-address line, no account number, no name, no real usage.
+- The PEC bill uses PEC's published tariff numbers only. The app has no built-in rate (`server/src/tariff.ts` learns it
+  from parsed bills), so tests that need dollar figures save this bill first. No service-address line, no account
+  number, no name, no real usage.
 - Money in tests uses obviously round placeholders. Never the owner's system price, loan, payment or payback figures.
 - Dates are in 2026 only (`tests/hygiene.test.ts` enforces this for this folder).
 - No snapshots: tests assert explicit numbers, plus a key-shape check for objects the views read.

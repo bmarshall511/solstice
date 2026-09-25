@@ -1,5 +1,6 @@
 // The Express app over a real socket on 127.0.0.1 with the real fetch (no supertest), on in-memory PGlite: design §8.
-// This file is the base for the later auth batch; today every route below is reachable without authentication.
+// Every /api route is owner-only, so the requests below carry the owner cookie, unlocked once with the synthetic
+// OWNER_KEY that tests/setup.ts puts in the environment. The gate itself is tested in tests/server/auth.test.ts.
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -7,6 +8,8 @@ import { app } from '../../server/src/app.js';
 import { q, kv, migrate } from '../../server/src/db.js';
 import { saveEnergyRows } from '../../server/src/sync.js';
 import { writePoolPlan } from '../../server/src/appliances/screenlogic.js';
+import { parsePecText } from '../../server/src/bills.js';
+import { PEC_BILL } from '../fixtures/pec-bill.js';
 
 vi.mock(import('../../server/src/pdf.js'), () => ({ pdfToLayoutText: vi.fn() }));
 vi.mock(import('../../server/src/appliances/screenlogic.js'), () => ({
@@ -22,9 +25,9 @@ vi.mock(import('../../server/src/appliances/nest.js'), async importOriginal => {
     nestExchangeCode: blocked('nestExchangeCode'), setCool: blocked('setCool'), setHeat: blocked('setHeat'), setMode: blocked('setMode'), setEco: blocked('setEco') };
 });
 
-let server: Server, base = '';
-const get = (path: string, headers: Record<string, string> = {}) => fetch(base + path, { headers });
-const send = (method: string, path: string, body: unknown) => fetch(base + path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+let server: Server, base = '', cookie = '';
+const get = (path: string, headers: Record<string, string> = {}) => fetch(base + path, { headers: { cookie, ...headers } });
+const send = (method: string, path: string, body: unknown) => fetch(base + path, { method, headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify(body) });
 
 beforeAll(async () => {
   await migrate();
@@ -37,6 +40,9 @@ beforeAll(async () => {
   const { port } = server.address() as AddressInfo;
   (globalThis as any).__testServerPorts.add(port); // the fetch guard in tests/setup.ts allows only registered in-process servers
   base = `http://127.0.0.1:${port}`;
+  const unlock = await fetch(`${base}/api/auth/owner`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: process.env.OWNER_KEY }) });
+  expect(unlock.status).toBe(200);
+  cookie = (unlock.headers.get('set-cookie') ?? '').split(';')[0];
 });
 afterAll(async () => { await new Promise(r => server.close(r)); });
 
@@ -44,13 +50,14 @@ describe('single-owner mode', () => {
   it('/api/auth/me reports single mode and the connected site', async () => {
     const r = await get('/api/auth/me');
     expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ mode: 'single', user: null, site: { id: 's', name: 'Test Site' } });
+    expect(await r.json()).toEqual({ mode: 'single', owner: true, user: null, site: { id: 's', name: 'Test Site' } });
   });
 
   it('PUT /api/settings merges top-level keys into the owner settings', async () => {
     expect((await send('PUT', '/api/settings', { calm: { enabled: true } })).status).toBe(200);
     expect((await send('PUT', '/api/settings', { pool: { autopilot: 'suggest' } })).status).toBe(200);
-    expect(await (await get('/api/settings')).json()).toEqual({ calm: { enabled: true }, pool: { autopilot: 'suggest' } });
+    // GET adds the site location from SITE_LAT/SITE_LON, which tests never set
+    expect(await (await get('/api/settings')).json()).toEqual({ calm: { enabled: true }, pool: { autopilot: 'suggest' }, location: null });
   });
 });
 
@@ -100,7 +107,8 @@ describe('pool Autopilot mode', () => {
 describe('/api/whatif replays stored hours with a different system', () => {
   // Locks today's replay (inside the route) ahead of the planner.ts extraction (design X15). Three hours on one day:
   // 12:00 and 13:00 make 5 kWh against 2 kWh of use, 18:00 uses 3 kWh with no sun. No site info, so the replay uses
-  // 27 kWh / 10 kW / 20 % reserve and, with no bills, 0.1064 in and 0.0719 out.
+  // 27 kWh / 10 kW / 20 % reserve. Rates come only from a parsed bill (server/src/tariff.ts): with none every cost is
+  // null; after the synthetic fixture bill is saved they are 0.1064 in and 0.071921 out.
   const whatif = async (qs = '') => (await get(`/api/whatif${qs}`)).json();
   const day = '2026-09-20', row = (hour: number, solar: number, home: number) => {
     const ts = `${day}T${hour}:00:00-05:00`;
@@ -113,6 +121,18 @@ describe('/api/whatif replays stored hours with a different system', () => {
   });
   afterAll(() => { vi.useRealTimers(); });
 
+  it('with no bill parsed the kWh replay stands, every cost is null and the reason says why', async () => {
+    const w = await whatif();
+    expect(w.baseline).toEqual({ importKwh: 0, exportKwh: 0, solarKwh: 10, homeKwh: 7, selfPowered: 100, batteryFullDays: 0, netCost: null });
+    expect(w.noSystem).toEqual({ importKwh: 7, exportKwh: 0, solarKwh: 0, homeKwh: 7, selfPowered: 0, batteryFullDays: 0, netCost: null });
+    expect([w.savesPerYear, w.paybackYears, w.assumptions.tariff, w.reason]).toEqual([null, null, null, 'no bill parsed']);
+  });
+  it('the fixture bill is saved through the API, which is where the rates come from', async () => {
+    expect((await send('POST', '/api/bills', parsePecText(PEC_BILL))).status).toBe(200);
+    const w = await whatif();
+    expect(w.assumptions.tariff).toMatchObject({ importRateAllIn: .1064, exportCredit: .071921 });
+    expect(w).not.toHaveProperty('reason');
+  });
   it('the as-built system covers every hour; no system imports everything', async () => {
     const w = await whatif();
     expect(w.days).toBe(1);
