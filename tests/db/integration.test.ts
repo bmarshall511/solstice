@@ -374,7 +374,7 @@ describe('syncSite with a fake Tesla client', () => {
 
 /* ---------------------------------------------------------------- the 5-minute cron's sampling and the 15-minute pool energy */
 describe('cron sampling and 15-minute pool energy on PGlite (Q17, Q18, Q23)', () => {
-  const T10 = Date.parse('2026-09-25T10:00:00-05:00'); // Friday 10:00 CDT: cooling season, 5-minute Nest samples
+  const T10 = Date.parse('2026-09-25T10:05:00-05:00'); // Friday 10:05 CDT: cooling season (5-minute Nest samples) and a pool read slot
   const tick = (t: number) => { vi.setSystemTime(t + 2_000); return cronTick(t, { sites: async () => ['cron-s'], acTick: id => acTick(id, {}, RATE, SLOPE) }); };
 
   it('a due tick claims its slots in kv, samples Nest through acTick and stores a pool reading; a repeat invocation skips both', async () => {
