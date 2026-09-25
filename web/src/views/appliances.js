@@ -16,7 +16,7 @@ export const poolTwin = () => twin;
 
 async function load(S) {
   const list = await api.appliances().catch(() => null);
-  if (list) { const cur = document.querySelector('#applStrip .app.on')?.dataset.id ?? 'pool'; $('applStrip').innerHTML = list.map(a => `<div class="app ${a.status === 'coming' ? 'dim' : a.id === cur ? 'on' : ''}" data-id="${a.id}"><i></i>${a.name}${a.status === 'coming' ? ` · ${a.source}, next` : a.watts != null ? ` · ${Math.round(a.watts)} W` : ''}</div>`).join(''); }
+  if (list) { const cur = document.querySelector('#applStrip .app.on')?.dataset.id ?? 'pool'; $('applStrip').innerHTML = list.map(a => `<div class="app ${a.status === 'coming' ? 'dim' : a.id === cur ? 'on' : ''}" data-id="${a.id}"><i></i>${a.name}${a.status === 'coming' ? ` · ${a.source ?? '—'}, next` : a.watts != null ? ` · ${Math.round(a.watts)} W` : ''}</div>`).join(''); }
   const d = await api.pool().catch(e => ({ error: e.message })); S.pool = d;
   drawPool(S); S.onPool?.();
 }
@@ -47,7 +47,7 @@ function drawPool(S) {
   const ss = d.spaSession;
   $('poolStats').innerHTML = `<div class="stat"><small>Pump</small><b>${running ? `${Math.round(L.watts)} W · ${L.rpm.toLocaleString()} rpm` : 'off'}</b></div><div class="stat"><small>Today</small><b>${d.todayKwh} kWh${d.shareOfHomePct != null ? ` · ${d.shareOfHomePct}%` : ''}</b></div>
     <div class="stat"><small>Pool · spa · air</small><b>${st.poolTemp ?? '—'}° · ${st.spaTemp ?? '—'}° · ${L?.airTemp ?? '—'}°</b></div><div class="stat"><small>Turnover</small><b>${d.current.turnoverPerDay}× a day</b></div>`
-    + (ss && ss.riseF != null ? `<div class="stat" style="grid-column:1/-1"><small>Spa session · ${ss.spaTemp}° → ${ss.spaSet}°</small><b>${ss.riseF ? `${ss.heatMinutes} min of propane · ${ss.propaneGal} gal ≈ $${ss.propaneUsd.toFixed(2)}` : 'already at temperature'} · then ${money2(ss.electricUsdPerHour)}/h pump + blower</b></div>` : '');
+    + (ss && ss.riseF != null ? `<div class="stat" style="grid-column:1/-1"><small>Spa session · ${ss.spaTemp}° → ${ss.spaSet}°</small><b>${ss.riseF ? `${ss.heatMinutes} min of propane · ${ss.propaneGal} gal ≈ ${money2(ss.propaneUsd)}` : 'already at temperature'} · then ${money2(ss.electricUsdPerHour)}/h pump + blower</b></div>` : '');
   $('poolNote').innerHTML = `IntelliFlo VSF on a Quad D.E. 80 filter, ${sp.gallons.toLocaleString()} gal. Streams follow the water: skimmer → pump → filter → heater → returns; green is the spa loop, purple the sheer-descent feed. Speed follows the pump's RPM. Lights are 500 W + 100 W incandescent, the blower 1.1 kW, the UV lamp ~60 W while the pump runs.${d.model.measured.length ? ` Measured: ${d.model.measured.map(m => `${m.rpm}→${Math.round(m.watts)} W`).join(', ')}.` : ''}${d.error ? ` <span style="color:var(--warn)">Last read failed: ${d.error}</span>` : ''}`;
   drawDial(S); drawAutopilot(S);
   $('poolSeason').innerHTML = d.seasons.map(s => `<div class="${s.current ? 'cur' : ''}"><b>${s.kwhPerDay}</b>${s.label}</div>`).join('');

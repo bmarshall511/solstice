@@ -16,15 +16,17 @@ import { initAppliances, poolTwin } from './views/appliances.js';
 import { initAc, thermalTwin, drawAc } from './views/ac.js';
 import { createDayRing } from './scenes/dayring.js';
 
-/* Owner link (https://<app>/#owner=<OWNER_KEY>): take the key and strip it from the address bar before anything else
-   in this module runs, so it never lingers in history or bookmarks. boot() trades it for the owner cookie. */
-let ownerLink = null;
-{ const m = /^#owner=([^&]+)/.exec(location.hash); if (m) { try { ownerLink = decodeURIComponent(m[1]); } catch { ownerLink = m[1]; } history.replaceState(null, '', location.pathname + location.search); } }
-// Pasting the link into a tab that already shows Solstice only changes the fragment: reload so the block above runs.
-addEventListener('hashchange', () => { if (location.hash.startsWith('#owner=')) location.reload(); });
+/* Owner link (https://<app>/#owner=<OWNER_KEY>) or share link (https://<app>/#s=<token>): take the secret and strip it from
+   the address bar before anything else in this module runs, so it never lingers in history or bookmarks. boot() trades it
+   for the owner or guest cookie. */
+let ownerLink = null, guestLink = null;
+{ const m = /^#(owner|s)=([^&]+)/.exec(location.hash);
+  if (m) { let v; try { v = decodeURIComponent(m[2]); } catch { v = m[2]; } if (m[1] === 'owner') ownerLink = v; else guestLink = v; history.replaceState(null, '', location.pathname + location.search); } }
+// Pasting a link into a tab that already shows Solstice only changes the fragment: reload so the block above runs.
+addEventListener('hashchange', () => { if (/^#(owner|s)=/.test(location.hash)) location.reload(); });
 
 /** All app state lives here; views read from it. */
-const S = { calm: matchMedia('(prefers-reduced-motion: reduce)').matches, preview: false };
+const S = { calm: matchMedia('(prefers-reduced-motion: reduce)').matches, preview: false, guest: false };
 const safe = fn => (...a) => { try { return fn(...a); } catch (e) { console.error(e); } };
 const isOn = id => $(id).classList.contains('on');
 
@@ -40,8 +42,8 @@ async function loadNow() {
 async function loadHistory() {
   const [daily, monthly, gridDays, records, outages, overnight, reconcile, profile] = await Promise.all([
     api.daily(400), api.monthly(13), api.gridDays(30), api.records(), api.outages(), api.overnight(60), api.reconcile(), api.profile(14)]);
-  Object.assign(S, { daily, monthly, gridDays, records, outages, overnight, reconcile });
-  S.tariff = reconcile.findLast(r => r.tariff?.importRateAllIn > 0)?.tariff ?? null; // learned from the newest parsed bill (server: currentTariff); null = rate unknown
+  Object.assign(S, { daily, monthly, gridDays, records, outages, overnight, reconcile: reconcile.map(billRow) });
+  S.tariff = S.reconcile.findLast(r => r.tariff?.importRateAllIn > 0)?.tariff ?? null; // learned from the newest parsed bill (server: currentTariff); null = rate unknown
   S.profile = Array.from({ length: 24 }, (_, h) => profile.hours.find(x => x.hour === h)?.home ?? 2);
   computeModel();
   [drawSocHeat, drawRecords, drawOutages, drawBills, drawOvernight, drawAC, drawPerformance, drawAlerts, drawSettings, renderStatic, renderWeather].forEach(f => safe(f)(S));
@@ -49,6 +51,17 @@ async function loadHistory() {
   const ld = landscapeData(S); if (ld) land.setData(ld);
   $('sideDays').textContent = `${daily.length} days`; $('sideBills').textContent = `${reconcile.length} bill${reconcile.length === 1 ? '' : 's'}`;
   drawBillDue();
+}
+
+/** A guest's bills arrive as a skeleton (month, period, kWh bought and sent, whether the meter matched Tesla). Give the bill
+    views the owner's row shape with every private value null, so they print "—" as they do for an unknown rate. */
+function billRow(b) {
+  if (b.pec) return b;
+  return { billDate: `${b.month}-01`, period: b.period ?? { from: null, to: null, days: null }, total: null, tariff: null, charges: [],
+    pec: { deliveredKwh: b.deliveredKwh, receivedKwh: b.receivedKwh, lastYearKwh: null },
+    tesla: { days: 0, solarKwh: null, homeKwh: null, importKwh: null, exportKwh: null, chargeKwh: null, dischargeKwh: null }, lastYear: null,
+    coverage: 1, importGapPct: null, checks: [{ id: 'meter', ok: !!b.checks?.meterMatchesTesla, label: 'Meter matches Tesla', detail: '' }],
+    solarShareOfHome: null, withoutSolarCost: null };
 }
 
 /** Weather, NWS and the sun need the site's coordinates, which come with /api/settings at boot; ask again if that call failed. */
@@ -134,7 +147,7 @@ const closeSheet = () => $('phone').classList.remove('open');
 $('scrim').onclick = closeSheet;
 document.addEventListener('click', e => { if (e.target.closest('[data-addbill]')) openBillSheet(S, () => loadHistory()); });
 $('openData').onclick = openRawData;
-addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); if (e.key === 'd' && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) openRawData(); });
+addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); if (e.key === 'd' && !S.guest && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) openRawData(); });
 $('calmSw').classList.toggle('on', S.calm); $('calmSw').onclick = () => { S.calm = !S.calm; $('calmSw').classList.toggle('on', S.calm); api.saveSettings({ calm: S.calm }).catch(() => {}); };
 $('signOut').onclick = async () => { await api.logout().catch(() => {}); location.reload(); };
 $('outSw').onclick = () => { S.preview = !S.preview; S.previewSince = Date.now(); $('outSw').classList.toggle('on', S.preview); updateOutage(); renderLive(S); };
@@ -161,7 +174,8 @@ $('drModes').onclick = e => { const b = e.target.closest('button'); if (!b) retu
 function drawDayRing() {
   const day = S.today; if (!day || !day.buckets?.length) return;
   const home = Array(24).fill(0), solar = Array(24).fill(0);
-  day.buckets.forEach(b => { const h = Math.floor(b.t); if (h < 24) { home[h] += b.home / 12; solar[h] += b.solar / 12; } });
+  const per = 60 / (day.bucketMinutes ?? 5); // buckets per hour: kW ÷ 12 = kWh for five-minute buckets (a guest's day comes hourly)
+  day.buckets.forEach(b => { const h = Math.floor(b.t); if (h < 24) { home[h] += b.home / per; solar[h] += b.solar / per; } });
   const p = S.pool, curve = p?.model?.curve, W = r => r && curve ? curve.reduce((a, c) => Math.abs(c.rpm - r) < Math.abs(a.rpm - r) ? c : a).watts : 0;
   const hourly = src => Array.from({ length: 24 }, (_, h) => src?.[h] ? W(src[h].rpm) * src[h].frac / 1000 : 0);
   const extras = p?.extras?.hourlyToday ?? Array(24).fill(0);
@@ -259,9 +273,25 @@ function showLocked(error = '') {
   $('authSub').textContent = 'Open your owner link on this device.';
   $('authErr').textContent = error;
 }
-let started = false, multi = false, unlocking = !!ownerLink;
-// Any 401 locks the app in single-owner mode (while an owner link is being redeemed, boot() decides). MULTI_USER: as before.
-setUnauthorized(() => { if (multi) { if (started) showAuth('login'); return; } if (!unlocking) showLocked(); });
+let started = false, multi = false, unlocking = !!(ownerLink || guestLink), rechecking = false;
+const linkError = reason => ({ revoked: 'This link was turned off.', expired: 'This link has expired.' })[reason] ?? '';
+// Any 401 locks the app in single-owner mode (while a link is being redeemed, boot() decides). A guest's 401 is either an
+// owner-only route (nothing to do) or a link that was just revoked or expired: /api/auth/me says which. MULTI_USER: as before.
+setUnauthorized(() => {
+  if (multi) { if (started) showAuth('login'); return; }
+  if (unlocking) return;
+  if (!S.guest) return showLocked();
+  if (rechecking) return; rechecking = true;
+  api.me().then(m => { if (m.owner) location.reload(); else if (!m.guest) showLocked(linkError(m.reason)); }).catch(() => {}).finally(() => { rechecking = false; });
+});
+
+/* Guests (and the owner previewing as one) never see a control that writes: Apply, Restore, Autopilot modes, Home/Away,
+   settings edits, bill upload and removal, cleaning logs, link/unlink, raw data and the CSV. The server refuses all of
+   those to a guest anyway. `hidden` alone loses to classes that set display (.row, .link, .primary, .seg2), hence the
+   inline display:none, as showLocked does for the form. Views re-render with innerHTML, so an observer re-applies it. */
+const OWNER_CONTROLS = '[data-addbill], #billDue, #billDueNow, #openData, a[href="/api/export.csv"], #calmSw, #alertPrefs, #signOut, #connectBtn, #autoMode, #acMode, #acPresence, #acLinkBtn, #poolApply, #poolRestore, #applyTomorrow, #logClean, button#cleaned, #undoClean, #acApply, #billRemove';
+const hideOwnerControls = () => document.querySelectorAll(OWNER_CONTROLS).forEach(el => { if (el.style.display !== 'none') { el.hidden = true; el.style.display = 'none'; } });
+function guestMode() { S.guest = true; hideOwnerControls(); new MutationObserver(hideOwnerControls).observe(document.body, { childList: true, subtree: true }); }
 
 async function boot() {
   const params = new URLSearchParams(location.search);
@@ -274,13 +304,23 @@ async function boot() {
     // Views that loaded while this device had no cookie got 401s; reload once so everything starts with the cookie.
     if (ok) return location.reload();
   }
+  let guestLinkError = '';
+  if (guestLink) {   // a share link opened on this device: trade the token for the guest cookie, then start clean
+    const err = await api.guest(guestLink).then(() => null, e => e);
+    unlocking = false;
+    if (!err) return location.reload();
+    guestLinkError = linkError(err.reason) || 'That link didn’t work on this device.';
+  }
   let me;
   try { me = await api.me(); } catch { $('authErr').textContent = 'Can’t reach the Solstice server.'; return showAuth('login'); }
   multi = me.mode !== 'single';
   if (me.mode === 'single') {           // no accounts: the owner cookie opens straight to the connected site
     document.querySelectorAll('.acct').forEach(el => el.hidden = true);
-    if (!me.owner) return showLocked(ownerLink ? 'That owner link didn’t work on this device.' : '');
-    if (!me.site) return showAuth('connect');
+    if (me.guest) guestMode();          // a share link (or the owner previewing as a guest): read-only, no controls
+    else {
+      if (!me.owner) return showLocked(guestLinkError || (ownerLink ? 'That owner link didn’t work on this device.' : linkError(me.reason)));
+      if (!me.site) return showAuth('connect');
+    }
   } else {
     if (!me.user) return me.needsSetup && params.get('setup') ? showAuth('setup', { token: params.get('setup') }) : showAuth('login');
     $('acctEmail').textContent = me.user.email;
@@ -299,7 +339,7 @@ async function boot() {
   // keep history current: sync now, then every 5 min while open; keep going while there are missing days to backfill
   const sync = async () => { const r = await api.sync().catch(() => null); if (r?.filled || r?.done?.includes('lastHistory')) loadHistory().catch(() => {}); if (r?.remaining > 0) setTimeout(sync, 1500);
     S.syncInfo = r; $('sideDays').textContent = r?.remaining ? `loading… ${r.remaining} days left` : $('sideDays').textContent; };
-  sync(); setInterval(sync, 5 * 60_000);
+  if (!S.guest) { sync(); setInterval(sync, 5 * 60_000); } // syncing is a write: the owner's device keeps history current
   setInterval(async () => { const s = await api.status().catch(() => null); safe(drawHealth)(S, s); }, 60_000);
   api.status().then(s => safe(drawHealth)(S, s)).catch(() => {});
 }

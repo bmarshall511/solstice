@@ -2,7 +2,7 @@
 export let onUnauthorized = () => {};
 export const setUnauthorized = fn => { onUnauthorized = fn; };
 async function call(path, opts) {
-  // Same-origin requests carry the HttpOnly solstice_owner cookie, in the browser and in the installed PWA alike.
+  // Same-origin requests carry the HttpOnly solstice_owner or solstice_guest cookie, in the browser and in the installed PWA alike.
   const r = await fetch(`/api/${path}`, { credentials: 'same-origin', cache: 'no-store', ...opts });
   if (r.status === 401) { onUnauthorized(); throw new Error('Sign in required'); }
   const j = await r.json().catch(() => ({}));
@@ -33,6 +33,18 @@ export const api = {
   sync: () => send('POST', 'sync'),
   me: () => get('auth/me'),
   owner: key => send('POST', 'auth/owner', { key }),
+  /** Trade a share-link token for the guest cookie. Rejects with `reason` ('unknown' | 'revoked' | 'expired') on a bad link. */
+  guest: async token => {
+    const r = await fetch('/api/auth/guest', { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(new Error(j.error ?? `auth/guest: HTTP ${r.status}`), { reason: j.reason ?? null });
+    return j;
+  },
+  preview: on => send('POST', 'auth/preview', { on }),
+  shares: () => get('share'),
+  createShare: (label, expiresIn) => send('POST', 'share', { label, expiresIn }),
+  revokeShare: id => send('POST', `share/${encodeURIComponent(id)}/revoke`),
+  revokeAllShares: () => send('POST', 'share/revoke-all'),
   login: (email, password) => send('POST', 'auth/login', { email, password }),
   setup: (token, email, password, name) => send('POST', 'auth/setup', { token, email, password, name }),
   logout: () => send('POST', 'auth/logout'),
