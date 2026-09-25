@@ -1,5 +1,8 @@
 // Minimal offline shell: cache the app assets, always go to the network for /api.
-const CACHE = 'solstice-v1';
+// /api and /auth are never intercepted or cached: the browser fetches them itself, same-origin, so the HttpOnly owner
+// cookie rides along from the installed PWA too, and a locked (cookie-less) client can never be served an owner response.
+// v2: drops shells cached before the owner lock, whose client showed the old sign-in form on a 401.
+const CACHE = 'solstice-v2';
 self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(['/', '/manifest.webmanifest', '/icon.svg']))); });
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))));
 self.addEventListener('fetch', e => {

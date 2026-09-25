@@ -77,9 +77,25 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS pool_readings_site_day ON pool_readings(site_id, day)`,
   `CREATE TABLE IF NOT EXISTS nest_readings (site_id text NOT NULL, ts bigint NOT NULL, day text NOT NULL, hour smallint NOT NULL, indoor_f real, humidity real, mode text, hvac text, cool_f real, heat_f real, eco boolean, PRIMARY KEY (site_id, ts))`,
   `CREATE INDEX IF NOT EXISTS nest_readings_site_day ON nest_readings(site_id, day)`,
+  // Single-owner mode: one row per device that opened the owner link (no account, no user row). Deleting a row signs that device out.
+  `CREATE TABLE IF NOT EXISTS owner_sessions (id text PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now(), last_seen timestamptz NOT NULL DEFAULT now(), label text)`,
 ];
 
 let migrated: Promise<void> | null = null;
 export function migrate() {
-  return (migrated ??= (async () => { for (const s of SCHEMA) await q(s); })());
+  return (migrated ??= (async () => { for (const s of SCHEMA) await q(s); await oneTimeMigrations(); })());
+}
+
+/** One-time data fixes, each guarded by a kv flag so it runs once per database. Row updates only: no table is dropped,
+ *  renamed or rewritten (rule 6). A failure is logged and retried on the next cold start rather than taking the API down. */
+export async function oneTimeMigrations() {
+  const flag = 'migration:bills-strip-account:v1';
+  try {
+    if (await kv.get(flag)) return;
+    // Bills imported from the old local install carried the PEC account number and the PDF file name inside `raw`.
+    // Idempotent: a second run matches no rows. RETURNING only counts the rows for the log line.
+    const rows = await q(`UPDATE bills SET raw = raw - 'account' - 'source' WHERE raw ? 'account' OR raw ? 'source' RETURNING bill_date`);
+    await kv.set(flag, new Date().toISOString());
+    console.log(`[solstice] one-time migration ${flag}: removed account/source from ${rows.length} bill row(s)`);
+  } catch (e) { console.error(`[solstice] one-time migration ${flag} failed; it will retry on the next cold start`, e); }
 }

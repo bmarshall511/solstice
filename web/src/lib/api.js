@@ -1,8 +1,9 @@
-/** Called when the server says we're not signed in (set by main.js). */
-let onUnauthorized = () => {};
+/** Called on any 401: in single-owner mode main.js shows the locked card (no owner cookie on this device). */
+export let onUnauthorized = () => {};
 export const setUnauthorized = fn => { onUnauthorized = fn; };
 async function call(path, opts) {
-  const r = await fetch(`/api/${path}`, { credentials: 'same-origin', ...opts });
+  // Same-origin requests carry the HttpOnly solstice_owner cookie, in the browser and in the installed PWA alike.
+  const r = await fetch(`/api/${path}`, { credentials: 'same-origin', cache: 'no-store', ...opts });
   if (r.status === 401) { onUnauthorized(); throw new Error('Sign in required'); }
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error ?? `${path}: HTTP ${r.status}`);
@@ -31,6 +32,7 @@ export const api = {
   deleteBill: date => call(`bills/${date}`, { method: 'DELETE' }),
   sync: () => send('POST', 'sync'),
   me: () => get('auth/me'),
+  owner: key => send('POST', 'auth/owner', { key }),
   login: (email, password) => send('POST', 'auth/login', { email, password }),
   setup: (token, email, password, name) => send('POST', 'auth/setup', { token, email, password, name }),
   logout: () => send('POST', 'auth/logout'),

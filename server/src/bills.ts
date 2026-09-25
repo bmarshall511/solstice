@@ -11,7 +11,6 @@ export type Bill = {
   tariff: { importRate: number; importRateAllIn: number; exportCredit: number | null; fixedMonthly: number | null; discounts: number; franchisePct: number | null };
   comparison?: { thisMonthKwh: number | null; lastMonthKwh: number | null; lastYearKwh: number | null; avgDailyKwh: number | null; lastYearCost: number | null; avgTempF: number | null };
   checks?: { lineItemsSumToTotal: boolean; registersConsistent: boolean };
-  source?: string;
 };
 
 const money = (s?: string) => (s == null ? null : Number(s.replace(/[$,]/g, '')));
@@ -82,7 +81,26 @@ export async function parsePecPdf(pdf: Uint8Array): Promise<Bill> {
   return parsePecText(text);
 }
 
-export async function saveBill(siteId: string, bill: Bill) {
+/** Copy only the listed keys that are present (never adds a key, so stored shapes stay as they were). */
+const pick = <T extends object>(o: T | null | undefined, keys: Array<keyof T>): T => (o == null ? o : Object.fromEntries(keys.filter(k => k in o).map(k => [k, o[k]]))) as T;
+
+/** The only fields a bill keeps. Anything else a PDF, an old import or a request body carried (the PEC account number,
+ *  the source file name, meter numbers) is dropped before a bill is stored, and again whenever one is read back. */
+export function toStoredBill(b: Bill): Bill {
+  return {
+    utility: b.utility, billDate: b.billDate, dueDate: b.dueDate ?? null,
+    period: pick(b.period, ['from', 'to', 'days']),
+    deliveredKwh: b.deliveredKwh, receivedKwh: b.receivedKwh, total: b.total,
+    charges: (b.charges ?? []).map(c => pick(c, ['label', 'kwh', 'rate', 'amount'])),
+    tariff: pick(b.tariff, ['importRate', 'importRateAllIn', 'exportCredit', 'fixedMonthly', 'discounts', 'franchisePct']),
+    ...(b.comparison ? { comparison: pick(b.comparison, ['thisMonthKwh', 'lastMonthKwh', 'lastYearKwh', 'avgDailyKwh', 'lastYearCost', 'avgTempF']) } : {}),
+    ...(b.checks ? { checks: pick(b.checks, ['lineItemsSumToTotal', 'registersConsistent']) } : {}),
+    ...(Array.isArray(b.meters) ? { meters: b.meters.map(m => pick(m, ['register', 'from', 'to', 'previous', 'present', 'kwh'])) } : {}),
+  };
+}
+
+export async function saveBill(siteId: string, input: Bill) {
+  const bill = toStoredBill(input);
   await q(`INSERT INTO bills (site_id, bill_date, period_from, period_to, delivered_kwh, received_kwh, total, raw) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
     ON CONFLICT (site_id, bill_date) DO UPDATE SET period_from=excluded.period_from, period_to=excluded.period_to, delivered_kwh=excluded.delivered_kwh,
       received_kwh=excluded.received_kwh, total=excluded.total, raw=excluded.raw`,
@@ -90,5 +108,5 @@ export async function saveBill(siteId: string, bill: Bill) {
 }
 
 export async function listBills(siteId: string): Promise<Bill[]> {
-  return (await q<{ raw: Bill }>('SELECT raw FROM bills WHERE site_id = $1 ORDER BY bill_date', [siteId])).map(r => r.raw);
+  return (await q<{ raw: Bill }>('SELECT raw FROM bills WHERE site_id = $1 ORDER BY bill_date', [siteId])).map(r => toStoredBill(r.raw));
 }

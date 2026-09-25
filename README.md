@@ -25,6 +25,15 @@ SITE_LON=<longitude>    # decimal degrees, negative west of Greenwich
 SITE_ZIP=<zip>          # 5 digits, shown in Settings
 ```
 
+## Owner access (`OWNER_KEY`)
+
+Solstice has no accounts. Every `/api` and `/auth` route is private to the owner, except `/api/auth/me`, the Vercel crons (which use `Authorization: Bearer $CRON_SECRET`) and the Tesla/Google OAuth callbacks (which check a signed, single-use `state`).
+
+- Set `OWNER_KEY` in `.env` (local) and in the Vercel env (Production and Preview). Use a long random value, at least 32 characters, for example `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`. Keep it in a password manager. Never commit it.
+- Open `https://<your-app>/#owner=<OWNER_KEY>` once on each device. The key travels in the URL fragment, so it never reaches server logs; the app posts it to `POST /api/auth/owner`, strips it from the address bar, and the server sets a 400-day HttpOnly `solstice_owner` cookie for that device.
+- Without the cookie the app shows "Solstice is private" and every API call answers 401. If `OWNER_KEY` is unset or shorter than 32 characters, the server logs a warning at start and nobody can unlock (it fails closed), locally too.
+- Sign out: `POST /api/auth/signout` (this device), `POST /api/auth/signout-others`; `GET /api/auth/devices` lists signed-in devices. Changing `OWNER_KEY` signs every device out.
+
 ## What's in it
 
 | Tab | What it shows |

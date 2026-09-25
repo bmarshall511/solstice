@@ -16,6 +16,13 @@ import { initAppliances, poolTwin } from './views/appliances.js';
 import { initAc, thermalTwin, drawAc } from './views/ac.js';
 import { createDayRing } from './scenes/dayring.js';
 
+/* Owner link (https://<app>/#owner=<OWNER_KEY>): take the key and strip it from the address bar before anything else
+   in this module runs, so it never lingers in history or bookmarks. boot() trades it for the owner cookie. */
+let ownerLink = null;
+{ const m = /^#owner=([^&]+)/.exec(location.hash); if (m) { try { ownerLink = decodeURIComponent(m[1]); } catch { ownerLink = m[1]; } history.replaceState(null, '', location.pathname + location.search); } }
+// Pasting the link into a tab that already shows Solstice only changes the fragment: reload so the block above runs.
+addEventListener('hashchange', () => { if (location.hash.startsWith('#owner=')) location.reload(); });
+
 /** All app state lives here; views read from it. */
 const S = { calm: matchMedia('(prefers-reduced-motion: reduce)').matches, preview: false };
 const safe = fn => (...a) => { try { return fn(...a); } catch (e) { console.error(e); } };
@@ -242,18 +249,37 @@ function showAuth(mode, opts = {}) {
     } catch (err) { $('authErr').textContent = err.message; $('authBtn').disabled = false; }
   };
 }
-let started = false;
-setUnauthorized(() => { if (!started) return; showAuth('login'); });
+/* Single-owner mode without the owner cookie: every API call answers 401 and the app stays locked.
+   PLACEHOLDER pending its own design approval (share-view design §2.7, mockup q-share): it reuses the existing sign-in
+   overlay (.auth / .authcard) as-is, with no new CSS and no new components. */
+function showLocked(error = '') {
+  $('auth').hidden = false; $('connectBtn').hidden = true;
+  $('authForm').hidden = true; $('authForm').style.display = 'none';   // `.authcard form{display:grid}` outranks [hidden]
+  $('authTitle').textContent = 'Solstice is private';
+  $('authSub').textContent = 'Open your owner link on this device.';
+  $('authErr').textContent = error;
+}
+let started = false, multi = false, unlocking = !!ownerLink;
+// Any 401 locks the app in single-owner mode (while an owner link is being redeemed, boot() decides). MULTI_USER: as before.
+setUnauthorized(() => { if (multi) { if (started) showAuth('login'); return; } if (!unlocking) showLocked(); });
 
 async function boot() {
   const params = new URLSearchParams(location.search);
   if (params.get('tesla_error')) toast('!', 'rgba(255,90,78,.25)', 'Tesla connection failed', params.get('tesla_error'));
   if (params.get('nest_error')) toast('!', 'rgba(255,90,78,.25)', 'Nest link failed', params.get('nest_error'));
   if (params.get('nest') === 'linked') toast('✓', 'rgba(78,240,166,.2)', 'Nest linked', 'Solstice can now see the thermostat. Open Insights → Appliances → AC.');
+  if (ownerLink) {   // first open of the owner link on this device: trade the key for the owner cookie
+    const ok = await api.owner(ownerLink).then(() => true, () => false);
+    unlocking = false;
+    // Views that loaded while this device had no cookie got 401s; reload once so everything starts with the cookie.
+    if (ok) return location.reload();
+  }
   let me;
   try { me = await api.me(); } catch { $('authErr').textContent = 'Can’t reach the Solstice server.'; return showAuth('login'); }
-  if (me.mode === 'single') {           // no accounts yet: open straight to the connected site
+  multi = me.mode !== 'single';
+  if (me.mode === 'single') {           // no accounts: the owner cookie opens straight to the connected site
     document.querySelectorAll('.acct').forEach(el => el.hidden = true);
+    if (!me.owner) return showLocked(ownerLink ? 'That owner link didn’t work on this device.' : '');
     if (!me.site) return showAuth('connect');
   } else {
     if (!me.user) return me.needsSetup && params.get('setup') ? showAuth('setup', { token: params.get('setup') }) : showAuth('login');
