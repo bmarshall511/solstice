@@ -16,19 +16,43 @@ export async function recordNest(siteId: string, st: NestState) {
   await q(`INSERT INTO nest_readings (site_id, ts, day, hour, indoor_f, humidity, mode, hvac, cool_f, heat_f, eco) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING`,
     [siteId, st.at, localDay(d), Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }).format(d)) % 24, st.indoorF, st.humidity, st.mode, st.hvac, st.coolF, st.heatF, st.eco]);
 }
+type AcLearned = { coolKw: number | null; heatKw: number | null; samples: number; heatSamples: number };
+const LEARN_TTL_MS = 3600e3;
 /**
  * AC power learned from load steps: for each pair of consecutive readings where HVAC switched between COOLING and OFF within 10 min,
  * the difference in Tesla's 5-minute home power across the switch. Median over the last 14 days; null until 5 samples exist.
+ * Cached in kv (`<site>:ac:learned`) for an hour, so app reads and the 5-minute cron share one computation; new transitions show up
+ * on the first call after the entry expires.
  */
-export async function learnAcKw(siteId: string) {
-  const rows = await q<{ ts: string; hvac: string }>(`SELECT ts::text, hvac FROM nest_readings WHERE site_id = $1 AND day >= $2 ORDER BY ts`, [siteId, addDays(localDay(), -14)]);
-  const steps: number[] = [], heat: number[] = [];
+export async function learnAcKw(siteId: string): Promise<AcLearned> {
+  const key = `${siteId}:ac:learned`, hit = await kv.get<{ at: number; learned: AcLearned }>(key), age = hit ? Date.now() - hit.at : -1;
+  if (hit && age >= 0 && age < LEARN_TTL_MS) return hit.learned;
+  const learned = await computeAcKw(siteId);
+  await kv.set(key, { at: Date.now(), learned });
+  return learned;
+}
+async function computeAcKw(siteId: string): Promise<AcLearned> {
+  type R = { ts: string; hvac: string };
+  const rows = await q<R>(`SELECT ts::text, hvac FROM nest_readings WHERE site_id = $1 AND day >= $2 ORDER BY ts`, [siteId, addDays(localDay(), -14)]);
+  const pairs: Array<{ on: R; off: R }> = [];
   for (let i = 1; i < rows.length; i++) {
     const a = rows[i - 1], b = rows[i], dt = Number(b.ts) - Number(a.ts); if (dt > 10 * 60_000) continue;
     const change = a.hvac !== b.hvac && (a.hvac === 'OFF' || b.hvac === 'OFF'); if (!change) continue;
-    const on = b.hvac !== 'OFF' ? b : a, off = b.hvac !== 'OFF' ? a : b;
-    const kw = async (ts: string) => (await q<{ kw: number }>(`SELECT (home_wh * 12 / 1000.0)::float8 kw FROM energy WHERE site_id = $1 AND epoch BETWEEN $2 AND $3 ORDER BY ABS(epoch - $4) LIMIT 1`, [siteId, Number(ts) - 5 * 60_000, Number(ts) + 5 * 60_000, Number(ts)]))[0]?.kw;
-    const kOn = await kw(on.ts), kOff = await kw(off.ts); if (kOn == null || kOff == null) continue;
+    pairs.push(b.hvac !== 'OFF' ? { on: b, off: a } : { on: a, off: b });
+  }
+  // One query for every transition: the energy bucket nearest each reading within ±5 min (energy_site_epoch index), kW from its
+  // home_wh (null when the bucket is missing or has no home_wh). Two equally near buckets resolve to the earlier one.
+  const kwAt = new Map<string, number | null>();
+  if (pairs.length) {
+    const ts = [...new Set(pairs.flatMap(p => [p.on.ts, p.off.ts]))].map(Number);
+    const got = await q<{ ts: string; kw: number | null }>(`SELECT t.ts::text, e.kw FROM unnest($2::bigint[]) t(ts) LEFT JOIN LATERAL (
+        SELECT (home_wh * 12 / 1000.0)::float8 kw FROM energy WHERE site_id = $1 AND epoch BETWEEN t.ts - 300000 AND t.ts + 300000
+        ORDER BY ABS(epoch - t.ts), epoch LIMIT 1) e ON true`, [siteId, ts]);
+    for (const r of got) kwAt.set(r.ts, r.kw);
+  }
+  const steps: number[] = [], heat: number[] = [];
+  for (const { on, off } of pairs) {
+    const kOn = kwAt.get(on.ts), kOff = kwAt.get(off.ts); if (kOn == null || kOff == null) continue;
     const d = kOn - kOff; if (d > .5 && d < 25) (on.hvac === 'HEATING' ? heat : steps).push(d);
   }
   const med = (a: number[]) => a.length >= 5 ? a.sort((x, y) => x - y)[Math.floor(a.length / 2)] : null;
