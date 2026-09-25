@@ -72,6 +72,8 @@ export const api = {
   applDay: date => get(`appliances/day?date=${date}`),
   acApply: () => send('POST', 'appliances/ac/apply'),
   acSettings: patch => send('POST', 'appliances/ac/settings', patch),
+  acUntrim: () => send('POST', 'appliances/ac/untrim'),
+  models: () => get('models'),
   saveSettings: patch => send('PUT', 'settings', patch),
 };
 
