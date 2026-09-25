@@ -41,7 +41,7 @@ export function createPoolTwin(el) {
   P.water = new THREE.Mesh(wg, waterMat()); P.water.material.uniforms.uSize.value.set(PW, PH); P.water.rotation.x = -Math.PI / 2; P.water.position.set(px, .03, pz); scene.add(P.water);
   // spa
   const sx = 3.9, sz = .2, SR = 1.25, SH = .55;
-  scene.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(SR, SR, SH, 48, 1, true), glass(C.green, .07)), { position: new THREE.Vector3(sx, SH / 2, sz) }));
+  const spaVol = new THREE.Mesh(new THREE.CylinderGeometry(SR, SR, SH, 48, 1, true), glass(C.green, .07)); spaVol.position.set(sx, SH / 2, sz); scene.add(spaVol);
   const ring = (y, c, op) => { const r = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(new THREE.Path().absarc(0, 0, SR, 0, Math.PI * 2, false).getPoints(64).map(p => new THREE.Vector3(p.x, 0, p.y))), new THREE.LineBasicMaterial({ color: c, transparent: true, opacity: op })); r.position.set(sx, y, sz); scene.add(r); return r; };
   ring(0.01, C.green, .5); P.spaRing = ring(SH, C.green, .9);
   P.spa = new THREE.Mesh(new THREE.CircleGeometry(SR, 48), waterMat()); P.spa.material.uniforms.uSize.value.set(2, 2); P.spa.rotation.x = -Math.PI / 2; P.spa.position.set(sx, SH - .02, sz); scene.add(P.spa);
