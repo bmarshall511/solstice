@@ -13,7 +13,11 @@
     "bills": "node scripts/parse-pec-bill.mjs",
     "web": "vite --config web/vite.config.js",
     "build": "vite build --config web/vite.config.js",
-    "start": "npm run build && npm run server"
+    "start": "npm run build && npm run server",
+    "predeploy:preview": "npm run typecheck && npm test && npm run build",
+    "deploy:preview": "npx vercel deploy --yes",
+    "predeploy:prod": "npm run typecheck && npm test && npm run build",
+    "deploy:prod": "npx vercel deploy --prod --yes"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

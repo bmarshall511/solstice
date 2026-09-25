@@ -23,7 +23,8 @@ Solstice is the owner's personal Tesla Powerwall + solar + pool + AC monitor. On
 
 ## Deploying
 
-- Vercel's git integration is **not** auto-deploying. Deploy with the CLI: `npx vercel deploy --yes` for a preview, `npx vercel deploy --prod --yes` for production (project `solstice-energy`, team `highfivery-llc`).
+- Vercel's git integration is **not** auto-deploying. Deploy with `npm run deploy:preview` for a preview, `npm run deploy:prod` for production (project `solstice-energy`, team `highfivery-llc`). Each runs typecheck, the test suite and the web build first and stops on the first failure before calling `vercel deploy` (`--yes` / `--prod --yes`).
+- `.vercelignore` at the repo root is an **allow-list** (`/*` then `!/api`, `!/server`, `!/web`, etc.), not a denylist — it's what actually controls what `vercel deploy` uploads, in place of `.gitignore`. When a new top-level directory becomes part of the build (installCommand, buildCommand, or something `api/index.ts` imports), add a `!/<dir>` line for it there or it silently stops being deployed.
 - Integration env vars on Vercel are "sensitive": `vercel env pull` returns placeholders.
 - Crons in `vercel.json`: `/api/cron/sync` nightly, `/api/cron/pool` 01:15 UTC (8:15 PM Central), `/api/cron/nest` every 5 minutes. They require `Authorization: Bearer $CRON_SECRET`.
 
@@ -44,7 +45,7 @@ Solstice is the owner's personal Tesla Powerwall + solar + pool + AC monitor. On
 - **Day windows and DST**: `fetchDay` ends a day at `start + 24 h − 1 s`, so the DST-start day (2026-03-08) was fetched with a window that crosses midnight and stored zero rows, and the fall-back day loses its last hour. A day is marked synced even with zero buckets. Until Batch 2 fixes this, treat monthly totals containing those days as slightly low.
 - **jsonb `?|` never matches numeric arrays**: `pool_readings.circuits` stores numbers (`[2,3,6]`) and the `circuits ?| array['1','2']` predicates in `autopilot.ts`/`pool.ts` only match string elements, so the "used yesterday", pool-light and use-day signals never fire. Use `jsonb_array_elements_text` instead.
 - **Google consent screen is in Testing mode**, so Nest refresh tokens expire after 7 days and the app keeps reporting "linked" while every SDM call fails. Publish the consent screen (or re-link weekly) before relying on the AC cron.
-- **Vercel CLI deploys upload the working directory**; without a `.vercelignore` that lists `.env*`, `secrets/`, `data/` and `mockups/d-rooftop.html`, those files ride along as deployment sources. Add it before the next deploy.
+- **Vercel CLI deploys upload the working directory.** A root `.vercelignore` (see Deploying) now keeps `.env*`, `secrets/`, `data/`, `docs/`, `mockups/`, `scripts/`, `tests/` and `.claude/` off every deploy by only allow-listing `api/`, `server/`, `web/` and the handful of root config files the build reads.
 - **Workflow resume caching** (Claude tooling): cached agent results key on call order as well as prompt/options, so stopping and resuming a workflow re-runs stages whose call order changed.
 - `learnAcKw` runs two un-indexed `energy` scans per thermostat transition on every AC read and every 5-minute cron tick; it will exceed the 60 s function limit within about two weeks of Nest history. Fixed in Batch 4 (one query, index on `energy(site_id, epoch)`, hourly cache).
 - Both Autopilots run in `auto` by the owner's choice (confirmed 2026-09-25). Do not change either setting; the safety clamps in Phase 2 Batch 1 bound what they may write.
