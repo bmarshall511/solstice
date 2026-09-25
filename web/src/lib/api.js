@@ -15,6 +15,7 @@ const send = (method, path, body) => call(path, { method, headers: { 'Content-Ty
 export const api = {
   now: () => get('now'),
   day: date => get(`day?date=${date}`),
+  flows: (range, date) => get(`flows?range=${range}&date=${date}`),
   daily: days => get(`daily?days=${days}`),
   monthly: months => get(`monthly?months=${months}`),
   profile: days => get(`profile?days=${days}`),
