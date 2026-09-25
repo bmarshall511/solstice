@@ -163,7 +163,7 @@ function drawDayRing() {
   const home = Array(24).fill(0), solar = Array(24).fill(0);
   day.buckets.forEach(b => { const h = Math.floor(b.t); if (h < 24) { home[h] += b.home / 12; solar[h] += b.solar / 12; } });
   const p = S.pool, curve = p?.model?.curve, W = r => r && curve ? curve.reduce((a, c) => Math.abs(c.rpm - r) < Math.abs(a.rpm - r) ? c : a).watts : 0;
-  const hourly = src => Array.from({ length: 24 }, (_, h) => src?.[h] ? W(src[h].rpm) * src[h].frac / 1000 : 0);
+  const hourly = src => Array.from({ length: 24 }, (_, h) => src?.[h] ? (src[h].slices ? src[h].slices.reduce((a, r) => a + W(r) / 4, 0) : W(src[h].rpm) * src[h].frac) / 1000 : 0); // per 15-minute slice
   const extras = p?.extras?.hourlyToday ?? Array(24).fill(0);
   const poolNow = hourly(p?.current?.hourly).map((v, h) => v + extras[h]), pool = S.ringMode === 'pool' ? hourly(p?.plan?.hourly).map((v, h) => v + extras[h]) : poolNow;
   const high = S.highs?.[localDate()], slope = S.acSlope ?? 2.5, acDay = high != null ? Math.max(0, (high - 80) * slope) : 0;
