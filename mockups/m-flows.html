@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Solstice · Where every kWh went</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+:root{--ac:#ff9e66;--rest:#8d93a8}
+body{overflow:auto;background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}.stage{position:static;padding:24px 0 60px;align-items:flex-start}.phone{height:auto;max-height:none;overflow:visible}.screen{position:static;padding:34px 20px 40px;overflow:visible}.view{display:block}
+.frames{display:flex;gap:40px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+.frame{width:393px;max-width:100%}
+.fcap{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin:0 8px 10px}
+.ghost{margin-top:12px;height:58px;border:1px dashed var(--glass-b);border-radius:18px;display:grid;place-items:center;font-size:11.5px;color:var(--mute)}
+.card .h.fh{flex-wrap:wrap;gap:4px 8px}
+.card .h .ro{flex-basis:100%;font-size:12.5px;color:var(--dim)}
+.card .h .ro b{font:500 12.5px "JetBrains Mono";color:var(--text)}
+.flow3d{height:300px;touch-action:pan-y;cursor:pointer}
+.flow3d .labs{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.flow3d .labs>div{position:absolute;left:0;top:0;will-change:transform}
+.flow3d .lbl3d .n{font:500 11px "JetBrains Mono";color:var(--text)}
+.flow3d .lbl3d.e{padding:3px 7px}
+.flow3d .lbl3d.on{border-color:rgba(255,255,255,.4);color:var(--text)}
+.flow3d .lax{line-height:1.2}
+.card .landtip b{color:var(--text)}
+.card .kv{margin-top:12px}
+@media (max-width:900px){.stage{padding:0 0 30px}.frames{display:block}.frame{width:100%}.fcap{margin:22px 20px 0}}
+</style></head><body>
+<div class="stage">
+  <aside class="side"><div class="k">Mockup · History → where every kWh went</div><h2>Every kWh, from where it came to where it went.</h2>
+    <p>A new History card placed directly after the totals. It follows the Day / Week / Month / Year selector. Sources are on the left: solar, PEC and the Powerwalls discharging. Sinks are on the right: the home, the Powerwalls charging and export to PEC. Ribbon width is kWh. Colour runs from the source to the sink. The Home slab is split into pool, AC and everything else, and each part says where its number comes from. Tap a ribbon or a slab to highlight it. Tap Home again to step through AC, pool and the rest. Move the pointer, or drag sideways, to tilt the view up to 12°.</p>
+    <div class="demo"><h4>What's real vs mocked</h4><p>Real in Phase 2: one read-only <code>/api/flows</code> query that sums Tesla's stored 5-minute rows. Pool kWh comes from ScreenLogic readings, or from the schedule when readings are sparse. AC kWh comes from Nest cooling minutes × the learned kW, or from the heat model. Mocked here: every number, shaped like a hot September day and a 30-day month for this home. The $ uses a sample rate.</p></div></aside>
+
+  <div class="frames">
+    <!-- ================= FRAME 1 · DAY ================= -->
+    <div class="frame">
+      <div class="fcap">Frame 1 · Day</div>
+      <div class="phone"><div class="screen"><section class="view on">
+        <div class="hello"><div><h3>History</h3><p>Friday, September 25</p></div></div>
+        <div class="seg"><button class="on">Day</button><button>Week</button><button>Month</button><button>Year</button></div>
+        <div class="daynav"><button aria-label="Previous day">‹</button><span>Today</span><button aria-label="Next day" disabled>›</button></div>
+        <div class="ghost">Day chart, legend and totals · unchanged</div>
+
+        <div class="card" data-flow="today">
+          <div class="h fh"><b>Where every kWh went · Today</b><span class="ro"></span></div>
+          <div class="ring3d flow3d"></div>
+          <div class="legend" style="justify-content:flex-start;margin-top:8px"><span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--grid)"></i>PEC</span><span><i style="background:var(--batt)"></i>Powerwalls</span><span><i style="background:var(--home)"></i>Home · pool</span><span><i style="background:var(--ac)"></i>AC</span><span><i style="background:var(--rest)"></i>rest</span><span style="color:var(--mute)">ribbons in kWh · ≈ estimated</span></div>
+          <div class="landtip"></div>
+          <div class="kv"></div>
+          <p class="fine"></p>
+        </div>
+
+        <div class="sect">Production landscape</div>
+        <div class="ghost">Unchanged</div>
+      </section></div></div>
+    </div>
+
+    <!-- ================= FRAME 2 · MONTH ================= -->
+    <div class="frame">
+      <div class="fcap">Frame 2 · Month</div>
+      <div class="phone"><div class="screen"><section class="view on">
+        <div class="hello"><div><h3>History</h3><p>Friday, September 25</p></div></div>
+        <div class="seg"><button>Day</button><button>Week</button><button class="on">Month</button><button>Year</button></div>
+        <div class="ghost">30-day bars, legend and totals · unchanged</div>
+
+        <div class="card" data-flow="month">
+          <div class="h fh"><b>Where every kWh went · Last 30 days</b><span class="ro"></span></div>
+          <div class="ring3d flow3d"></div>
+          <div class="legend" style="justify-content:flex-start;margin-top:8px"><span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--grid)"></i>PEC</span><span><i style="background:var(--batt)"></i>Powerwalls</span><span><i style="background:var(--home)"></i>Home · pool</span><span><i style="background:var(--ac)"></i>AC</span><span><i style="background:var(--rest)"></i>rest</span><span style="color:var(--mute)">ribbons in kWh · ≈ estimated</span></div>
+          <div class="landtip"></div>
+          <div class="kv"></div>
+          <p class="fine"></p>
+        </div>
+
+        <div class="sect">Production landscape</div>
+        <div class="ghost">Unchanged</div>
+      </section></div></div>
+    </div>
+  </div>
+</div>
+<p class="fine" style="text-align:center;margin:0 auto 40px;padding:0 20px;max-width:640px">Illustrative data. No price, loan, bill or location figures are shown.</p>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+
+/* ---------- tokens, formatting ---------- */
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const COL = { solar: css('--solar') || '#ffc15e', grid: css('--grid') || '#c4a2ff', batt: css('--batt') || '#4ef0a6', home: css('--home') || '#6cc4ff', ac: css('--ac') || '#ff9e66', rest: css('--rest') || '#8d93a8' };
+const RATE = { import: .1064, export: .0719 };          // sample "your rate" for the $ readout only
+const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const f1 = v => { if (v >= 100) return Math.round(v).toLocaleString('en-US'); const r = Math.round(v * 10) / 10; return Number.isInteger(r) ? String(r) : r.toFixed(1); };
+const usd = v => v < 10 ? `$${v.toFixed(2)}` : `$${Math.round(v).toLocaleString('en-US')}`;
+const pc = v => `${Math.round(v * 100)}%`;
+const sum = (a, b) => a + b;
+
+/* ---------- synthetic data, shaped like /api/flows ---------- */
+const DATA = {
+  today: { days: 1,
+    kwh: { solarHome: 22.5, solarBatt: 12.4, solarGrid: 5.1, battHome: 17.6, battGrid: .3, gridHome: 38.3, gridBatt: .6 },
+    homeMeasured: 78.8, residual: { home: .4, export: 0 },
+    home: { pool: { kwh: 4.1, src: 'from the schedule', how: 'from the applied schedule (ScreenLogic readings too sparse today)' },
+            ac: { kwh: 21, src: 'measured', how: 'measured: Nest cooling minutes × 2.0 kW learned' } },
+    sel: { type: 'edge', k: 'solarBatt' } },
+  month: { days: 30,
+    kwh: { solarHome: 690, solarBatt: 330, solarGrid: 130, battHome: 318, battGrid: 6, gridHome: 1272, gridBatt: 14 },
+    homeMeasured: 2283.1, residual: { home: 3.1, export: 0 },
+    home: { pool: { kwh: 78, src: 'from the schedule', how: 'from the schedule: 153 W @ 1,500 RPM, 2.6 kWh a day' },
+            ac: { kwh: 552, src: 'heat model', how: 'heat model: 1.15 kWh per °F above 80° (Nest readings cover 6 of 30 days)' } },
+    sel: { type: 'slice', k: 'ac' } },
+};
+
+const SRC = [ { name: 'Solar', col: COL.solar, noun: 'solar', short: 'solar', verb: 'made' },
+              { name: 'PEC grid', col: COL.grid, noun: 'what you bought', short: 'PEC', verb: 'bought' },
+              { name: 'Powerwalls', col: COL.batt, noun: 'Powerwall output', short: 'Powerwalls', verb: 'out' } ];
+const SNK = [ { name: 'Home', col: COL.home, short: 'home', verb: 'used' },
+              { name: 'Powerwalls', col: COL.batt, short: 'Powerwalls', verb: 'in' },
+              { name: 'PEC export', col: COL.grid, short: 'PEC', verb: 'sent' } ];
+const EDGES = [ { id: 'solarHome', s: 0, d: 0 }, { id: 'solarBatt', s: 0, d: 1 }, { id: 'solarGrid', s: 0, d: 2 },
+                { id: 'gridHome', s: 1, d: 0 }, { id: 'gridBatt', s: 1, d: 1, est: true },
+                { id: 'battHome', s: 2, d: 0 }, { id: 'battGrid', s: 2, d: 2, est: true } ];
+
+/* pooltwin.js materials */
+const glass = (c, op = .10) => new THREE.MeshPhysicalMaterial({ color: c, transparent: true, opacity: op, roughness: .15, metalness: 0, emissive: c, emissiveIntensity: .08, side: THREE.DoubleSide, depthWrite: false });
+
+/* ---------- the Sankey scene ---------- */
+function createSankey(card, D) {
+  const el = card.querySelector('.flow3d'), tip = card.querySelector('.landtip');
+  let W = el.clientWidth || 351, H = el.clientHeight || 300;
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); renderer.setPixelRatio(Math.min(1.5, devicePixelRatio)); renderer.setSize(W, H); el.prepend(renderer.domElement);
+  const labs = document.createElement('div'); labs.className = 'labs'; el.appendChild(labs);
+  const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(34, W / H, .1, 100); cam.position.set(0, .5, 13); cam.lookAt(0, 0, 0);
+  scene.add(new THREE.AmbientLight(0xffffff, .6));
+
+  // values; a zero edge is hidden
+  const E = EDGES.map(e => ({ ...e, v: D.kwh[e.id] || 0 })).filter(e => e.v > 0);
+  const srcTot = SRC.map((_, i) => E.filter(e => e.s === i).map(e => e.v).reduce(sum, 0));
+  const snkTot = SNK.map((_, i) => E.filter(e => e.d === i).map(e => e.v).reduce(sum, 0));
+  const K = 5 / Math.max(srcTot.reduce(sum), snkTot.reduce(sum));           // largest column = 5 units
+  E.forEach(e => e.w = Math.max(.08, e.v * K));
+  const GAP = .45, XS = -4, XD = 4, HW = .25, DEP = .6, YC = -.15;
+  const column = (tots, key) => { const hs = tots.map((t, i) => Math.max(.4, t * K, E.filter(e => e[key] === i).map(e => e.w).reduce(sum, 0)));
+    let y = YC + (hs.reduce(sum) + GAP * (hs.length - 1)) / 2; return hs.map(h => { const top = y; y -= h + GAP; return { top, h, cy: top - h / 2 }; }); };
+  const SC = column(srcTot, 's'), DC = column(snkTot, 'd');
+  // attach points: at a source, ribbons stack in sink order; at a sink, in source order
+  SC.forEach((n, i) => { const L = E.filter(e => e.s === i).sort((a, b) => a.d - b.d); let y = n.cy + L.map(e => e.w).reduce(sum, 0) / 2; L.forEach(e => { e.y0 = y - e.w / 2; y -= e.w; }); });
+  DC.forEach((n, i) => { const L = E.filter(e => e.d === i).sort((a, b) => a.s - b.s); let y = n.cy + L.map(e => e.w).reduce(sum, 0) / 2; L.forEach(e => { e.y1 = y - e.w / 2; y -= e.w; }); });
+
+  // slabs (glass + one merged edge buffer)
+  const slabs = {}, slabMeshes = [], ePos = [], eCol = [];
+  const slab = (key, x, cy, h, col) => { const geo = new THREE.BoxGeometry(HW * 2, h, DEP); const m = new THREE.Mesh(geo, glass(col, .12)); m.position.set(x, cy, 0); m.userData.key = key; scene.add(m); slabMeshes.push(m);
+    slabs[key] = { m, op: .12, em: .08 };
+    const eg = new THREE.EdgesGeometry(geo, 20), p = eg.attributes.position, c = new THREE.Color(col); for (let i = 0; i < p.count; i++) { ePos.push(p.getX(i) + x, p.getY(i) + cy, p.getZ(i)); eCol.push(c.r, c.g, c.b); } eg.dispose(); };
+  SC.forEach((n, i) => slab('s' + i, XS, n.cy, n.h, SRC[i].col));
+  DC.forEach((n, i) => { if (i) slab('d' + i, XD, n.cy, n.h, SNK[i].col); });
+  // Home: stacked rest (top), AC, pool (bottom), proportional to the split home total
+  const hn = DC[0], homeSplit = snkTot[0], pool = D.home.pool.kwh, ac = D.home.ac.kwh, rest = Math.max(0, homeSplit - pool - ac);
+  const slices = [['rest', rest, COL.rest], ['ac', ac, COL.ac], ['pool', pool, COL.home]]; const sliceY = {};
+  { let y = hn.top; slices.forEach(([k, v, c]) => { const h = Math.max(.05, v / homeSplit * hn.h); slab('h' + k, XD, y - h / 2, h, c); sliceY[k] = y - h / 2; y -= h; }); }
+  { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(ePos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(eCol, 3));
+    scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: .85 }))); }
+
+  // ribbons: 7 cubic Béziers × 24 samples, flat strips, merged into one draw call; per-ribbon uniforms indexed by aId
+  const N = 24, TRI = (N - 1) * 2, x0 = XS + HW, x1 = XD - HW, cx = (x1 - x0) * .45, ZS = [.12, 0, -.12];
+  const bez = (e, t) => { const u = 1 - t, y = u * u * u * e.y0 + 3 * u * u * t * e.y0 + 3 * u * t * t * e.y1 + t * t * t * e.y1;
+    const x = u * u * u * x0 + 3 * u * u * t * (x0 + cx) + 3 * u * t * t * (x1 - cx) + t * t * t * x1; return new THREE.Vector3(x, y, ZS[e.s]); };
+  const pos = [], uv = [], ids = [], idx = [];
+  E.forEach((e, j) => { let len = 0, prev = null;
+    for (let i = 0; i < N; i++) { const t = i / (N - 1), p = bez(e, t); if (prev) len += p.distanceTo(prev); prev = p;
+      pos.push(p.x, p.y + e.w / 2, p.z, p.x, p.y - e.w / 2, p.z); uv.push(t, 1, t, 0); ids.push(j, j);
+      if (i < N - 1) { const a = j * N * 2 + i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); } }
+    e.len = len; });
+  const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); rg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); rg.setAttribute('aId', new THREE.Float32BufferAttribute(ids, 1)); rg.setIndex(idx);
+  const pad = (a, v) => { while (a.length < 7) a.push(v); return a; }, maxV = Math.max(...E.map(e => e.v));
+  const U = { uT: { value: 0 },
+    uSrc: { value: pad(E.map(e => new THREE.Color(SRC[e.s].col)), new THREE.Color()) }, uDst: { value: pad(E.map(e => new THREE.Color(SNK[e.d].col)), new THREE.Color()) },
+    uOn: { value: pad(E.map(() => .85), 0) }, uLen: { value: pad(E.map(e => e.len), 1) },
+    uSpeed: { value: pad(E.map(e => calm ? .25 : .35 + 1.1 * e.v / maxV), 0) }, uEst: { value: pad(E.map(e => e.est ? 1 : 0), 0) } };
+  const ribbon = new THREE.Mesh(rg, new THREE.ShaderMaterial({ uniforms: U, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    vertexShader: `attribute float aId;uniform vec3 uSrc[7];uniform vec3 uDst[7];uniform float uOn[7],uLen[7],uSpeed[7],uEst[7];
+      varying vec2 vUv;varying vec3 vS,vD;varying float vOn,vLen,vSp,vEst;
+      void main(){int i=int(aId+.5);vUv=uv;vS=uSrc[i];vD=uDst[i];vOn=uOn[i];vLen=uLen[i];vSp=uSpeed[i];vEst=uEst[i];gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+    // the flowline dash from home.js, plus the source→sink blend over the last 30% and a dotted look for estimated edges
+    fragmentShader: `uniform float uT;varying vec2 vUv;varying vec3 vS,vD;varying float vOn,vLen,vSp,vEst;
+      void main(){float d=fract(vUv.x*vLen/.9-uT*vSp);float dash=smoothstep(.0,.15,d)*smoothstep(.75,.45,d);
+        float dotted=vEst>.5?mix(.35,1.,step(.5,fract(vUv.x*vLen/.25))):1.;
+        vec3 c=mix(vS,vD,smoothstep(.7,1.,vUv.x));float side=smoothstep(0.,.22,vUv.y)*smoothstep(1.,.78,vUv.y);
+        float a=(.2+.55*dash*vOn)*mix(.6,1.,side)*(.3+.7*vOn)*dotted;
+        gl_FragColor=vec4(c*(.75+.8*dash*vOn),clamp(a,0.,1.));
+        #include <colorspace_fragment>
+      }` }));
+  scene.add(ribbon); scene.updateMatrixWorld();   // so taps can pick before the first render
+
+  // ---------- DOM labels (projected by hand so they can be clamped inside the canvas) ----------
+  const labels = [];
+  const mk = (cls, html, p, ax, ay, extra = {}) => { const d = document.createElement('div'); d.className = cls; d.innerHTML = html; d.style.transform = 'none'; labs.appendChild(d); const L = { el: d, p, ax, ay, oy: 0, show: true, ...extra }; labels.push(L); return L; };
+  SC.forEach((n, i) => mk('lax', `${SRC[i].name} · ${f1(srcTot[i])}`, new THREE.Vector3(XS, n.top + .05, DEP / 2), .5, 1, { fixed: true }));
+  DC.forEach((n, i) => mk('lax', `${SNK[i].name} · ${f1(snkTot[i])}`, new THREE.Vector3(XD, n.top + .05, DEP / 2), .5, 1, { fixed: true }));
+  const lAc = mk('lbl3d', `AC <span class="n">${f1(ac)} kWh</span> · ${D.home.ac.src}`, new THREE.Vector3(XD - HW - .1, sliceY.ac, DEP / 2), 1, .5, { fixed: true });
+  const lPool = mk('lbl3d', `pool <span class="n">${f1(pool)} kWh</span> · ${D.home.pool.src}`, new THREE.Vector3(XD - HW - .1, sliceY.pool, DEP / 2), 1, 1, { fixed: true });
+  const edgeL = [...E].sort((a, b) => b.v - a.v).map(e => mk('lbl3d e', `<span class="n">${e.est ? '≈' : ''}${f1(e.v)} kWh</span>`, null, .5, .5, { edge: e }));
+  const project = p => { const v = p.clone().project(cam); return [(v.x + 1) / 2 * W, (1 - v.y) / 2 * H]; };
+  const rectOf = L => { const [x, y] = project(L.p); const l = clamp(x - L.w * L.ax, 4, W - L.w - 4), t = clamp(y - L.h * L.ay + L.oy, 4, H - L.h - 4); return { l, t, r: l + L.w, b: t + L.h }; };
+  const hits = (a, b, g = 3) => a.l < b.r + g && b.l < a.r + g && a.t < b.b + g && b.t < a.b + g;
+  const TRY = Array.from({ length: 19 }, (_, i) => .14 + i * .04).sort((a, b) => Math.abs(a - .5) - Math.abs(b - .5));   // midpoint first, then outward
+  function layout() {   // at the resting camera: fixed labels first, then up to 3 edge labels that find a clear spot along their ribbon
+    const saved = cam.position.clone(); cam.position.set(0, .5, 13); cam.lookAt(0, 0, 0); cam.updateMatrixWorld();
+    labels.forEach(L => { L.el.style.display = ''; L.w = L.el.offsetWidth; L.h = L.el.offsetHeight; L.oy = 0; });
+    const placed = labels.filter(L => L.fixed).map(L => { L.r = rectOf(L); return L.r; });
+    const ra = lAc.r, rp = lPool.r; if (hits(ra, rp, 2)) { lAc.oy = rp.t - 3 - ra.b; lAc.r = rectOf(lAc); placed[placed.indexOf(ra)] = lAc.r; }   // pool sits just above its thin slice; AC moves up to clear it
+    let shown = 0;
+    const selId = sel?.type === 'edge' ? sel.k : null;
+    [...edgeL].sort((a, b) => (b.edge.id === selId) - (a.edge.id === selId)).forEach(L => { L.show = false; if (shown >= 3) return;
+      const dys = L.edge.w > .5 ? [0, .3, -.3] : [0];   // a thick ribbon can carry its label off-centre, still on the ribbon
+      search: for (const dy of dys) for (const t of TRY) { L.p = bez(L.edge, t); L.p.y += dy * L.edge.w; const r = rectOf(L); if (!placed.some(q => hits(q, r))) { L.show = true; placed.push(r); shown++; break search; } } });
+    cam.position.copy(saved); cam.lookAt(0, 0, 0); cam.updateMatrixWorld(); place();
+  }
+  function place() { labels.forEach(L => { if (!L.show) { L.el.style.display = 'none'; return; } L.el.style.display = ''; const r = rectOf(L); L.el.style.transform = `translate(${r.l.toFixed(1)}px,${r.t.toFixed(1)}px)`; }); }
+
+  // ---------- selection, emphasis, readout ----------
+  let sel = D.sel, ready = false;
+  const HC = ['all', 'ac', 'pool', 'rest'];
+  const onT = E.map(() => .85), slabT = {};
+  function apply() {
+    Object.keys(slabs).forEach(k => slabT[k] = { op: .12, em: .08 });
+    const bright = k => slabT[k] = { op: .3, em: .35 }, dim = k => slabT[k] = { op: .05, em: .04 };
+    E.forEach((e, j) => onT[j] = .85);
+    if (sel?.type === 'edge') { const e = E.find(x => x.id === sel.k); E.forEach((x, j) => onT[j] = x === e ? 1 : .45); bright('s' + e.s); if (e.d) bright('d' + e.d); else ['rest', 'ac', 'pool'].forEach(k => bright('h' + k)); }
+    if (sel?.type === 'node') { E.forEach((x, j) => onT[j] = (sel.side === 's' ? x.s : x.d) === sel.i ? 1 : .45); bright(sel.side + sel.i); }
+    if (sel?.type === 'slice') { E.forEach((x, j) => onT[j] = x.d === 0 ? 1 : .45); ['rest', 'ac', 'pool'].forEach(k => sel.k === 'all' || sel.k === k ? bright('h' + k) : dim('h' + k)); }
+    edgeL.forEach(L => L.el.classList.toggle('on', sel?.type === 'edge' && L.edge.id === sel.k));
+    tip.innerHTML = tipText();
+    if (ready) layout();
+  }
+  function shares(list, tot, name) { return list.filter(x => x.v > 0).map(x => `${pc(x.v / tot)} ${name(x)}${x.est ? ' ≈' : ''}`).join(' · '); }
+  function tipText() {
+    if (!sel) return 'Tap a ribbon or a slab. Ribbon width is kWh; colour runs from where the energy came from to where it went.';
+    if (sel.type === 'edge') { const e = E.find(x => x.id === sel.k), S = SRC[e.s], T = SNK[e.d], $ = e.v * (e.d === 2 ? RATE.export : RATE.import);
+      return `<b>${S.name} → ${T.name}</b> · ${e.est ? '≈' : ''}${f1(e.v)} kWh · ${pc(e.v / srcTot[e.s])} of ${S.noun} · ${usd($)}${e.d === 2 ? ' credit' : ''} at your rate${e.est ? ' · estimated' : ''}`; }
+    if (sel.type === 'node' && sel.side === 's') { const i = sel.i; return `<b>${SRC[i].name}</b> · ${f1(srcTot[i])} kWh ${SRC[i].verb} · ${shares(E.filter(e => e.s === i), srcTot[i], e => SNK[e.d].short)}`; }
+    if (sel.type === 'node') { const i = sel.i; return `<b>${SNK[i].name}</b> · ${f1(snkTot[i])} kWh ${SNK[i].verb} · ${shares(E.filter(e => e.d === i), snkTot[i], e => SRC[e.s].short)}`; }
+    const k = sel.k;
+    if (k === 'all') return `<b>Home</b> · ${f1(homeSplit)} kWh used · ${shares(E.filter(e => e.d === 0), homeSplit, e => SRC[e.s].short)} · tap again for AC, pool and the rest`;
+    if (k === 'ac') return `<b>Home · AC</b> · ${f1(ac)} kWh · ${pc(ac / homeSplit)} of home use · ${D.home.ac.how}`;
+    if (k === 'pool') return `<b>Home · pool</b> · ${f1(pool)} kWh · ${pc(pool / homeSplit)} of home use · ${D.home.pool.how}`;
+    return `<b>Home · everything else</b> · ${f1(rest)} kWh · ${pc(rest / homeSplit)} of home use · what is left after the pool and the AC`;
+  }
+
+  // ---------- picking + parallax ----------
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), cv = renderer.domElement;
+  function pick(cx, cy) { const r = el.getBoundingClientRect();
+    for (const [dx, dy] of [[0, 0], [0, -6], [0, 6], [-6, 0], [6, 0], [0, -12], [0, 12]]) {
+      ndc.set((cx + dx - r.left) / r.width * 2 - 1, -((cy + dy - r.top) / r.height) * 2 + 1); ray.setFromCamera(ndc, cam);
+      const h = ray.intersectObjects([...slabMeshes, ribbon], false)[0]; if (h) return h; } return null; }
+  function tap(cx, cy) { const h = pick(cx, cy);
+    if (!h) sel = null;
+    else if (h.object === ribbon) { const e = E[Math.floor(h.faceIndex / TRI)]; sel = sel?.type === 'edge' && sel.k === e.id ? null : { type: 'edge', k: e.id }; }
+    else { const k = h.object.userData.key;
+      if (k[0] === 'h') sel = { type: 'slice', k: sel?.type === 'slice' ? HC[(HC.indexOf(sel.k) + 1) % HC.length] : 'all' };
+      else { const side = k[0], i = +k.slice(1); sel = sel?.type === 'node' && sel.side === side && sel.i === i ? null : { type: 'node', side, i }; } }
+    apply(); }
+  let yaw = 0, yawT = 0, down = null; const MAXYAW = 12 * Math.PI / 180;
+  cv.addEventListener('pointerdown', ev => { down = { x: ev.clientX, y: ev.clientY }; });
+  cv.addEventListener('pointermove', ev => { const r = el.getBoundingClientRect(); yawT = clamp(((ev.clientX - r.left) / r.width - .5) * 2, -1, 1) * MAXYAW; });
+  cv.addEventListener('pointerup', ev => { if (down && Math.hypot(ev.clientX - down.x, ev.clientY - down.y) < 8) tap(ev.clientX, ev.clientY); down = null; if (ev.pointerType !== 'mouse') yawT = 0; });
+  cv.addEventListener('pointerleave', () => { yawT = 0; down = null; });
+  cv.addEventListener('pointercancel', () => { yawT = 0; down = null; });
+
+  // ---------- loop (renders only while on screen) ----------
+  let vis = true, t = 0, last = performance.now(), lastYaw = NaN;
+  new IntersectionObserver(es => vis = es[0].isIntersecting, { rootMargin: '160px 0px' }).observe(el);
+  function frame(now) { requestAnimationFrame(frame); const dt = Math.min(.05, (now - last) / 1000); last = now; if (!vis || document.hidden) return; t += dt;
+    yaw += (yawT - yaw) * Math.min(1, dt * 5);
+    if (Math.abs(yaw - lastYaw) > 1e-5 || lastYaw !== lastYaw) { cam.position.set(13 * Math.sin(yaw), .5, 13 * Math.cos(yaw)); cam.lookAt(0, 0, 0); cam.updateMatrixWorld(); place(); lastYaw = yaw; }
+    U.uT.value = t; const k = Math.min(1, dt * 8);
+    E.forEach((e, j) => U.uOn.value[j] += (onT[j] - U.uOn.value[j]) * k);
+    Object.entries(slabs).forEach(([key, s]) => { const T = slabT[key]; s.op += (T.op - s.op) * k; s.em += (T.em - s.em) * k; s.m.material.opacity = s.op; s.m.material.emissiveIntensity = s.em; });
+    renderer.render(scene, cam); }
+  new ResizeObserver(() => { const w = el.clientWidth, h = el.clientHeight; if (!w || !h || (w === W && h === H)) return; W = w; H = h; renderer.setSize(W, H); cam.aspect = W / H; cam.updateProjectionMatrix(); layout(); }).observe(el);
+
+  // ---------- card text: header readout, totals, fine print ----------
+  const sunshine = (D.kwh.solarHome + D.kwh.battHome) / D.homeMeasured;
+  card.querySelector('.ro').innerHTML = `<b>${f1(Math.round(D.homeMeasured))} kWh</b> used · <b>${pc(sunshine)}</b> sunshine`;
+  const kv = [['Solar made', `${f1(srcTot[0])} kWh`], ['Home used · Tesla total', `${f1(D.homeMeasured)} kWh${D.days > 1 ? ` · ${f1(D.homeMeasured / D.days)}/day` : ''}`],
+    ['Bought from PEC', `${f1(srcTot[1])} kWh`], ['Sent to PEC', `${f1(snkTot[2])} kWh`], ['Powerwalls in / out', `${f1(snkTot[1])} / ${f1(srcTot[2])} kWh`],
+    ['Pool · AC · rest', `${f1(pool)} · ${f1(ac)} · ${f1(rest)} kWh`], ['Unaccounted', `${f1(D.residual.home + D.residual.export)} kWh`]];
+  card.querySelector('.kv').innerHTML = kv.map(([a, b]) => `<span>${a}</span><b>${b}</b>`).join('');
+  card.querySelector('.fine').textContent = `Powerwall → PEC and PEC → Powerwall (≈, dotted) are estimated from the stored totals while solar is present, until V3c. Tesla's home total is ${f1(D.residual.home)} kWh more than the split can place; that is shown as "unaccounted", not hidden. Sunshine counts solar used directly plus Powerwall output.`;
+
+  apply(); E.forEach((e, j) => U.uOn.value[j] = onT[j]); Object.entries(slabs).forEach(([key, s]) => { s.op = slabT[key].op; s.em = slabT[key].em; });
+  ready = true; layout(); document.fonts?.ready.then(layout);
+  requestAnimationFrame(frame);
+}
+
+document.querySelectorAll('[data-flow]').forEach(card => { try { createSankey(card, DATA[card.dataset.flow]); } catch (e) { console.error('sankey', e); } });
+</script></body></html>

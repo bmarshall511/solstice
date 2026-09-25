@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Solstice · Next 48 hours road</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+:root{--ac:#ff9e66;--rest:#8d93a8}
+body{overflow:auto;background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}.stage{position:static;padding:24px 0 60px;align-items:flex-start}.phone{height:auto;max-height:none;overflow:visible}.screen{position:static;padding:34px 20px 40px;overflow:visible}.view{display:block}
+.card{overflow:hidden}
+.road{height:260px;touch-action:pan-y;cursor:grab;outline:none;background:radial-gradient(120% 90% at 25% 100%,rgba(108,196,255,.06),rgba(0,0,0,.16))}
+.road:active{cursor:grabbing}
+.road .hud{top:10px;bottom:auto}
+.road .rl{position:absolute;left:0;top:0;padding:2px 6px;border-radius:7px;background:rgba(8,10,16,.62);border:1px solid rgba(255,255,255,.08);pointer-events:none;display:none;will-change:transform}
+.landtip .ph{color:var(--mute)}
+</style></head><body>
+<div class="stage">
+  <aside class="side"><div class="k">Mockup · Next 48 hours as a road</div><h2>Drive into tomorrow.</h2>
+    <p>The Now tab's "Next 48 hours" card keeps its title, legend and sentence. Only the chart changes: the SVG becomes a 260 px road. Solar is the near lane, the home's load is the middle lane, and the Powerwalls' charge is the wall at the back, with the 20% reserve dashed across it. The floor darkens at night and under cloud. The strip at the front shows when the pool runs and when the AC pre-cools or coasts. Today's applied windows are solid and tomorrow's planned ones are outlined. Drag sideways to drive into tomorrow, drag up or down to scroll, and tap any hour to see its numbers.</p>
+    <div class="demo"><h4>What's real vs mocked</h4><p>Mocked: every number (a Tuesday at 10 AM, Powerwalls at 57%, a pop-up storm on Wednesday evening). In the app, the lanes come from the same 48-hour forecast the SVG draws today (your usage profile plus Open-Meteo). The reserve comes from Tesla, and cloud and rain from Open-Meteo. The pool windows come from ScreenLogic's applied schedule and Autopilot's plan for tomorrow. The AC windows come from Solstice's plan; tomorrow's hours need a small new field on the AC week. The markers and the sentence use the same values, so they always match.</p></div></aside>
+  <div class="phone"><div class="screen"><section class="view on">
+
+    <div class="sect">Frame 1 · as the card opens</div>
+    <div class="card">
+      <div class="h"><b>Next 48 hours</b><span>forecast · your usage + Open-Meteo</span></div>
+      <div class="ring3d road" id="road1" aria-label="Next 48 hours road. Drag sideways to move through time, tap an hour for its numbers."><div class="hud">—</div></div>
+      <div class="landtip" id="tip1"><span class="ph">Tap any hour on the road for its numbers.</span></div>
+      <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--home)"></i>Home</span><span><i style="background:var(--batt)"></i>Battery %</span></div>
+      <p id="fcTxt" class="fcs" style="margin-top:10px">Powerwalls should be <b style="color:var(--batt)">full by Tue 1:40 PM</b>. Overnight they reach their <b style="color:var(--warn)">lowest 22% · Wed 6 AM</b>, above the 20% reserve, so you'll buy about <b style="color:var(--grid)">0 kWh</b> from PEC over the next two days.</p>
+    </div>
+
+    <div class="sect">Frame 2 · driven to +24 h, an hour tapped</div>
+    <div class="card">
+      <div class="h"><b>Next 48 hours</b><span>forecast · your usage + Open-Meteo</span></div>
+      <div class="ring3d road" id="road2" aria-label="Next 48 hours road. Drag sideways to move through time, tap an hour for its numbers."><div class="hud">—</div></div>
+      <div class="landtip" id="tip2"><span class="ph">Tap any hour on the road for its numbers.</span></div>
+      <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--home)"></i>Home</span><span><i style="background:var(--batt)"></i>Battery %</span></div>
+      <p class="fcs" style="margin-top:10px">Powerwalls should be <b style="color:var(--batt)">full by Tue 1:40 PM</b>. Overnight they reach their <b style="color:var(--warn)">lowest 22% · Wed 6 AM</b>, above the 20% reserve, so you'll buy about <b style="color:var(--grid)">0 kWh</b> from PEC over the next two days.</p>
+    </div>
+
+    <p class="fine" style="margin:18px 4px 0">Illustrative data. No price, loan, bill or location figures are shown.</p>
+  </section></div></div>
+</div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+
+/* ---------- synthetic forecast, shaped like forecast48() output ----------
+   one row per hour from now (Tue 10 AM): [solar kW, home kW, Powerwall SOC after the hour, grid kW (+ import, − export), cloud 0..1, rain %, pool rpm] */
+const RAW = [[5.65,2.25,0.692,0,0.08,4,1500],[6.32,2.25,0.836,0,0.08,4,1500],[6.63,3.8,0.935,0,0.08,4,1500],[6.56,3.8,1,-0.91,0.08,4,1500],[6.1,4.21,1,-1.89,0.08,4,2400],[4.89,3.8,1,-1.09,0.2,4,1500],[3.73,3.8,0.997,0,0.25,4,1500],[2.8,2.2,1,-0.51,0.08,4,1500],[1.28,1.9,0.976,0,0.08,4,1500],[0,1.75,0.907,0,0.08,4,0],[0,1.75,0.839,0,0.08,4,0],[0,2.05,0.759,0,0.08,4,0],[0,1.81,0.689,0,0.08,4,0],[0,1.81,0.618,0,0.08,4,0],[0,1.58,0.557,0,0.08,6,0],[0,1.58,0.495,0,0.08,6,0],[0,1.58,0.433,0,0.08,6,0],[0,1.58,0.372,0,0.08,6,0],[0,1.58,0.31,0,0.08,6,0],[0,1.58,0.249,0,0.08,6,0],[0.32,1,0.222,0,0.08,6,0],[1.9,1,0.254,0,0.08,6,0],[2.08,1,0.292,0,0.7,6,0],[2.57,2.1,0.308,0,0.8,6,0],[3.48,2.25,0.351,0,0.7,6,1500],[5.46,2.25,0.464,0,0.3,6,1500],[6.63,3.8,0.564,0,0.08,6,1500],[6.56,3.8,0.661,0,0.08,6,1500],[6.1,3.8,0.741,0,0.08,6,1500],[5.28,4.21,0.779,0,0.08,6,2400],[3.98,2.2,0.842,0,0.15,22,1500],[1.9,1.56,0.854,0,0.6,44,1500],[0.63,1.56,0.817,0,0.9,62,1500],[0,1.41,0.762,0,0.75,46,0],[0,1.41,0.707,0,0.5,24,0],[0,1.45,0.651,0,0.35,12,0],[0,1.35,0.598,0,0.08,6,0],[0,1.35,0.545,0,0.08,6,0],[0,1.12,0.502,0,0.08,4,0],[0,1.12,0.458,0,0.08,4,0],[0,1.12,0.414,0,0.08,4,0],[0,1.12,0.371,0,0.08,4,0],[0,1.12,0.327,0,0.08,4,0],[0,1.12,0.283,0,0.08,4,0],[0.32,1,0.257,0,0.08,4,0],[1.9,1,0.289,0,0.08,4,0],[3.37,1,0.372,0,0.08,4,0],[4.65,2.1,0.462,0,0.08,4,0]];
+const START_H = 10, SOC0 = .573, RESERVE = .20, CAP = 27, DAYS = ['Tue', 'Wed', 'Thu'];
+const P = RAW.map(([s, h, soc, g, c, pop, rpm], k) => { const H = START_H + k; return { k, s, h, soc, g, c, pop, rpm, day: DAYS[Math.floor(H / 24)], hh: H % 24 }; });
+const clock = (hh, m = 0) => `${hh % 12 || 12}${m ? ':' + String(m).padStart(2, '0') : ''} ${hh < 12 ? 'AM' : 'PM'}`;
+const when = (k, m = 0) => `${P[k].day} ${clock(P[k].hh, m)}`;
+
+// schedule windows in hours from now: today's are applied (solid), tomorrow's are Autopilot / Solstice plans (outlined)
+const WIN = [
+  { kind: 'pool',  day: 0, a: 0,  b: 9,  label: 'pool · 10 AM–7 PM' },
+  { kind: 'boost', day: 0, a: 4,  b: 5 },
+  { kind: 'pre',   day: 0, a: 2,  b: 7,  label: 'pre-cool · 12–5 PM' },
+  { kind: 'coast', day: 0, a: 8,  b: 11, label: 'coast · 6–9 PM' },
+  { kind: 'pool',  day: 1, a: 24, b: 33, label: 'pool plan · 10 AM–7 PM', plan: true },
+  { kind: 'boost', day: 1, a: 29, b: 30, plan: true },
+  { kind: 'pre',   day: 1, a: 26, b: 30, label: 'pre-cool plan · 12–4 PM', plan: true },
+  { kind: 'coast', day: 1, a: 31, b: 35, label: 'coast plan · 5–9 PM', plan: true },
+];
+const acAt = k => { const w = WIN.find(w => (w.kind === 'pre' || w.kind === 'coast') && k >= w.a && k < w.b); return w ? (w.kind === 'pre' ? 'pre-cool' : 'coast') : ''; };
+
+// markers, derived from the same numbers as the sentence
+const kFull = P.findIndex(p => p.soc > .995);
+const fullMin = Math.round((1 - (kFull ? P[kFull - 1].soc : SOC0)) * CAP / .95 / (P[kFull].s - P[kFull].h) * 60);
+const xFull = kFull + fullMin / 60;
+let kLow = 2; P.forEach((p, k) => { if (k > 1 && p.soc < P[kLow].soc) kLow = k; });
+const importKwh = P.reduce((a, p) => a + Math.max(0, p.g), 0);
+const FULL_TXT = `full by ${when(kFull, fullMin)}`, LOW_TXT = `lowest ${Math.round(P[kLow].soc * 100)}% · ${when(kLow)}`;
+const kRain = P.findIndex(p => p.pop >= 50);
+const SENTENCE = `Powerwalls should be <b style="color:var(--batt)">${FULL_TXT}</b>. Overnight they reach their <b style="color:var(--warn)">${LOW_TXT}</b>, above the ${RESERVE * 100}% reserve, so you'll buy about <b style="color:var(--grid)">${Math.round(importKwh)} kWh</b> from PEC over the next two days.`;
+document.querySelectorAll('.fcs').forEach(p => p.innerHTML = SENTENCE);
+
+const readout = k => { const p = P[k];
+  const pec = p.g > .05 ? `PEC ${p.g.toFixed(1)} kW` : p.g < -.05 ? `export ${(-p.g).toFixed(1)} kW` : 'PEC 0';
+  return [`<b>${when(k)}</b>`, `solar ${p.s.toFixed(1)} kW`, `home ${p.h.toFixed(1)} kW`, `Powerwalls ${Math.round(p.soc * 100)}%`, pec,
+    p.rpm ? `pool ${p.rpm.toLocaleString('en-US')} rpm` : 'pool off', acAt(k), p.pop >= 30 ? `rain ${p.pop}%` : ''].filter(Boolean).join(' · '); };
+
+// palette: the app's :root tokens (plus --ac / --rest, the Day Ring constants the spec promotes to tokens)
+const css = getComputedStyle(document.documentElement);
+const tok = n => new THREE.Color(css.getPropertyValue(n).trim());
+const PAL = { solar: tok('--solar'), batt: tok('--batt'), home: tok('--home'), grid: tok('--grid'), warn: tok('--warn'), out: tok('--out'), ac: tok('--ac'), rest: tok('--rest'), white: new THREE.Color(1, 1, 1) };
+const CSSVAR = { pool: 'var(--home)', pre: 'var(--batt)', coast: 'var(--grid)' };
+const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const V3 = THREE.Vector3;
+
+/* ---------- the road: 8 draw calls, ~1.3k triangles, MeshBasic only, no lights, no shadows ---------- */
+function createRoad(el, { d0 = 0, tapK = null } = {}) {
+  const DMAX = 34, DAY2_AT = 14, MAX_LABELS = 4;
+  let W = el.clientWidth, H = el.clientHeight;
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); renderer.setSize(W, H); el.prepend(renderer.domElement);
+  const scene = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(34, W / H, .1, 120);
+  // spec direction (−4,4,6)→(18,.6,0), pulled back 22% and aimed 3 h earlier so "now" sits inside the frame
+  const TGT = new V3(15, 1.3, 0), OFF = new V3(-22, 3.4, 6).multiplyScalar(1.22);
+  const m4 = new THREE.Matrix4(), q0 = new THREE.Quaternion();
+
+  // floor: 48 tiles, night/day and cloud shading per instance
+  const floor = new THREE.InstancedMesh(new THREE.PlaneGeometry(.94, 4.1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial(), 48);
+  const tileCol = P.map(p => { const night = p.hh < 7 || p.hh >= 20, dusk = p.hh === 7 || p.hh === 19;
+    return PAL.rest.clone().multiplyScalar((night ? .025 : dusk ? .045 : .09) * (1 - .6 * Math.max(0, p.c - .08) / .92)); });
+  P.forEach((p, k) => { m4.makeTranslation(k + .5, 0, .35); floor.setMatrixAt(k, m4); floor.setColorAt(k, tileCol[k]); });
+  floor.instanceColor.needsUpdate = true; scene.add(floor);
+
+  // lanes: vertical ribbons (indexed triangle strips), brighter at the top edge
+  function ribbon(xs, ys, z, col, bot, opacity, order) {
+    const n = xs.length, pos = new Float32Array(n * 6), cc = new Float32Array(n * 6), idx = [], b = col.clone().multiplyScalar(bot);
+    for (let i = 0; i < n; i++) { pos.set([xs[i], 0, z, xs[i], ys[i], z], i * 6); cc.set([b.r, b.g, b.b, col.r, col.g, col.b], i * 6); if (i < n - 1) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); } }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(cc, 3)); g.setIndex(idx);
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false }));
+    m.renderOrder = order; scene.add(m); return m;
+  }
+  const lx = [0, ...P.map(p => p.k + .5), 48];
+  const laneY = f => [f(P[0]), ...P.map(f), f(P[47])];
+  const sY = laneY(p => .25 * p.s), hY = laneY(p => .25 * p.h);
+  const socPts = [[0, SOC0]]; P.forEach((p, k) => { if (k === kFull && xFull < k + 1) socPts.push([xFull, 1]); socPts.push([k + 1, p.soc]); });
+  const socX = socPts.map(p => p[0]), socY = socPts.map(p => 2.5 * p[1]);
+  const socWall = ribbon(socX, socY, -1.2, PAL.batt, .1, .55, 2);
+  const homeLane = ribbon(lx, hY, 0, PAL.home, .6, .35, 3);
+  const solarLane = ribbon(lx, sY, 1.2, PAL.solar, .3, .62, 4);
+
+  // reserve: dashed, --out, at 2.5 × reserve on the SOC wall
+  const res = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new V3(0, 2.5 * RESERVE, -1.2), new V3(48, 2.5 * RESERVE, -1.2)]), new THREE.LineDashedMaterial({ color: PAL.out, dashSize: .35, gapSize: .25 }));
+  res.computeLineDistances(); res.renderOrder = 5; scene.add(res);
+
+  // schedule gutter: pool row (front) and AC row, z 1.72–2.26
+  const ROW = { pool: [2.02, 2.26], boost: [2.05, 2.23], pre: [1.72, 1.94], coast: [1.72, 1.94] }, KCOL = { pool: PAL.home, boost: PAL.home, pre: PAL.batt, coast: PAL.grid };
+  const gut = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial(), WIN.length);
+  const LP = [], LC = []; const seg = (a, b, c) => { LP.push(...a, ...b); LC.push(c.r, c.g, c.b, c.r, c.g, c.b); };
+  const boxEdges = (x0, x1, y0, y1, z0, z1, c) => { const X = [x0, x1], Y = [y0, y1], Z = [z0, z1];
+    for (const y of Y) for (const z of Z) seg([x0, y, z], [x1, y, z], c);
+    for (const x of X) for (const z of Z) seg([x, y0, z], [x, y1, z], c);
+    for (const x of X) for (const y of Y) seg([x, y, z0], [x, y, z1], c); };
+  WIN.forEach((w, i) => { const [z0, z1] = ROW[w.kind], hgt = w.kind === 'boost' ? .24 : .1, c = KCOL[w.kind];
+    m4.compose(new V3((w.a + w.b) / 2, hgt / 2, (z0 + z1) / 2), q0, new V3(w.b - w.a - .06, hgt, z1 - z0)); gut.setMatrixAt(i, m4);
+    gut.setColorAt(i, c.clone().multiplyScalar(w.plan ? .1 : w.kind === 'boost' ? 1 : .6));
+    if (w.plan) boxEdges(w.a + .03, w.b - .03, 0, hgt + .004, z0, z1, c); });
+  gut.instanceColor.needsUpdate = true; gut.renderOrder = 1; scene.add(gut);
+
+  // every thin line in one LineSegments: home edge, SOC edge, now line, midnights, planned outlines
+  for (let i = 0; i < lx.length - 1; i++) seg([lx[i], hY[i], 0], [lx[i + 1], hY[i + 1], 0], PAL.home);
+  for (let i = 0; i < socX.length - 1; i++) seg([socX[i], socY[i], -1.2], [socX[i + 1], socY[i + 1], -1.2], PAL.batt);
+  seg([0, 0, -1.2], [0, 2.95, -1.2], PAL.white); seg([0, .01, -1.75], [0, .01, 2.4], PAL.white);
+  const mid = PAL.rest.clone().multiplyScalar(.22);
+  P.forEach(p => { if (p.hh === 0) seg([p.k, .012, -1.75], [p.k, .012, 2.4], mid); });
+  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(LP, 3)); lg.setAttribute('color', new THREE.Float32BufferAttribute(LC, 3));
+  const lines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ vertexColors: true })); lines.renderOrder = 6; scene.add(lines);
+
+  // markers: full (--batt) and lowest (--warn)
+  const sph = new THREE.InstancedMesh(new THREE.SphereGeometry(.17, 16, 12), new THREE.MeshBasicMaterial(), 2);
+  m4.makeTranslation(xFull, 2.5, -1.2); sph.setMatrixAt(0, m4); sph.setColorAt(0, PAL.batt);
+  m4.makeTranslation(kLow + 1, 2.5 * P[kLow].soc, -1.2); sph.setMatrixAt(1, m4); sph.setColorAt(1, PAL.warn);
+  sph.instanceColor.needsUpdate = true; sph.renderOrder = 7; scene.add(sph);
+
+  /* ---------- DOM overlays: HUD + at most 4 labels, projected, clamped, de-overlapped ---------- */
+  const hud = el.querySelector('.hud');
+  const LBL = [
+    { txt: FULL_TXT, at: [xFull, 2.5, -1.2], color: 'var(--batt)', on: () => true },
+    { txt: LOW_TXT, at: [kLow + 1, 2.5 * P[kLow].soc, -1.2], w: true, on: () => true },
+    ...['pre', 'pool', 'coast'].flatMap(kind => WIN.filter(w => w.kind === kind).map(w => ({
+      txt: w.label, at: [kind === 'pool' ? w.a + 1.5 : (w.a + w.b) / 2, .12, (ROW[kind][0] + ROW[kind][1]) / 2], color: CSSVAR[kind],
+      on: d => (w.day === 1) === (d >= DAY2_AT) }))),
+    ...(kRain >= 0 ? [{ txt: `☂ rain ${P[kRain].pop}%`, at: [kRain + .5, 2.2, .6], color: 'var(--dim)', on: () => true }] : []),
+  ];
+  LBL.forEach(l => { const e = document.createElement('div'); e.className = 'lax rl' + (l.w ? ' w' : ''); if (l.color) e.style.color = l.color; e.textContent = l.txt; el.appendChild(e); l.el = e; });
+  const measure = () => LBL.forEach(l => { l.el.style.display = 'block'; l.bw = l.el.offsetWidth; l.bh = l.el.offsetHeight; l.el.style.display = 'none'; });
+  measure(); document.fonts?.ready.then(() => { measure(); kick(); });
+  const pv = new V3(), cv = new V3();
+  function placeLabels(d) {
+    const placed = [];
+    for (const l of LBL) {
+      let show = false;
+      if (placed.length < MAX_LABELS && l.on(d)) {
+        pv.set(...l.at); cv.copy(pv).applyMatrix4(cam.matrixWorldInverse); pv.project(cam);
+        const px = (pv.x + 1) / 2 * W, py = (1 - pv.y) / 2 * H;
+        if (cv.z < -.2 && px > -6 && px < W + 6 && py > 0 && py < H) {
+          let x = clamp(px - l.bw / 2, 4, W - 4 - l.bw), y = clamp(py - l.bh - 6, 4, H - 4 - l.bh), ok = true;
+          for (let n = 0; n < 4; n++) { const hit = placed.find(r => x < r.x + r.w + 2 && x + l.bw + 2 > r.x && y < r.y + r.h + 2 && y + l.bh + 2 > r.y);
+            if (!hit) break; y = hit.y - l.bh - 3; if (y < 4 || n === 3) { ok = false; break; } }
+          if (ok) { show = true; placed.push({ x, y, w: l.bw, h: l.bh }); l.el.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`; }
+        }
+      }
+      l.el.style.display = show ? 'block' : 'none';
+    }
+  }
+
+  /* ---------- tap readout ---------- */
+  const tip = el.nextElementSibling; let sel = null;
+  const HI = PAL.solar.clone().multiplyScalar(.28);
+  function select(k) { if (sel != null) floor.setColorAt(sel, tileCol[sel]); sel = k; floor.setColorAt(k, HI); floor.instanceColor.needsUpdate = true; tip.innerHTML = readout(k); kick(); }
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  function tap(e) { const r = el.getBoundingClientRect(); ndc.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1); ray.setFromCamera(ndc, cam);
+    const f = ray.intersectObject(floor)[0]; if (f) return select(f.instanceId);
+    const h = ray.intersectObjects([solarLane, homeLane, socWall])[0]; if (h) select(clamp(Math.floor(h.point.x), 0, 47)); }
+
+  /* ---------- drive: horizontal drag slides along x (damped), vertical drag scrolls the page ---------- */
+  let d = d0, dT = d0, st = null;
+  el.addEventListener('pointerdown', e => { if (e.button) return; st = { x: e.clientX, y: e.clientY, d: dT, id: e.pointerId, moved: false, drive: false }; });
+  el.addEventListener('pointermove', e => { if (!st || e.pointerId !== st.id) return; const dx = e.clientX - st.x, dy = e.clientY - st.y;
+    if (!st.moved && Math.hypot(dx, dy) > 6) { st.moved = true; if (Math.abs(dx) > Math.abs(dy)) { st.drive = true; try { el.setPointerCapture(e.pointerId); } catch {} } }
+    if (st.drive) { dT = clamp(st.d - dx * 24 / W, 0, DMAX); kick(); } });
+  el.addEventListener('pointerup', e => { if (st && !st.moved) tap(e); st = null; });
+  el.addEventListener('pointercancel', () => { st = null; });
+  el.tabIndex = 0; el.addEventListener('keydown', e => { if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { dT = clamp(dT + (e.key === 'ArrowRight' ? 3 : -3), 0, DMAX); kick(); e.preventDefault(); } });
+
+  /* ---------- render on demand, only while in view ---------- */
+  let visible = false, raf = 0, last = 0;
+  function kick() { if (!raf) raf = requestAnimationFrame(loop); }
+  function loop(t) { raf = 0; if (!visible) return; const dt = last ? Math.min(.05, (t - last) / 1000) : .016; last = t;
+    d = calm ? dT : d + (dT - d) * (1 - Math.exp(-dt * 8)); if (Math.abs(dT - d) < .003) d = dT;
+    cam.position.set(TGT.x + OFF.x + d, TGT.y + OFF.y, TGT.z + OFF.z); cam.lookAt(TGT.x + d, TGT.y, TGT.z); cam.updateMatrixWorld();
+    renderer.render(scene, cam); placeLabels(d);
+    const k = clamp(Math.round(d), 0, 47); hud.textContent = `${when(k)}${k === 0 ? ' · now · ← drag to drive →' : ` · +${k} h`}`;
+    if (d !== dT) kick(); else last = 0; }
+  new IntersectionObserver(([en]) => { visible = en.isIntersecting; if (visible) kick(); }, { rootMargin: '160px 0px' }).observe(el);
+  addEventListener('resize', () => { W = el.clientWidth; H = el.clientHeight; renderer.setSize(W, H); cam.aspect = W / H; cam.updateProjectionMatrix(); kick(); });
+  if (tapK != null) select(tapK);
+  kick();
+}
+
+createRoad(document.getElementById('road1'), { d0: 0 });
+createRoad(document.getElementById('road2'), { d0: 24, tapK: 28 });
+</script>
+</body></html>

@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Solstice · Home energy twin</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+:root{--ac:#ff9e66;--rest:#8d93a8}
+body{overflow:auto;background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}.stage{position:static;padding:24px 0 60px;align-items:flex-start}.phone{height:auto;max-height:none;overflow:visible}.screen{position:static;padding:34px 20px 40px;overflow:visible}.view{display:block}
+.view>.sect:first-child{margin-top:0}
+.cap{margin:8px 4px 0;line-height:1.5}
+/* Energy flow card with the twin: the canvas stays 370 px; the scrub row, chips and readout sit under it */
+.card.twin{overflow:hidden}
+.card.twin .house{margin:12px -16px 0;border-radius:0}
+.twin .house-canvas{touch-action:pan-y}
+.twin .hlbl{transform:none}
+.twin .hlbl b i.s{color:rgba(255,255,255,.72);font-weight:500}
+.twin .hlbl.link{pointer-events:auto;cursor:pointer}
+.twin .hlbl.edge-l small::before{content:"‹ "}.twin .hlbl.edge-r small::after{content:" ›"}
+.twin .hlead{transform-origin:0 0}
+.twin .house.nodata .hlbl{opacity:.35}
+.twinhud{right:12px;font-size:10.5px}
+.twinhud[hidden]{display:none}
+.twinhud .s{font:500 11px/1.45 Manrope,system-ui,sans-serif;color:rgba(242,244,248,.86);margin-top:3px}
+.twinhud em{font:normal 500 10px "JetBrains Mono";color:rgba(242,244,248,.5)}
+.twinhud .cov{display:inline-block;margin-left:4px;padding:0 6px;border-radius:999px;border:1px solid rgba(255,122,102,.42);color:#ffc3b8;font:500 9.5px/15px "JetBrains Mono";vertical-align:1px;white-space:nowrap}
+.twin-row{grid-template-columns:34px minmax(0,1fr) 56px auto;gap:10px;height:34px;margin-top:12px}
+.twin-row .play{all:unset;box-sizing:border-box;cursor:pointer;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--glass);border:1px solid var(--glass-b);color:var(--text);font-size:11px}
+.twin-row .play:focus-visible,.twin-row .livep:focus-visible{outline:2px solid rgba(108,196,255,.6);outline-offset:2px}
+.twin-row .tm{text-align:right}
+.twin-row .livep{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--glass);border:1px solid var(--glass-b);color:var(--dim)}
+.twin-row .livep i{width:6px;height:6px;border-radius:50%;background:var(--mute)}
+.twin-row .livep.on{background:rgba(78,240,166,.14);border-color:rgba(78,240,166,.45);color:var(--text)}
+.twin-row .livep.on i{background:var(--batt);box-shadow:0 0 8px var(--batt)}
+.twin .circ span.p.on{background:rgba(108,196,255,.13);border-color:rgba(108,196,255,.42);color:var(--text)}
+.twin .circ span.a.on{background:rgba(255,158,102,.13);border-color:rgba(255,158,102,.42);color:var(--text)}
+.twin .circ span.b.chg{background:rgba(78,240,166,.13);border-color:rgba(78,240,166,.42);color:var(--text)}
+.twin .circ span.b.dis{background:rgba(255,193,94,.13);border-color:rgba(255,193,94,.42);color:var(--text)}
+.twin .landtip{min-height:58px;overflow-wrap:anywhere}
+.endnote{text-align:center;padding:0 16px 40px}
+</style></head><body>
+<div class="stage">
+  <aside class="side"><div class="k">Mockup · Home energy twin</div><h2>Scrub the day, watch the house.</h2>
+    <p>The Now "Energy flow" card keeps today's live framing, 370 px canvas and title. The scene gains the pool, spa and equipment pad north of the patio, the AC condenser on the west wall, fill strips with a reserve tick on both Powerwalls, and pool and AC feed lines. Under the canvas: a scrub row, appliance chips and a running total. Drag the slider or press ▶ (1 hour per second) and the camera eases out to a wider framing while the flows, labels, HUD and sun replay the day. Live, 20 s idle, or letting go within 10 minutes of now brings back the live view.</p>
+    <div class="demo"><h4>What's real vs mocked</h4>
+      <p>From the app: the house, panels, wiring, sky and dash-flow shader (home scene), the pool outline (pool twin, rescaled to metres), the condenser and fan (thermal twin), and the label style.</p>
+      <p>Mocked: one synthetic day shaped like the home: about 71 kWh used, solar 37 kWh (about half), 2 × Powerwall 2 (27 kWh, 10 kW, reserve 20%), pump 153 W at 1,500 rpm 10a–7p, AC 2.0 kW pre-cooling 12–5 PM and coasting 5–9 PM. In the HUD, + means energy going into the Powerwalls or out to PEC. Where the pool and condenser sit is a placeholder (Q2). Frame 1 is seen live at 2:35 PM. Frames 2 and 3 are the same day seen at 10:40 PM, which is why they can replay 9 PM. Pool readings after 10 AM are missing on purpose, so replayed pool values fall back to the schedule.</p></div></aside>
+  <div class="phone"><div class="screen"><section class="view on">
+
+    <div class="sect">1 · Live, as today</div>
+    <div class="card twin" data-now="14.5833" data-h="14.5833" data-mode="live">
+      <div class="h"><b>Energy flow</b><span>live · 2:35 PM</span></div>
+      <div class="house"><div class="roofhud twinhud" hidden></div></div>
+      <div class="scrub twin-row"><button class="play" aria-label="Play the day">▶</button><input type="range" min="0" max="24" step="0.0833" value="14.5833" aria-label="Time of day"><span class="tm">2:35 PM</span><button class="livep on"><i></i>Live</button></div>
+      <div class="circ"><span class="p on">Pool 153 W</span><span class="a on">AC cooling 2.0 kW</span><span class="b chg">PW 64% ▲</span></div>
+      <div class="landtip">Since midnight…</div>
+    </div>
+    <p class="fine cap">Same camera, canvas and title as today's card. In this framing the pool and pad are off the left edge, so the POOL label sticks to that edge (drag to orbit round to them).</p>
+
+    <div class="sect">2 · Replay at 2:35 PM</div>
+    <div class="card twin" data-now="22.6667" data-h="14.5833" data-mode="replay">
+      <div class="h"><b>Energy flow</b><span>replay · 2:35 PM</span></div>
+      <div class="house"><div class="roofhud twinhud" hidden></div></div>
+      <div class="scrub twin-row"><button class="play" aria-label="Play the day">▶</button><input type="range" min="0" max="24" step="0.0833" value="14.5833" aria-label="Time of day"><span class="tm">2:35 PM</span><button class="livep"><i></i>Live</button></div>
+      <div class="circ"><span class="p on">Pool 153 W</span><span class="a on">AC cooling 2.0 kW</span><span class="b chg">PW 64% ▲</span></div>
+      <div class="landtip">Since midnight…</div>
+    </div>
+    <p class="fine cap">When you start scrubbing, the camera takes 600 ms to ease out to this framing, which fits the house, pool and pad. The pool reading is tagged (schedule) because pool data is missing for that hour, and the "pool 62%" chip shows how much of the day has pool data.</p>
+
+    <div class="sect">3 · Replay at 9 PM</div>
+    <div class="card twin" data-now="22.6667" data-h="21" data-mode="replay">
+      <div class="h"><b>Energy flow</b><span>replay · 9:00 PM</span></div>
+      <div class="house"><div class="roofhud twinhud" hidden></div></div>
+      <div class="scrub twin-row"><button class="play" aria-label="Play the day">▶</button><input type="range" min="0" max="24" step="0.0833" value="21" aria-label="Time of day"><span class="tm">9:00 PM</span><button class="livep"><i></i>Live</button></div>
+      <div class="circ"><span class="p">Pool off</span><span class="a on">AC cooling 2.0 kW</span><span class="b dis">PW 30% ▼</span></div>
+      <div class="landtip">Since midnight…</div>
+    </div>
+    <p class="fine cap">Night: the pump is off, the AC is back on after the 5–9 PM coast, the Powerwalls are running the house, and the lit windows turn cooler while the AC runs.</p>
+
+  </section></div></div>
+</div>
+<p class="fine endnote">Illustrative data. No price, loan, bill or location figures are shown.</p>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ================= synthetic day (5-minute samples, shaped like the home) ================= */
+const CAP = 27, PWMAX = 10, RESERVE = 20, ACKW = 2.016, POOLW = 153, POOLRPM = 1500, PEAK = 9;
+const REST = [1.6, 1.2, 1.0, .95, .95, 1.0, 1.2, 1.5, 1.3, 1.05, 1.0, 1.0, 1.05, 1.05, 1.05, 1.05, 2.0, 3.2, 3.5, 3.7, 3.6, 3.6, 4.4, 4.0, 1.6];
+const restKw = h => { const i = Math.min(23, Math.floor(h)), f = h - i; return REST[i] + (REST[i + 1] - REST[i]) * f; };
+const SOLP = 6.13, SR = 7.3, SS = 19.35;                     // array faces WSW, so the bell peaks mid-afternoon
+const bump = (h, c, w) => Math.exp(-((h - c) ** 2) / w);
+const cloudAt = h => .12 + .3 * bump(h, 9.8, 1.2) + .1 * bump(h, 17.5, .8);
+function solarKw(h) { if (h <= SR || h >= SS) return 0; const x = (h - SR) / (SS - SR); return SOLP * Math.pow(Math.sin(Math.PI * Math.pow(x, 1.29)), 1.5) * (1 - .12 * bump(h, 9.8, 1.2) - .18 * bump(h, 17.5, .8)); }
+const poolOn = h => h >= 10 && h < 19;                      // applied plan: Pool 10a–7p @ 1,500 rpm
+function acAt(h) {                                          // pre-cool 12–5 PM, coast 5–9 PM, otherwise Nest cycling
+  if (h >= 12 && h < 17) return { phase: 'pre-cool', on: true, set: 74 };
+  if (h >= 17 && h < 21) return { phase: 'coast', on: false, set: 78 };
+  const duty = h >= 21 ? .9 : h < 2 ? .6 : h < 7 ? .12 : .2;
+  return { phase: null, on: ((h * 2) % 1) < duty - 1e-9, set: 76 };
+}
+function indoorAt(h) {
+  if (h < 12) return 75.6 + .3 * Math.sin(h * 9);
+  if (h < 15) return 75.8 - 1.4 * (h - 12) / 3;
+  if (h < 17) return 74.4 - .2 * (h - 15) / 2;
+  if (h < 21) return 74.2 + 2.6 * (h - 17) / 4;
+  return 76.8 - .8 * Math.min(1, (h - 21) / 1.5);
+}
+function buildDay(soc0 = 100, share = .83) {
+  const pts = []; let soc = soc0;
+  for (let k = 0; k <= 288; k++) {
+    const h = k / 12, s = solarKw(h), ac = acAt(Math.min(h, 23.99)), pool = poolOn(h) ? POOLW / 1000 : 0, acKw = ac.on ? ACKW : 0, home = restKw(h) + pool + acKw;
+    let batt = 0, grid = 0; const sur = s - home;
+    if (sur > 0) { const ch = Math.min(sur * share, PWMAX, (100 - soc) / 100 * CAP * 12); batt = -ch; grid = -(sur - ch); }
+    else { const dis = Math.min(-sur, PWMAX, Math.max(0, (soc - RESERVE) / 100 * CAP * 12)); batt = dis; grid = -sur - dis; }
+    pts.push({ solar: s, home, pool, acKw, batt, grid, soc, ac, indoor: indoorAt(h), cloud: cloudAt(h) });
+    soc = Math.min(100, Math.max(0, soc - batt / 12 / CAP * 100));
+  }
+  return pts;
+}
+const DAY = buildDay();
+const CUM = [{ solar: 0, home: 0, pool: 0, ac: 0, imp: 0, exp: 0 }];
+for (let k = 1; k <= 288; k++) { const a = DAY[k - 1], p = CUM[k - 1];
+  CUM.push({ solar: p.solar + a.solar / 12, home: p.home + a.home / 12, pool: p.pool + a.pool / 12, ac: p.ac + a.acKw / 12, imp: p.imp + Math.max(0, a.grid) / 12, exp: p.exp + Math.max(0, -a.grid) / 12 }); }
+const cumAt = h => { const x = Math.max(0, Math.min(288, h * 12)), k = Math.min(287, Math.floor(x)), f = x - k, a = CUM[k], b = CUM[k + 1], o = {}; for (const key in a) o[key] = a[key] + (b[key] - a[key]) * f; return o; };
+// synthetic sun arc for a late-September day (no site coordinates): up 7:20 AM, down 7:26 PM, 59° at solar noon
+const sunAt = h => { const x = (h - 7.33) / 12.1; return { el: 59 * Math.sin(Math.PI * x), az: 90 + 180 * Math.max(-.15, Math.min(1.15, x)) }; };
+// pool readings exist before 10 AM and after 6:36 PM; the gap is filled from the schedule (source: 'schedule')
+const poolMeasured = h => h < 10 || h >= 18.6;
+const poolCoverage = now => (Math.min(now, 10) + Math.max(0, now - 18.6)) / now;
+function at(h) {
+  const x = Math.max(0, Math.min(288, h * 12)), k = Math.round(x), a = DAY[k], k0 = Math.min(287, Math.floor(x)), f = x - k0;
+  const L = key => DAY[k0][key] + (DAY[k0 + 1][key] - DAY[k0][key]) * f;
+  const running = a.pool > 0;
+  return { h, sun: sunAt(h), cloud: L('cloud'),
+    r: { solarKw: a.solar, homeKw: a.home, batteryKw: a.batt, gridKw: a.grid, soc: L('soc') },
+    pool: { running, rpm: running ? POOLRPM : 0, watts: running ? POOLW : 0, source: poolMeasured(h) ? 'measured' : 'schedule' },
+    ac: { on: a.ac.on, phase: a.ac.phase, set: a.ac.set, indoorF: L('indoor'), kw: a.acKw } };
+}
+
+/* ================= helpers ================= */
+const RAD = Math.PI / 180, TILT = 27 * RAD, W = 14, L = 24, WALL = 3.2, OH = .5;
+const THETA = Math.atan2(Math.sin(154 * RAD), -Math.cos(154 * RAD)); // local +z → bearing 154°
+const css = getComputedStyle(document.documentElement), tok = n => new THREE.Color(css.getPropertyValue(n).trim() || '#ffffff').getHex();
+const PAL = { solar: tok('--solar'), batt: tok('--batt'), home: tok('--home'), grid: tok('--grid'), warn: tok('--warn'), out: tok('--out'), ac: tok('--ac'), rest: tok('--rest') };
+const CALM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const fmt = h => { const m = Math.round(h * 60) % 1440, H = Math.floor(m / 60), M = m % 60; return `${H % 12 || 12}:${String(M).padStart(2, '0')} ${H < 12 ? 'AM' : 'PM'}`; };
+const kw = x => `${Math.abs(x) < .05 ? 0 : Math.abs(x).toFixed(1)} kW`;
+const EASE = (() => { const x1 = .2, y1 = .8, x2 = .2, y2 = 1; return t => { let s = t; for (let i = 0; i < 8; i++) { const x = 3 * (1 - s) ** 2 * s * x1 + 3 * (1 - s) * s * s * x2 + s ** 3 - t, dx = 3 * (1 - s) ** 2 * x1 + 6 * (1 - s) * s * (x2 - x1) + 3 * s * s * (1 - x2); if (Math.abs(dx) < 1e-6) break; s = clamp(s - x / dx, 0, 1); } return 3 * (1 - s) ** 2 * s * y1 + 3 * (1 - s) * s * s * y2 + s ** 3; }; })(); // --ease
+function tex(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; }
+const M = (x, y, z, ry = 0, rx = 0) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, 0)), new THREE.Vector3(1, 1, 1));
+// merge [geometry, matrix, colour] items into one vertex-coloured geometry: one draw call per material
+function mergeColored(items) {
+  const P = [], N = [], C = [], c = new THREE.Color();
+  for (const [geo, m, hex] of items) {
+    const g = (geo.index ? geo.toNonIndexed() : geo.clone()).applyMatrix4(m); if (!g.attributes.normal) g.computeVertexNormals();
+    c.set(hex); const p = g.attributes.position, n = g.attributes.normal;
+    for (let i = 0; i < p.count; i++) { P.push(p.getX(i), p.getY(i), p.getZ(i)); N.push(n.getX(i), n.getY(i), n.getZ(i)); C.push(c.r, c.g, c.b); }
+  }
+  const out = new THREE.BufferGeometry(); out.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); out.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); out.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); return out;
+}
+function mergeLines(items) { const P = []; for (const [geo, m] of items) { const g = geo.clone().applyMatrix4(m), p = g.attributes.position; for (let i = 0; i < p.count; i++) P.push(p.getX(i), p.getY(i), p.getZ(i)); } const out = new THREE.BufferGeometry(); out.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); return out; }
+// light tube for the dash-flow shader: one 8-sided cylinder per straight run, uv.x = distance along the whole feed
+function segTube(pts, r = .06, rad = 8) {
+  const V = pts.map(p => new THREE.Vector3(...p)), lens = V.slice(1).map((v, i) => v.distanceTo(V[i])), total = lens.reduce((a, b) => a + b, 0);
+  const pos = [], uv = [], idx = []; let acc = 0; const up = new THREE.Vector3(), n1 = new THREE.Vector3(), n2 = new THREE.Vector3(), d = new THREE.Vector3(), o = new THREE.Vector3();
+  for (let i = 0; i < lens.length; i++) {
+    d.subVectors(V[i + 1], V[i]).normalize(); up.set(Math.abs(d.y) > .9 ? 1 : 0, Math.abs(d.y) > .9 ? 0 : 1, 0); n1.crossVectors(d, up).normalize(); n2.crossVectors(d, n1);
+    const a = V[i].clone().addScaledVector(d, i ? -r : 0), b = V[i + 1].clone().addScaledVector(d, i < lens.length - 1 ? r : 0);
+    const ua = (acc - (i ? r : 0)) / total, ub = (acc + lens[i] + (i < lens.length - 1 ? r : 0)) / total, base = pos.length / 3;
+    for (let j = 0; j <= rad; j++) { const t = j / rad * Math.PI * 2; o.copy(n1).multiplyScalar(Math.cos(t) * r).addScaledVector(n2, Math.sin(t) * r);
+      pos.push(a.x + o.x, a.y + o.y, a.z + o.z, b.x + o.x, b.y + o.y, b.z + o.z); uv.push(ua, j / rad, ub, j / rad); }
+    for (let j = 0; j < rad; j++) { const A = base + 2 * j, B = A + 1, A2 = A + 2, B2 = A + 3; idx.push(A, B, A2, B, B2, A2); }
+    acc += lens[i];
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); return { geo: g, len: total };
+}
+// pooltwin.js water shader, unchanged
+const waterMat = () => new THREE.ShaderMaterial({ transparent: true, depthWrite: false, uniforms: { uT: { value: 0 }, uGlow: { value: 0 }, uFlow: { value: 0 }, uSize: { value: new THREE.Vector2(1, 1) } },
+  vertexShader: `varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+  fragmentShader: `varying vec2 vUv;uniform float uT,uGlow,uFlow;uniform vec2 uSize;
+    void main(){vec2 p=(vUv-.5)*uSize; float r=length(p/(uSize*.5)); float base=.22+.18*(1.-r);
+      float rings=0.; for(int i=0;i<3;i++){ float ph=fract(uT*.18+float(i)/3.); float rr=ph*1.15; rings+=smoothstep(.03,.0,abs(r-rr))*(1.-ph)*.5; }
+      float lanes=smoothstep(.85,1.,sin(p.x*4.+uT*2.2*uFlow)*.5+.5)*uFlow*.35*(1.-r*.7);
+      float shimmer=(sin(p.x*9.+uT*1.3)*sin(p.y*11.-uT*1.1))*.05;
+      vec3 col=mix(vec3(.26,.62,1.),vec3(.45,.95,1.),uGlow*.8);
+      float a=base+rings*(.4+uFlow)+lanes+shimmer+uGlow*.25; gl_FragColor=vec4(col*(1.+uGlow*.6),clamp(a,0.,.9));}` });
+
+/* ================= the house (home.js buildHouse) + extras (pool, spa, pad, condenser, PW strips) ================= */
+function buildHouse() {
+  const edgeMats = [];
+  const panelMat = new THREE.MeshStandardMaterial({ roughness: .25, metalness: .55, emissive: 0x1a2a66, emissiveIntensity: 0, map: tex(256, 400, (x, w, h) => {
+    x.fillStyle = '#12182b'; x.fillRect(0, 0, w, h); x.strokeStyle = 'rgba(150,170,220,.28)'; x.lineWidth = 3;
+    for (let i = 1; i < 6; i++) { x.beginPath(); x.moveTo(i * w / 6, 0); x.lineTo(i * w / 6, h); x.stroke(); } for (let j = 1; j < 10; j++) { x.beginPath(); x.moveTo(0, j * h / 10); x.lineTo(w, j * h / 10); x.stroke(); }
+    x.strokeStyle = 'rgba(210,220,240,.55)'; x.lineWidth = 8; x.strokeRect(0, 0, w, h); }) });
+  const winMat = new THREE.MeshStandardMaterial({ color: 0x6f7a8e, roughness: .08, metalness: .6, emissive: 0xffc98a, emissiveIntensity: 0 });
+  const g = new THREE.Group(); g.rotation.y = THETA;
+
+  function hipGeo(Wd, Ln, tilt, over) {
+    const w = Wd / 2 + over, l = Ln / 2 + over, H = w * Math.tan(tilt), r = Math.max(0, l - w);
+    const A = [-w, 0, -l], B = [w, 0, -l], C = [w, 0, l], D = [-w, 0, l], R1 = [0, H, -r], R2 = [0, H, r];
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute([A, D, R2, A, R2, R1, B, R1, R2, B, R2, C, A, R1, B, D, C, R2].flat(), 3)); geo.computeVertexNormals();
+    return { geo, w };
+  }
+  const main = hipGeo(W, L, TILT, OH), patio = hipGeo(7, 6, 22 * RAD, .3), mR = M(0, WALL, 0), pR = M(-5.5, 2.8, -14.5);
+  // walls, window frames, gateway, Powerwalls: one vertex-coloured mesh
+  const S = [[new THREE.BoxGeometry(W, WALL, L), M(0, WALL / 2, 0), 0x3b3f47], [new THREE.BoxGeometry(7, 2.8, 6), M(-5.5, 1.4, -14.5), 0x34373e]];
+  [-8.5, -5.5, 1.5, 4.5].forEach(z => S.push([new THREE.PlaneGeometry(1.6, 1.4), M(-W / 2 - .015, 1.7, z, -Math.PI / 2), 0x4a4f58]));
+  S.push([new THREE.BoxGeometry(.14, .75, .5), M(-W / 2 - .08, 1.6, 8.6), 0x4a4e57]);
+  [9.7, 10.6].forEach(z => S.push([new THREE.BoxGeometry(.16, 1.15, .75), M(-W / 2 - .1, .95, z), 0xf2f3f5]));
+  const solids = new THREE.Mesh(mergeColored(S), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .75, metalness: .06 })); solids.castShadow = solids.receiveShadow = true; g.add(solids);
+  const roofs = new THREE.Mesh(mergeColored([[main.geo, mR, 0x2a2c32], [patio.geo, pR, 0x1f2126]]), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85, metalness: .05, flatShading: true, side: THREE.DoubleSide }));
+  roofs.castShadow = roofs.receiveShadow = true; g.add(roofs);
+  const roofEdges = new THREE.LineSegments(mergeLines([[new THREE.EdgesGeometry(main.geo), mR], [new THREE.EdgesGeometry(patio.geo), pR]]), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .12 })); g.add(roofEdges); edgeMats.push(roofEdges.material);
+
+  // 30 SunPower modules on the west face, 3 rows × 10: one InstancedMesh + one merged edge LineSegments
+  const arr = new THREE.Group(); arr.position.set(-main.w, WALL, 0); arr.rotation.z = TILT; g.add(arr);
+  const pGeo = new THREE.BoxGeometry(1.558, .05, 1.046), panels = new THREE.InstancedMesh(pGeo, panelMat, 30), eArr = new THREE.EdgesGeometry(pGeo).attributes.position.array, eAll = new Float32Array(eArr.length * 30);
+  let n = 0, o = 0;
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 10; c++) { const px = .9 + (r + .5) * 1.591, py = .09, pz = 1.2 + (c - 4.5) * 1.079; panels.setMatrixAt(n++, new THREE.Matrix4().makeTranslation(px, py, pz));
+    for (let i = 0; i < eArr.length; i += 3) { eAll[o++] = eArr[i] + px; eAll[o++] = eArr[i + 1] + py; eAll[o++] = eArr[i + 2] + pz; } }
+  panels.castShadow = panels.receiveShadow = true; arr.add(panels);
+  const peGeo = new THREE.BufferGeometry(); peGeo.setAttribute('position', new THREE.BufferAttribute(eAll, 3));
+  const panelEdge = new THREE.LineBasicMaterial({ color: 0x8fb8ff, transparent: true, opacity: .15 }); edgeMats.push(panelEdge); arr.add(new THREE.LineSegments(peGeo, panelEdge));
+
+  g.add(new THREE.Mesh(mergeColored([-8.5, -5.5, 1.5, 4.5].map(z => [new THREE.PlaneGeometry(1.4, 1.2), M(-W / 2 - .02, 1.7, z, -Math.PI / 2), 0xffffff])), winMat));
+  const door = new THREE.Mesh(new THREE.PlaneGeometry(5, 2.3), new THREE.MeshStandardMaterial({ roughness: .7, map: tex(256, 256, (x, w, h) => { x.fillStyle = '#2a2d33'; x.fillRect(0, 0, w, h); x.fillStyle = 'rgba(0,0,0,.35)'; for (let j = 1; j < 8; j++) x.fillRect(0, j * h / 8 - 2, w, 4); }) }));
+  door.position.set(2.2, 1.2, L / 2 + .02); g.add(door);
+  const leds = new THREE.Mesh(mergeColored([9.7, 10.6].map(z => [new THREE.PlaneGeometry(.03, .5), M(-W / 2 - .19, .75, z - .3, -Math.PI / 2), 0xffffff])), new THREE.MeshBasicMaterial({ color: PAL.batt })); g.add(leds);
+
+  /* ---- extras (hidden in the Panels 'sun' view in the app) ---- */
+  const ex = new THREE.Group(); g.add(ex);
+  // Powerwall fill strips: base at y .45, scale.y = soc/100; dark track + --out reserve tick behind them
+  const strip = new THREE.Mesh(mergeColored([9.7, 10.6].map(z => [new THREE.PlaneGeometry(.6, 1).translate(0, .5, 0), M(-W / 2 - .187, 0, z + .03, -Math.PI / 2), 0xffffff])), new THREE.MeshBasicMaterial({ color: PAL.batt }));
+  strip.position.y = .45; ex.add(strip);
+  ex.add(new THREE.Mesh(mergeColored([...[9.7, 10.6].map(z => [new THREE.PlaneGeometry(.6, 1), M(-W / 2 - .184, .95, z + .03, -Math.PI / 2), 0x1a1d24]),
+    ...[9.7, 10.6].map(z => [new THREE.PlaneGeometry(.68, .03), M(-W / 2 - .19, .45 + RESERVE / 100, z + .03, -Math.PI / 2), PAL.out])]), new THREE.MeshBasicMaterial({ vertexColors: true })));
+  // pool: pooltwin outline (feet) → metres, centred at (−3, −23), long axis ≈ east-west
+  const FTM = .3048, pl = (x, z) => [-3 + (x - 16.65) * FTM, -23 + (z - 9.7) * FTM], F = (x, z, y = .08) => { const [X, Z] = pl(x, z); return new THREE.Vector3(X, y, Z); };
+  const outline = [[1, 7], [3, 3], [8, 1], [14, 1.5], [19, 3.5], [24, 2], [29, 3], [32.5, 7], [31.5, 12], [27, 16], [21, 18.2], [15, 17.5], [9, 18.4], [4, 16.5], [.8, 12]];
+  const oPts = new THREE.CatmullRomCurve3(outline.map(([x, z]) => F(x, z, 0)), true, 'catmullrom', .5).getPoints(120);
+  const shape = new THREE.Shape(oPts.map(p => new THREE.Vector2(p.x, -p.z))), sg = new THREE.ShapeGeometry(shape);
+  { const bb = new THREE.Box2(); oPts.forEach(p => bb.expandByPoint(new THREE.Vector2(p.x, -p.z))); const s2 = bb.getSize(new THREE.Vector2()), pos = sg.attributes.position, uv = sg.attributes.uv; for (let i = 0; i < pos.count; i++) uv.setXY(i, (pos.getX(i) - bb.min.x) / s2.x, (pos.getY(i) - bb.min.y) / s2.y); uv.needsUpdate = true; }
+  const floor = new THREE.Mesh(sg, new THREE.MeshStandardMaterial({ color: 0x103552, roughness: .35 })); floor.rotation.x = -Math.PI / 2; floor.position.y = .02; floor.receiveShadow = true; ex.add(floor);
+  const water = new THREE.Mesh(sg, waterMat()); water.material.uniforms.uSize.value.set(6.5, 3.7); water.rotation.x = -Math.PI / 2; water.position.y = .05; ex.add(water);
+  ex.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(oPts.map(p => p.clone().setY(.07))), new THREE.LineBasicMaterial({ color: 0xd6dbe2, transparent: true, opacity: .55 })));
+  const [sx, sz] = pl(5.5, -1.5), SRd = 3.5 * FTM;                        // 7' spa at the north-west end, raised 0.3 m
+  const spaW = new THREE.Mesh(new THREE.CircleGeometry(SRd - .07, 24), waterMat()); spaW.material.uniforms.uSize.value.set(2, 2); spaW.rotation.x = -Math.PI / 2; spaW.position.set(sx, .33, sz); ex.add(spaW);
+  // equipment pad 0.76 × 2.4 m east of the pool; condenser 0.9 × 0.8 × 0.9 on the west wall between the last window and the gateway
+  const PX = 5.03, PZ = -18.03, PUMPZ = PZ - .91, CX = -W / 2 - .8, CZ = 6.2;
+  ex.add(Object.assign(new THREE.Mesh(mergeColored([
+    [new THREE.CylinderGeometry(SRd, SRd, .32, 28), M(sx, .16, sz), 0x9aa0a8],
+    [new THREE.BoxGeometry(.76, .1, 2.4), M(PX, .05, PZ), PAL.rest], [new THREE.BoxGeometry(.55, .5, .5), M(PX, .35, PUMPZ), 0x3f5566],
+    [new THREE.CylinderGeometry(.3, .3, 1.0, 16), M(PX, .6, PZ), 0xd8cfae], [new THREE.BoxGeometry(.6, .6, .6), M(PX, .4, PZ + .93), 0x6e727a],
+    [new THREE.BoxGeometry(.9, .8, .9), M(CX, .45, CZ), 0x575c64]]), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .7, metalness: .1 })), { castShadow: true, receiveShadow: true }));
+  const rotor = new THREE.Mesh(mergeColored([[new THREE.TorusGeometry(.17, .02, 6, 20), M(0, 0, 0), PAL.home], [new THREE.BoxGeometry(.3, .03, .02), M(0, 0, 0), 0xffffff]]), new THREE.MeshBasicMaterial({ vertexColors: true }));
+  rotor.position.set(PX - .29, .35, PUMPZ); rotor.rotation.y = Math.PI / 2; ex.add(rotor);
+  const fan = new THREE.Mesh(mergeColored([[new THREE.TorusGeometry(.3, .025, 6, 24), M(0, 0, 0), PAL.ac], [new THREE.BoxGeometry(.5, .03, .02), M(0, 0, 0), 0xffffff]]), new THREE.MeshBasicMaterial({ vertexColors: true }));
+  fan.position.set(CX, .87, CZ); fan.rotation.x = Math.PI / 2; ex.add(fan);
+  const pointsOf = (n, color, size) => { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(n * 3), 3)); const p = new THREE.Points(geo, new THREE.PointsMaterial({ color, size, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })); p.frustumCulled = false; ex.add(p); return p; };
+  const streamCurve = new THREE.CatmullRomCurve3([F(31, 9), F(37, 13), new THREE.Vector3(PX - .45, .3, PUMPZ - .1), new THREE.Vector3(PX, .8, PZ), new THREE.Vector3(PX - .35, .4, PZ + .93), F(34, 19.5), F(24, 19.6), F(14, 19.2), F(5, 16.5)], false, 'catmullrom', .2);
+  const stream = pointsOf(90, PAL.home, .28), exhaust = pointsOf(120, PAL.ac, .22);
+
+  // wiring (house-local). The four existing feeds plus pool and AC, all in the home.js dash-flow shader
+  const X = -W / 2 - .07;
+  const FEED = {
+    solar: [[X, WALL - .05, 6.9], [X, 2.05, 6.9], [X, 2.05, 8.45]],
+    home:  [[X, 1.6, 8.3], [X, 1.6, 5.3]],
+    batt:  [[X, 1.4, 8.9], [X, 1.4, 9.3]],
+    grid:  [[X, 1.25, 8.6], [X, .05, 8.6], [X - 3, .05, 8.6], [X - 3, .05, 14]],
+    pool:  [[X, 1.6, 5.3], [X, .05, 5.3], [X - 2.4, .05, 5.3], [X - 2.4, .05, -19.4], [PX - .28, .05, -19.4], [PX - .28, .05, PUMPZ], [PX - .28, .3, PUMPZ]],
+    ac:    [[X, 1.6, 5.3], [X, 1.0, CZ], [CX + .45, .8, CZ]],
+  };
+  const flows = {};
+  for (const [k, pts] of Object.entries(FEED)) {
+    const { geo, len } = segTube(pts), u = { uColor: { value: new THREE.Color() }, uT: { value: 0 }, uOn: { value: 0 }, uDir: { value: 1 }, uLen: { value: len }, uSpeed: { value: 1 } };
+    g.add(new THREE.Mesh(geo, new THREE.ShaderMaterial({ uniforms: u, side: THREE.DoubleSide,
+      vertexShader: `varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+      fragmentShader: `varying vec2 vUv;uniform vec3 uColor;uniform float uT,uOn,uDir,uLen,uSpeed;
+        void main(){float d=fract(vUv.x*uLen/.9-uT*uSpeed*uDir);float dash=smoothstep(.0,.15,d)*smoothstep(.75,.45,d);
+          gl_FragColor=vec4(mix(vec3(.16,.17,.2),uColor*1.6,uOn*(.35+.65*dash)),1.);}` })));
+    flows[k] = u;
+  }
+  g.updateMatrixWorld(true);
+  const local = (x, y, z) => g.localToWorld(new THREE.Vector3(x, y, z));
+  const anchors = { solar: local(-4.4, 5.3, 1.2), home: local(-W / 2, 2.4, 4.5), pw: local(-W / 2 - .1, .3, 10.2), grid: local(X - 3, .05, 13), ac: local(CX, .95, CZ), pool: local(PX, .75, PUMPZ) };
+  return { group: g, panelMat, winMat, leds, strip, water, spaW, rotor, fan, stream, streamCurve, exhaust, cond: [CX, CZ], flows, anchors, local, edgeMats };
+}
+const sunVec = ({ el, az }, v = new THREE.Vector3()) => v.set(Math.sin(az * RAD) * Math.cos(el * RAD), Math.sin(el * RAD), -Math.cos(az * RAD) * Math.cos(el * RAD));
+
+/* ================= one Energy flow card ================= */
+const KEYS = ['solar', 'home', 'pw', 'grid', 'ac', 'pool'];
+const NAMES = { solar: 'SOLAR', home: 'HOME', pw: 'POWERWALL · 2×', grid: 'PEC GRID', ac: 'AC', pool: 'POOL' };
+// label offsets from the anchor [dx, dy]; live = today's card (home.js lifts), twin = tuned for the wide framing
+const PREF = { live: { solar: [0, -40], home: [0, -54], pw: [0, 24], grid: [0, -34], ac: [0, -40], pool: [0, -40] },
+               twin: { solar: [0, -62], home: [-70, -40], pw: [0, 40], grid: [0, -60], ac: [-135, 44], pool: [0, -50] } };
+
+function createTwin(card) {
+  const host = card.querySelector('.house'), noteEl = card.querySelector('.h span'), hud = host.querySelector('.twinhud'), range = card.querySelector('input'), tm = card.querySelector('.tm'),
+    playB = card.querySelector('.play'), liveB = card.querySelector('.livep'), [chipP, chipA, chipB] = card.querySelectorAll('.circ span'), tip = card.querySelector('.landtip');
+  const NOW = +card.dataset.now;
+  const st = { mode: card.dataset.mode, h: +card.dataset.h, playing: false, dragging: false, idle: -1, k: card.dataset.mode === 'live' ? 0 : 1, tw: null, msg: 0, msgText: '' };
+
+  const canvas = document.createElement('canvas'); canvas.className = 'house-canvas'; host.prepend(canvas);
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  const DPR = Math.min(devicePixelRatio || 1, 1.5); renderer.setPixelRatio(DPR);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.shadowMap.autoUpdate = false; // shadows on demand
+  const scene = new THREE.Scene(); scene.fog = new THREE.Fog(0x1a2030, 45, 140);
+  const H = buildHouse(); scene.add(H.group);
+
+  const camera = new THREE.PerspectiveCamera(32, 353 / 370, .1, 500);
+  const controls = new OrbitControls(camera, canvas);
+  Object.assign(controls, { enableDamping: true, enablePan: false, enableZoom: false, maxPolarAngle: Math.PI * .48 });
+  canvas.style.touchAction = 'pan-y'; // OrbitControls sets 'none'; keep vertical page scroll on phones
+  const FR = { live: { pos: H.local(-38, 19, 12), tgt: H.local(-3, 2.2, 3.5), fov: 32 }, twin: { pos: H.local(-74, 55, -7), tgt: H.local(-2, 9, -7), fov: 34 } };
+  { const f = st.k ? FR.twin : FR.live; camera.position.copy(f.pos); controls.target.copy(f.tgt); camera.fov = f.fov; camera.updateProjectionMatrix(); }
+
+  const sky = { top: { value: new THREE.Color() }, hor: { value: new THREE.Color() }, sunDir: { value: new THREE.Vector3() }, glow: { value: new THREE.Color() }, cloud: { value: 0 }, t: { value: 0 } };
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(300, 32, 16), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, uniforms: sky,
+    vertexShader: `varying vec3 vD;void main(){vD=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+    fragmentShader: `varying vec3 vD;uniform vec3 top,hor,sunDir,glow;uniform float cloud,t;
+    float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+    float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x),f.y);}
+    float fbm(vec2 p){float s=0.,a=.5;for(int i=0;i<5;i++){s+=a*n(p);p*=2.;a*=.5;}return s;}
+    void main(){float y=max(vD.y,0.);vec3 c=mix(hor,top,pow(y,.6));float s=max(dot(vD,normalize(sunDir)),0.);c+=glow*(pow(s,300.)*2.5+pow(s,8.)*.4);
+      vec2 uv=vD.xz/(vD.y+.25)*1.4+vec2(t*.02,0.);float cl=smoothstep(1.-cloud*.95,1.25-cloud*.6,fbm(uv*1.3))*smoothstep(0.,.25,vD.y);
+      c=mix(c,mix(hor,vec3(.85,.88,.92),.35)*(.55+.6*max(0.,normalize(sunDir).y)),cl*.85);gl_FragColor=vec4(c,1.);}` })));
+  const hemi = new THREE.HemisphereLight(0xbfd2ff, 0x2a2d34, .9); scene.add(hemi);
+  const moon = new THREE.DirectionalLight(0x9fbcff, 0); moon.position.set(35, 55, -30); scene.add(moon, moon.target);
+  const nightFill = new THREE.DirectionalLight(0x8fa8d8, 0); scene.add(nightFill, nightFill.target);
+  const sun = new THREE.DirectionalLight(0xfff0d8, 3); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); sun.shadow.bias = -.0005; sun.shadow.normalBias = .04;
+  Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 160 }); scene.add(sun, sun.target);
+  const fill = new THREE.DirectionalLight(0xdfe8ff, .9); fill.position.copy(FR.live.pos); fill.target.position.copy(FR.live.tgt); scene.add(fill, fill.target);
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(70, 72), new THREE.MeshStandardMaterial({ color: 0x15171c, roughness: .95 })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+
+  // DOM overlays: six .hlbl labels with leaders, and the replay HUD
+  const els = {}, leads = {}, meta = {};
+  for (const k of KEYS) { const el = document.createElement('div'); el.className = 'hlbl' + (k === 'pool' || k === 'ac' ? ' link' : ''); host.appendChild(el);
+    const l = document.createElement('div'); l.className = 'hlead'; host.appendChild(l); els[k] = el; leads[k] = l; meta[k] = { html: null, w: 60, h: 34, dirty: true, edge: '' }; }
+  els.pool.addEventListener('click', () => note('POOL links to Insights → Appliances with the pool selected. It only opens the page; it changes nothing on the pool.'));
+  els.ac.addEventListener('click', () => note('AC links to Insights → Appliances with the AC selected. It only opens the page; it changes nothing on the thermostat.'));
+  const hudM = { html: null, rect: { x: 0, y: 0, w: 0, h: 0 }, dirty: true };
+
+  const sz = { w: 353, h: 370 };
+  function resize() { const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return; sz.w = w; sz.h = h; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+  new ResizeObserver(resize).observe(host); resize();
+  const setDpr = d => { renderer.setPixelRatio(d); renderer.setSize(sz.w, sz.h, false); };
+
+  /* ---- interactions ---- */
+  const touch = () => { st.idle = 20; };
+  function tweenTo(F) { const k1 = F === FR.twin ? 1 : 0;
+    if (CALM) { camera.position.copy(F.pos); controls.target.copy(F.tgt); camera.fov = F.fov; camera.updateProjectionMatrix(); st.k = k1; st.tw = null; return; }
+    st.tw = { t: 0, p0: camera.position.clone(), t0: controls.target.clone(), f0: camera.fov, k0: st.k, F, k1 }; }
+  function enterReplay() { if (st.mode === 'replay') return; st.mode = 'replay'; tweenTo(FR.twin); }
+  function goLive() { st.mode = 'live'; st.playing = false; st.idle = -1; st.h = NOW; tweenTo(FR.live); }
+  function release() { if (st.mode === 'replay' && !st.playing && Math.abs(st.h - NOW) <= 10 / 60) goLive(); }
+  function note(t) { st.msg = 3.2; st.msgText = t; }
+  range.addEventListener('pointerdown', () => { st.dragging = true; setDpr(Math.min(DPR, 1.25)); st.playing = false; touch(); });
+  const up = () => { if (!st.dragging) return; st.dragging = false; setDpr(DPR); release(); };
+  addEventListener('pointerup', up); addEventListener('pointercancel', up);
+  range.addEventListener('input', () => { st.h = +range.value; st.playing = false; enterReplay(); touch(); });
+  range.addEventListener('keydown', e => { if (!e.shiftKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return; e.preventDefault();
+    if (st.mode === 'live') st.h = NOW; st.h = clamp(st.h + (e.key === 'ArrowRight' ? 1 : -1), 0, 24); st.playing = false; enterReplay(); touch(); });
+  playB.addEventListener('click', () => { if (st.playing) { st.playing = false; touch(); return; }
+    if (st.mode === 'live' || st.h >= NOW - 1 / 60) st.h = 0; enterReplay(); st.playing = true; touch(); });
+  liveB.addEventListener('click', goLive);
+  canvas.addEventListener('pointerdown', () => { st.tw = null; if (st.mode === 'replay') touch(); });
+  range.style.background = `linear-gradient(90deg,rgba(255,255,255,.3) 0 ${(NOW / 24 * 100).toFixed(1)}%,rgba(255,255,255,.08) ${(NOW / 24 * 100).toFixed(1)}% 100%)`;
+
+  /* ---- per-frame scene update (home.js render, plus extras) ---- */
+  const C = { nightTop: new THREE.Color(0x05070d), nightHor: new THREE.Color(0x121a2c), duskTop: new THREE.Color(0x2a3560), duskHor: new THREE.Color(0xe79a68),
+    dayTop: new THREE.Color(0x3d6fb0), dayHor: new THREE.Color(0x9fb8d6), grayTop: new THREE.Color(0x4b5360), grayHor: new THREE.Color(0x7d8591) };
+  const warmWin = new THREE.Color(0xffc98a), coolWin = new THREE.Color(0xcfe6ff), panelBase = new THREE.Color(0x1a2a66), MUTE = 0x6b6f78;
+  const sd = new THREE.Vector3(), v = new THREE.Vector3(); let lastSun = null, coolK = 0, poolFlow = 0;
+  function applyScene(d, nodata, dt, T) {
+    const sp = d.sun, cloud = d.cloud; sunVec(sp, sd);
+    const upK = clamp((sp.el + 4) / 14, 0, 1), high = clamp(sp.el / 35, 0, 1);
+    sky.top.value.copy(C.nightTop).lerp(C.duskTop, upK).lerp(C.dayTop, high).lerp(C.grayTop, cloud * .7 * upK);
+    sky.hor.value.copy(C.nightHor).lerp(C.duskHor, upK).lerp(C.dayHor, high).lerp(C.grayHor, cloud * .7 * upK);
+    sky.sunDir.value.copy(sd); sky.glow.value.set(0xffd9a0).multiplyScalar(upK * (1 - cloud * .75)); sky.cloud.value = cloud; sky.t.value = T;
+    scene.fog.color.copy(sky.hor.value).multiplyScalar(.6); scene.fog.near = 45 + 25 * st.k; scene.fog.far = 140 + 60 * st.k; ground.scale.setScalar(1 + st.k);
+    sun.position.copy(sd).multiplyScalar(60); sun.intensity = 3.4 * clamp(sp.el / 8, 0, 1) * (1 - cloud * .7); hemi.intensity = .55 + .45 * upK;
+    moon.intensity = (1 - upK) * 1.1 * (1 - cloud * .5); nightFill.intensity = (1 - upK) * .7; nightFill.position.copy(camera.position); nightFill.target.position.copy(controls.target);
+    H.edgeMats.forEach(m => m.opacity = .12 + (1 - upK) * .3);
+    if (!lastSun || Math.abs(sp.el - lastSun.el) + Math.abs(sp.az - lastSun.az) >= .5) { renderer.shadowMap.needsUpdate = true; lastSun = { ...sp }; }
+
+    const r = nodata ? null : d.r, calmK = CALM ? .3 : 1;
+    const solar = r?.solarKw ?? 0;
+    H.panelMat.emissive.copy(panelBase); H.panelMat.emissiveIntensity = (1 - upK) * .15 + solar / PEAK * .5;
+    const cooling = !nodata && d.ac.on; coolK += ((cooling ? 1 : 0) - coolK) * Math.min(1, dt * 3);
+    H.winMat.emissive.copy(warmWin).lerp(coolWin, coolK); H.winMat.emissiveIntensity = Math.min(1.6, (1 - upK) * (.4 + (r?.homeKw ?? 1) / 4));
+    const bcol = !r ? MUTE : r.batteryKw < -.05 ? PAL.batt : r.batteryKw > .05 ? PAL.solar : MUTE;
+    H.leds.material.color.set(r ? (r.batteryKw < -.05 ? PAL.batt : r.batteryKw > .05 ? PAL.solar : 0x9aa3b0) : 0x9aa3b0);
+    H.strip.material.color.set(bcol); H.strip.scale.y = Math.max(.001, (r?.soc ?? 0) / 100);
+
+    const F = H.flows, set = (k, on, dir, color, amt) => { const f = F[k]; f.uOn.value = on ? 1 : 0; f.uDir.value = dir; f.uColor.value.set(color); f.uSpeed.value = CALM ? .3 : .6 + Math.min(1.6, amt / 3); f.uT.value = T; };
+    if (r) {
+      set('solar', r.solarKw > .05, 1, PAL.solar, r.solarKw);
+      set('batt', Math.abs(r.batteryKw) > .05, r.batteryKw < 0 ? 1 : -1, r.batteryKw < 0 ? PAL.solar : PAL.batt, Math.abs(r.batteryKw));
+      set('home', r.homeKw > .05, 1, r.solarKw >= r.homeKw ? PAL.solar : r.batteryKw > .05 && r.batteryKw >= Math.max(0, r.gridKw) ? PAL.batt : r.gridKw > .05 ? PAL.grid : PAL.solar, r.homeKw);
+      set('grid', Math.abs(r.gridKw) > .05, r.gridKw < 0 ? 1 : -1, r.gridKw < 0 ? PAL.solar : PAL.grid, Math.abs(r.gridKw));
+      set('pool', d.pool.running, 1, PAL.home, d.pool.watts / 1000);
+      set('ac', d.ac.on, 1, PAL.ac, d.ac.kw);
+    } else Object.values(F).forEach(f => { f.uOn.value = 0; });
+
+    // pool water, pump rotor, return stream; condenser fan and exhaust
+    const running = !nodata && d.pool.running, sp2 = running ? d.pool.rpm / 3450 : 0;
+    poolFlow += ((running ? .4 + sp2 : 0) - poolFlow) * Math.min(1, dt * 3);
+    H.water.material.uniforms.uFlow.value = poolFlow; H.water.material.uniforms.uT.value = T; H.spaW.material.uniforms.uT.value = T;
+    H.rotor.rotation.z += sp2 * 30 * dt * calmK; H.fan.rotation.z += (cooling ? 21 : 0) * dt * calmK;
+    const s = H.stream, sa = s.geometry.attributes.position; s.material.opacity += ((running ? .9 : 0) - s.material.opacity) * Math.min(1, dt * 4);
+    if (s.material.opacity > .01) { for (let i = 0; i < 90; i++) { const p = H.streamCurve.getPointAt((T * (1 + sp2 * 3) * .06 * calmK + i / 90) % 1, v); sa.setXYZ(i, p.x, p.y, p.z); } sa.needsUpdate = true; }
+    s.visible = s.material.opacity > .01;
+    const e = H.exhaust, ea = e.geometry.attributes.position, [cx, cz] = H.cond; e.material.opacity += ((cooling ? .6 : 0) - e.material.opacity) * Math.min(1, dt * 4);
+    if (e.material.opacity > .01) { for (let i = 0; i < 120; i++) { const u = ((T * .7 * calmK) + i * .43) % 1; ea.setXYZ(i, cx + Math.cos(i * 2.1) * .3 * (1 + u) - u * .6, .9 + u * 1.8, cz + Math.sin(i * 1.7) * .3 * (1 + u)); } ea.needsUpdate = true; }
+    e.visible = e.material.opacity > .01;
+  }
+
+  /* ---- DOM: labels, HUD, chips, readout ---- */
+  const put = (el, prop, val) => { if (el['_' + prop] === val) return false; el['_' + prop] = val; el[prop] = val; return true; };
+  const tog = (el, cls, on) => { if (el.classList.contains(cls) !== on) el.classList.toggle(cls, on); };
+  const sgn = x => Math.abs(x) < .05 ? '0.0' : (x > 0 ? '+' : '−') + Math.abs(x).toFixed(1);
+  const nb = s => s.replace(/ /g, '&nbsp;');
+  function labelHtml(k, d, nodata) {
+    if (nodata) return `<small>${NAMES[k]}</small><b>—</b>`;
+    const r = d.r;
+    switch (k) {
+      case 'solar': return `<small>SOLAR</small><b>${kw(r.solarKw)}</b>`;
+      case 'home': return `<small>HOME</small><b>${kw(r.homeKw)}</b>`;
+      case 'pw': return `<small>POWERWALL · 2×</small><b>${kw(r.batteryKw)} ${r.batteryKw < -.05 ? '<i style="color:var(--batt)">▲</i>' : r.batteryKw > .05 ? '<i style="color:var(--solar)">▼</i>' : '<i style="color:var(--mute)">·</i>'}${Math.round(r.soc)}%</b>`;
+      case 'grid': return `<small>PEC GRID</small><b>${r.gridKw > .05 ? `↓ ${kw(r.gridKw)}` : r.gridKw < -.05 ? `↑ ${kw(r.gridKw)}` : '0 kW'}</b>`;
+      case 'ac': return d.ac.on ? `<small>AC</small><b>${kw(d.ac.kw)}<i class="s">· cooling · ${d.ac.set}°</i></b>` : `<small>AC</small><b>0 kW<i class="s">· ${d.ac.phase === 'coast' ? 'coasting' : 'idle'} · ${Math.round(d.ac.indoorF)}°</i></b>`;
+      case 'pool': return d.pool.running ? `<small>POOL</small><b>${POOLW} W<i class="s">· ${POOLRPM.toLocaleString('en-US')} rpm</i></b>` : `<small>POOL</small><b>Off<i class="s">· pump</i></b>`;
+    }
+  }
+  function hudHtml(d, h, nodata) {
+    if (nodata) return `<div class="m">${nb(fmt(h))} · no&nbsp;data&nbsp;yet</div><div class="s">Sun and sky only. Data stops at ${fmt(NOW)}.</div>`;
+    const r = d.r;
+    const m = [fmt(h), `☀ ${r.solarKw.toFixed(1)} kW → home ${r.homeKw.toFixed(1)}`, `PW ${sgn(-r.batteryKw)}`, `PEC ${sgn(-r.gridKw)}`, `${Math.round(r.soc)}%`].map(nb).join(' · ');
+    const src = r.solarKw >= r.homeKw - .05 ? 'on sunshine' : r.batteryKw > Math.max(.05, r.gridKw) ? 'on the Powerwalls' : 'on PEC';
+    const tag = d.pool.source === 'schedule' ? ' <em>(schedule)</em>' : '';
+    const pool = d.pool.running ? `Pump at ${POOLRPM.toLocaleString('en-US')} rpm ${src}${tag}` : `Pump off${tag}`;
+    const ac = d.ac.on ? (d.ac.phase === 'pre-cool' ? `AC pre-cooling to ${d.ac.set}°` : `AC cooling to ${d.ac.set}°`) : d.ac.phase === 'coast' ? `AC coasting, ${Math.round(d.ac.indoorF)}° inside` : `AC idle, ${Math.round(d.ac.indoorF)}° inside`;
+    const pw = r.batteryKw < -.05 ? (r.soc > 99 ? 'Powerwalls full' : 'Powerwalls filling') : r.batteryKw > .05 ? 'Powerwalls running the house' : r.soc <= RESERVE + .5 ? 'Powerwalls at reserve, PEC supplying' : r.soc >= 99 ? 'Powerwalls full' : 'Powerwalls idle';
+    const cov = poolCoverage(NOW), covChip = cov < .9 ? `<span class="cov">pool ${Math.round(cov * 100)}%</span>` : ''; // nest is 100% (5-minute cron), so no chip
+    return `<div class="m">${m}</div><div class="s">${pool} · ${ac} · ${pw}${covChip}</div>`;
+  }
+  function updateDom(d, h, nodata, dt) {
+    put(noteEl, 'textContent', st.mode === 'live' ? `live · ${fmt(NOW)}` : `replay · ${fmt(h)}`);
+    put(tm, 'textContent', fmt(h)); if (!st.dragging) { const rv = String(h); if (range._v !== rv) { range._v = rv; range.value = rv; } }
+    tog(liveB, 'on', st.mode === 'live'); put(playB, 'textContent', st.playing ? '❚❚' : '▶'); playB.setAttribute('aria-label', st.playing ? 'Pause' : 'Play the day');
+    tog(host, 'nodata', nodata);
+    for (const k of KEYS) { const html = labelHtml(k, d, nodata); if (meta[k].html !== html) { meta[k].html = html; els[k].innerHTML = html; meta[k].dirty = true; } }
+    const showHud = st.mode === 'replay'; if (hud.hidden === showHud) { hud.hidden = !showHud; hudM.dirty = true; }
+    if (showHud) { const hh = hudHtml(d, h, nodata); if (hudM.html !== hh) { hudM.html = hh; hud.innerHTML = hh; hudM.dirty = true; } }
+    // chips
+    const r = d.r;
+    put(chipP, 'textContent', nodata ? 'Pool —' : d.pool.running ? `Pool ${POOLW} W` : 'Pool off'); tog(chipP, 'on', !nodata && d.pool.running);
+    put(chipA, 'textContent', nodata ? 'AC —' : d.ac.on ? `AC cooling ${d.ac.kw.toFixed(1)} kW` : d.ac.phase === 'coast' ? 'AC coasting' : 'AC idle'); tog(chipA, 'on', !nodata && d.ac.on);
+    put(chipB, 'textContent', nodata ? 'PW —' : `PW ${Math.round(r.soc)}% ${r.batteryKw < -.05 ? '▲' : r.batteryKw > .05 ? '▼' : '·'}`);
+    tog(chipB, 'chg', !nodata && r.batteryKw < -.05); tog(chipB, 'dis', !nodata && r.batteryKw > .05);
+    // readout: running totals since midnight (clamped to the data we have)
+    if (st.msg > 0) { st.msg -= dt; put(tip, 'innerHTML', st.msgText); }
+    else { const hh = Math.min(h, NOW), c = cumAt(hh);
+      put(tip, 'innerHTML', `<b>Midnight → ${fmt(hh)}</b> ☀ ${c.solar.toFixed(1)} · home ${c.home.toFixed(1)} · pool ${c.pool.toFixed(1)} · AC ${c.ac.toFixed(1)} · PEC in ${c.imp.toFixed(1)} / out ${c.exp.toFixed(1)} kWh${nodata ? ` · nothing recorded after ${fmt(NOW)} yet` : ''}`); }
+  }
+  function measure() {
+    for (const k of KEYS) if (meta[k].dirty) { meta[k].w = els[k].offsetWidth; meta[k].h = els[k].offsetHeight; meta[k].dirty = false; }
+    if (hudM.dirty) { hudM.rect = hud.hidden ? null : { x: hud.offsetLeft, y: hud.offsetTop, w: hud.offsetWidth, h: hud.offsetHeight }; hudM.dirty = false; }
+  }
+  const hits = (b, list) => list.some(o => o && b.x < o.x + o.w + 3 && b.x + b.w + 3 > o.x && b.y < o.y + o.h + 3 && b.y + b.h + 3 > o.y);
+  function layout() {
+    const Wc = sz.w, Hc = sz.h, placed = [hudM.rect];
+    for (const k of KEYS) {
+      const m = meta[k], el = els[k], ld = leads[k];
+      v.copy(H.anchors[k]).project(camera);
+      const ax = (v.x + 1) / 2 * Wc, ay = (1 - v.y) / 2 * Hc, off = v.z > 1 || ax < 0 || ax > Wc || ay < 0 || ay > Hc;
+      const pL = PREF.live[k], pT = PREF.twin[k], dx = pL[0] + (pT[0] - pL[0]) * st.k, dy = pL[1] + (pT[1] - pL[1]) * st.k;
+      let box, edge = '';
+      if (off) { // anchor outside the canvas: pin the label to that edge (clamped), no leader
+        edge = ax < Wc / 2 ? 'l' : 'r';
+        box = { x: edge === 'l' ? 6 : Wc - 6 - m.w, y: clamp(ay - m.h / 2, 6, Hc - m.h - 6), w: m.w, h: m.h };
+        for (let i = 0; i < 12 && hits(box, placed); i++) box.y = clamp(box.y + 14, 6, Hc - m.h - 6);
+      } else {
+        const cands = dy < 0 ? [dy, dy - 22, dy - 44, 24, 46, 68] : [dy, dy + 22, dy + 44, -40, -62, -84];
+        for (const c of cands) { const b = { x: clamp(ax + dx - m.w / 2, 4, Wc - 4 - m.w), y: c < 0 ? ay + c - m.h : ay + c, w: m.w, h: m.h };
+          if (b.y < 4 || b.y + b.h > Hc - 4 || hits(b, placed)) continue; box = b; break; }
+        if (!box) box = { x: clamp(ax + dx - m.w / 2, 4, Wc - 4 - m.w), y: clamp(dy < 0 ? ay + dy - m.h : ay + dy, 4, Hc - 4 - m.h), w: m.w, h: m.h };
+      }
+      if (m.edge !== edge) { tog(el, 'edge-l', edge === 'l'); tog(el, 'edge-r', edge === 'r'); m.edge = edge; m.dirty = true; }
+      el.style.left = box.x.toFixed(1) + 'px'; el.style.top = box.y.toFixed(1) + 'px';
+      if (off) ld.style.display = 'none';
+      else { const above = box.y + box.h / 2 < ay, ex = clamp(ax, box.x + 6, box.x + box.w - 6), ey = above ? box.y + box.h + 4 : box.y - 4, ddx = ex - ax, ddy = ey - ay, len = Math.hypot(ddx, ddy);
+        if (len < 4) ld.style.display = 'none';
+        else { ld.style.display = ''; ld.style.left = ax.toFixed(1) + 'px'; ld.style.top = ay.toFixed(1) + 'px'; ld.style.height = len.toFixed(1) + 'px'; ld.style.transform = `rotate(${Math.atan2(-ddx, ddy).toFixed(4)}rad)`; } }
+      placed.push(box);
+    }
+  }
+
+  function tick(dt, T) {
+    if (st.playing) { st.h += dt; if (st.h >= NOW) goLive(); }  // ▶ = 1 hour per second, up to now, then live
+    if (st.mode === 'replay' && !st.playing && !st.dragging && st.idle > 0 && !CALM) { st.idle -= dt; if (st.idle <= 0) goLive(); } // 20 s idle → live
+    if (st.tw) { const w = st.tw; w.t = Math.min(1, w.t + dt / .6); const e = EASE(w.t);
+      camera.position.lerpVectors(w.p0, w.F.pos, e); controls.target.lerpVectors(w.t0, w.F.tgt, e); camera.fov = w.f0 + (w.F.fov - w.f0) * e; camera.updateProjectionMatrix();
+      st.k = w.k0 + (w.k1 - w.k0) * e; if (w.t >= 1) st.tw = null; }
+    const h = st.mode === 'live' ? NOW : st.h, nodata = h > NOW + 1e-6, d = at(Math.min(h, 24));
+    applyScene(d, nodata, dt, T);
+    controls.update(); renderer.render(scene, camera);
+    updateDom(d, h, nodata, dt); measure(); layout();
+  }
+  return { card, tick, vis: false };
+}
+
+/* ================= run: one loop, only visible cards animate ================= */
+const twins = [...document.querySelectorAll('.card.twin')].map(createTwin);
+const io = new IntersectionObserver(es => es.forEach(e => { const t = twins.find(x => x.card === e.target); if (t) t.vis = e.intersectionRatio >= .1; }), { threshold: [0, .1, .5] });
+twins.forEach(t => io.observe(t.card));
+let last = performance.now(), T = 0, warm = 0;
+function loop(now) {
+  requestAnimationFrame(loop);
+  if (document.hidden) { last = now; return; }
+  const dt = Math.min(.05, (now - last) / 1000); last = now; T += dt; warm++;
+  for (const t of twins) if (t.vis || warm < 45) t.tick(dt, T); // every card draws its first frames even off-screen
+}
+requestAnimationFrame(loop);
+</script></body></html>

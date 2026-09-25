@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Solstice · Learning layer mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+body{overflow:auto;background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}.stage{position:static;padding:24px 0 60px;align-items:flex-start}.phone{height:auto;max-height:none;overflow:visible}.screen{position:static;padding:34px 20px 40px;overflow:visible}.view{display:block}
+
+/* ---- confidence badge chip (new; would live in style.css) ---- */
+.conf{display:inline-flex;align-items:center;gap:0;font:500 10.5px "JetBrains Mono";padding:2px 7px;border-radius:999px;white-space:nowrap;line-height:1.5;border:1px solid transparent;vertical-align:1px}
+.conf[data-t="m"]{color:var(--home);background:rgba(108,196,255,.12);border-color:rgba(108,196,255,.32)}
+.conf[data-t="l"]{color:var(--batt);background:rgba(78,240,166,.12);border-color:rgba(78,240,166,.32)}
+.conf[data-t="e"]{color:var(--solar);background:rgba(255,193,94,.12);border-color:rgba(255,193,94,.32)}
+.conf[data-t="n"]{color:var(--mute);background:rgba(255,255,255,.05);border-color:var(--glass-b)}
+.conf[data-t="u"]{color:var(--mute);background:transparent;border:1px dashed rgba(255,255,255,.22)}
+
+/* ---- Model Report card ---- */
+.mrhead{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.mrhead b{font-size:15px;font-weight:600;line-height:1.3}
+.headline{font-size:13px;color:var(--dim);line-height:1.5;margin-top:8px}
+.lrows{margin-top:14px}
+.lrow{padding:10px 0;border-top:1px solid var(--glass-b);cursor:pointer}
+.lrow:first-child{border-top:none}
+.lrow:active{background:rgba(255,255,255,.04)}
+.lrow-top{display:flex;align-items:center;gap:8px;min-width:0}
+.lrow-top .lbl{flex:1;font-size:12.5px;color:var(--text);font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dot{flex:none;width:8px;height:8px;border-radius:50%;box-sizing:border-box}
+.dot.learned{background:var(--batt);box-shadow:0 0 6px var(--batt)}
+.dot.estimated{background:linear-gradient(90deg,var(--solar) 50%,rgba(255,255,255,.1) 50%);border:1px solid var(--solar)}
+.dot.learning{background:transparent;border:1px solid var(--mute)}
+.dot.unscored{background:transparent;border:1px dashed rgba(255,255,255,.35)}
+.dot.measured{background:var(--home);box-shadow:0 0 6px var(--home)}
+.lrow-mid{display:flex;align-items:center;gap:8px;margin-top:5px;padding-left:16px}
+.lrow-mid svg{flex:none;display:block}
+.bias{flex:none;font:500 10.5px "JetBrains Mono";width:14px;text-align:center}
+.bias.up{color:var(--warn)}.bias.dn{color:var(--home)}.bias.ev{color:var(--mute)}
+.lnote{flex:1;font-size:11px;color:var(--mute);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lhelp{padding-left:16px;margin-top:4px;font-size:11px;color:var(--mute);line-height:1.4}
+.chev-r{flex:none;color:var(--mute);font-size:13px}
+
+/* ---- tap-through sheet (fixed overlay; the app anchors .sheet inside the phone frame, this mockup's page scrolls so it's pinned to the viewport instead) ---- */
+.mscrim{position:fixed;inset:0;background:rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:.3s;z-index:40}
+.msheet{position:fixed;left:50%;bottom:0;transform:translateX(-50%) translateY(110%);transition:transform .4s var(--ease);width:393px;max-width:calc(100% - 16px);max-height:82vh;overflow:auto;scrollbar-width:none;
+  border-radius:28px 28px 0 0;background:rgba(22,24,32,.98);border:1px solid var(--glass-b);padding:10px 18px 26px;z-index:41}
+.mopen .mscrim{opacity:1;pointer-events:auto}
+.mopen .msheet{transform:translateX(-50%) translateY(0)}
+.msheet .grab{width:38px;height:5px;border-radius:3px;background:rgba(255,255,255,.25);margin:0 auto 12px}
+.msheet .shead{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.msheet h4{font-size:17px;font-weight:600}
+.msheet .x{all:unset;cursor:pointer;flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.1);font-size:15px}
+.msheet .sub{font-size:12.5px;color:var(--dim);margin-top:4px;line-height:1.5}
+.scatter{margin-top:12px}
+.scatter svg{display:block;width:100%}
+
+/* ---- anomaly action buttons ---- */
+.abtns{display:flex;gap:8px;margin-top:12px}
+.abtns .link{margin-top:0;flex:1;justify-content:center;text-align:center}
+
+/* ---- autopilot trim suggestion ---- */
+.trim{margin-top:14px}
+.trim .link{margin-top:10px}
+
+.sect2{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:600;margin:20px 2px 4px}
+</style></head><body>
+<div class="stage">
+  <aside class="side"><div class="k">Mockup · learning layer (Insights → Home)</div><h2>How well Solstice knows your home.</h2>
+    <p>Every model Solstice runs — solar yield, the AC's kW, the pump curve, the 48-hour forecast, battery capacity — now carries a badge for how much to trust it: <b>measured</b>, <b>learned ±X%</b>, <b>estimated ±X%</b>, <b>learning · n of N</b>, or <b>unscored</b>. This mockup stacks the new "How well Solstice knows your home" report card, its tap-through raw-data sheet, the confidence badges dropped onto five existing cards, two persisted anomaly cards, the Data health row and the AC Autopilot trim suggestion — all as they'd appear in Insights → Home and nearby cards. Nothing here writes to ScreenLogic or Nest; the action buttons are inert in this mockup.</p>
+    <div class="demo"><h4>What's real vs mocked</h4><p>All numbers are illustrative and shaped like the design doc's example (76 kWh/day home, 2 Powerwalls, 2.0 kW learned AC, 153 W pool pump at 1,500 RPM). Tapping a Model Report row opens a real interactive sheet with a synthetic 30-point scatter. No price, loan, bill or location figures appear anywhere. The badge vocabulary, row layout, sparkline shape and anomaly copy follow the approved design doc §2, §6, §11 and §12.</p></div>
+  </aside>
+
+  <div class="phone"><div class="screen"><section class="view on">
+
+    <div class="sect">Insights · Home</div>
+
+    <!-- (1) Model Report card -->
+    <div class="card">
+      <div class="mrhead"><b>How well Solstice knows your home</b><span class="badge g">5 of 9 learned</span></div>
+      <p class="headline">Forecasts are 31% more accurate than 8 weeks ago.</p>
+      <div class="lrows" id="lrows"></div>
+      <div class="sect2" style="margin-top:16px">Learning log</div>
+      <div class="tline">
+        <div><i></i><span>Sep 22</span><p>AC draw now ±0.2 kW (was ±0.5) after 16 steps</p></div>
+        <div><i></i><span>Sep 21</span><p>Pump curve refit: 168 W at 1,500 RPM (was 153) <em>plan re-costed</em></p></div>
+      </div>
+      <p class="fine" style="margin-top:10px">Tap a row for the last 30 predicted-vs-actual pairs, the bias, and the error by model version.</p>
+    </div>
+
+    <div class="sect2">Confidence badges — dropped onto existing cards, only the noted element changed</div>
+
+    <!-- (3a) Now · Next 48 hours -->
+    <div class="card">
+      <div class="h"><b>Next 48 hours</b><span>forecast · solar ±11% · home ±14% · battery ±5 pts at 6 h</span></div>
+      <svg class="mini" viewBox="0 0 310 150" id="fc48mini"></svg>
+      <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--home)"></i>Home</span><span><i style="background:var(--batt)"></i>Battery %</span></div>
+      <p style="margin-top:10px">Powerwalls peak around <b style="color:var(--batt)">96%</b> (2 PM). After that you'll buy about <b>38 kWh (32–44)</b> from PEC overnight. <span class="conf" data-t="l">calibrated −6%</span></p>
+    </div>
+
+    <!-- (3b) Now · Today tile -->
+    <div class="stats">
+      <div class="stat"><span>Solar produced</span><b>41.2 kWh</b><em>81% of what today's sun allows <span class="conf" data-t="l">±4%</span></em></div>
+      <div class="stat"><span>Home used</span><b>58.4 kWh</b><em>63% from solar</em></div>
+      <div class="stat"><span>Bought from PEC</span><b>6.1 kWh</b><em>evening top-up</em></div>
+      <div class="stat"><span>Sent to PEC</span><b>2.8 kWh</b><em>midday surplus</em></div>
+    </div>
+
+    <!-- (3c) Insights · Appliances · AC stat -->
+    <div class="card">
+      <div class="h"><b>AC · today</b><span class="badge g">Linked · Nest</span></div>
+      <div class="two">
+        <div class="stat"><small>Today</small><b>32 kWh · 41%</b></div>
+        <div class="stat"><small>Run time</small><b>6 h 12 m · 52% duty</b></div>
+        <div class="stat"><small>AC draw · learned</small><b>2.0 kW · 16 steps</b><div style="margin-top:5px"><span class="conf" data-t="l">±0.2 kW</span></div></div>
+        <div class="stat"><small>Indoor · humidity</small><b>74° · 48%</b></div>
+      </div>
+    </div>
+
+    <!-- (3d) Insights · Appliances · Pool dial -->
+    <div class="card">
+      <div class="h"><b>Pump schedule</b><span class="seg2"><button class="on">Recommended</button></span></div>
+      <div class="dialwrap"><svg viewBox="0 0 320 320" id="dial24"></svg>
+        <div class="dialc"><small>Recommended</small><b>6.1 <i>kWh/day</i></b><span>5.6–6.8 kWh/day <span class="conf" data-t="l" style="margin-left:4px">±12%</span></span></div>
+      </div>
+    </div>
+
+    <!-- (3e) Now · Powerwall kv -->
+    <div class="card">
+      <div class="h"><b>Powerwall</b><span>2 × Powerwall 2</span></div>
+      <div class="pwtop"><div class="pwpct">62%</div><div><div class="pwstate" style="color:var(--batt)">Charging</div><div class="pwsub">3.1 kW in</div></div></div>
+      <div class="kv">
+        <span>Time to full</span><b>2 h 05 m</b>
+        <span>Backup at current usage</span><b>19 h 40 m</b>
+        <span>Backup reserve</span><b>20%</b>
+        <span>Usable per full discharge</span><b>24.1 kWh · −2% since Jul <span class="conf" data-t="m" style="margin-left:4px">measured</span></b>
+      </div>
+    </div>
+
+    <div class="sect2">Worth knowing — persisted anomalies</div>
+
+    <!-- (4a) pump.below_curve -->
+    <div class="card" style="border-color:rgba(255,122,102,.32)">
+      <div class="ins" style="--c:var(--warn)"><div class="ic">⚠</div><div>
+        <b>Pump running softer than its clean baseline</b> <time>· 3 days</time>
+        <p>Pump drawing 12% less than its clean-filter baseline at 1,500 RPM: it is moving less water. A loaded D.E. filter, a full basket or a partly closed valve does this.</p>
+      </div></div>
+      <div class="kv" style="margin-top:10px">
+        <span>Expected (clean baseline)</span><b>153 W</b>
+        <span>Measured (7-day median)</span><b>134 W</b>
+        <span>Threshold</span><b>≤ 135 W · 88% of baseline</b>
+        <span>Persisted</span><b>3 of last 5 covered days</b>
+        <span>Confound checked</span><b>none — filter age unchanged</b>
+      </div>
+      <div class="abtns"><button class="link">✓ I cleaned the filter</button><button class="link">Snooze 14 d</button></div>
+    </div>
+
+    <!-- (4b) ac.overrun -->
+    <div class="card" style="border-color:rgba(255,122,102,.32)">
+      <div class="ins" style="--c:var(--warn)"><div class="ic">⏱</div><div>
+        <b>AC ran longer than expected</b> <time>· 2 days</time>
+        <p>AC ran 1 h 40 m longer than your model expects for a 96° day. Filter, refrigerant charge or a door left open.</p>
+      </div></div>
+      <div class="kv" style="margin-top:10px">
+        <span>Expected runtime (degree-hour model)</span><b>3 h 50 m</b>
+        <span>Measured runtime</span><b>5 h 30 m</b>
+        <span>Threshold</span><b>&gt; 90 min over, 1.3× expected</b>
+        <span>Persisted</span><b>2 of last 3 days</b>
+        <span>Confound checked</span><b>setpoint steady, no away days this week</b>
+      </div>
+      <div class="abtns"><button class="link" style="flex:none;padding-left:22px;padding-right:22px;margin-left:auto;display:block">Snooze 7 d</button></div>
+    </div>
+
+    <!-- (5) Data health -->
+    <div class="card">
+      <div class="h"><b>Data health</b><span class="badge g">all good</span></div>
+      <div style="margin-top:8px">
+        <div class="health"><i></i>Tesla live status<b>12s ago</b></div>
+        <div class="health"><i></i>Energy history (5-min)<b>4m ago</b></div>
+        <div class="health"><i></i>History stored<b>437 days</b></div>
+        <div class="health"><i></i>Open-Meteo weather<b>live</b></div>
+        <div class="health"><i></i>ERCOT grid status<b>normal</b></div>
+        <div class="health"><i></i>Learning<b>last run 5:45 AM · 9 models scored</b></div>
+      </div>
+    </div>
+
+    <!-- (6) AC Autopilot with trim suggestion -->
+    <div class="card auto">
+      <div class="h"><b>Autopilot</b><span class="seg2"><button>Off</button><button>Suggest</button><button class="on">Auto</button></span></div>
+      <div class="status"><i></i><span>Plans each day at <b>6:00 AM</b> from the forecast · adjusts at noon from real solar · never leaves your comfort band</span></div>
+      <div class="trim">
+        <div class="rec"><b>Suggested trim from the last 3 pre-cool days</b><br>Coast shortened to 6 PM: the house reached 78° by 5:40 PM on Tue and Wed.
+          <button class="link">Use this</button>
+        </div>
+      </div>
+      <div class="tline" style="margin-top:16px">
+        <div><i></i><span>Tue 22</span><p>Pre-cool 1–5 PM to 72°, coast to 78° by 9 PM <em>−5.8 kWh</em></p></div>
+        <div><i></i><span>Mon 21</span><p>AC draw refit: 2.0 kW (was 2.2) after 16 load steps <em>±0.2 kW</em></p></div>
+      </div>
+    </div>
+
+    <p class="fine">Illustrative data. No price, loan, bill or location figures are shown.</p>
+
+  </section></div></div>
+</div>
+
+<!-- (2) tap-through sheet -->
+<div class="mscrim" id="mscrim"></div>
+<div class="msheet" id="msheet">
+  <div class="grab"></div>
+  <div class="shead"><h4 id="mTitle">Model</h4><button class="x" id="mClose">✕</button></div>
+  <p class="sub" id="mSub">—</p>
+  <div id="mBody"></div>
+</div>
+
+<script>
+/* ---------------- synthetic model data (illustrative only) ---------------- */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function sparkline(values, w, h){
+  if(!values) return '';
+  const max=Math.max(...values), min=0, bw=(w-(values.length-1)*1.5)/values.length;
+  let bars='';
+  values.forEach((v,i)=>{ const bh=Math.max(1,(v-min)/(max-min||1)*h); const x=i*(bw+1.5), y=h-bh;
+    bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="1" fill="rgba(78,240,166,${.35+.55*(i/(values.length-1))})"/>`; });
+  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">${bars}</svg>`;
+}
+const ROWS = [
+  {id:'solar.yield', dot:'learned', label:'Solar per sunlight', t:'l', v:'±4%', spark:[9,8,7.5,6.5,6,5.5,5,4.5], bias:-1, note:'212 days', unit:'kWh', mape:4, base:5.2, help:null},
+  {id:'solar.fcst', dot:'learned', label:"Tomorrow's solar", t:'l', v:'±11%', spark:[22,19,17,15,13,12,11.5,11], bias:-6, note:'61 days · calibrated −6%', unit:'kWh', mape:11, base:41, help:null},
+  {id:'pump.watts', dot:'learned', label:'Pump watts', t:'l', v:'±3%', spark:[6,5,4.5,4,3.5,3.2,3,3], bias:1, note:'1,500 & 2,400 RPM', unit:'W', mape:3, base:153, help:null},
+  {id:'pool.kwh', dot:'unscored', label:'Pool kWh/day', t:'u', v:'unscored', spark:null, bias:null, note:'readings cover 22% of pump hours', unit:'kWh', mape:null, base:2.6, help:'needs pool readings through more of the pump’s scheduled hours (coverage ≥ 80%)'},
+  {id:'ac.kw', dot:'learned', label:'AC draw', t:'l', v:'±0.2 kW', spark:[.6,.5,.45,.4,.35,.3,.28,.25], bias:0, note:'16 load steps', unit:'kW', mape:null, base:2.0, mad:.2, help:null},
+  {id:'ac.kwhday', dot:'estimated', label:'AC kWh/day', t:'e', v:'±34%', spark:[52,48,45,43,41,40,39,38], bias:9, note:'9 of 21 days', unit:'kWh', mape:34, base:32, help:'needs 12 more days with a full runtime reading'},
+  {id:'ac.saving', dot:'learning', label:'AC plan savings', t:'n', v:'learning · 3 of 10', spark:null, bias:null, note:'3 of 10 plan days', unit:'kWh', mape:null, base:6, help:'needs control days — a few days with Autopilot on Suggest instead of Auto'},
+  {id:'fc48.soc', dot:'learned', label:'Next 48 h battery %', t:'l', v:'±5 pts', spark:[18,16,15,14,13,12.5,12,12], bias:-2, note:'±5 pts at 6 h · ±12 pts at 24 h', unit:'pts', mape:null, base:62, mad:5, help:null},
+  {id:'battery.cap', dot:'measured', label:'Battery capacity', t:'m', v:'measured', spark:null, bias:null, note:'24.1 kWh/discharge · −2% since Jul', unit:'kWh', mape:null, base:24.1, help:null},
+];
+document.getElementById('lrows').innerHTML = ROWS.map((r,i)=>{
+  const biasDir = r.bias==null ? null : r.bias>1 ? 'up' : r.bias<-1 ? 'dn' : 'ev';
+  const biasArrow = biasDir==null ? '' : `<span class="bias ${biasDir}">${biasDir==='up'?'▲':biasDir==='dn'?'▼':'→'}</span>`;
+  return `<div class="lrow" data-i="${i}">
+    <div class="lrow-top"><i class="dot ${r.dot}"></i><span class="lbl">${r.label}</span><span class="conf" data-t="${r.t}">${r.v}</span><span class="chev-r">›</span></div>
+    <div class="lrow-mid">${r.spark ? sparkline(r.spark,58,18) : '<span style="width:58px;flex:none"></span>'}${biasArrow||'<span class="bias"></span>'}<span class="lnote">${r.note}</span></div>
+    ${r.help ? `<div class="lhelp">What would help: ${r.help}</div>` : ''}
+  </div>`;
+}).join('');
+
+/* ---------------- tap-through sheet ---------------- */
+function genPairs(seed, n, base, mapePct, biasPct, abs){
+  const rnd = mulberry32(seed); const pts=[];
+  for(let i=0;i<n;i++){
+    const noise = (rnd()-.5)*2; // -1..1
+    const relErr = abs ? noise*mapePct : noise*(mapePct/100);
+    const actual = abs ? base + (rnd()-.5)*mapePct*2.2 : base*(1+(rnd()-.5)*.5);
+    const bias = abs ? biasPct : biasPct/100;
+    const predicted = abs ? actual + bias + relErr : actual*(1+bias/100+relErr);
+    pts.push({p:predicted, a:actual, v: i < n*.5 ? 1 : 2});
+  }
+  return pts;
+}
+function scatterSvg(pts, unit){
+  const w=300,h=170,pad=28; const vals=pts.flatMap(p=>[p.p,p.a]); const lo=Math.min(...vals)*0.9, hi=Math.max(...vals)*1.08;
+  const X=v=>pad+(v-lo)/(hi-lo)*(w-pad-10), Y=v=>h-14-(v-lo)/(hi-lo)*(h-14-10);
+  let s = `<line x1="${X(lo)}" y1="${Y(lo)}" x2="${X(hi)}" y2="${Y(hi)}" stroke="rgba(255,255,255,.18)" stroke-dasharray="3 4"/>`;
+  pts.forEach(p=>{ s+=`<circle cx="${X(p.p).toFixed(1)}" cy="${Y(p.a).toFixed(1)}" r="2.6" fill="${p.v===1?'rgba(108,196,255,.75)':'rgba(78,240,166,.85)'}"/>`; });
+  s += `<text x="${pad}" y="${h-2}" font-size="8.5" fill="rgba(242,244,248,.4)" font-family="JetBrains Mono">predicted →</text>`;
+  s += `<text x="4" y="${(Y(lo)+Y(hi))/2}" font-size="8.5" fill="rgba(242,244,248,.4)" font-family="JetBrains Mono" transform="rotate(-90 4 ${(Y(lo)+Y(hi))/2})" text-anchor="middle">actual ${unit}</text>`;
+  return `<svg viewBox="0 0 ${w} ${h}">${s}</svg>`;
+}
+function openSheet(i){
+  const r = ROWS[i];
+  document.getElementById('mTitle').textContent = r.label;
+  const body = document.getElementById('mBody');
+  if(r.mape==null && !r.mad && r.dot!=='measured'){
+    document.getElementById('mSub').textContent = 'Not enough scored samples yet.';
+    body.innerHTML = `<p style="font-size:13px;color:var(--dim);line-height:1.55;margin-top:10px">${r.help || 'No predictions have been scored against an actual reading in the last 14 days.'}</p>`;
+    return;
+  }
+  if(r.dot==='measured'){
+    document.getElementById('mSub').textContent = 'A direct reading — no model to score.';
+    body.innerHTML = `<div class="kv" style="margin-top:10px"><span>Latest value</span><b>${r.base} ${r.unit}</b><span>Baseline (first 90 days)</span><b>${(r.base*1.02).toFixed(1)} ${r.unit}</b><span>Change</span><b>${r.note.split('·')[1]?.trim() || '—'}</b></div>`;
+    return;
+  }
+  document.getElementById('mSub').textContent = `Last 30 predicted-vs-actual pairs, in ${r.unit}. Dots: blue = older model version, green = current.`;
+  const abs = !!r.mad;
+  const pts = genPairs(i+7, 30, r.base, abs ? r.mad : r.mape, r.bias, abs);
+  const errs = pts.map(p=> abs ? p.p-p.a : (p.p-p.a)/p.a*100).sort((a,b)=>a-b);
+  const bias = (errs.reduce((s,e)=>s+e,0)/errs.length);
+  const p10 = errs[Math.floor(errs.length*.1)], p90 = errs[Math.floor(errs.length*.9)];
+  const v1 = pts.filter(p=>p.v===1), v2 = pts.filter(p=>p.v===2);
+  const mapeOf = arr => (arr.reduce((s,p)=> s + Math.abs(abs?(p.p-p.a):(p.p-p.a)/p.a*100),0)/arr.length);
+  body.innerHTML = `<div class="scatter">${scatterSvg(pts, r.unit)}</div>
+    <div class="kv" style="margin-top:8px">
+      <span>Bias</span><b>${bias>=0?'+':''}${bias.toFixed(1)}${abs?' '+r.unit:'%'}</span>
+      <span>p10 / p90 error</span><b>${p10.toFixed(1)} / ${p90.toFixed(1)}${abs?' '+r.unit:'%'}</b>
+      <span>v1 (older) · n=${v1.length}</span><b>±${mapeOf(v1).toFixed(1)}${abs?' '+r.unit:'%'}</b>
+      <span>v2 (current) · n=${v2.length}</span><b>±${mapeOf(v2).toFixed(1)}${abs?' '+r.unit:'%'}</b>
+    </div>`;
+}
+document.getElementById('lrows').addEventListener('click', e=>{
+  const row = e.target.closest('.lrow'); if(!row) return;
+  openSheet(+row.dataset.i);
+  document.getElementById('mscrim').parentElement; document.documentElement.classList.add('mopen');
+});
+function closeSheet(){ document.documentElement.classList.remove('mopen'); }
+document.getElementById('mClose').onclick = closeSheet;
+document.getElementById('mscrim').onclick = closeSheet;
+
+/* ---------------- tiny decorative charts on the confidence-badge cards ---------------- */
+(function(){
+  const s=document.getElementById('fc48mini'); const X=i=>10+i/47*295;
+  const solar=Array.from({length:48},(_,i)=>Math.max(0,Math.sin((i%24-6.5)/12.5*Math.PI))*38);
+  const home=Array.from({length:48},(_,i)=>18+Math.sin(i/6)*6);
+  const soc=Array.from({length:48},(_,i)=>50+Math.min(46,i*1.4)-Math.max(0,(i-30))*1.1);
+  const line=(f,c)=>`<polyline points="${f.map((v,i)=>`${X(i)},${140-v}`).join(' ')}" fill="none" stroke="${c}" stroke-width="1.6"/>`;
+  s.innerHTML = `<path d="M${X(0)},140 ${solar.map((v,i)=>`L${X(i)},${140-v}`).join(' ')} L${X(47)},140 Z" fill="rgba(255,193,94,.15)"/>` + line(home,'#6cc4ff') + line(soc.map(v=>v*.9),'#4ef0a6');
+})();
+(function(){
+  const s=document.getElementById('dial24'); const cx=160,cy=160,r=128; let o='';
+  o+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="20"/>`;
+  const C=2*Math.PI*r; const frac=(10/24);
+  o+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#4ef0a6" stroke-width="20" stroke-dasharray="${C*frac} ${C}" stroke-linecap="round" transform="rotate(-90 ${cx} ${cy})"/>`;
+  s.innerHTML=o;
+})();
+</script>
+</body></html>

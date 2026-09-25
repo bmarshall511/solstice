@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Solstice · UI fixes mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+body{overflow:auto;background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}.stage{position:static;padding:24px 0 60px;align-items:flex-start}.phone{height:auto;max-height:none;overflow:visible}.screen{position:static;padding:34px 20px 40px;overflow:visible}.view{display:block}
+
+/* ---------- mockup chrome (not app CSS) ---------- */
+.tag{display:flex;align-items:center;gap:6px;margin:12px 4px 0;font:600 10px Manrope,system-ui,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--mute)}
+.tag i{width:6px;height:6px;border-radius:50%;background:var(--warn);box-shadow:0 0 8px var(--warn)}.tag.p i{background:var(--batt);box-shadow:0 0 8px var(--batt)}
+.copy{padding-top:4px}
+.note{font-size:11px;color:var(--mute);line-height:1.55;margin:10px 4px 0}.note code{font:500 10.5px "JetBrains Mono";color:var(--dim)}
+.sub{font-size:11px;color:var(--dim);margin:10px 4px 0;font-weight:600}
+.foot{font-size:11px;color:var(--mute);text-align:center;margin-top:28px;line-height:1.5}
+
+/* F3: a static "scrolled" snapshot of the History view */
+.snap{position:relative;overflow:hidden;height:168px;margin:6px -4px 0;padding:0 4px;border-radius:0 0 22px 22px}
+.snap .seg{position:absolute;left:0;right:0;top:0;margin:0}
+.snap .card{margin-top:14px}
+
+/* F6 / F13: the Energy-flow house as a still image */
+.mock-house{background:linear-gradient(180deg,#1a2540 0%,#2b3a5a 44%,#3a4360 46%,#171a21 46.5%,#101218 100%)}
+.mock-house.out{background:linear-gradient(180deg,#24141a 0%,#3b1e21 44%,#4a2626 46%,#1a1214 46.5%,#120d0e 100%)}
+.mock-house::before{content:"";position:absolute;left:34%;top:40%;width:40%;height:24%;background:#3b3f47;border-left:1px solid rgba(255,255,255,.12)}
+.mock-house::after{content:"";position:absolute;left:30%;top:26%;width:48%;height:15%;background:#2a2c32;clip-path:polygon(0 100%,100% 100%,78% 0,22% 0)}
+.mock-house .hlbl,.mock-house .hlead{position:absolute}
+
+/* F9: the pool twin as a still image */
+.mock-pool{background:radial-gradient(60% 50% at 50% 60%,rgba(108,196,255,.14),transparent 70%),repeating-linear-gradient(0deg,rgba(108,196,255,.05) 0 1px,transparent 1px 24px),repeating-linear-gradient(90deg,rgba(108,196,255,.05) 0 1px,transparent 1px 24px)}
+.mock-pool::before{content:"";position:absolute;left:8%;top:36%;width:50%;height:36%;border:1px solid rgba(108,196,255,.7);border-radius:44px;background:rgba(108,196,255,.08)}
+.mock-pool::after{content:"";position:absolute;left:62%;top:34%;width:72px;height:72px;border:1px solid rgba(78,240,166,.8);border-radius:50%;background:rgba(78,240,166,.06)}
+.mock-pool .lbl3d{position:absolute;z-index:2}
+.mock-lead{position:absolute;height:1px;background:rgba(255,255,255,.45);pointer-events:none;z-index:1}
+
+/* ---------- proposed CSS, scoped under .fix so the "Today" copies keep the real cascade ---------- */
+/* F1 · Now/History stat tiles get their original design back (style.css 105–109) */
+.fix.f1 .stat{background:var(--glass);border-radius:18px;padding:12px 14px}
+.fix.f1 .stat b{display:block;font:300 22px Manrope,system-ui,sans-serif;margin-top:2px;letter-spacing:-.02em;word-break:normal}
+.fix.f1 .stat b small{display:inline;font:400 12px Manrope,system-ui,sans-serif;color:var(--dim);margin-left:2px;letter-spacing:0;text-transform:none}
+/* F2 · the Now status strip scrolls in one row again (style.css 193) */
+.fix.f2 .chips{flex-wrap:nowrap}
+/* F3 · the seg is not sticky in History: at this scroll position it has left with the chart */
+.fix.f3 .snap .seg{top:-30px}
+/* F4 · card headers: title never wraps, subtitle wraps right-aligned */
+.fix.f4 .card .h{gap:10px}.fix.f4 .card .h b{flex:none}.fix.f4 .card .h>span{min-width:0;text-align:right}
+/* F5 · Panels header */
+.fix.f5 .wx{flex:none;white-space:nowrap}
+/* F7 · AC delta tile */
+.fix.f7 .deltas b{white-space:normal}
+/* F8 · Autopilot signals: 3 × 2 at phone width */
+.fix.f8 .signals{grid-template-columns:repeat(3,1fr);gap:8px 4px}.fix.f8 .signals svg{max-width:64px;margin:0 auto}.fix.f8 .signals small{letter-spacing:.02em}
+</style></head><body>
+<div class="stage">
+  <aside class="side"><div class="k">Mockup · UI fixes</div><h2>Sixteen small fixes, one element each.</h2>
+    <p>Every pair shows the element as the live app renders it today (bugs included) and the proposed version underneath. Nothing else on the screen changes: the proposed CSS lives under a <b>.fix</b> class in this file only, so both copies share the real stylesheet.</p>
+    <div class="demo"><h4>What's real vs mocked</h4><p>"Today" blocks are the app's own markup styled by <b>web/src/style.css</b>, so the cascade bugs reproduce here without any JavaScript. The 3D house and the pool twin are stand-ins: a dark block with the labels placed where the live scene puts them at 393 px. Numbers are shaped like a September dawn (home 1.5 kW, 20.4 kWh used, both Powerwalls at the 20% reserve); no price, loan or bill figures.</p></div></aside>
+
+  <div class="phone"><div class="screen"><section class="view on">
+    <div class="card">
+      <div class="h"><b>16 fixes</b><span>Today vs Proposed</span></div>
+      <p>Each pair changes only the named element. <b style="color:var(--text)">Today</b> is the live markup with the live stylesheet, bugs included. <b style="color:var(--text)">Proposed</b> applies one override under a <code style="font:500 12px 'JetBrains Mono'">.fix</code> class, or the shorter copy, and nothing else.</p>
+    </div>
+
+    <!-- ================= F1 ================= -->
+    <div class="sect">F1 · Stat tiles</div>
+    <div class="tag t"><i></i>Today</div>
+    <div class="copy">
+      <div class="stats">
+        <div class="stat"><span>Solar produced</span><b>0.0<small>kWh</small></b><em>26% of what today's sun allows</em></div>
+        <div class="stat"><span>Home used</span><b>20.4<small>kWh</small></b><em>−1% from solar + battery</em></div>
+        <div class="stat"><span>Bought from PEC</span><b>20.6<small>kWh</small></b><em>≈ $2.19 at PEC rates</em></div>
+        <div class="stat"><span>Sent to PEC</span><b>0.0<small>kWh</small></b><em>≈ $0.00 credit</em></div>
+      </div>
+    </div>
+    <div class="tag p"><i></i>Proposed</div>
+    <div class="copy fix f1">
+      <div class="stats">
+        <div class="stat"><span>Solar produced</span><b>0.0<small>kWh</small></b><em>26% of what today's sun allows</em></div>
+        <div class="stat"><span>Home used</span><b>20.4<small>kWh</small></b><em>−1% from solar + battery</em></div>
+        <div class="stat"><span>Bought from PEC</span><b>20.6<small>kWh</small></b><em>≈ $2.19 at PEC rates</em></div>
+        <div class="stat"><span>Sent to PEC</span><b>0.0<small>kWh</small></b><em>≈ $0.00 credit</em></div>
+      </div>
+    </div>
+    <div class="note">Scope style.css 434–436 as <code>.two .stat</code> / <code>.tiles .stat</code> (or rename the appliance tiles to <code>.tile</code>); the Now and History tiles fall back to 105–109: 22px light number, kWh inline. Same markup, same text (the percentages are F10).</div>
+
+    <!-- ================= F2 ================= -->
+    <div class="sect">F2 · Status chips</div>
+    <div class="tag t"><i></i>Today</div>
+    <div class="copy">
+      <div class="chips">
+        <div class="chipx"><i></i>Powerwalls online</div>
+        <div class="chipx"><i style="--c:var(--batt)"></i>No weather alerts</div>
+        <div class="chipx"><i style="--c:var(--batt)"></i>ERCOT normal · 70% load</div>
+        <div class="chipx"><i style="--c:rgba(242,244,248,.4);box-shadow:none"></i>Storm Watch standby</div>
+      </div>
+    </div>
+    <div class="tag p"><i></i>Proposed</div>
+    <div class="copy fix f2">
+      <div class="chips">
+        <div class="chipx"><i></i>Powerwalls online</div>
+        <div class="chipx"><i style="--c:var(--batt)"></i>No weather alerts</div>
+        <div class="chipx"><i style="--c:var(--batt)"></i>ERCOT normal · 70% load</div>
+        <div class="chipx"><i style="--c:rgba(242,244,248,.4);box-shadow:none"></i>Storm Watch standby</div>
+      </div>
+    </div>
+    <div class="note">Rename the Autopilot rule chips (style.css 419, <code>.chips</code> / <code>.chips span</code>) to <code>.rules</code>; the Now strip keeps 193: one row, <code>overflow-x:auto</code>, −20px bleed to the edges. Mocked here with <code>.fix .chips{flex-wrap:nowrap}</code>.</div>
+
+    <!-- ================= F3 ================= -->
+    <div class="sect">F3 · Sticky segment control in History</div>
+    <div class="tag t"><i></i>Today · scrolled to the bill check</div>
+    <div class="copy">
+      <div class="snap">
+        <div class="seg"><button class="on">Day</button><button>Week</button><button>Month</button><button>Year</button></div>
+        <div class="card">
+          <div class="h"><b>September bill check</b><span class="badge g">all good</span></div>
+          <div style="margin-top:8px">
+            <div class="check"><i class="ok">✓</i><div><b>PEC's meter matches Tesla.</b> 812 kWh delivered on the bill, 804 kWh measured: 1% apart.</div></div>
+            <div class="check"><i class="ok">✓</i><div><b>Rate matches your plan.</b> The energy charge and the PCRF add up to the all-in rate on file.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="tag p"><i></i>Proposed · same scroll position</div>
+    <div class="copy fix f3">
+      <div class="snap">
+        <div class="seg"><button class="on">Day</button><button>Week</button><button>Month</button><button>Year</button></div>
+        <div class="card">
+          <div class="h"><b>September bill check</b><span class="badge g">all good</span></div>
+          <div style="margin-top:8px">
+            <div class="check"><i class="ok">✓</i><div><b>PEC's meter matches Tesla.</b> 812 kWh delivered on the bill, 804 kWh measured: 1% apart.</div></div>
+            <div class="check"><i class="ok">✓</i><div><b>Rate matches your plan.</b> The energy charge and the PCRF add up to the all-in rate on file.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note">Sticky only on Insights: <code>#insSeg{position:sticky;top:0}</code> (or <code>.seg.sticky</code>) and style.css 370 drops <code>position:sticky</code>, so History's <code>#hseg</code> scrolls away with the chart and never covers a card header.</div>
+
+    <!-- ================= F4 ================= -->
+    <div class="sect">F4 · Card header wrapping</div>
+    <div class="tag t"><i></i>Today</div>
+    <div class="copy">
+      <div class="card"><div class="h"><b>Next 48 hours</b><span>forecast · your usage + Open-Meteo</span></div></div>
+      <div class="card"><div class="h"><b>Today: Nest vs Solstice</b><span class="fine">74°–78° home · 74°–76° night · away 80°</span></div></div>
+      <div class="card"><div class="h"><b>Last 30 days × 24 hours</b><span>drag to rotate · tap a bar</span></div></div>
+    </div>
+    <div class="tag p"><i></i>Proposed</div>
+    <div class="copy fix f4">
+      <div class="card"><div class="h"><b>Next 48 hours</b><span>your usage + Open-Meteo</span></div></div>
+      <div class="card"><div class="h"><b>Today: Nest vs Solstice</b><span class="fine">74°–78° home · 74°–76° night · away 80°</span></div></div>
+      <div class="card"><div class="h"><b>Last 30 days × 24 hours</b><span>drag · tap a bar</span></div></div>
+    </div>
+    <div class="note"><code>.card .h{gap:10px}</code> <code>.card .h b{flex:none}</code> <code>.card .h>span{min-width:0;text-align:right}</code> (style.css 83): the title never wraps, a long subtitle wraps right-aligned. Shorter copy: "your usage + Open-Meteo", "drag · tap a bar".</div>
+
+    <!-- ================= F5 ================= -->
+    <div class="sect">F5 · Panels header</div>
+    <div class="tag t"><i></i>Today</div>
+    <div class="copy">
+      <div class="hello"><div><h3>Panels</h3><p><span>30 × 320 W SunPower · 9.6 kW DC · facing 244°</span></p></div><div class="wx"><b>0.0</b>kW right now</div></div>
+    </div>
+    <div class="tag p"><i></i>Proposed</div>
+    <div class="copy fix f5">
+      <div class="hello"><div><h3>Panels</h3><p><span>30 × 320 W · 9.6 kW DC · faces 244°</span></p></div><div class="wx"><b>0.0</b>kW right now</div></div>
+    </div>
+    <div class="note">index.html 191: subtitle "30 × 320 W · 9.6 kW DC · faces 244°"; <code>.wx{flex:none;white-space:nowrap}</code> (style.css 53) so "kW right now" stays on one line.</div>
+
+    <!-- ================= F6 ================= -->
+    <div class="sect">F6 · Energy-flow house labels</div>
+    <div class="tag t"><i></i>Today</div>
+    <div class="copy">
+      <div class="card">
+        <div class="h"><b>Energy flow</b><span>live · 6:52 AM</span></div>
+        <div class="house mock-house">
+          <div class="hlbl" style="left:120px;top:80px"><small>SOLAR</small><b>0 kW</b></div><div class="hlead" style="left:120px;top:84px;height:36px"></div>
+          <div class="hlbl" style="left:200px;top:151px"><small>HOME</small><b>1.5 kW</b></div><div class="hlead" style="left:200px;top:155px;height:50px"></div>
+          <div class="hlbl below" style="left:318px;top:274px"><small>POWERWALL · 2×</small><b>0 kW <i style="color:var(--mute)">·</i>20%</b></div><div class="hlead" style="left:318px;top:250px;height:20px"></div>
+          <div class="hlbl" style="left:360px;top:266px"><small>PEC GRID</small><b>↓ 1.5 kW</b></div><div class="hlead" style="left:360px;top:270px;height:30px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="tag p"><i></i>Proposed</div>
+    <div class="copy fix f6">
+      <div class="card">
+        <div class="h"><b>Energy flow</b><span>live · 6:52 AM</span></div>
+        <div class="house mock-house">
+          <div class="hlbl" style="left:120px;top:80px"><small>SOLAR</small><b>0 kW</b></div><div class="hlead" style="left:120px;top:84px;height:36px"></div>
+          <div class="hlbl" style="left:200px;top:151px"><small>HOME</small><b>1.5 kW</b></div><div class="hlead" style="left:200px;top:155px;height:50px"></div>
+          <div class="hlbl below" style="left:72%;top:274px"><small>POWERWALL · 2×</small><b>0 kW <i style="color:var(--mute)">·</i>20%</b></div><div class="hlead" style="left:72%;top:270px;height:24px;transform-origin:top;transform:rotate(-104.5deg)"></div>
+          <div class="hlbl" style="left:78%;top:250px"><small>PEC GRID</small><b>↓ 1.5 kW</b></div><div class="hlead" style="left:78%;top:254px;height:26px;transform-origin:top;transform:rotate(-65deg)"></div>
+        </div>
+      </div>
+    </div>
+    <div class="note">scenes/home.js render(): <code>x = clamp(8 + w/2, x, width − 8 − w/2)</code> with <code>w = el.offsetWidth</code>, so every label stays 8 px inside the card; the leader runs from the label to the projected anchor (the grid anchor sits just past the right edge at this width).</div>
+
+    <!-- ================= F7 ================= -->
+    <div class="sect">F7 · AC delta tile</div>
+    <div class="tag t"><i></i>Today</div>
+    <div class="copy">
+      <div class="card sched">
+        <div class="h"><b>Today: Nest vs Solstice</b><span class="fine">74°–78° home · 74°–76° night · away 80°</span></div>
+        <div class="deltas">
+          <div><small>AC electricity</small><b>−0.5 kWh</b><span>per day</span></div><div><small>Cost</small><b>−$2</b><span>per month</span></div>
+          <div><small>Today</small><b>96° · 5.8 kWh/m²</b><span>pre-cool day</span></div><div><small>Warmest indoor</small><b>78°</b><span>5p–9p</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="tag p"><i></i>Proposed</div>
+    <div class="copy fix f7">
+      <div class="card sched">
+        <div class="h"><b>Today: Nest vs Solstice</b><span class="fine">74°–78° home · 74°–76° night · away 80°</span></div>
+        <div class="deltas">
+          <div><small>AC electricity</small><b>−0.5 kWh</b><span>per day</span></div><div><small>Cost</small><b>−$2</b><span>per month</span></div>
+          <div><small>Today</small><b>96°</b><span>5.8 kWh/m² sun<br>pre-cool day</span></div><div><small>Warmest indoor</small><b>78°</b><span>5p–9p</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="note"><code>.deltas b{white-space:normal}</code> (style.css 408) and ac.js 58: the value is "96°", the sun figure moves to its own line in the sub-label ("5.8 kWh/m² sun"). The header wrap is F4.</div>
+
+    <!-- ================= F8 ================= -->
+    <div class="sect">F8 · Autopilot signals</div>
+    <div class="tag t"><i></i>Today</div>
+    <div class="copy">
+      <div class="card auto">
+        <div class="h"><b>Autopilot</b><span class="seg2"><button>Off</button><button class="on">Suggest</button><button>Auto</button></span></div>
+        <div class="status"><i></i><span>Suggests each day's plan from the 6 AM forecast, samples Nest every 5 minutes, never leaves your comfort band, never touches heating mode</span></div>
+        <div class="signals">
+          <div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="#ff9e66" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="97.7 106.8" transform="rotate(-90 22 22)"/></svg><b>96°</b><small>high</small></div>
+          <div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="#ffc15e" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="77.4 106.8" transform="rotate(-90 22 22)"/></svg><b>5.8</b><small>sun</small></div>
+          <div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="#4ef0a6" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="106.8 106.8" transform="rotate(-90 22 22)"/></svg><b>home</b><small>presence</small></div>
+          <div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="#6cc4ff" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="21.4 106.8" transform="rotate(-90 22 22)"/></svg><b>20%</b><small>powerwall</small></div>
+          <div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="#c4a2ff" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="53.4 106.8" transform="rotate(-90 22 22)"/></svg><b>50%</b><small>humidity</small></div>
+          <div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="#8d93a8" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="16.0 106.8" transform="rotate(-90 22 22)"/></svg><b>normal</b><small>ercot</small></div>
+        </div>
+      </div>
+    </div>
+    <div class="tag p"><i></i>Proposed</div>
+    <div class="copy fix f8">
+      <div class="card auto">
+        <div class="h"><b>Autopilot</b><span class="seg2"><button>Off</button><button class="on">Suggest</button><button>Auto</button></span></div>
+        <div class="status"><i></i><span>Suggests each day's plan from the 6 AM forecast, samples Nest every 5 minutes, never leaves your comfort band, never touches heating mode</span></div>
+        <div class="signals">
+          <div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="#ff9e66" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="97.7 106.8" transform="rotate(-90 22 22)"/></svg><b>96°</b><small>high</small></div>
+          <div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="#ffc15e" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="77.4 106.8" transform="rotate(-90 22 22)"/></svg><b>5.8</b><small>sun</small></div>
+          <div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="#4ef0a6" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="106.8 106.8" transform="rotate(-90 22 22)"/></svg><b>home</b><small>presence</small></div>
+          <div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="#6cc4ff" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="21.4 106.8" transform="rotate(-90 22 22)"/></svg><b>20%</b><small>battery</small></div>
+          <div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="#c4a2ff" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="53.4 106.8" transform="rotate(-90 22 22)"/></svg><b>50%</b><small>rh</small></div>
+          <div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="#8d93a8" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="16.0 106.8" transform="rotate(-90 22 22)"/></svg><b>normal</b><small>ercot</small></div>
+        </div>
+      </div>
+    </div>
+    <div class="note">style.css 417 at phone width (a container query on <code>.card</code>, since the desktop phone is 393 px too): <code>.signals{grid-template-columns:repeat(3,1fr)}</code>, <code>.signals svg{max-width:64px}</code>, <code>.signals small{letter-spacing:.02em}</code>; ac.js 77 labels "battery" and "rh".</div>
+
+    <!-- ================= F9 ================= -->
+    <div class="sect">F9 · Pool twin labels</div>
+    <div class="tag t"><i></i>Today</div>
+    <div class="copy">
+      <div class="card">
+        <div class="h"><b>Pool &amp; spa · live</b><span class="badge g">Linked · ScreenLogic</span></div>
+        <div class="ring3d pool3d mock-pool">
+          <div class="lbl3d dim" style="left:250px;top:95px">24" sheer descent<br><b>off</b></div>
+          <div class="lbl3d" style="left:18px;top:120px">Spa · 1,000 gal<br><b>89°F</b></div>
+          <div class="lbl3d" style="left:150px;top:145px">Pool · 14,995 gal<br><b>86°F</b></div>
+          <div class="lbl3d dim" style="left:335px;top:170px">Heater · propane<br><b>off · spa set 98°</b></div>
+          <div class="lbl3d" style="left:120px;top:262px">Pump<br><b>153 W · 1,500 rpm</b></div>
+          <div class="hud">Pool · 1,500 RPM · 153 W</div>
+        </div>
+      </div>
+    </div>
+    <div class="tag p"><i></i>Proposed</div>
+    <div class="copy fix f9">
+      <div class="card">
+        <div class="h"><b>Pool &amp; spa · live</b><span class="badge g">Linked · ScreenLogic</span></div>
+        <div class="ring3d pool3d mock-pool">
+          <div class="lbl3d dim" style="left:250px;top:95px">24" sheer descent<br><b>off</b></div>
+          <div class="lbl3d" style="left:63px;top:120px">Spa · 1,000 gal<br><b>89°F</b></div><div class="mock-lead" style="left:18px;top:120px;width:45px"></div>
+          <div class="lbl3d" style="left:150px;top:145px">Pool · 14,995 gal<br><b>86°F</b></div>
+          <div class="lbl3d dim" style="left:76%;top:170px">Heater · propane<br><b>off · spa set 98°</b></div><div class="mock-lead" style="left:76%;top:170px;width:20%"></div>
+          <div class="lbl3d" style="left:120px;top:262px">Pump<br><b>153 W · 1,500 rpm</b></div>
+          <div class="hud">Pool · 1,500 RPM · 153 W</div>
+        </div>
+      </div>
+    </div>
+    <div class="note">scenes/pooltwin.js: after <code>labels.render()</code>, clamp each <code>.lbl3d</code> to 8 px inside the twin (using its offsetWidth) and draw a 1 px leader back to the anchor; or shorten the two labels. Nothing else in the scene moves.</div>
+
+    <!-- ================= F10 ================= -->
+    <div class="sect">F10 · Dawn percentages</div>
+    <div class="tag t"><i></i>Today</div>
+    <div class="copy">
+      <div class="stats">
+        <div class="stat"><span>Solar produced</span><b>0.0<small>kWh</small></b><em>26% of what today's sun allows</em></div>
+        <div class="stat"><span>Home used</span><b>20.4<small>kWh</small></b><em>−1% from solar + battery</em></div>
+      </div>
+    </div>
+    <div class="tag p"><i></i>Proposed</div>
+    <div class="copy fix f10">
+      <div class="stats">
+        <div class="stat"><span>Solar produced</span><b>0.0<small>kWh</small></b><em>so far today</em></div>
+        <div class="stat"><span>Home used</span><b>20.4<small>kWh</small></b><em>0% from solar + battery</em></div>
+      </div>
+    </div>
+    <div class="note">views/now.js 108–109: "so far today" until today.solar ≥ 0.5 kWh; self-powered clamped to 0–100% (history.js 22, the day radial's centre, the same clamp). Only the two <code>em</code> strings change; tile styling is F1.</div>
+
+    <!-- ================= F11 ================= -->
+    <div class="sect">F11 · "Time to full —" while idle</div>
+    <div class="tag t"><i></i>Today</div>
+    <div class="copy">
+      <div class="card">
+        <div class="h"><b>Powerwall</b><span>2 × Powerwall 2 · 27 kWh</span></div>
+        <div class="pwtop"><div class="pwpct">20%</div><div><div class="pwstate" data-s="i">Idle</div><div class="pwsub">≈ 5.4 of 27 kWh stored</div></div></div>
+        <div class="pwunits"><div class="pwu" style="--v:.2"><i></i><b class="pwres" style="bottom:20%"></b><span>PW 1</span><em>13.5 kWh · 5 kW</em></div><div class="pwu" style="--v:.2"><i></i><b class="pwres" style="bottom:20%"></b><span>PW 2</span><em>13.5 kWh · 5 kW</em></div></div>
+        <div class="kv">
+          <span>Time to full</span><b>—</b>
+          <span>Backup at current usage</span><b>3h 25m</b>
+          <span>Charged today</span><b>0.0 kWh</b>
+          <span>Discharged today</span><b>4.8 kWh</b>
+          <span>Backup reserve</span><b>20%</b>
+          <span>Mode</span><b>Self-Powered</b>
+          <span>Storm Watch</span><b>On · standing by</b>
+          <span>Today's range</span><b>20% – 41%</b>
+        </div>
+      </div>
+    </div>
+    <div class="tag p"><i></i>Proposed</div>
+    <div class="copy fix f11">
+      <div class="card">
+        <div class="h"><b>Powerwall</b><span>2 × Powerwall 2 · 27 kWh</span></div>
+        <div class="pwtop"><div class="pwpct">20%</div><div><div class="pwstate" data-s="i">Idle</div><div class="pwsub">≈ 5.4 of 27 kWh stored</div></div></div>
+        <div class="pwunits"><div class="pwu" style="--v:.2"><i></i><b class="pwres" style="bottom:20%"></b><span>PW 1</span><em>13.5 kWh · 5 kW</em></div><div class="pwu" style="--v:.2"><i></i><b class="pwres" style="bottom:20%"></b><span>PW 2</span><em>13.5 kWh · 5 kW</em></div></div>
+        <div class="kv">
+          <span>Time to full</span><b>Standing by</b>
+          <span>Backup at current usage</span><b>3h 25m</b>
+          <span>Charged today</span><b>0.0 kWh</b>
+          <span>Discharged today</span><b>4.8 kWh</b>
+          <span>Backup reserve</span><b>20%</b>
+          <span>Mode</span><b>Self-Powered</b>
+          <span>Storm Watch</span><b>On · standing by</b>
+          <span>Today's range</span><b>20% – 41%</b>
+        </div>
+      </div>
+    </div>
+    <div class="note">views/now.js 80: while idle the value reads "Standing by" instead of "—" (the reserve is already the "Backup reserve" row; a longer value makes the label column wrap at 375 px). Label and the other rows unchanged.</div>
+
+    <!-- ================= F12 ================= -->
+    <div class="sect">F12 · Pool "Recommended" when already applied</div>
+    <div class="tag t"><i></i>Today</div>
+    <div class="copy">
+      <div class="card sched">
+        <div class="h"><b>Pump schedule</b><span class="seg2"><button>Now</button><button class="on">Recommended</button><button>Both</button></span></div>
+        <div class="deltas">
+          <div><small>Electricity</small><b>−0.2 kWh</b><span>per day</span></div><div><small>Cost</small><b>−$1</b><span>per month</span></div>
+          <div><small>Turnover</small><b>2.21× → 1.88×</b><span>still one a day</span></div><div><small>Top speed</small><b>2,400 → 2,400</b><span>RPM</span></div>
+        </div>
+        <p class="fine" style="margin-top:10px">Applied to ScreenLogic Sep 24, 8:15 PM. <button class="link" style="margin:0 0 0 6px;padding:4px 10px">Restore the previous schedule</button></p>
+      </div>
+    </div>
+    <div class="tag p"><i></i>Proposed</div>
+    <div class="copy fix f12">
+      <div class="card sched">
+        <div class="h"><b>Pump schedule</b><span class="seg2"><button>Now</button><button class="on">Recommended</button><button>Both</button></span></div>
+        <div class="deltas">
+          <div style="grid-column:1/-1"><small>You're on the recommended schedule</small><b>10 h at 1,500 RPM + 1 h boost</b><span>applied Sep 24, 8:15 PM · 2.1 kWh a day</span></div>
+        </div>
+        <p class="fine" style="margin-top:10px"><button class="link" style="margin:0;padding:4px 10px">Restore the previous schedule</button></p>
+      </div>
+    </div>
+    <div class="note">appliances.js 82–83: when <code>d.applied</code> matches the current plan, replace the 2×2 deltas with one green status tile (<code>.deltas div{grid-column:1/-1}</code>) and keep the Restore link. The dial and the reasons strip are unchanged and left out here.</div>
+
+    <!-- ================= F13 ================= -->
+    <div class="sect">F13 · Outage preview physics</div>
+    <div class="tag t"><i></i>Today · preview outage mode</div>
+    <div class="copy">
+      <div class="card">
+        <div class="h"><b>Energy flow</b><span>islanded · grid offline</span></div>
+        <div class="house mock-house out">
+          <div class="hlbl" style="left:120px;top:80px"><small>SOLAR</small><b>0 kW</b></div><div class="hlead" style="left:120px;top:84px;height:36px"></div>
+          <div class="hlbl" style="left:200px;top:151px"><small>HOME</small><b>4.0 kW</b></div><div class="hlead" style="left:200px;top:155px;height:50px"></div>
+          <div class="hlbl below" style="left:72%;top:274px"><small>POWERWALL · 2×</small><b>0 kW <i style="color:var(--mute)">·</i>20%</b></div><div class="hlead" style="left:72%;top:270px;height:24px;transform-origin:top;transform:rotate(-104.5deg)"></div>
+          <div class="hlbl off" style="left:78%;top:250px"><small>PEC GRID</small><b>Offline</b></div><div class="hlead" style="left:78%;top:254px;height:26px;transform-origin:top;transform:rotate(-65deg)"></div>
+        </div>
+      </div>
+    </div>
+    <div class="tag p"><i></i>Proposed</div>
+    <div class="copy fix f13">
+      <div class="card">
+        <div class="h"><b>Energy flow</b><span>islanded · grid offline</span></div>
+        <div class="house mock-house out">
+          <div class="hlbl" style="left:120px;top:80px"><small>SOLAR</small><b>0 kW</b></div><div class="hlead" style="left:120px;top:84px;height:36px"></div>
+          <div class="hlbl" style="left:200px;top:151px"><small>HOME</small><b>4.0 kW</b></div><div class="hlead" style="left:200px;top:155px;height:50px"></div>
+          <div class="hlbl below" style="left:72%;top:274px"><small>POWERWALL · 2×</small><b>4.0 kW <i style="color:var(--solar)">▼</i>20%</b></div><div class="hlead" style="left:72%;top:270px;height:24px;transform-origin:top;transform:rotate(-104.5deg)"></div>
+          <div class="hlbl off" style="left:78%;top:250px"><small>PEC GRID</small><b>Offline</b></div><div class="hlead" style="left:78%;top:254px;height:26px;transform-origin:top;transform:rotate(-65deg)"></div>
+        </div>
+      </div>
+    </div>
+    <div class="note">main.js 128 (outSw) / updateOutage(): in preview, derive the reading before it is rendered: <code>gridKw = 0</code>, <code>batteryKw = homeKw − solarKw</code> (4.0 kW ▼), so the four labels add up instead of only forcing the grid label to "Offline" (home.js 193). Only the Powerwall value changes; label positions as in F6 Proposed.</div>
+
+    <!-- ================= F14 ================= -->
+    <div class="sect">F14 · Stale copy</div>
+    <div class="sub">Settings subtitle · index.html 342</div>
+    <div class="tag t"><i></i>Today</div>
+    <div class="copy"><div class="hello"><div><h3>Settings</h3><p>Solstice · local on your Mac</p></div></div></div>
+    <div class="tag p"><i></i>Proposed</div>
+    <div class="copy fix f14"><div class="hello"><div><h3>Settings</h3><p>Solstice · your home, live</p></div></div></div>
+    <div class="sub">Desktop sidebar · index.html 46</div>
+    <div class="tag t"><i></i>Today</div>
+    <div class="copy"><div class="demo" style="margin-top:6px"><p style="margin-top:0">Private to your account. Press <b>D</b> for raw data.</p></div></div>
+    <div class="tag p"><i></i>Proposed</div>
+    <div class="copy fix f14"><div class="demo" style="margin-top:6px"><p style="margin-top:0">Owner view. Press <b>D</b> for raw data.</p></div></div>
+    <div class="sub">Day Ring caption · main.js 166</div>
+    <div class="tag t"><i></i>Today</div>
+    <div class="copy"><div class="card"><p style="margin-top:0">The pool pump is about <b style="color:var(--text)">6%</b> of today so far. AC is estimated from your heat model (about 2.5 kWh per degree over 80°F) until Nest is linked; everything else is what's left of Tesla's home load.</p></div></div>
+    <div class="tag p"><i></i>Proposed</div>
+    <div class="copy fix f14"><div class="card"><p style="margin-top:0">The pool pump is about <b style="color:var(--text)">6%</b> of today so far. AC is measured through Nest and Tesla's load steps (2.0 kW); everything else is what's left of Tesla's home load.</p></div></div>
+    <div class="note">Copy only: index.html 342 and 46, main.js 166. No layout or style changes.</div>
+
+    <!-- ================= F15 ================= -->
+    <div class="sect">F15 · Settings › Connections</div>
+    <div class="tag t"><i></i>Today</div>
+    <div class="copy">
+      <div class="group">
+        <div class="row" style="--c:#e82127"><div class="ri">T</div><div class="rt">Tesla Fleet API<small>Solstice Home Energy · Home</small></div><div class="rv"><span style="color:var(--batt)">Live</span></div></div>
+        <div class="row" style="--c:var(--home)"><div class="ri">☁</div><div class="rt">Open-Meteo weather<small>your ZIP · tilt 27° · facing 244°</small></div><div class="rv"><span style="color:var(--batt)">Live</span></div></div>
+        <div class="row tap" style="--c:var(--solar)" tabindex="0"><div class="ri">$</div><div class="rt">PEC bills<small>Last: September · next ~Oct 10</small></div><div class="chev">›</div></div>
+        <div class="row tap" style="--c:var(--grid)" tabindex="0"><div class="ri">≡</div><div class="rt">All data<small>Raw live status and site info</small></div><div class="chev">›</div></div>
+      </div>
+    </div>
+    <div class="tag p"><i></i>Proposed</div>
+    <div class="copy fix f15">
+      <div class="group">
+        <div class="row" style="--c:#e82127"><div class="ri">T</div><div class="rt">Tesla Fleet API<small>Solstice Home Energy · Home</small><small style="color:var(--warn)">Tesla backup history · retrying (HTTP 504)</small></div><div class="rv"><span style="color:var(--batt)">Live</span></div></div>
+        <div class="row" style="--c:var(--home)"><div class="ri">☁</div><div class="rt">Open-Meteo weather<small>your ZIP · tilt 27° · facing 244°</small></div><div class="rv"><span style="color:var(--batt)">Live</span></div></div>
+        <div class="row" style="--c:#6cc4ff"><div class="ri">≈</div><div class="rt">Pentair ScreenLogic<small>pool &amp; spa · read 2 min ago</small></div><div class="rv"><span style="color:var(--batt)">Linked</span></div></div>
+        <div class="row" style="--c:#ff9e66"><div class="ri">◐</div><div class="rt">Google Nest<small>Hallway thermostat · sampled 3 min ago</small></div><div class="rv"><span style="color:var(--batt)">Linked</span></div></div>
+        <div class="row tap" style="--c:var(--solar)" tabindex="0"><div class="ri">$</div><div class="rt">PEC bills<small>Last: September · next ~Oct 10</small></div><div class="chev">›</div></div>
+        <div class="row tap" style="--c:var(--grid)" tabindex="0"><div class="ri">≡</div><div class="rt">All data<small>Raw live status and site info</small></div><div class="chev">›</div></div>
+      </div>
+    </div>
+    <div class="note">index.html 344–349 + settings.js: two new <code>.row</code>s (ScreenLogic ≈ <code>--c:#6cc4ff</code>, Nest ◐ <code>--c:#ff9e66</code>) fed by /api/pool and /api/ac; the Tesla row gets a second <code>small</code> in <code>var(--warn)</code> from the kv backup_history error. Existing rows untouched.</div>
+
+    <!-- ================= F16 ================= -->
+    <div class="sect">F16 · Data health card</div>
+    <div class="tag t"><i></i>Today</div>
+    <div class="copy">
+      <div class="card">
+        <div class="h"><b>Data health</b><span class="badge g">all good</span></div>
+        <div style="margin-top:8px">
+          <div class="health"><i style=""></i>Tesla live status<b>28 s ago</b></div>
+          <div class="health"><i style=""></i>Energy history (5-min)<b>4 min ago</b></div>
+          <div class="health"><i style=""></i>History stored<b>399 days</b></div>
+          <div class="health"><i style=""></i>Open-Meteo weather<b>live</b></div>
+          <div class="health"><i style=""></i>ERCOT grid status<b>normal</b></div>
+        </div>
+      </div>
+    </div>
+    <div class="tag p"><i></i>Proposed</div>
+    <div class="copy fix f16">
+      <div class="card">
+        <div class="h"><b>Data health</b><span class="badge">1 issue</span></div>
+        <div style="margin-top:8px">
+          <div class="health"><i style=""></i>Tesla live status<b>28 s ago</b></div>
+          <div class="health"><i style=""></i>Energy history (5-min)<b>4 min ago</b></div>
+          <div class="health"><i style="background:var(--warn);box-shadow:0 0 8px var(--warn)"></i>Backup history (Tesla)<b>504 · retrying</b></div>
+          <div class="health"><i style=""></i>History stored<b>399 days</b></div>
+          <div class="health"><i style=""></i>Open-Meteo weather<b>live</b></div>
+          <div class="health"><i style=""></i>ERCOT grid status<b>normal</b></div>
+          <div class="health"><i style=""></i>ScreenLogic<b>2 min ago</b></div>
+          <div class="health"><i style=""></i>Nest<b>3 min ago</b></div>
+        </div>
+      </div>
+    </div>
+    <div class="note">insights.js 97–102: add the Tesla backup-history row (kv error → warn dot), ScreenLogic and Nest rows from their last reads; the badge counts issues ("1 issue", warn colour) instead of "check". Same <code>.health</code> row markup.</div>
+
+    <div class="foot">All numbers are illustrative; no price, loan or bill figures are shown.</div>
+  </section></div></div>
+</div>
+</body></html>

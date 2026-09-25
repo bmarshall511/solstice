@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Solstice · Your year ring</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+body{overflow:auto;background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}.stage{position:static;padding:24px 0 60px;align-items:flex-start}.phone{height:auto;max-height:none;overflow:visible}.screen{position:static;padding:34px 20px 40px;overflow:visible}.view{display:block}
+:root{--ac:#ff9e66;--rest:#8d93a8}
+.card{overflow:hidden}
+.stub{opacity:.45}
+/* year ring: same 330 px as .ring3d, but it sits on a scrolling tab so vertical swipes must scroll */
+.yr3d{touch-action:pan-y}
+.yr3d .labs{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.yr3d .labs .lax{position:absolute;left:0;top:0;will-change:transform}
+.yr3d .labs .lax.cur{color:var(--text)}
+.yr3d .hint{left:12px;top:10px;right:auto;bottom:auto;max-width:calc(100% - 24px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:rgba(255,193,94,.7)}
+.readout.yr{top:168px;width:170px}
+.readout.yr b{font-size:28px}
+.readout.yr small{margin-top:3px;white-space:nowrap}
+.readout.yr small:first-of-type{margin-top:6px}
+.readout.yr .s{color:var(--solar)}.readout.yr .hm{color:var(--home)}.readout.yr .im{color:var(--grid)}.readout.yr .bt{color:var(--batt)}.readout.yr .ot{color:var(--out)}
+.readout.yr .open{pointer-events:auto;display:inline-block;margin-top:8px;font:600 11.5px Manrope;color:var(--solar);cursor:pointer;text-decoration:none;padding:3px 6px;border-radius:8px}
+.readout.yr .open:focus-visible{outline:2px solid var(--solar)}
+.legend.yl{justify-content:flex-start;gap:6px 12px;margin-top:10px}
+.legend.yl i.bar{border-radius:2px;width:4px;height:10px;vertical-align:-1px}
+.legend.yl i.tk{border-radius:1px;width:10px;height:3px;vertical-align:2px}
+.legend.yl i.gh{border-radius:0;width:12px;height:0;border-top:1.5px dashed rgba(255,193,94,.55);vertical-align:3px}
+.legend.yl i.hd{border-radius:1px;width:2px;height:10px;background:rgba(255,255,255,.7);vertical-align:-1px}
+#yrNote{margin-top:10px}
+</style></head><body>
+<div class="stage">
+  <aside class="side"><div class="k">Mockup · History → Your year</div><h2>A whole year on one ring.</h2>
+    <p>A new History card after the production landscape. Every day of the last 365 is one bar on three rings: solar on the outside, home use in the middle, energy bought from PEC on the inside. Green ticks on the floor mark days the Powerwalls reached 100%. Red beads mark outages, sized by how long they lasted. A faint gold line outside the solar ring traces last year's solar, only for the days where last year's data exists. The white hand is today. Tap any day to read it, then open it in the Day view.</p>
+    <div class="demo"><h4>What's real vs mocked</h4><p>All 437 days here are synthetic, shaped like the home: about 76 kWh a day, solar covering about 49%, a summer AC hump with 94–98°F highs, a winter dip, 2 × Powerwall 2 with a 20% reserve and the pool pump at 153 W from spring to fall. In the app the rings read the daily history, outages and highs already loaded on History. The ghost fetches 800 days once when the card first builds, and it is not part of the 5-minute refresh.</p><p>"Open this day →" would switch History to Day for that date. Here it only shows a note.</p></div></aside>
+  <div class="phone"><div class="screen"><section class="view on">
+    <div class="hello"><div><h3>History</h3><p>Friday, September 25</p></div></div>
+
+    <div class="sect">Production landscape</div>
+    <div class="card stub"><div class="h"><b>Last 30 days × 24 hours</b><span>unchanged</span></div></div>
+
+    <!-- new card -->
+    <div class="card" id="yrCard">
+      <div class="h"><b>Your year</b><span>drag · tap a day</span></div>
+      <div class="ring3d yr3d" id="yr">
+        <div class="labs" id="yrLabs"></div>
+        <div class="hint" id="yrHint">last year shown where data exists</div>
+        <div class="readout yr" id="yrRead"><b>—</b><small>loading…</small></div>
+      </div>
+      <div class="legend yl">
+        <span><i class="bar" style="background:var(--solar)"></i>Solar</span>
+        <span><i class="bar" style="background:var(--home);opacity:.6"></i>Home</span>
+        <span><i class="bar" style="background:var(--grid)"></i>From PEC</span>
+        <span><i class="tk" style="background:var(--batt)"></i>Full battery</span>
+        <span><i style="background:var(--out)"></i>Outage</span>
+        <span><i class="gh"></i>Last year</span>
+        <span><i class="hd"></i>Today</span>
+      </div>
+      <div class="two" id="yrStats"></div>
+      <p class="fine" id="yrNote">Bars share one scale, so solar, home and PEC heights compare directly. Last year shown where data exists: Jul 16 – Sep 25, 72 of 365 days. The ghost closes into a full loop as the second year is stored.</p>
+    </div>
+
+    <div class="sect">Powerwall patterns</div>
+    <div class="card stub"><div class="h"><b>Powerwall patterns</b><span>unchanged</span></div></div>
+
+    <p class="fine" style="margin-top:18px;text-align:center">Illustrative data. No price, loan, bill or location figures are shown.</p>
+  </section></div></div>
+</div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ---------- synthetic 437-day history (Jul 16 2025 → Sep 25 2026), seeded so every render matches ---------- */
+function makeDays() {
+  let s = 20260925; const rnd = () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const START = Date.UTC(2025, 6, 16), N = 437, DAY = 864e5, out = [];
+  const OUTAGES = { '2025-10-30': 6, '2026-01-25': 212, '2026-05-28': 48, '2026-08-09': 14 }; // minutes
+  for (let i = 0; i < N; i++) {
+    const d = new Date(START + i * DAY), date = d.toISOString().slice(0, 10), doy = Math.floor((d - Date.UTC(d.getUTCFullYear(), 0, 1)) / DAY);
+    const high = Math.round(77 + 20 * Math.cos(2 * Math.PI * (doy - 205) / 365) + (rnd() - .5) * 9);
+    const r = rnd(), cloud = r < .7 ? .86 + rnd() * .14 : r < .9 ? .55 + rnd() * .3 : .2 + rnd() * .35;
+    const sun = (4.3 + 1.9 * Math.cos(2 * Math.PI * (doy - 172) / 365)) * cloud;              // kWh/m²
+    const solar = sun * 11.4;
+    const pool = doy >= 90 && doy <= 300 ? 2.6 : 0;                                              // 153 W pump season
+    const home = 63 + 1.25 * Math.pow(Math.max(0, high - 76), 1.1) + pool + .6 * Math.max(0, 52 - high) + (rnd() - .5) * 7;
+    const dayLoad = home * .35, direct = Math.min(solar, dayLoad), excess = Math.max(0, solar - dayLoad);
+    const morning = 5.4 + rnd() * 1.6, charge = Math.min(excess, 27 - morning), socMax = (morning + charge) / 27 * 100;
+    const exp = excess - charge, dis = Math.min(charge * .88 + morning - 5.4, home - dayLoad), imp = Math.max(0, home - direct - dis);
+    out.push({ date, doy, high, solar, home, imp, exp, socMax, outage: OUTAGES[date] || 0 });
+  }
+  Object.assign(out.find(d => d.date === '2026-06-14'), { solar: 61, home: 79, imp: 12, exp: 9, high: 97, socMax: 100 });
+  return out;
+}
+const ALL = makeDays(), YEAR = ALL.slice(-365), byDate = new Map(ALL.map(d => [d.date, d]));
+const lastYear = d => { const t = new Date(d.date + 'T00:00:00Z'); t.setUTCFullYear(t.getUTCFullYear() - 1); return byDate.get(t.toISOString().slice(0, 10)); };
+const fmtDate = (iso, o = { month: 'short', day: 'numeric' }) => new Date(iso + 'T12:00:00Z').toLocaleDateString('en-US', { ...o, timeZone: 'UTC' });
+const dur = m => m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} m` : `${m} m`;
+
+/* ---------- stats under the ring ---------- */
+(function stats() {
+  const sum = k => YEAR.reduce((a, d) => a + d[k], 0), full = YEAR.filter(d => d.socMax >= 99).length, outs = YEAR.filter(d => d.outage);
+  const mAvg = (m, k) => { const M = YEAR.filter(d => +d.date.slice(5, 7) === m); return M.reduce((a, d) => a + d[k], 0) / M.length; };
+  const best = YEAR.reduce((a, d) => d.solar > a.solar ? d : a);
+  const S = [['Solar · 12 mo', `${(sum('solar') / 1000).toFixed(1)} MWh`], ['Solar covered', `${Math.round((1 - sum('imp') / sum('home')) * 100)}% of home`],
+    ['Full-battery days', `${full} of 365`], ['Outages', `${outs.length} · ${dur(outs.reduce((a, d) => a + d.outage, 0))}`],
+    ['Home/day Jul vs Dec', `${Math.round(mAvg(7, 'home'))} vs ${Math.round(mAvg(12, 'home'))} kWh`], ['Best solar day', `${fmtDate(best.date)} · ${Math.round(best.solar)} kWh`]];
+  document.getElementById('yrStats').innerHTML = S.map(([k, v]) => `<div class="stat"><small>${k}</small><b>${v}</b></div>`).join('');
+})();
+
+/* ---------- the ring ---------- */
+(function yearRing() {
+  const el = document.getElementById('yr'), labsEl = document.getElementById('yrLabs'), read = document.getElementById('yrRead');
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const FALLBACK = { '--solar': '#ffc15e', '--home': '#6cc4ff', '--grid': '#c4a2ff', '--batt': '#4ef0a6', '--out': '#ff5a4e' };
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || FALLBACK[n];
+  const C = { solar: new THREE.Color(css('--solar')), home: new THREE.Color(css('--home')), grid: new THREE.Color(css('--grid')), batt: new THREE.Color(css('--batt')), out: new THREE.Color(css('--out')) };
+  let W = el.clientWidth || 353, H = el.clientHeight || 330;
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); renderer.setPixelRatio(Math.min(1.5, devicePixelRatio)); renderer.setSize(W, H); el.prepend(renderer.domElement);
+  const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(38, W / H, .1, 100); cam.position.set(0, 9.6, 6.2);
+  const ctl = new OrbitControls(cam, renderer.domElement); Object.assign(ctl, { enableZoom: false, enablePan: false, enableDamping: true, minPolarAngle: .35, maxPolarAngle: 1.0, autoRotate: !calm, autoRotateSpeed: .35 });
+  ctl.target.set(0, .15, 0); // on the camera's line of sight through (0,.6,.3): same framing as dayring, but the ring spins about its own centre
+  renderer.domElement.style.touchAction = 'pan-y'; // OrbitControls sets 'none'; the History tab must keep scrolling
+  scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x0a0c14, 1.1));
+  const key = new THREE.DirectionalLight(0xffffff, 1.4); key.position.set(4, 8, 5); scene.add(key);
+
+  const R = { solar: 3.2, home: 2.6, imp: 2.1, tick: 2.9, lab: 3.95 }, MAXH = 2.4;
+  const K = MAXH / Math.max(...YEAR.map(d => Math.max(d.home, d.solar, d.imp)));   // one scale for all three rings
+  const ang = doy => (doy + .5) / 365 * Math.PI * 2 - Math.PI / 2;                    // Jan at the far side, clockwise from above
+  const bar = new THREE.BoxGeometry(.05, 1, .11).translate(0, .5, 0);
+  const std = (op = 1) => new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .55, metalness: .1, emissive: 0x000000, transparent: op < 1, opacity: op, depthWrite: op >= 1 });
+  const rings = [
+    { key: 'solar', r: R.solar, col: C.solar, mesh: new THREE.InstancedMesh(bar, std(), 365) },
+    { key: 'home', r: R.home, col: C.home, mesh: new THREE.InstancedMesh(bar, std(.6), 365) },
+    { key: 'imp', r: R.imp, col: C.grid, mesh: new THREE.InstancedMesh(bar, std(), 365) },
+  ];
+  rings.forEach(g => { YEAR.forEach((d, i) => g.mesh.setColorAt(i, g.col)); scene.add(g.mesh); });
+
+  // floor disc (same treatment as the Day Ring)
+  const disc = new THREE.Mesh(new THREE.RingGeometry(1.9, 3.5, 128), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .045, side: THREE.DoubleSide, depthWrite: false }));
+  disc.rotation.x = -Math.PI / 2; scene.add(disc);
+
+  // full-battery ticks on the floor between the home and solar rings
+  const fullDays = YEAR.filter(d => d.socMax >= 99);
+  const ticks = new THREE.InstancedMesh(new THREE.PlaneGeometry(.035, .2).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: C.batt }), fullDays.length);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
+  const place = (a, r, y, sx, sy, sz) => { p.set(r * Math.cos(a), y, r * Math.sin(a)); q.setFromAxisAngle(UP, Math.PI / 2 - a); sc.set(sx, sy, sz); return m4.compose(p, q, sc); };
+  fullDays.forEach((d, i) => ticks.setMatrixAt(i, place(ang(d.doy), R.tick, .01, 1, 1, 0))); scene.add(ticks);
+
+  // outage beads above the tallest bar of the day, radius ∝ √minutes
+  const outDays = YEAR.filter(d => d.outage);
+  const beads = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshBasicMaterial({ color: C.out }), outDays.length);
+  const beadR = d => .06 + .011 * Math.sqrt(d.outage);
+  scene.add(beads);
+
+  // last-year ghost: one LineLoop. Out along last year's solar (radius offset), back along the ring's base, only where data exists.
+  const ghostDays = YEAR.filter(d => lastYear(d)), GK = .42 / Math.max(...ALL.map(d => d.solar));
+  const gpts = [];
+  ghostDays.forEach(d => { const a = ang(d.doy), r = R.solar + .12 + lastYear(d).solar * GK; gpts.push(new THREE.Vector3(r * Math.cos(a), .015, r * Math.sin(a))); });
+  [...ghostDays].reverse().forEach(d => { const a = ang(d.doy), r = R.solar + .1; gpts.push(new THREE.Vector3(r * Math.cos(a), .015, r * Math.sin(a))); });
+  const ghostMat = new THREE.LineBasicMaterial({ color: C.solar, transparent: true, opacity: 0, depthWrite: false });
+  scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(gpts), ghostMat));
+
+  // today hand
+  const today = YEAR[YEAR.length - 1], L = 1.9;
+  const hand = new THREE.Mesh(new THREE.BoxGeometry(.035, .02, L).translate(0, 0, 1.85 + L / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .55 }));
+  hand.position.y = .02; hand.rotation.y = Math.PI / 2 - ang(today.doy); scene.add(hand);
+
+  // 12 month labels (.lax), projected each frame and clamped inside the canvas
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], curM = +today.date.slice(5, 7) - 1;
+  const labs = MONTHS.map((t, m) => { const e = document.createElement('div'); e.className = 'lax' + (m === curM ? ' cur' : ''); e.textContent = t; labsEl.appendChild(e);
+    const doy = Math.floor((Date.UTC(2026, m, 15) - Date.UTC(2026, 0, 1)) / 864e5), a = ang(doy);
+    return { e, pos: new THREE.Vector3(R.lab * Math.cos(a), 0, R.lab * Math.sin(a)), w: 0, h: 0 }; });
+  const v = new THREE.Vector3();
+  document.fonts?.ready.then(() => labs.forEach(l => l.w = 0));
+  function placeLabels() { labs.forEach(l => { if (!l.w) { l.w = l.e.offsetWidth; l.h = l.e.offsetHeight; }
+    v.copy(l.pos).project(cam); const x = (v.x + 1) / 2 * W, y = (1 - v.y) / 2 * H;
+    const lx = Math.max(4, Math.min(W - l.w - 4, x - l.w / 2)), ly = Math.max(4, Math.min(H - l.h - 4, y - l.h / 2));
+    l.e.style.transform = `translate(${lx.toFixed(1)}px,${ly.toFixed(1)}px)`; }); }
+
+  // grow-in over 1.2 s (swept around the ring), then static
+  let grow = calm ? 1.2 : 0, built = false;
+  const white = new THREE.Color(0xffffff);
+  function layout(t) {
+    const k = t / 1.2;
+    YEAR.forEach((d, i) => { const e0 = Math.max(0, Math.min(1, k * 1.3 - i / 365 * .3)), e = 1 - Math.pow(1 - e0, 3), a = ang(d.doy);
+      rings[0].mesh.setMatrixAt(i, place(a, R.solar, 0, 1, Math.max(.004, d.solar * K * e), 1));
+      rings[1].mesh.setMatrixAt(i, place(a, R.home, 0, 1, Math.max(.004, d.home * K * e), 1));
+      rings[2].mesh.setMatrixAt(i, place(a, R.imp, 0, 1, Math.max(.004, d.imp * K * e), 1)); });
+    rings.forEach(g => g.mesh.instanceMatrix.needsUpdate = true);
+    const ke = 1 - Math.pow(1 - Math.min(1, k), 3);
+    outDays.forEach((d, i) => { const r = beadR(d) * ke; beads.setMatrixAt(i, place(ang(d.doy), R.home + .3, Math.max(d.home, d.solar) * K * ke + .18 + r, r || .001, r || .001, r || .001)); });
+    beads.instanceMatrix.needsUpdate = true;
+    fullDays.forEach((d, i) => ticks.setMatrixAt(i, place(ang(d.doy), R.tick, .01, 1, 1, Math.max(.001, ke))));
+    ticks.instanceMatrix.needsUpdate = true;
+    ghostMat.opacity = .25 * ke;
+  }
+  // bounding spheres for raycasting (computed once at full height)
+  layout(1.2); rings.forEach(g => g.mesh.computeBoundingSphere()); beads.computeBoundingSphere(); layout(grow);
+
+  // selection + readout
+  let sel = -1;
+  function select(i) {
+    if (sel >= 0) rings.forEach(g => g.mesh.setColorAt(sel, g.col));
+    sel = i;
+    if (sel >= 0) rings.forEach(g => g.mesh.setColorAt(sel, g.col.clone().lerp(white, .75)));
+    rings.forEach(g => g.mesh.instanceColor.needsUpdate = true);
+    if (sel < 0) { const sum = k => YEAR.reduce((a, d) => a + d[k], 0);
+      read.innerHTML = `<b>${Math.round((1 - sum('imp') / sum('home')) * 100)}%</b><small>of home from solar</small><small>${Math.round(sum('home') / 365)} kWh/day · last 365 days</small><small>tap a day to read it</small>`; return; }
+    const d = YEAR[sel], full = d.socMax >= 99;
+    read.innerHTML = `<b>${fmtDate(d.date)}</b>`
+      + `<small><span class="s">${Math.round(d.solar)} kWh solar</span> · <span class="hm">${Math.round(d.home)} home</span></small>`
+      + `<small><span class="im">${Math.round(d.imp)} from PEC</span> · ${Math.round(d.exp)} sent</small>`
+      + `<small>${d.high}°F · ${full ? '<span class="bt">full at 100%</span>' : `peak ${Math.round(d.socMax)}%`}</small>`
+      + (d.outage ? `<small class="ot">outage · ${dur(d.outage)}</small>` : '')
+      + `<a class="open" href="#" id="yrOpen">Open this day →</a>`;
+    document.getElementById('yrOpen').onclick = e => { e.preventDefault();
+      document.getElementById('yrNote').textContent = `In the app this calls showDay(S, '${d.date}'): History switches to Day for ${fmtDate(d.date, { weekday: 'long', month: 'long', day: 'numeric' })} and redraws.`; };
+  }
+  select(YEAR.findIndex(d => d.date === '2026-06-14'));
+
+  // tap = pointer up within 6 px of pointer down; bars by instanceId, otherwise the floor angle inside the ring band
+  const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(), floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hitP = new THREE.Vector3();
+  const idxByDoy = new Map(YEAR.map((d, i) => [d.doy, i]));
+  let down = null;
+  renderer.domElement.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; ctl.autoRotate = false; });
+  renderer.domElement.addEventListener('pointerup', e => {
+    if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return; down = null;
+    const r = renderer.domElement.getBoundingClientRect(); ptr.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1); ray.setFromCamera(ptr, cam);
+    const hit = ray.intersectObjects([...rings.map(g => g.mesh), beads], false)[0];
+    if (hit) { select(hit.object === beads ? YEAR.indexOf(outDays[hit.instanceId]) : hit.instanceId); return; }
+    if (ray.ray.intersectPlane(floor, hitP)) { const rr = Math.hypot(hitP.x, hitP.z);
+      if (rr > 1.8 && rr < 4.2) { const a = Math.atan2(hitP.z, hitP.x), doy = Math.floor((((a + Math.PI / 2) / (2 * Math.PI)) % 1 + 1) % 1 * 365); select(idxByDoy.get(doy) ?? -1); return; } }
+    select(-1);
+  });
+
+  // render only while on screen and the page is visible
+  let visible = true; new IntersectionObserver(es => visible = es[0].isIntersecting, { rootMargin: '160px 0px' }).observe(el);
+  new ResizeObserver(() => { const w = el.clientWidth, h = el.clientHeight; if (!w || !h) return; W = w; H = h; renderer.setSize(w, h); cam.aspect = w / h; cam.updateProjectionMatrix(); }).observe(el);
+  const clock = new THREE.Clock();
+  (function frame() { requestAnimationFrame(frame); const dt = Math.min(.05, clock.getDelta()); if (!visible || document.hidden) return;
+    if (grow < 1.2) { grow = Math.min(1.2, grow + dt); layout(grow); }
+    ctl.update(); renderer.render(scene, cam); placeLabels(); })();
+})();
+</script>
+</body></html>

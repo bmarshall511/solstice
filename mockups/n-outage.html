@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Solstice · Outage readiness</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+body{overflow:auto;background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}.stage{position:static;padding:24px 0 60px;align-items:flex-start}.phone{height:auto;max-height:none;overflow:visible}.screen{position:static;padding:34px 20px 40px;overflow:visible}.view{display:block}
+.card{overflow:hidden}
+/* outage scene: same box as the Day Ring canvas, but it scrolls with the page */
+.o3d{height:330px;touch-action:pan-y;background:#05070d}
+.o3d canvas{position:absolute;inset:0;touch-action:pan-y}
+.o3d .roofhud{max-width:calc(100% - 24px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.o3d .roofhud span{display:block;color:var(--dim)}
+.o3d .hlbl,.o3d .hlead{will-change:left,top}
+.o3d .hlbl.dark b{color:var(--mute)}
+.hbtns{display:flex;gap:6px;align-items:center;flex:none}
+button.chip{cursor:pointer;font-family:inherit}
+button.chip.on{background:rgba(255,90,78,.14);border-color:rgba(255,90,78,.4);color:#ffd0cb}
+.seg2.wide{margin-top:10px}.seg2.wide button{flex:1 1 auto;text-align:center}
+.ochips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.rung{min-width:0}.rung small{font:10.5px "JetBrains Mono";color:var(--mute);margin-left:6px;white-space:nowrap}
+.rung i{display:block;height:3px;border-radius:2px;margin-top:5px;background:var(--c);transition:width .6s var(--ease),opacity .3s}
+.kv .off{opacity:.35;text-decoration:line-through}
+.kv .off i{opacity:.4}
+.wkhead b{min-width:0}
+</style></head><body>
+<div class="stage">
+  <aside class="side"><div class="k">Mockup · outage readiness</div><h2>If PEC dropped now.</h2>
+    <p>A new first card in Insights → Home. The app's own house model is drawn at night, fully islanded: windows lit, Powerwall LEDs and fill strips on, the grid wire red and still, running to a PEC pole with a dark street lamp while six neighbouring houses sit dark. The toggles re-run a battery simulation in the browser with the AC, or the AC and pool pump, switched off, and the fill strips drain to the predicted empty point. <b>Preview</b> plays the next 48 hours of the outage in about nine seconds, sunrise included. The second frame is the storm version: cloud, rain and lightning, with Storm Watch having charged the Powerwalls to 100%.</p>
+    <div class="demo"><h4>What's real vs mocked</h4><p>Real: the house, panels, Powerwalls and wiring are copied from the app's home scene, the simulation uses the Next 48 hours model's battery step (reserve 0, no grid), and the outage strip is the History card's drawing. Mocked: every number (74% charge, the hourly load profile, tomorrow's 41 kWh, the outage dates), and where the neighbours and the pole sit.</p></div></aside>
+  <div class="phone"><div class="screen"><section class="view on">
+    <div class="hello"><div><h3>Insights</h3><p>From your real data</p></div><div class="wx"><b>68</b>kWh today</div></div>
+    <div class="seg"><button>Today</button><button>Appliances</button><button>Planner</button><button class="on">Home</button></div>
+
+    <!-- ============ frame 1: outage readiness, clear night ============ -->
+    <div class="card" id="cardA">
+      <div class="h"><b>Outage readiness</b><span class="hbtns"><button class="chip" data-preview>Preview</button></span></div>
+      <div class="ring3d o3d" data-scene><div class="roofhud" data-hud>—</div></div>
+      <div class="seg2 wide" data-seg><button class="on" data-s="asis">As is</button><button data-s="noac">Without AC</button><button data-s="noacpool">Without AC + pool</button></div>
+      <div class="ochips">
+        <span class="chipx"><i style="--c:rgba(242,244,248,.38)"></i>Storm Watch · off</span>
+        <span class="chipx"><i style="--c:var(--batt)"></i>NWS · no alerts</span>
+        <span class="chipx"><i style="--c:var(--batt)"></i>ERCOT · normal</span>
+        <span class="chipx"><i style="--c:var(--home)"></i>Reserve 20%</span>
+      </div>
+      <div class="wkhead"><span>If it kept drawing</span><b data-usable>—</b></div>
+      <div class="kv" data-ladder></div>
+      <div class="kv" data-rows></div>
+      <p class="fine">Up to 10 kW at once (2 × PW2 at 5 kW continuous). The AC and pool pump starting together stay well inside that.</p>
+      <div class="wkhead"><span>Outages</span><b>12 months</b></div>
+      <p style="margin-top:6px">Last outage: <b style="color:var(--text)">Aug 1 · 5 m</b> · 4 in 12 months · longest 1 h 33 m</p>
+      <svg class="mini" id="outStripN" viewBox="0 0 310 64"></svg>
+      <p class="fine">The ladder divides what the Powerwalls hold now (charge × 27 kWh × 95%) by a steady draw. The HUD runs tonight's hourly load through the Next 48 hours battery model instead, so it lasts longer as the house draws less overnight. "Sun tomorrow adds" counts the hours tomorrow's sun keeps the house fully powered after the first empty.</p>
+    </div>
+
+    <div class="card" style="opacity:.5"><div class="h"><b>Heat &amp; your AC</b><span>every 80°F+ day · real highs</span></div><p class="fine">Existing card, unchanged. Outage readiness sits above it.</p></div>
+
+    <!-- ============ frame 2: storm variant ============ -->
+    <div class="sect">Frame 2 · storm variant</div>
+    <div class="card" id="cardB">
+      <div class="h"><b>Outage readiness</b><span class="hbtns"><span class="badge">Storm Watch</span><button class="chip" data-preview>Preview</button></span></div>
+      <div class="ring3d o3d" data-scene><div class="roofhud" data-hud>—</div></div>
+      <div class="seg2 wide" data-seg><button class="on" data-s="asis">As is</button><button data-s="noac">Without AC</button><button data-s="noacpool">Without AC + pool</button></div>
+      <div class="ochips">
+        <span class="chipx alert"><i style="--c:var(--out)"></i>Storm Watch · active</span>
+        <span class="chipx alert"><i style="--c:var(--out)"></i>NWS · Severe Thunderstorm Warning</span>
+        <span class="chipx"><i style="--c:var(--batt)"></i>ERCOT · normal</span>
+        <span class="chipx"><i style="--c:var(--home)"></i>Reserve 20%</span>
+      </div>
+      <div class="kv" data-rows></div>
+      <p class="fine">Shown when Storm Watch or an NWS alert is active: cloud cover, rain, and a lightning flash every 6 to 12 seconds (off with reduced motion). Storm Watch has already charged the Powerwalls to 100%, and tomorrow's forecast is cloudy. The ladder, the 10 kW limit and the outage history are the same as in frame 1.</p>
+    </div>
+
+    <p class="fine" style="margin:18px 4px 0">Illustrative data. No price, loan, bill or location figures are shown.</p>
+  </section></div></div>
+</div>
+
+<!-- data, simulation and card UI (plain script so the numbers still show if the 3D fails to load) -->
+<script>
+(function(){
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)), lerp=(a,b,k)=>a+(b-a)*k, ease=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+  const CAP=27, MAXKW=10, H0=21, DAYS=['Fri','Sat','Sun','Mon'];
+  // typical hourly home load for a hot September day (kW), about 78 kWh/day; 9 PM draw is 2.4 kW
+  const PROFILE=[1.95,1.9,1.85,1.8,1.75,1.75,2.05,2.5,3.2,3.6,4.0,4.2,4.4,4.6,4.9,5.1,5.0,4.9,4.7,4.1,3.1,2.4,2.2,2.0];
+  const AC_KW=2.0, AC_DUTY=.7, POOL=h=>h===14?.8:(h>=10&&h<19?.153:0); // pool plan: 10a–7p @1,500 rpm (153 W), 2p–3p @2,400
+  function solarDay(kwh){ const w=Array.from({length:24},(_,h)=>Math.pow(Math.max(0,Math.sin(Math.PI*(h+.5-7.3)/12.2)),1.7)); const s=w.reduce((a,b)=>a+b); return w.map(x=>x/s*kwh); }
+
+  /* simulateIsland: forecast48's battery step with reserve 0 and no grid (web/src/lib/model.js) */
+  function simulateIsland({ soc0, capKwh, maxKw, hours=48, solarKw, loadKw }){
+    let soc=soc0/100, emptyH=null, unmetKwh=0, minSoc=soc, sunAdds=0; const points=[];
+    for(let k=0;k<hours;k++){
+      const s=solarKw[k], h=loadKw[k], n=s-h; let b;
+      if(n>0) b=-Math.min(n,maxKw,(1-soc)*capKwh/.95); else b=Math.min(-n,maxKw,Math.max(0,soc)*capKwh*.95);
+      soc=clamp(soc+(b<0?-b*.95:-b/.95)/capKwh,0,1);
+      const u=n<0?Math.max(0,h-s-b):0; unmetKwh+=u;
+      if(u>1e-6&&emptyH==null) emptyH=k+b/(h-s);
+      if(emptyH!=null&&k>=Math.ceil(emptyH)&&k<Math.ceil(emptyH)+24&&u<1e-6) sunAdds++;
+      minSoc=Math.min(minSoc,soc); points.push({k,soc,s,h,b,u});
+    }
+    return { points, emptyH, sunAdds, minSoc, unmetKwh };
+  }
+  const fmtHM=h=>{ let H=Math.floor(h), M=Math.round((h-H)*60); if(M===60){H++;M=0;} return h>=24?`${Math.round(h)} h`:M?`${H} h ${M} m`:`${H} h`; };
+  const clock=(k,step=1,day=true)=>{ const tot=H0+k; let d=Math.floor(tot/24), hh=tot-d*24, H=Math.floor(hh), M=Math.round((hh-H)*60/step)*step; if(M>=60){H++;M=0;} if(H>=24){H-=24;d++;}
+    return `${day?DAYS[d]+' ':''}${H%12||12}:${String(M).padStart(2,'0')} ${H<12?'AM':'PM'}`; };
+
+  function makeCard(root, cfg){
+    const sol=[Array(24).fill(0),solarDay(cfg.solar[0]),solarDay(cfg.solar[1])].flat(), solarKw=Array.from({length:48},(_,k)=>sol[H0+k]);
+    const loads={ asis:()=>0, noac:()=>AC_KW*AC_DUTY, noacpool:h=>AC_KW*AC_DUTY+POOL(h) };
+    const C={ cfg, scen:'asis', previewOutage:false, anim:null, sim:null, knots:null, cur:{k:0,soc:cfg.soc0/100,s:0,h:2.4,b:2.4,dark:false}, root };
+    const $=s=>root.querySelector(s), hud=$('[data-hud]');
+    function run(){
+      const loadKw=Array.from({length:48},(_,k)=>Math.max(.6,PROFILE[(H0+k)%24]-loads[C.scen]((H0+k)%24)));
+      C.sim=simulateIsland({ soc0:cfg.soc0, capKwh:CAP, maxKw:MAXKW, solarKw, loadKw });
+      const S=[cfg.soc0/100,...C.sim.points.map(p=>p.soc)]; C.knots=S.map((v,i)=>[i,v]);
+      if(C.sim.emptyH!=null){ const e=C.sim.emptyH; C.knots=C.knots.filter(([i])=>i<=Math.floor(e)).concat([[e,0]],C.knots.filter(([i])=>i>e)); }
+      let km=0; for(let i=1;i<=12;i++) if(S[i]<S[km]-1e-6) km=i; C.kNight=km; C.socNight=S[km];
+      let kg=0; S.forEach((v,i)=>{ if(v<S[kg]-1e-6) kg=i; }); C.kMin=kg;
+      C.kw0=loadKw[0];
+    }
+    C.socAt=k=>{ const n=C.knots; if(k<=0) return n[0][1]; for(let i=1;i<n.length;i++) if(n[i][0]>=k){ const [a,va]=n[i-1],[b,vb]=n[i]; return lerp(va,vb,(k-a)/(b-a||1)); } return n[n.length-1][1]; };
+    function sample(k){ const i=Math.min(47,Math.floor(k)), p=C.sim.points[i], e=C.sim.emptyH;
+      C.cur={ k, soc:C.socAt(k), s:p.s, h:p.h, b:p.b, dark:p.u>1e-6&&(e==null||i!==Math.floor(e)||k>=e) }; }
+    function summary(){ const m=C.sim; if(m.emptyH!=null) return [`${fmtHM(m.emptyH)} at ${C.kw0.toFixed(1)} kW`, `sun tomorrow adds ~${m.sunAdds} h${cfg.solar[0]<25?' · clouds':''}`];
+      return [`48 h+ at ${C.kw0.toFixed(1)} kW`, `lowest ${Math.round(m.minSoc*100)}% · ${clock(C.kMin)} · sun refills`]; }
+    let last='';
+    function setHud(a,b){ const s=`${a}<span>${b}</span>`; if(s!==last){ hud.innerHTML=s; last=s; C.hudDirty=true; } }
+    function rows(){ const m=C.sim, usable=cfg.soc0/100*CAP*.95;
+      const r=[['Powerwalls now',`${cfg.soc0}% · ${usable.toFixed(1)} kWh`],['Reserve (kept for outages)','20%'],['Backup at current draw',`${fmtHM(usable/C.kw0)} at ${C.kw0.toFixed(1)} kW`],
+        ['Tonight (sim)', m.emptyH!=null&&m.emptyH<16?`empty ~${clock(m.emptyH,1,false)}`:`${Math.round(C.socNight*100)}% by ${clock(C.kNight,1,false)}`],
+        ["Tomorrow's solar",`${cfg.solar[0]} kWh${cfg.solar[0]<25?' · clouds':''}`]];
+      if(!cfg.storm) r.push(['Most at once','10 kW']);
+      $('[data-rows]').innerHTML=r.map(([a,b])=>`<span>${a}</span><b>${b}</b>`).join('');
+      const lad=$('[data-ladder]'); if(lad){
+        const R=[['on','Always-on','0.6 kW',.6,'rgba(242,244,248,.75)'],['pool','+ Pool pump','+0.15 → 0.75 kW',.75,'var(--home)'],['ac','+ AC','+1.4 kW (2.0 × 70% duty)',2.15,'#ff9e66'],['else','+ Everything else','+0.25 → 2.4 kW',2.4,'#8d93a8']];
+        const off=k=>(k==='ac'&&C.scen!=='asis')||(k==='pool'&&C.scen==='noacpool');
+        lad.innerHTML=R.map(([k,a,sm,kw,c])=>{ const h=usable/kw; return `<span class="rung${off(k)?' off':''}" style="--c:${c}">${a}<small>${sm}</small><i style="width:${Math.min(100,h/48*100).toFixed(1)}%"></i></span><b class="${off(k)?'off':''}">${fmtHM(h)}</b>`; }).join('');
+        $('[data-usable]').textContent=`${usable.toFixed(1)} kWh usable`; }
+    }
+    function go(anim){ C.anim=anim?{...anim,t0:performance.now()}:null; }
+    C.tick=now=>{
+      const A=C.anim; if(!A){ sample(0); C.cur.soc=cfg.soc0/100; setHud(...summary()); return; }
+      const p=clamp((now-A.t0)/A.dur,0,1);
+      if(A.type==='drain'||A.type==='preview'){
+        const k=(A.type==='drain'?ease(p):p)*A.kEnd; sample(k);
+        const pct=Math.round(C.cur.soc*100), c=C.cur;
+        if(A.type==='drain') setHud(`+${fmtHM(k)} · ${pct}%`, `${clock(k,10)} · home ${c.h.toFixed(1)} kW`);
+        else setHud(`${clock(k,10)} · ${pct}%`, c.dark?'dark · Powerwalls empty':c.s>=c.h?`sun → home${c.b<-.05?` · +${(-c.b).toFixed(1)} kW to PW`:''}`:c.s>.05?`sun ${c.s.toFixed(1)} + PW ${c.b.toFixed(1)} kW → home`:`Powerwalls → home ${c.b.toFixed(1)} kW`);
+        if(p>=1){ if(A.type==='drain') go({type:'hold',dur:1400}); else { C.previewOutage=false; root.querySelector('[data-preview]').classList.remove('on'); go({type:'back',dur:700,from:C.cur.soc}); } }
+      } else if(A.type==='hold'){ setHud(...summary()); if(p>=1) go({type:'back',dur:700,from:C.cur.soc}); }
+      else if(A.type==='back'){ sample(0); C.cur.soc=lerp(A.from,cfg.soc0/100,ease(p)); setHud(...summary()); if(p>=1) go(null); }
+    };
+    root.querySelector('[data-seg]').onclick=e=>{ const b=e.target.closest('button'); if(!b) return;
+      root.querySelectorAll('[data-seg] button').forEach(x=>x.classList.toggle('on',x===b)); C.scen=b.dataset.s; run(); rows();
+      C.previewOutage=false; root.querySelector('[data-preview]').classList.remove('on');
+      go({type:'drain',dur:2000,kEnd:C.sim.emptyH??C.kNight}); };
+    root.querySelector('[data-preview]').onclick=e=>{ C.previewOutage=!C.previewOutage; e.currentTarget.classList.toggle('on',C.previewOutage);
+      if(C.previewOutage) go({type:'preview',dur:9000,kEnd:47.99}); else go({type:'back',dur:700,from:C.cur.soc}); };
+    run(); rows(); C.tick(performance.now());
+    return C;
+  }
+  const cards=[ makeCard(document.getElementById('cardA'),{ soc0:74, solar:[41,38], storm:false }), makeCard(document.getElementById('cardB'),{ soc0:100, solar:[16,30], storm:true }) ];
+  window.OUTAGE_CARDS=cards;
+  (function loop(now){ cards.forEach(c=>c.tick(now)); requestAnimationFrame(loop); })(performance.now());
+
+  /* 12-month outage strip: same drawing as history.js drawOutages */
+  (function(){ const svgText=(x,y,t,{size=9.5,fill='rgba(242,244,248,.4)',anchor='start',font='JetBrains Mono',weight=400}={})=>`<text x="${x}" y="${y}" fill="${fill}" font-size="${size}" font-family="${font}" font-weight="${weight}" text-anchor="${anchor}">${t}</text>`;
+    const yearAgo='2025-09-25', addDays=(d,n)=>new Date(Date.parse(d+'T12:00:00Z')+n*864e5).toISOString().slice(0,10);
+    const O=[{ts:'2026-08-01T14:05',duration_s:300},{ts:'2026-05-19T16:47',duration_s:5580},{ts:'2026-02-03T06:10',duration_s:660},{ts:'2025-11-14T18:22',duration_s:1320}];
+    const fmtDur=hrs=>{ const H=Math.floor(hrs), M=Math.round((hrs-H)*60); return H?`${H}h ${String(M).padStart(2,'0')}m`:`${M}m`; };
+    const months=Array.from({length:12},(_,i)=>addDays(yearAgo,i*30.4).slice(0,7));
+    let s='<line x1="6" x2="304" y1="28" y2="28" stroke="rgba(255,255,255,.1)"/>';
+    months.forEach((m,i)=>s+=svgText(6+i*24.8+12,58,new Date(m+'-15T12:00:00Z').toLocaleDateString('en-US',{month:'narrow',timeZone:'UTC'}),{anchor:'middle'}));
+    O.forEach(o=>{ const f=(Date.parse(o.ts)-Date.parse(yearAgo))/(365*864e5), r=3+Math.sqrt(o.duration_s/3600)*5;
+      s+=`<circle cx="${(6+f*298).toFixed(1)}" cy="28" r="${r.toFixed(1)}" fill="#ff5a4e" fill-opacity=".3" stroke="#ff5a4e"><title>${o.ts.replace('T',' ')} · ${fmtDur(o.duration_s/3600)}</title></circle>`; });
+    document.getElementById('outStripN').innerHTML=s; })();
+})();
+</script>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+/* geometry copied from web/src/scenes/home.js buildHouse (panels, windows and Powerwall parts instanced to keep draw calls near 25) */
+const RAD=Math.PI/180, TILT=27*RAD, W=14, L=24, WALL=3.2, OH=.5;
+const THETA=Math.atan2(Math.sin(154*RAD),-Math.cos(154*RAD));
+const X=-W/2-.07, PWZ=[9.7,10.6];
+const COL={ solar:0xffc15e, batt:0x4ef0a6, home:0x6cc4ff, out:0xff5a4e, rest:0x8d93a8, idle:0x9aa3b0 };
+const CALM=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const V=(x,y,z)=>new THREE.Vector3(x,y,z), ONE=V(1,1,1), m4=new THREE.Matrix4();
+const qY=a=>new THREE.Quaternion().setFromAxisAngle(V(0,1,0),a);
+
+function tex(w,h,draw){ const c=document.createElement('canvas'); c.width=w; c.height=h; draw(c.getContext('2d'),w,h); const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; t.anisotropy=4; return t; }
+function hipGeo(w,l,H){ const r=Math.max(0,l-w), A=[-w,0,-l],B=[w,0,-l],C=[w,0,l],D=[-w,0,l],R1=[0,H,-r],R2=[0,H,r];
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute([A,D,R2,A,R2,R1,B,R1,R2,B,R2,C,A,R1,B,D,C,R2].flat(),3)); g.computeVertexNormals(); return g; }
+
+function buildHouse(){
+  const edgeMats=[];
+  const mat=(c,r=.8,m=.05)=>new THREE.MeshStandardMaterial({color:c,roughness:r,metalness:m});
+  const wall=mat(0x3b3f47), roofM=mat(0x2a2c32,.85,.05), trim=mat(0x4a4f58,.6);
+  const panelMat=new THREE.MeshStandardMaterial({ roughness:.25, metalness:.55, emissive:0x1a2a66, emissiveIntensity:0, map:tex(256,400,(x,w,h)=>{
+    x.fillStyle='#12182b'; x.fillRect(0,0,w,h); x.strokeStyle='rgba(150,170,220,.28)'; x.lineWidth=3;
+    for(let i=1;i<6;i++){x.beginPath();x.moveTo(i*w/6,0);x.lineTo(i*w/6,h);x.stroke();} for(let j=1;j<10;j++){x.beginPath();x.moveTo(0,j*h/10);x.lineTo(w,j*h/10);x.stroke();}
+    x.strokeStyle='rgba(210,220,240,.55)'; x.lineWidth=8; x.strokeRect(0,0,w,h); }) });
+  const winMat=new THREE.MeshStandardMaterial({ color:0x6f7a8e, roughness:.08, metalness:.6, emissive:0xffc98a, emissiveIntensity:0 });
+  const g=new THREE.Group(); g.rotation.y=THETA;
+  function hip(Wd,Ln,wallH,tilt,wallMat,roofMat,over){
+    const grp=new THREE.Group();
+    const body=new THREE.Mesh(new THREE.BoxGeometry(Wd,wallH,Ln),wallMat); body.position.y=wallH/2; grp.add(body);
+    const w=Wd/2+over, l=Ln/2+over, geo=hipGeo(w,l,w*Math.tan(tilt));
+    const roof=new THREE.Mesh(geo,roofMat.clone()); roof.material.side=THREE.DoubleSide; roof.material.flatShading=true; roof.position.y=wallH; grp.add(roof);
+    const e=new THREE.LineSegments(new THREE.EdgesGeometry(geo),new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:.12})); e.position.y=wallH; grp.add(e); edgeMats.push(e.material);
+    return { grp, w };
+  }
+  const main=hip(W,L,WALL,TILT,wall,roofM,OH); g.add(main.grp);
+  const patio=hip(7,6,2.8,22*RAD,mat(0x34373e),mat(0x1f2126,.85),.3); patio.grp.position.set(-5.5,0,-14.5); g.add(patio.grp);
+  // 30 SunPower modules on the west face, 3 rows × 10: one InstancedMesh + one merged edge set
+  const arr=new THREE.Group(); arr.position.set(-main.w,WALL,0); arr.rotation.z=TILT; g.add(arr);
+  const pGeo=new THREE.BoxGeometry(1.558,.05,1.046), eg=new THREE.EdgesGeometry(pGeo), parts=[], panels=new THREE.InstancedMesh(pGeo,panelMat,30);
+  let n=0; for(let r=0;r<3;r++) for(let c=0;c<10;c++){ const x=.9+(r+.5)*1.591, y=.09, z=1.2+(c-4.5)*1.079; panels.setMatrixAt(n++,m4.makeTranslation(x,y,z)); parts.push(eg.clone().translate(x,y,z)); }
+  arr.add(panels);
+  const panelEdge=new THREE.LineBasicMaterial({color:0x8fb8ff,transparent:true,opacity:.15}); edgeMats.push(panelEdge); arr.add(new THREE.LineSegments(mergeGeometries(parts),panelEdge));
+  // windows on the west wall, garage door on the south end
+  const wins=new THREE.InstancedMesh(new THREE.PlaneGeometry(1.4,1.2),winMat,4), frames=new THREE.InstancedMesh(new THREE.PlaneGeometry(1.6,1.4),trim,4), qW=qY(-Math.PI/2);
+  [-8.5,-5.5,1.5,4.5].forEach((z,i)=>{ wins.setMatrixAt(i,m4.compose(V(-W/2-.03,1.7,z),qW,ONE)); frames.setMatrixAt(i,m4.compose(V(-W/2-.015,1.7,z),qW,ONE)); }); g.add(frames,wins);
+  const door=new THREE.Mesh(new THREE.PlaneGeometry(5,2.3),new THREE.MeshStandardMaterial({roughness:.7,map:tex(256,256,(x,w,h)=>{x.fillStyle='#2a2d33';x.fillRect(0,0,w,h);x.fillStyle='rgba(0,0,0,.35)';for(let j=1;j<8;j++)x.fillRect(0,j*h/8-2,w,4);})}));
+  door.position.set(2.2,1.2,L/2+.02); g.add(door);
+  // gateway + 2 Powerwall 2s on the west wall near the garage end
+  const gw=new THREE.Mesh(new THREE.BoxGeometry(.14,.75,.5),mat(0x4a4e57,.5,.2)); gw.position.set(-W/2-.08,1.6,8.6); g.add(gw);
+  const slabs=new THREE.InstancedMesh(new THREE.BoxGeometry(.16,1.15,.75),new THREE.MeshStandardMaterial({color:0xf2f3f5,roughness:.35}),2);
+  PWZ.forEach((z,i)=>slabs.setMatrixAt(i,m4.makeTranslation(-W/2-.1,.95,z))); g.add(slabs);
+  // Powerwall face: track, fill strip (scale.y = charge), 20% reserve tick, LED; one InstancedMesh of bottom-anchored unit planes
+  const fxGeo=new THREE.PlaneGeometry(1,1).translate(0,.5,0);
+  const fx=new THREE.InstancedMesh(fxGeo,new THREE.MeshBasicMaterial({toneMapped:false}),8); g.add(fx);
+  const FX=(i,x,y,z,sx,sy,col)=>{ fx.setMatrixAt(i,m4.compose(V(x,y,z),qW,V(sx,Math.max(.001,sy),1))); if(col!=null) fx.setColorAt(i,new THREE.Color(col)); };
+  const face=-W/2-.18;
+  PWZ.forEach((z,i)=>{ FX(i,face-.006,.45,z+.05,.6,1,0x0b0d12); FX(2+i,face-.016,.45,z+.05,.6,.74,COL.solar); FX(4+i,face-.026,.45+.2-.0125,z+.05,.66,.025,COL.out); FX(6+i,face-.026,.5,z-.3,.03,.5,COL.solar); });
+  const setPw=(soc,col,led)=>{ PWZ.forEach((z,i)=>{ FX(2+i,face-.016,.45,z+.05,.6,soc,col); fx.setColorAt(6+i,new THREE.Color(led)); }); fx.instanceMatrix.needsUpdate=true; fx.instanceColor.needsUpdate=true; };
+  // wiring (same FEED as home.js); the grid feed ends at the PEC pole
+  const FEED={ solar:[[X,WALL-.05,6.9],[X,2.05,6.9],[X,2.05,8.45]], home:[[X,1.6,8.3],[X,1.6,5.3]], batt:[[X,1.4,8.9],[X,1.4,9.3]], grid:[[X,1.25,8.6],[X,.05,8.6],[X-3,.05,8.6],[X-3,.05,14]] };
+  const flows={};
+  for(const [k,pts] of Object.entries(FEED)){
+    const path=new THREE.CurvePath(); for(let i=0;i<pts.length-1;i++) path.add(new THREE.LineCurve3(V(...pts[i]),V(...pts[i+1])));
+    const len=path.getLength(), u={uColor:{value:new THREE.Color()},uT:{value:0},uOn:{value:0},uDir:{value:1},uLen:{value:len},uSpeed:{value:1}};
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(path,Math.max(12,Math.round(len*12)),.06,8,false),new THREE.ShaderMaterial({uniforms:u,
+      vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+      fragmentShader:`varying vec2 vUv;uniform vec3 uColor;uniform float uT,uOn,uDir,uLen,uSpeed;
+        void main(){float d=fract(vUv.x*uLen/.9-uT*uSpeed*uDir);float dash=smoothstep(.0,.15,d)*smoothstep(.75,.45,d);
+          gl_FragColor=vec4(mix(vec3(.16,.17,.2),uColor*1.6,uOn*(.35+.65*dash)),1.);}`})));
+    flows[k]=u;
+  }
+  // PEC pole at the grid feed's end (X−3, 0, 14): pole + crossarm + lamp arm merged, dark lamp head
+  const pole=mergeGeometries([ new THREE.CylinderGeometry(.13,.18,8,8).translate(0,4,0), new THREE.BoxGeometry(.12,.12,2.0).translate(0,7.6,0), new THREE.BoxGeometry(.08,.08,1.7).translate(0,6.6,.85) ]);
+  const poleM=new THREE.Mesh(pole,mat(0x3b342c,.9)); poleM.position.set(X-3,0,14); g.add(poleM);
+  const lamp=new THREE.Mesh(new THREE.BoxGeometry(.3,.16,.55),new THREE.MeshStandardMaterial({color:0x202328,roughness:.5,metalness:.3,emissive:0x000000})); lamp.position.set(X-3,6.48,15.65); g.add(lamp);
+  g.updateMatrixWorld(true);
+  const local=(x,y,z)=>g.localToWorld(V(x,y,z));
+  const anchors={ home:local(-W/2,2.4,4.5), pw:local(-W/2-.1,.3,10.2), grid:local(X-3,8.2,14) };
+  return { group:g, panelMat, winMat, flows, anchors, local, edgeMats, setPw };
+}
+const sunVec=({el,az},v=new THREE.Vector3())=>v.set(Math.sin(az*RAD)*Math.cos(el*RAD),Math.sin(el*RAD),-Math.cos(az*RAD)*Math.cos(el*RAD));
+
+function createOutageScene(host, card){
+  const storm=card.cfg.storm, hud=host.querySelector('[data-hud]');
+  const canvas=document.createElement('canvas'); canvas.className='house-canvas'; host.prepend(canvas);
+  const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.1; // no shadows
+  const scene=new THREE.Scene(); scene.fog=new THREE.Fog(0x1a2030,45,140);
+  const H=buildHouse(); scene.add(H.group);
+  const camera=new THREE.PerspectiveCamera(36,1,1,500);
+  const controls=new OrbitControls(camera,canvas); canvas.style.touchAction='pan-y'; // page keeps scrolling; horizontal drags orbit
+  Object.assign(controls,{enableDamping:true,enablePan:false,enableZoom:false,maxPolarAngle:Math.PI*.48});
+  camera.position.copy(H.local(-42,11,17)); controls.target.copy(H.local(-3,2.6,5));
+
+  const sky={top:{value:new THREE.Color()},hor:{value:new THREE.Color()},sunDir:{value:new THREE.Vector3()},glow:{value:new THREE.Color()},cloud:{value:0},t:{value:0}};
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(300,32,16),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,fog:false,uniforms:sky,
+    vertexShader:`varying vec3 vD;void main(){vD=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+    fragmentShader:`varying vec3 vD;uniform vec3 top,hor,sunDir,glow;uniform float cloud,t;
+    float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+    float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x),f.y);}
+    float fbm(vec2 p){float s=0.,a=.5;for(int i=0;i<5;i++){s+=a*n(p);p*=2.;a*=.5;}return s;}
+    void main(){float y=max(vD.y,0.);vec3 c=mix(hor,top,pow(y,.6));float s=max(dot(vD,normalize(sunDir)),0.);c+=glow*(pow(s,300.)*2.5+pow(s,8.)*.4);
+      vec2 uv=vD.xz/(vD.y+.25)*1.4+vec2(t*.02,0.);float cl=smoothstep(1.-cloud*.95,1.25-cloud*.6,fbm(uv*1.3))*smoothstep(0.,.25,vD.y);
+      c=mix(c,mix(hor,vec3(.85,.88,.92),.35)*(.55+.6*max(0.,normalize(sunDir).y)),cl*.85);gl_FragColor=vec4(c,1.);}`})));
+  const hemi=new THREE.HemisphereLight(0xbfd2ff,0x2a2d34,.9); scene.add(hemi);
+  const moon=new THREE.DirectionalLight(0x9fbcff,0); moon.position.set(35,55,-30); scene.add(moon,moon.target);
+  const nightFill=new THREE.DirectionalLight(0x8fa8d8,0); scene.add(nightFill,nightFill.target);
+  const sun=new THREE.DirectionalLight(0xfff0d8,0); scene.add(sun,sun.target);
+  const ground=new THREE.Mesh(new THREE.CircleGeometry(70,72),new THREE.MeshStandardMaterial({color:0x15171c,roughness:.95})); ground.rotation.x=-Math.PI/2; scene.add(ground);
+
+  // neighbourhood: six dark houses on a loose ±35 m grid (house-local), InstancedMesh walls + 6-triangle hip roofs, matte, no windows
+  const nMat=new THREE.MeshStandardMaterial({color:0x14161c,roughness:.95}), nRoofMat=new THREE.MeshStandardMaterial({color:0x14161c,roughness:.95,flatShading:true,side:THREE.DoubleSide});
+  const NB=[[33,-33,.95,.2],[36,-8,1.05,-.1],[33,15,.9,.15],[8,-38,1,.05],[-30,-36,1.1,-.2],[6,38,.95,.1]];
+  const nBox=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1).translate(0,.5,0),nMat,6), nRoof=new THREE.InstancedMesh(hipGeo(6.4,9.4,6.4*Math.tan(25*RAD)),nRoofMat,6);
+  NB.forEach(([x,z,s,j],i)=>{ const p=H.local(x,0,z), q=qY(THETA+j); nBox.setMatrixAt(i,m4.compose(p,q,V(12*s,3*s,18*s))); nRoof.setMatrixAt(i,m4.compose(p.clone().setY(3*s),q,V(s,s,s))); });
+  scene.add(nBox,nRoof);
+
+  // rain (home.js), only in the storm frame
+  const RN=1200, rp=new Float32Array(RN*6);
+  for(let i=0;i<RN;i++){ const x=(Math.random()-.5)*70, y=Math.random()*30, z=(Math.random()-.5)*70; rp.set([x,y,z,x-.1,y-.9,z],i*6); }
+  const rg=new THREE.BufferGeometry(); rg.setAttribute('position',new THREE.BufferAttribute(rp,3));
+  const rain=new THREE.LineSegments(rg,new THREE.LineBasicMaterial({color:0xaecbff,transparent:true,opacity:storm?.45:0})); rain.visible=storm; scene.add(rain);
+
+  // labels: the app's .hlbl + leader lines, clamped inside the canvas and clear of the HUD
+  const lift={home:-44,pw:22,grid:-12}, names={home:'HOME',pw:'POWERWALL · 2×',grid:'PEC GRID'}, els={}, lines={}, size={}, txt={};
+  for(const k of Object.keys(H.anchors)){
+    const el=document.createElement('div'); el.className=`hlbl ${lift[k]>0?'below':''} ${k==='grid'?'off':''}`; el.innerHTML=`<small>${names[k]}</small><b>—</b>`; host.appendChild(el); els[k]=el;
+    const l=document.createElement('div'); l.className='hlead'; host.appendChild(l); lines[k]=l;
+  }
+  const setLbl=(k,html)=>{ if(txt[k]===html) return; txt[k]=html; els[k].querySelector('b').innerHTML=html; size[k]=[els[k].offsetWidth,els[k].offsetHeight]; };
+  let hudBox=null;
+
+  const C={nightTop:new THREE.Color(0x05070d),nightHor:new THREE.Color(0x121a2c),duskTop:new THREE.Color(0x2a3560),duskHor:new THREE.Color(0xe79a68),dayTop:new THREE.Color(0x3d6fb0),dayHor:new THREE.Color(0x9fb8d6),grayTop:new THREE.Color(0x4b5360),grayHor:new THREE.Color(0x7d8591),flash:new THREE.Color(0xb9c6e8)};
+  const sd=new THREE.Vector3(), v=new THREE.Vector3(), cw=new THREE.Color();
+  let CW=1, CH=1;
+  function resize(){ const r=host.getBoundingClientRect(); if(!r.width) return; CW=r.width; CH=r.height; renderer.setSize(CW,CH,false); camera.aspect=CW/CH; camera.updateProjectionMatrix(); hudBox=null; }
+  new ResizeObserver(resize).observe(host); resize();
+  let nextFlash=3+Math.random()*4, flashAt=-10, lastSoc=-1, lastCol=-1;
+
+  return function render(dt,t){
+    const cur=card.cur, cloud=storm?1:.1;
+    // time of day for the preview; "now" is 9 PM with the sun forced to el = −10
+    const hod=(21+cur.k)%24, el=cur.k<.01?-10:Math.max(-10,62*Math.sin(Math.PI*(hod-7.3)/12.2)), az=el>-4?90+180*clamp((hod-7.3)/12.2):290;
+    sunVec({el,az},sd);
+    let flash=0;
+    if(storm&&!CALM){ if(t>nextFlash){ flashAt=t; nextFlash=t+6+Math.random()*6; } const d=t-flashAt; flash=Math.exp(-d*9)+(d>.18?.7*Math.exp(-(d-.18)*12):0); if(d>1.5) flash=0; }
+    const up=clamp((el+4)/14), high=clamp(el/35);
+    sky.top.value.copy(C.nightTop).lerp(C.duskTop,up).lerp(C.dayTop,high).lerp(C.grayTop,cloud*.7*up).lerp(C.flash,flash*.55);
+    sky.hor.value.copy(C.nightHor).lerp(C.duskHor,up).lerp(C.dayHor,high).lerp(C.grayHor,cloud*.7*up).lerp(C.flash,flash*.35);
+    sky.sunDir.value.copy(sd); sky.glow.value.set(0xffd9a0).multiplyScalar(up*(1-cloud*.75)); sky.cloud.value=cloud; sky.t.value=t;
+    scene.fog.color.copy(sky.hor.value).multiplyScalar(.6);
+    sun.position.copy(sd).multiplyScalar(60); sun.intensity=3.4*clamp(el/8)*(1-cloud*.7); hemi.intensity=.55+.45*up+flash*3.2;
+    moon.intensity=(1-up)*1.1*(1-cloud*.5); nightFill.intensity=(1-up)*.7; nightFill.position.copy(camera.position); nightFill.target.position.copy(controls.target);
+    H.edgeMats.forEach(m=>m.opacity=.12+(1-up)*.3);
+    if(storm) rain.position.y=-((t*22*(CALM?.35:1))%30);
+
+    // house state from the island simulation
+    H.panelMat.emissiveIntensity=(1-up)*.15+cur.s/9*.5;
+    H.winMat.emissiveIntensity=cur.dark?0:Math.min(1.6,(1-up)*(.4+cur.h/4));
+    const col=cur.dark?0x3a3f48:cur.b<-.05?COL.batt:cur.b>.05?COL.solar:COL.rest, led=cur.dark?0x3a3f48:cur.b<-.05?COL.batt:cur.b>.05?COL.solar:COL.idle;
+    if(Math.abs(cur.soc-lastSoc)>.0005||col!==lastCol){ H.setPw(cur.soc,col,led); lastSoc=cur.soc; lastCol=col; }
+    const set=(k,on,dir,color,amt)=>{ const f=H.flows[k]; f.uOn.value=on?1:0; f.uDir.value=dir; f.uColor.value.set(color); f.uSpeed.value=CALM?.3:.6+Math.min(1.6,amt/3); f.uT.value=t; };
+    set('solar',cur.s>.05,1,COL.solar,cur.s);
+    set('batt',!cur.dark&&Math.abs(cur.b)>.05,cur.b<0?1:-1,cur.b<0?COL.solar:COL.batt,Math.abs(cur.b));
+    set('home',!cur.dark,1,cur.s>=cur.h?COL.solar:COL.batt,cur.h);
+    H.flows.grid.uOn.value=1; H.flows.grid.uColor.value.set(COL.out); H.flows.grid.uSpeed.value=0; H.flows.grid.uT.value=0; // red and static
+    setLbl('home',cur.dark?'dark':`${cur.h.toFixed(1)} kW`); els.home.classList.toggle('dark',cur.dark);
+    setLbl('pw',`${Math.abs(cur.b)<.05?0:Math.abs(cur.b).toFixed(1)} kW ${cur.b<-.05?'<i style="color:var(--batt)">▲</i>':cur.b>.05?'<i style="color:var(--solar)">▼</i>':'<i style="color:var(--mute)">·</i>'}${Math.round(cur.soc*100)}%`);
+    setLbl('grid','Offline');
+
+    controls.update(); renderer.render(scene,camera);
+    if(card.hudDirty||!hudBox){ hudBox=[hud.offsetLeft,hud.offsetTop,hud.offsetLeft+hud.offsetWidth,hud.offsetTop+hud.offsetHeight]; card.hudDirty=false; }
+    for(const [k,p] of Object.entries(H.anchors)){
+      v.copy(p).project(camera); const ax=(v.x+1)/2*CW, ay=(1-v.y)/2*CH, dy=lift[k], [w,h]=size[k]||[80,34], below=dy>0;
+      const vis=v.z<1&&ax>-40&&ax<CW+40&&ay>-40&&ay<CH+40; els[k].style.visibility=lines[k].style.visibility=vis?'visible':'hidden'; if(!vis) continue;
+      const x=clamp(ax,w/2+6,CW-w/2-6); let top=ay+dy;
+      if(below) top=clamp(top,6,CH-h-6);
+      else { let minTop=h+6; if(x-w/2<hudBox[2]+4&&x+w/2>hudBox[0]-4) minTop=Math.max(minTop,hudBox[3]+6+h); top=clamp(top,minTop,CH-6); }
+      els[k].style.left=x+'px'; els[k].style.top=top+'px';
+      const lx=clamp(ax,2,CW-2), y0=below?Math.min(ay,top):Math.min(ay,top), y1=below?Math.max(ay,top):Math.max(ay,top);
+      lines[k].style.left=lx+'px'; lines[k].style.top=(below?y0:y0+4)+'px'; lines[k].style.height=Math.max(0,y1-y0-4)+'px';
+    }
+  };
+}
+
+// build each scene when its card approaches, render only while ≥10% visible
+const scenes=[];
+window.OUTAGE_CARDS.forEach(card=>{
+  const host=card.root.querySelector('[data-scene]'), S={card,host,render:null,vis:false};
+  new IntersectionObserver(es=>es.forEach(e=>{ S.vis=e.intersectionRatio>=.1; if(e.isIntersecting&&!S.render){ try{ S.render=createOutageScene(host,card); }catch(err){ console.error('outage scene',err); S.render=()=>{}; } } }),{rootMargin:'160px 0px',threshold:[0,.1,.2]}).observe(host);
+  scenes.push(S);
+});
+let last=performance.now(), T=0;
+(function frame(now){ requestAnimationFrame(frame); const dt=Math.min(.05,(now-last)/1000); last=now; T+=dt; if(document.hidden) return;
+  scenes.forEach(S=>{ if(S.render&&S.vis) S.render(dt,T); }); })(last);
+</script>
+</body></html>

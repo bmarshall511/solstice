@@ -1,0 +1,750 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Solstice · Share view mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* ---------- mockup scaffold (same as h-pool-twin / i-ac) ---------- */
+body{overflow:auto;background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}.stage{position:static;padding:24px 0 60px;align-items:flex-start}.phone{height:auto;max-height:none;overflow:visible}.screen{position:static;padding:34px 20px 40px;overflow:visible}.view{display:block}
+.side{position:sticky;top:24px}
+.col{width:393px;flex:none}
+.fsect{display:flex;align-items:center;gap:10px;margin:44px 4px 12px;color:var(--dim)}
+.col>.fsect:first-child{margin-top:0}
+.fsect b{flex:none;width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);color:var(--text);font:600 11px Manrope;letter-spacing:0}
+.fcap{font-size:12px;color:var(--mute);line-height:1.5;margin:-4px 6px 12px}
+.fsub{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin:22px 6px 10px}
+.phone+.fsub{margin-top:26px}
+.seg{position:relative}
+.card{overflow:hidden}
+@media (max-width:900px){.col{width:100%}.stage{padding:0 0 40px}.fsect{margin-left:20px;margin-right:20px}.fcap,.fsub{margin-left:20px;margin-right:20px}}
+
+/* ---------- share view: section 4.1, verbatim ---------- */
+:root{--frost:rgba(8,10,16,.45);--frost-blur:14px;--veil:rgba(242,244,248,.32);--lock:rgba(242,244,248,.55)}
+/* inline veil: shape-preserving decoy text, never a real value */
+.veil{display:inline-flex;align-items:center;gap:5px;font-family:"JetBrains Mono";font-weight:500;color:var(--veil);letter-spacing:.1em;
+  position:relative;overflow:hidden;border-radius:6px;padding:0 3px;background:rgba(255,255,255,.06);filter:blur(.8px);cursor:help;animation:veilin .3s var(--ease) both}
+.veil::before{content:"";flex:none;width:8px;height:10px;border:1.5px solid var(--lock);border-radius:2px;box-shadow:inset 0 -5px 0 var(--lock)} /* padlock */
+.veil::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.16),transparent);transform:translateX(-100%);animation:sweep 5.5s 1.5s infinite}
+@keyframes veilin{from{opacity:0;filter:blur(6px)}}
+/* locked card: frosted glass over a deterministic skeleton, same height as the owner's card */
+.card.locked{position:relative}
+.card.locked>*:not(.h):not(.lock){filter:blur(6px) saturate(.5);opacity:.5;pointer-events:none;user-select:none}
+.card.locked::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--frost);backdrop-filter:blur(var(--frost-blur));-webkit-backdrop-filter:blur(var(--frost-blur))}
+.card.locked .lock{position:absolute;inset:0;z-index:2;display:grid;place-content:center;gap:6px;text-align:center;font-size:12.5px;color:var(--dim)}
+.card.locked .lock b{display:block;font-size:14px;color:var(--text);font-weight:600}
+.card.locked .lock i{width:26px;height:26px;border-radius:9px;margin:0 auto 4px;display:grid;place-items:center;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);font-style:normal}
+html[data-role=guest] [data-owner],html[data-as=guest] [data-owner]{display:none!important}
+.chipx.guest{background:rgba(255,255,255,.08);border-color:var(--glass-b);color:var(--text)}
+html[data-as=guest] .phone{border-color:rgba(255,255,255,.32)}
+html[data-calm] .veil::after,html[data-calm] .veil{animation:none}      /* new attribute toggled with S.calm (F11) */
+
+/* ---------- mockup-only helpers ---------- */
+data.veil{white-space:nowrap}
+.card.locked>.h{position:relative;z-index:3}            /* keep the title crisp above the frost */
+.card.locked{cursor:help}
+.chipx.guest i{--c:#f2f4f8;box-shadow:0 0 8px rgba(242,244,248,.6)}
+.skl{display:block;height:9px;border-radius:5px;background:rgba(255,255,255,.16)}
+.kv .skl{margin-top:3px}.kv b .skl{margin-left:auto}
+/* orb stand-in (the app draws it with three.js) */
+.orbfake{position:absolute;left:50%;top:44%;width:214px;height:214px;transform:translate(-50%,-50%);border-radius:50%;
+  background:radial-gradient(circle at 36% 30%,rgba(217,255,240,.95) 0,#4ef0a6 26%,rgba(24,120,90,.75) 58%,rgba(6,30,24,.35) 71%,transparent 72%);
+  box-shadow:0 0 90px rgba(78,240,166,.28);animation:orbb 6s ease-in-out infinite}
+.orbfake::after{content:"";position:absolute;inset:-14px;border-radius:50%;border:1px solid rgba(78,240,166,.25)}
+@keyframes orbb{50%{transform:translate(-50%,-52%)}}
+.house svg,.pool3d svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+/* owner-only values in the Frost demo (no real figures in mockups) */
+.ownv{font:500 11px "JetBrains Mono";color:var(--solar);background:rgba(255,193,94,.1);border:1px dashed rgba(255,193,94,.45);border-radius:6px;padding:0 5px;white-space:nowrap}
+/* share sheet (static in the mockup) */
+.sheet.static{position:relative;left:auto;right:auto;bottom:auto;transform:none;max-height:none;margin:0 8px 8px;z-index:1}
+.behind{position:relative;height:118px;padding:34px 20px 0;overflow:hidden;border-radius:56px 56px 0 0}
+.behind::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.45)}
+.lbl{display:block;font-size:11px;color:var(--dim);margin:14px 0 6px}
+.seg2.exp button{flex:1;text-align:center}
+.lnk{margin-top:14px;padding:12px;border-radius:16px;background:rgba(0,0,0,.3);border:1px solid var(--glass-b)}
+.lnk code{display:block;font:12px "JetBrains Mono";color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lnk .lb{display:flex;gap:8px;flex-wrap:wrap}.lnk .lb .link{margin-top:10px;padding:7px 14px}
+.qr{display:block;width:180px;height:180px;margin:12px auto 0;border-radius:12px}
+.lrow{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-top:1px solid var(--glass-b)}
+.lrow:first-of-type{border-top:none}
+.lrow .lm{flex:1;min-width:0;font-size:12px;color:var(--dim);line-height:1.45}
+.lrow .lm b{display:block;font-size:13.5px;color:var(--text);font-weight:600}
+.lrow .lm em{font-style:normal;color:var(--mute)}
+.link.rvk{margin:0;flex:none;padding:6px 12px;font-size:12px;color:#ffb3aa;background:rgba(255,90,78,.1);border-color:rgba(255,90,78,.35)}
+.lrow.off{opacity:.45}.lrow.off .link{display:none}
+/* auth frames */
+.authphone{height:640px;overflow:hidden}
+.authphone .auth{position:absolute;border-radius:inherit;transition:opacity .4s var(--ease),backdrop-filter .4s var(--ease),-webkit-backdrop-filter .4s var(--ease)}
+.authphone .auth.gone{opacity:0;backdrop-filter:blur(0);-webkit-backdrop-filter:blur(0);pointer-events:none}
+.authcard .ln{margin-top:12px;font:500 12px "JetBrains Mono";color:var(--text)}
+.authcard .fine{margin-top:12px;line-height:1.5}
+.authcard .olink{all:unset;cursor:pointer;display:block;margin:16px auto 0;font-size:12px;color:var(--mute);text-decoration:underline;text-underline-offset:3px}
+.authcard form[hidden]{display:none}
+/* frost wipe (section 4.5) */
+#fw{overflow:hidden}
+#fw .screen{padding-top:64px}
+.phone[data-as=guest]{border-color:rgba(255,255,255,.32)}
+.phone[data-as=guest] [data-owner]{display:none!important}
+.phone:not([data-as=guest]) [data-guest]{display:none!important}
+.frostwipe{position:absolute;inset:0;z-index:40;border-radius:inherit;pointer-events:none;visibility:hidden;
+  background:linear-gradient(180deg,rgba(242,244,248,.09),rgba(242,244,248,.04));
+  clip-path:circle(0 at var(--x) var(--y));backdrop-filter:blur(0);-webkit-backdrop-filter:blur(0)}
+.frostwipe.run{visibility:visible;pointer-events:auto}
+.veil.wait{animation-play-state:paused}
+.gpill{position:absolute;left:50%;top:14px;z-index:41;display:flex;align-items:center;gap:10px;padding:6px 6px 6px 14px;border-radius:999px;white-space:nowrap;
+  background:rgba(24,26,34,.95);border:1px solid rgba(255,255,255,.32);box-shadow:0 20px 40px rgba(0,0,0,.4);font-size:12.5px;font-weight:600;
+  transform:translate(-50%,-160%);transition:transform .5s var(--ease)}
+.gpill.show{transform:translate(-50%,0)}
+.gpill i{width:7px;height:7px;border-radius:50%;background:#f2f4f8;box-shadow:0 0 8px rgba(242,244,248,.7)}
+.gpill .link{margin:0;padding:5px 12px;font-size:12px}
+.fbar{display:flex;align-items:center;gap:12px;margin:0 6px 14px}.fbar .link{margin:0}
+.stills{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:0 20px 18px}
+.stills figure{margin:0;min-width:0}
+.still{position:relative;height:196px;border-radius:22px;overflow:hidden;background:rgba(8,10,16,.5);border:1px solid rgba(255,255,255,.14);padding:22px 10px 0}
+.still i{display:block;height:7px;border-radius:4px;background:rgba(255,255,255,.14);margin-top:9px}
+.still i.v{width:34px;background:rgba(242,244,248,.3)}
+.still .ssw{position:absolute;left:72%;top:74%;width:22px;height:13px;border-radius:7px;background:rgba(255,255,255,.2)}
+.still .ssw::after{content:"";position:absolute;left:2px;top:2px;width:9px;height:9px;border-radius:50%;background:#fff}
+.still .sf{position:absolute;inset:0;background:rgba(242,244,248,.1);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
+.stills figcaption{font-size:10.5px;color:var(--mute);line-height:1.4;margin-top:6px}
+.stills figcaption b{display:block;font:500 10.5px "JetBrains Mono";color:var(--text)}
+#toast{position:fixed;top:12px;left:12px;right:auto;width:369px;max-width:calc(100vw - 24px);z-index:200}
+.endnote{text-align:center;padding:0 20px 40px}
+</style></head><body>
+<div class="stage">
+  <aside class="side"><div class="k">Mockup · share view</div><h2>Live energy for guests. Money stays with the owner.</h2>
+    <p>What someone sees when the owner sends them a link. It is the same app with the same tabs and card heights. Every dollar amount becomes a frosted decoy, the three money cards on History are locked, and controls that write to the pool or the thermostat are hidden. Below that: the owner's Sharing group and sheets, the three sign-in cards, and the Frost wipe the owner sees when he previews the guest view.</p>
+    <div class="demo"><h4>What's real vs mocked</h4><p>Layout, classes and copy come from the app and the share-view design (§1.4, §4, §5, §7). All numbers are synthetic but shaped like this home: about 76 kWh a day, 49% from solar, 2 × Powerwall 2, pool pump 153 W at 1,500 RPM. The veils are decoys, so no dollar value exists on this page. The owner's own figures in the Frost demo are shown as placeholders. The orb, the energy-flow house and the pool twin are flat stand-ins here, because the share view does not change those 3D scenes. The QR pattern is illustrative.</p><p>Tap any veil or locked card to see the privacy toast.</p></div></aside>
+
+  <div class="col">
+  <!-- ================================================================ 1 · GUEST NOW -->
+  <div class="sect fsect"><b>1</b>Guest · Now</div>
+  <p class="fcap">The Now tab as a guest sees it. The first chip says whose home this is. The kWh figures are unchanged, and the two "≈ $" subtitles plus the 48-hour cost are veiled. The bill-due card is not rendered.</p>
+  <div class="phone"><div class="screen"><section class="view on">
+    <div class="hello">
+      <div><h3>Good afternoon</h3><p><span class="sync"></span><span>The owner's home</span> · <span>2:40 PM</span></p></div>
+      <div class="wx"><b>96°</b>Sunny · UV 9</div>
+    </div>
+    <div class="chips">
+      <div class="chipx guest"><i></i>Shared by the owner · live</div>
+      <div class="chipx"><i></i>Powerwalls online</div>
+      <div class="chipx"><i style="--c:var(--batt)"></i>No weather alerts</div>
+      <div class="chipx"><i style="--c:var(--batt)"></i>ERCOT normal · 71% load</div>
+      <div class="chipx"><i style="--c:rgba(242,244,248,.4);box-shadow:none"></i>Storm Watch standby</div>
+    </div>
+    <div class="orbwrap"><div class="orbfake"></div>
+      <div class="orbtxt"><div class="pct"><span>64</span><small>%</small></div><p><b>Charging 1.9 kW</b> · full in 5h 23m</p></div>
+    </div>
+    <div class="story"><b>The sun is running your home.</b> The extra 1.9 kW is filling the Powerwalls.</div>
+
+    <div class="card">
+      <div class="h"><b>Energy flow</b><span>live · 2:40 PM</span></div>
+      <div class="house" style="height:260px">
+        <svg viewBox="0 0 353 260" aria-hidden="true">
+          <ellipse cx="176" cy="214" rx="150" ry="26" fill="rgba(255,255,255,.035)"/>
+          <path class="flbase" d="M176 92 L176 150"/><path class="fl" d="M176 92 L176 150" stroke="#ffc15e" style="--d:1.2s"/>
+          <path class="flbase" d="M150 98 L92 150"/><path class="fl" d="M150 98 L92 150" stroke="#4ef0a6" style="--d:1.6s"/>
+          <polygon points="96,118 176,64 256,118" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.28)"/>
+          <g stroke="rgba(255,193,94,.55)" stroke-width="1"><path d="M126 104 L176 71 L226 104 Z" fill="rgba(255,193,94,.18)"/><path d="M143 93 L209 93 M134 99 L218 99 M159 104 L176 71 L193 104"/></g>
+          <rect x="112" y="118" width="128" height="80" rx="3" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.22)"/>
+          <rect x="164" y="160" width="24" height="38" rx="2" fill="rgba(108,196,255,.12)" stroke="rgba(108,196,255,.45)"/>
+          <rect x="76" y="150" width="14" height="44" rx="3" fill="rgba(78,240,166,.16)" stroke="rgba(78,240,166,.6)"/><rect x="93" y="150" width="14" height="44" rx="3" fill="rgba(78,240,166,.16)" stroke="rgba(78,240,166,.6)"/>
+          <path d="M296 86 L296 200 M284 98 L308 98 M286 110 L306 110" stroke="rgba(196,162,255,.5)" stroke-width="1.5"/>
+          <path d="M296 104 C270 108 252 130 240 150" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="1.5" stroke-dasharray="2 5"/>
+        </svg>
+        <div class="hlbl" style="left:176px;top:58px"><small>SOLAR</small><b>5.3 kW</b></div>
+        <div class="hlbl below" style="left:176px;top:204px"><small>HOME</small><b>3.4 kW</b></div>
+        <div class="hlbl" style="left:92px;top:144px"><small>POWERWALL</small><b>64% · +1.9 kW</b></div>
+        <div class="hlbl" style="left:298px;top:80px"><small>GRID</small><b>0.0 kW</b></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="h"><b>Next 48 hours</b><span>forecast · your usage + Open-Meteo</span></div>
+      <svg class="mini" id="fc48" viewBox="0 0 310 150"></svg>
+      <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--home)"></i>Home</span><span><i style="background:var(--batt)"></i>Battery %</span></div>
+      <p id="fcTxt" style="margin-top:10px"></p>
+    </div>
+
+    <div class="card">
+      <div class="h"><b>Powerwall</b><span>2 × Powerwall 2 · 27 kWh</span></div>
+      <div class="pwtop"><div class="pwpct">64%</div><div><div class="pwstate" data-s="c">Charging · 1.9 kW</div><div class="pwsub">17.3 kWh of 27 kWh stored</div></div></div>
+      <div class="pwunits">
+        <div class="pwu chg" style="--v:.64"><i></i><b class="pwres" style="bottom:20%"></b><span>PW 1</span><em>13.5 kWh · 5 kW</em></div>
+        <div class="pwu chg" style="--v:.64"><i></i><b class="pwres" style="bottom:20%"></b><span>PW 2</span><em>13.5 kWh · 5 kW</em></div>
+      </div>
+      <div class="kv">
+        <span>Time to full</span><b>5h 23m</b>
+        <span>Backup at current usage</span><b>3h 26m</b>
+        <span>Charged today</span><b>12.6 kWh</b>
+        <span>Discharged today</span><b>10.9 kWh</b>
+        <span>Backup reserve</span><b>20%</b>
+        <span>Mode</span><b>Time-Based Control</b>
+        <span>Storm Watch</span><b>On · standing by</b>
+        <span>Today's range</span><b>31% – 64%</b>
+      </div>
+    </div>
+
+    <div class="sect">Today</div>
+    <div class="stats">
+      <div class="stat"><span>Solar produced</span><b>29.1<small>kWh</small></b><em>86% of what today's sun allows</em></div>
+      <div class="stat"><span>Home used</span><b>39.8<small>kWh</small></b><em>70% from solar + battery</em></div>
+      <div class="stat"><span>Bought from PEC</span><b>12.1<small>kWh</small></b><em>≈ <data class="veil">$•.••</data> at PEC rates</em></div>
+      <div class="stat"><span>Sent to PEC</span><b>0.9<small>kWh</small></b><em>≈ <data class="veil">$•.••</data> credit</em></div>
+    </div>
+
+    <div class="card">
+      <div class="h"><b>Next 12 hours</b><span>kW expected from your panels</span></div>
+      <div class="hours" id="wx12"></div>
+      <p style="margin-top:12px">No storms expected, so Storm Watch stays on standby.</p>
+    </div>
+  </section></div></div>
+
+  <!-- ================================================================ 2 · GUEST HISTORY -->
+  <div class="sect fsect"><b>2</b>Guest · History</div>
+  <p class="fcap">The charts, production landscape, Powerwall patterns, records and outages are unchanged, so they are not repeated here. The bills list keeps its months, kWh and Tesla check, with the totals veiled. "+ Add a PEC bill" and the bill detail sheet are not rendered. The three money cards are locked at the owner card's height.</p>
+  <div class="phone"><div class="screen"><section class="view on">
+    <div class="hello"><div><h3>History</h3><p>Aug 27 – Sep 25</p></div></div>
+    <div class="seg"><button>Day</button><button>Week</button><button class="on">Month</button><button>Year</button></div>
+    <div class="stats">
+      <div class="stat"><span>Solar</span><b>1.1<small>MWh</small></b><em>49% of home use</em></div>
+      <div class="stat"><span>Home</span><b>2.3<small>MWh</small></b><em>76 kWh/day avg</em></div>
+      <div class="stat"><span>Bought from PEC</span><b>1.2<small>MWh</small></b><em>≈ <data class="veil">$•••</data></em></div>
+      <div class="stat"><span>Sent to PEC</span><b>44.0<small>kWh</small></b><em>≈ <data class="veil">$•••</data> credit</em></div>
+    </div>
+
+    <div class="sect">Electric bills · PEC</div>
+    <div class="card">
+      <div class="h"><b>Your bills <span style="font-weight:400;font-size:12px;color:var(--mute);margin-left:4px">3 saved</span></b></div>
+      <div style="margin-top:6px">
+        <div class="bill" style="cursor:default"><div class="bm"><b>September 2026</b><br>Aug 13 – Sep 11 · 1,184 kWh bought · 52 sent</div><div class="bt"><data class="veil">$•••</data><small style="color:var(--batt)">✓ matches Tesla</small></div></div>
+        <div class="bill" style="cursor:default"><div class="bm"><b>August 2026</b><br>Jul 14 – Aug 12 · 1,236 kWh bought · 38 sent</div><div class="bt"><data class="veil">$•••</data><small style="color:var(--batt)">✓ matches Tesla</small></div></div>
+        <div class="bill" style="cursor:default"><div class="bm"><b>July 2026</b><br>Jun 12 – Jul 13 · 1,078 kWh bought · 61 sent</div><div class="bt"><data class="veil">$•••</data><small style="color:var(--batt)">✓ matches Tesla</small></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="h"><b>September bill check</b><span class="badge g">all good</span></div>
+      <div style="margin-top:8px">
+        <div class="check"><i class="ok">✓</i><div><b>Meter matches Tesla.</b> PEC billed 1,184 kWh and Tesla measured 1,162 kWh, 1.9% apart.</div></div>
+        <div class="check"><i class="ok">✓</i><div><b>Line items add up.</b></div></div>
+        <div class="check"><i class="ok">✓</i><div><b>Export credit applied.</b> 52 kWh sent on the bill, 49 kWh measured by Tesla.</div></div>
+        <div class="check"><i class="ok">✓</i><div><b>Versus the same dates last year:</b> home use +4%, solar −2%, bought from PEC +7%.</div></div>
+      </div>
+      <div class="kv"><span>Aug 13 – Sep 11 · total</span><b><data class="veil">$•••</data></b>
+        <span>Your rate, all-in</span><b><data class="veil">$•.••••/kWh</data></b><span>Solar + Powerwall covered</span><b style="color:var(--batt)">49% of home use</b>
+        <span>Without solar it would have been</span><b><data class="veil">$•••</data></b></div>
+    </div>
+    <div class="card">
+      <div class="h"><b>PEC meter vs Tesla</b><span>kWh bought per bill</span></div>
+      <svg class="mini" id="meterChart" viewBox="0 0 310 150"></svg>
+      <div class="legend" style="justify-content:flex-start"><span><i style="background:rgba(196,162,255,.35)"></i>PEC billed</span><span><i style="background:var(--grid)"></i>Tesla measured</span><span><i style="background:var(--out)"></i>&gt;5% apart</span></div>
+    </div>
+
+    <div class="card locked">
+      <div class="h"><b>Where your last bill went</b><span>Aug 13 – Sep 11</span></div>
+      <svg class="mini" viewBox="0 0 310 190" id="skWater"></svg>
+      <div class="lock"><i><svg width="12" height="14" viewBox="0 0 12 14" fill="none" stroke="#f2f4f8" stroke-width="1.5"><rect x="1" y="6" width="10" height="7" rx="2"/><path d="M3.5 6V4a2.5 2.5 0 0 1 5 0v2"/></svg></i><b>Private to the owner</b>Bill dollars stay with the owner.</div>
+    </div>
+    <div class="card locked">
+      <div class="h"><b>This billing cycle</b><span>day 14 of ~31</span></div>
+      <div class="cyc"><i style="width:45%;background:rgba(255,255,255,.22)"></i></div><div class="cycl"><span class="skl" style="width:40px"></span><span class="skl" style="width:34px"></span><span class="skl" style="width:40px"></span></div>
+      <div class="kv">
+        <span><i class="skl" style="width:62%"></i></span><b><i class="skl" style="width:58px"></i></b>
+        <span><i class="skl" style="width:54%"></i></span><b><i class="skl" style="width:44px"></i></b>
+        <span><i class="skl" style="width:40%"></i></span><b><i class="skl" style="width:52px"></i></b>
+        <span><i class="skl" style="width:58%"></i></span><b><i class="skl" style="width:90px"></i></b>
+      </div>
+      <div class="lock"><i><svg width="12" height="14" viewBox="0 0 12 14" fill="none" stroke="#f2f4f8" stroke-width="1.5"><rect x="1" y="6" width="10" height="7" rx="2"/><path d="M3.5 6V4a2.5 2.5 0 0 1 5 0v2"/></svg></i><b>Private to the owner</b>The projected bill stays with the owner.</div>
+    </div>
+    <div class="card locked">
+      <div class="h"><b>Monthly cost</b><span>Tesla usage × PEC rates</span></div>
+      <svg class="mini" viewBox="0 0 310 130" id="skMonthly"></svg>
+      <div class="legend" style="justify-content:flex-start"><span class="skl" style="width:80px"></span><span class="skl" style="width:150px"></span></div>
+      <span class="skl" style="width:130px;height:36px;border-radius:999px;margin-top:12px"></span>
+      <div class="lock"><i><svg width="12" height="14" viewBox="0 0 12 14" fill="none" stroke="#f2f4f8" stroke-width="1.5"><rect x="1" y="6" width="10" height="7" rx="2"/><path d="M3.5 6V4a2.5 2.5 0 0 1 5 0v2"/></svg></i><b>Private to the owner</b>Monthly dollars stay with the owner.</div>
+    </div>
+  </section></div></div>
+
+  <!-- ================================================================ 3 · GUEST APPLIANCES (POOL) -->
+  <div class="sect fsect"><b>3</b>Guest · Appliances · Pool</div>
+  <p class="fcap">The twin, circuits, temperatures, the schedule dial and Autopilot's reasoning all stay. The Autopilot Off/Suggest/Auto control becomes a static badge. Apply, Restore, "Show the settings", "Apply tomorrow's plan" and "I cleaned the filter" are not rendered, and one line takes their place. Now/Recommended/Both still works, because it only changes what is drawn on the phone.</p>
+  <div class="phone"><div class="screen"><section class="view on">
+    <div class="hello"><div><h3>Insights</h3><p>From real data</p></div><div class="wx"><b>39.8</b>kWh today</div></div>
+    <div class="seg"><button>Today</button><button class="on">Appliances</button><button>Planner</button><button>Home</button></div>
+    <div class="apps" style="margin-top:14px"><div class="app on"><i></i>Pool pump · 153 W</div><div class="app"><i></i>AC · 2.0 kW</div></div>
+
+    <div class="card"><div class="h"><b>Pool &amp; spa · live</b><span class="badge g">Linked · ScreenLogic</span></div>
+      <div class="ring3d pool3d" style="height:300px">
+        <svg viewBox="0 0 353 300" aria-hidden="true">
+          <defs><radialGradient id="pw" cx="50%" cy="45%" r="60%"><stop offset="0" stop-color="#6cc4ff" stop-opacity=".42"/><stop offset="1" stop-color="#6cc4ff" stop-opacity=".12"/></radialGradient></defs>
+          <rect x="22" y="58" width="310" height="196" rx="30" fill="rgba(255,255,255,.03)" stroke="rgba(255,255,255,.07)"/>
+          <path d="M62 172 C58 124 108 100 170 106 C232 112 252 86 292 102 C330 118 326 196 288 220 C250 242 204 226 162 232 C112 238 66 222 62 172Z" fill="url(#pw)" stroke="rgba(108,196,255,.6)" stroke-width="1.5"/>
+          <circle cx="96" cy="118" r="30" fill="rgba(78,240,166,.14)" stroke="rgba(78,240,166,.6)" stroke-width="1.5"/>
+          <path class="flbase" d="M300 70 C270 80 250 120 232 150"/><path class="fl" d="M300 70 C270 80 250 120 232 150" stroke="#6cc4ff" style="--d:1.8s"/>
+          <path class="flbase" d="M300 70 C300 140 270 190 196 200"/><path class="fl" d="M300 70 C300 140 270 190 196 200" stroke="#6cc4ff" style="--d:2.2s"/>
+          <rect x="286" y="56" width="30" height="20" rx="4" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.3)"/>
+        </svg>
+        <div class="lbl3d" style="position:absolute;left:190px;top:160px">Pool<b>87°</b></div>
+        <div class="lbl3d" style="position:absolute;left:96px;top:84px">Spa<b>85°</b></div>
+        <div class="lbl3d" style="position:absolute;left:278px;top:50px">Pump<b>1,500 RPM</b></div>
+        <div class="hud">Pool · 1,500 RPM · 153 W</div>
+      </div>
+      <div class="circ"><span class="on">Pool</span><span>Spa</span><span>Sheer descent</span><span>Jets</span><span>Air blower</span><span>Heater</span><span>Lights</span></div>
+      <div class="two">
+        <div class="stat"><small>Pump</small><b>153 W · 1,500 rpm</b></div><div class="stat"><small>Today</small><b>1.3 kWh · 3%</b></div>
+        <div class="stat"><small>Pool · spa · air</small><b>87° · 85° · 96°</b></div><div class="stat"><small>Turnover</small><b>1.1× a day</b></div>
+        <div class="stat" style="grid-column:1/-1"><small>Spa session · 85° → 101°</small><b>41 min of propane · 1.1 gal ≈ <data class="veil">$•.••</data> · then <data class="veil">$•.••/h</data> pump + blower</b></div>
+      </div>
+      <p class="fine">IntelliFlo VSF on a Quad D.E. 80 filter, about 15,000 gal. Streams follow the water: skimmer → pump → filter → heater → returns. Speed follows the pump's RPM. Measured: 1500→153 W, 2400→598 W.</p>
+    </div>
+
+    <div class="card sched">
+      <div class="h"><b>Pump schedule</b><span class="seg2" id="schMode"><button data-m="now">Now</button><button data-m="rec" class="on">Recommended</button><button data-m="both">Both</button></span></div>
+      <div class="dialwrap"><svg viewBox="0 0 320 320" id="dial24"></svg><div class="dialc"><small id="dcLbl">Recommended</small><b id="dcKwh">2.6 <i>kWh/day</i></b><span id="dcSub"></span></div></div>
+      <div id="schNow" hidden>
+        <div class="kv" style="margin-top:10px"><span>Pool · 1,800 RPM · 8a–6p</span><b>2.6 kWh</b><span>High Speed · 2,800 RPM · 12p–3p</span><b style="color:var(--warn)">3.2 kWh</b><span>Total per day</span><b>5.4 kWh · <data class="veil">$•.••</data></b></div>
+        <p>When two pump programs overlap, the controller runs the faster one. Switch to <b style="color:var(--text)">Recommended</b> to see the fix.</p>
+      </div>
+      <div id="schRec">
+        <div class="deltas"><div><small>Electricity</small><b>−2.8 kWh</b><span>per day</span></div><div><small>Cost</small><b><data class="veil">$•••</data></b><span>per month</span></div>
+          <div><small>Turnover</small><b>1.9× → 1.1×</b><span>still one a day</span></div><div><small>Top speed</small><b>2,800 → 2,400</b><span>RPM</span></div></div>
+        <div class="reasons">
+          <div><i>⚡</i><b>Speed³</b><p>Power rises with the cube of RPM. 2,800 RPM draws 1.1 kW, 1,500 RPM draws 0.15 kW.</p></div>
+          <div><i>↻</i><b>One turnover</b><p>About 15,000 gal at ~30 GPM is 8.4 h. At 87°F you get 9 h.</p></div>
+          <div><i>☀</i><b>Under the sun</b><p>10a–7p sits inside the solar curve, so the pump runs on free power and the Powerwalls reach evening fuller.</p></div>
+        </div>
+        <div class="dots"><i class="on"></i><i></i><i></i><i></i><i></i><i></i></div>
+        <p class="fine" style="margin-top:12px;text-align:center">The owner approves changes from their own devices.</p>
+      </div>
+    </div>
+
+    <div class="card auto">
+      <div class="h"><b>Autopilot</b><span class="badge g">Autopilot · Suggest</span></div>
+      <div class="status"><i></i><span>Suggests tomorrow's plan tonight at <b>8:15 PM</b> · last Sep 24 · never touches spa, heater, lights or freeze protection</span></div>
+      <div class="signals" id="autoSignals"></div>
+      <div class="wkhead"><span>Next 7 days</span><b>Tomorrow 9 h + boost · Heat wave</b></div>
+      <svg class="mini" viewBox="0 0 310 110" id="autoWeek"></svg>
+      <div class="legend" style="justify-content:flex-start"><span><i style="background:#6cc4ff"></i>Filter hours</span><span><i style="background:#ff7a66"></i>Skim boost</span><span><i style="background:rgba(255,193,94,.6)"></i>Sun forecast</span></div>
+      <div class="rec" style="margin-top:12px"><b>Suggested for Saturday:</b> 9 h at 1,500 RPM, 10a–7p, skim boost at 2p. Heat wave: +1 h boost; sun 5.6 kWh/m².</div>
+      <div class="chips"><span>4–12 h/day</span><span>1,200–1,800 RPM</span><span>under the solar curve</span><span>one change a day</span><span>+1 h after rain</span><span>+2 h heat wave</span><span>+1 h heavy use</span><span>−1 h below 70°F</span><span>freeze: hands off</span></div>
+      <div class="tline">
+        <div><i></i><span>Sep 24</span><p>Suggested 9 h at 1,500 RPM with a 1 h skim boost <em>−2.8 kWh</em></p></div>
+        <div><i></i><span>Sep 23</span><p>Kept the season plan: sun 5.2 kWh/m², no rain <em>season</em></p></div>
+        <div><i></i><span>Sep 22</span><p>+1 h after 0.4 in of rain <em>rain</em></p></div>
+        <div><i class="w"></i><span>filter</span><p>About 212 run hours since the D.E. cleaning on Aug 30.</p></div>
+      </div>
+    </div>
+    <div class="season"><div><b>1.2</b>Winter</div><div><b>2.0</b>Spring</div><div class="cur"><b>2.6</b>Summer</div><div><b>2.1</b>Fall</div></div>
+    <p class="fine" style="margin-top:8px">kWh per day by season, the baseline Autopilot adjusts from each day's data.</p>
+  </section></div></div>
+
+  <!-- ================================================================ 4 · GUEST PLANNER -->
+  <div class="sect fsect"><b>4</b>Guest · Planner</div>
+  <p class="fcap">The sliders still work because the planner runs on the phone. kWh, coverage and backup hours stay. The PEC cost, savings and payback figures are veiled, the recommendation gets a kWh-only version, and "Your system so far" is locked. The generic hardware estimate ($2.75/W placeholder) stays visible, as §1.4 allows. It says nothing about this home.</p>
+  <div class="phone"><div class="screen"><section class="view on">
+    <div class="hello"><div><h3>Insights</h3><p>From real data</p></div><div class="wx"><b>39.8</b>kWh today</div></div>
+    <div class="seg"><button>Today</button><button>Appliances</button><button class="on">Planner</button><button>Home</button></div>
+    <div class="card">
+      <div class="h"><b>What if you added…</b><span>the Day Ring morphs with these</span></div>
+      <div class="slider"><label>Solar panels <b id="aPv">+8</b></label><input type="range" id="rPv" min="0" max="20" step="2" value="8"><small id="aPvS">38 panels · roughly $7.0k (assumes 320 W modules)</small></div>
+      <div class="slider"><label>Powerwalls <b>+0</b></label><input type="range" min="0" max="2" step="1" value="0"><small>Today: 2 × Powerwall 2 · 27 kWh</small></div>
+      <div class="slider"><label>New daily usage <b>+0 kWh</b></label><input type="range" min="0" max="30" step="2" value="0"><small>EV, pool heater, heat pump… (added 5–11 PM)</small></div>
+      <div class="tiles">
+        <div class="stat"><small>Covered by solar + battery</small><b class="up">49% → 61%</b></div>
+        <div class="stat"><small>PEC energy cost / yr</small><b><data class="veil">$•,•••</data> → <data class="veil">$•,•••</data></b></div>
+        <div class="stat"><small>Payback</small><b><data class="veil">•• yrs</data></b></div>
+        <div class="stat"><small>Days batteries full</small><b class="up">38 → 112</b></div>
+      </div>
+      <div class="rec"><b>For this home, panels beat batteries.</b> 8 more panels would cover 61% of home use instead of 49%, and cut about 3,300 kWh a year from PEC. Another Powerwall adds little, because today's batteries only reach full on 38 days a year, so there's rarely any surplus to store. Extra batteries would mainly buy outage time: about 14 h of evening backup instead of 9 h.</div>
+      <button class="link">Full comparison table</button>
+      <div class="cmp">
+        <span class="hd">Last 12 months</span><span class="hd">As built</span><span class="hd">With it</span>
+        <span>Solar produced</span><span class="n">13.6 MWh</span><b class="up">17.2 MWh</b>
+        <span>Covered by solar + battery</span><span class="n">49%</span><b class="up">61%</b>
+        <span>Bought from PEC</span><span class="n">14.2 MWh</span><b class="up">10.9 MWh</b>
+        <span>Sent to PEC</span><span class="n">0.6 MWh</span><b class="up">1.4 MWh</b>
+        <span>PEC energy cost</span><span class="n"><data class="veil">$•,•••</data></span><b><data class="veil">$•,•••</data></b>
+        <span>Days batteries hit 100%</span><span class="n">38</span><b class="up">112</b>
+        <span>Est. installed cost</span><span class="n">—</span><b>$7.0k</b>
+        <span>Saves per year</span><span class="n">—</span><b><data class="veil">$•••</data></b>
+        <span>Payback</span><span class="n">—</span><b><data class="veil">•• yrs</data></b>
+      </div>
+      <p class="fine">Replays 365 days of real 5-minute data. Hardware prices are generic placeholders ($2.75/W for panels). The PEC rate is private to the owner, so cost rows are veiled.</p>
+    </div>
+    <div class="card locked">
+      <div class="h"><b>Your system so far</b><span>installed Dec 2020</span></div>
+      <div class="rec" style="margin-top:10px"><span class="skl" style="width:92%"></span><span class="skl" style="width:84%;margin-top:9px"></span><span class="skl" style="width:96%;margin-top:9px"></span><span class="skl" style="width:70%;margin-top:9px"></span><span class="skl" style="width:88%;margin-top:9px"></span><span class="skl" style="width:40%;margin-top:9px"></span></div>
+      <div class="lock"><i><svg width="12" height="14" viewBox="0 0 12 14" fill="none" stroke="#f2f4f8" stroke-width="1.5"><rect x="1" y="6" width="10" height="7" rx="2"/><path d="M3.5 6V4a2.5 2.5 0 0 1 5 0v2"/></svg></i><b>Private to the owner</b>What the system cost and saves stays with the owner.</div>
+    </div>
+  </section></div></div>
+
+  <!-- ================================================================ 5 · SETTINGS › SHARING -->
+  <div class="sect fsect"><b>5</b>Owner · Settings › Sharing</div>
+  <p class="fcap">This adds one new group to Settings. The rest of Settings is unchanged (rule 3). Tap a row to jump to its sheet below.</p>
+  <div class="phone"><div class="screen"><section class="view on">
+    <div class="hello"><div><h3>Settings</h3><p>Solstice · local on your Mac</p></div></div>
+    <p class="fine" style="margin:14px 4px 0">Connections, Your system and Alerts are above this point and unchanged.</p>
+    <div class="sect">Your data</div>
+    <div class="group">
+      <div class="row tap" style="--c:var(--home)"><div class="ri">⇩</div><div class="rt">Export CSV<small>Every 5-minute reading</small></div><div class="chev">›</div></div>
+      <div class="row" style="--c:var(--grid)"><div class="ri">✦</div><div class="rt">Calm mode<small>Less motion; follows your system setting</small></div><div class="sw"></div></div>
+    </div>
+    <div class="sect">Sharing</div>
+    <div class="group">
+      <div class="row tap" style="--c:var(--home)" data-go="s5a" tabindex="0"><div class="ri">⇗</div><div class="rt">Share this app</div><div class="rv">2 active links</div><div class="chev">›</div></div>
+      <div class="row" style="--c:#e6e8ee"><div class="ri">◐</div><div class="rt">Preview as a guest<small>see what they see</small></div><div class="sw" data-go="f7"></div></div>
+      <div class="row tap" style="--c:var(--solar)" tabindex="0"><div class="ri">@</div><div class="rt">Name shown on invites</div><div class="rv">The owner</div><div class="chev">›</div></div>
+      <div class="row tap" style="--c:var(--grid)" data-go="s5c" tabindex="0"><div class="ri">▣</div><div class="rt">Owner on 3 devices<small>sign out others</small></div><div class="chev">›</div></div>
+    </div>
+    <div class="sect">Preview</div>
+    <div class="group">
+      <div class="row" style="--c:var(--out)"><div class="ri">⚡</div><div class="rt">Preview outage mode<small>What the app looks like when the grid goes down</small></div><div class="sw red"></div></div>
+    </div>
+  </section></div></div>
+
+  <div class="fsub" id="s5a">Share sheet · create</div>
+  <div class="phone">
+    <div class="behind"><div class="group"><div class="row" style="--c:var(--home)"><div class="ri">⇗</div><div class="rt">Share this app</div><div class="rv">2 active links</div></div><div class="row" style="--c:#e6e8ee"><div class="ri">◐</div><div class="rt">Preview as a guest</div><div class="sw"></div></div></div></div>
+    <div class="sheet static"><div class="grab"></div>
+      <div class="shead"><h4>Share Solstice</h4><button class="x" aria-label="Close">×</button></div>
+      <p class="sub">Anyone with a link sees live energy. Never dollars, never controls.</p>
+      <div class="fields" style="grid-template-columns:1fr"><label>Label · private, the guest never sees it<input value="Dad" aria-label="Label"></label></div>
+      <span class="lbl">Expires</span>
+      <div class="seg2 exp" id="expSeg"><button>24h</button><button>7d</button><button class="on">30d</button><button>1 yr</button><button>Never</button></div>
+      <button class="primary" id="createBtn">Create link</button>
+      <p class="fine" style="margin-top:10px;line-height:1.5">Links can be opened again until they expire or you revoke them. Each one opens the guest view: live kWh, no dollars, no controls.</p>
+    </div>
+  </div>
+
+  <div class="fsub" id="s5b">Share sheet · after Create link</div>
+  <div class="phone">
+    <div class="behind"><div class="group"><div class="row" style="--c:var(--home)"><div class="ri">⇗</div><div class="rt">Share this app</div><div class="rv">2 active links</div></div><div class="row" style="--c:#e6e8ee"><div class="ri">◐</div><div class="rt">Preview as a guest</div><div class="sw"></div></div></div></div>
+    <div class="sheet static"><div class="grab"></div>
+      <div class="shead"><h4>Share Solstice</h4><button class="x" aria-label="Close">×</button></div>
+      <p class="sub">Link for <b style="color:var(--text)">Dad</b> · expires Oct 25.</p>
+      <div class="lnk">
+        <code>your-app.vercel.app/#s=Xq7…9F</code>
+        <div class="lb"><button class="link" data-t="copy">Copy</button><button class="link" data-t="share">Share…</button><button class="link" id="qrBtn">QR</button></div>
+        <svg class="qr" id="qr" viewBox="0 0 29 29" hidden aria-label="QR code (illustrative)"></svg>
+        <p class="fine" style="margin-top:10px">Shown once. Solstice keeps only a fingerprint.</p>
+      </div>
+      <div class="sect" style="margin-top:20px">Active links</div>
+      <div id="activeLinks">
+        <div class="lrow" data-l="Dad"><div class="lm"><b>Dad</b>created Sep 25 · expires Oct 25 · opened 4× · last Sep 26 · iPhone Safari</div><button class="link rvk">Revoke</button></div>
+        <div class="lrow" data-l="Neighbor"><div class="lm"><b>Neighbor</b>created Sep 20 · never expires · never opened</div><button class="link rvk">Revoke</button></div>
+      </div>
+      <div class="sect">Revoked · 30 days</div>
+      <div id="revokedLinks">
+        <div class="lrow off"><div class="lm"><b>Pet sitter</b>created Aug 30 · revoked Sep 12 · opened 9× · last Sep 11 · Android Chrome</div></div>
+      </div>
+      <button class="danger" id="revokeAll">Revoke all links</button>
+    </div>
+  </div>
+
+  <div class="fsub" id="s5c">Devices sheet</div>
+  <div class="phone">
+    <div class="behind"><div class="group"><div class="row" style="--c:var(--solar)"><div class="ri">@</div><div class="rt">Name shown on invites</div><div class="rv">The owner</div></div><div class="row" style="--c:var(--grid)"><div class="ri">▣</div><div class="rt">Owner on 3 devices</div></div></div></div>
+    <div class="sheet static"><div class="grab"></div>
+      <div class="shead"><h4>Owner devices</h4><button class="x" aria-label="Close">×</button></div>
+      <p class="sub">Each device unlocked with the owner key stays signed in for 400 days after it was last used.</p>
+      <div style="margin-top:10px">
+        <div class="lrow"><div class="lm"><b>This iPhone</b>Safari · now</div><span class="badge g" style="flex:none">this device</span></div>
+        <div class="lrow" data-d="Mac"><div class="lm"><b>Mac</b>Chrome · 2 h ago</div><button class="link rvk">Sign out</button></div>
+        <div class="lrow" data-d="iPad"><div class="lm"><b>iPad</b>Safari · Sep 21</div><button class="link rvk">Sign out</button></div>
+      </div>
+      <button class="danger">Sign out other devices</button>
+      <p class="fine" style="margin-top:10px;line-height:1.5">The key lives in your password manager. Rotating it does not sign devices out. This list does.</p>
+    </div>
+  </div>
+
+  <!-- ================================================================ 6 · AUTH CARDS -->
+  <div class="sect fsect"><b>6</b>Opening a link · three cards</div>
+  <p class="fcap">These use the app's existing .auth overlay and .authcard. The welcome card is shown once per device, with the real Now view already behind it. The anonymous and revoked cards have nothing behind them: no data and no site name.</p>
+  <div class="fsub" style="margin-top:0">Welcome · first open of a share link</div>
+  <div class="phone authphone" id="welcomePhone"><div class="screen"><section class="view on">
+    <div class="hello"><div><h3>Good afternoon</h3><p><span class="sync"></span><span>The owner's home</span> · <span>2:40 PM</span></p></div><div class="wx"><b>96°</b>Sunny · UV 9</div></div>
+    <div class="chips"><div class="chipx guest"><i></i>Shared by the owner · live</div><div class="chipx"><i></i>Powerwalls online</div><div class="chipx"><i style="--c:var(--batt)"></i>No weather alerts</div></div>
+    <div class="orbwrap"><div class="orbfake"></div><div class="orbtxt"><div class="pct"><span>64</span><small>%</small></div><p><b>Charging 1.9 kW</b> · full in 5h 23m</p></div></div>
+    <div class="story"><b>The sun is running your home.</b> The extra 1.9 kW is filling the Powerwalls.</div>
+  </section></div>
+    <div class="auth" id="welcomeAuth"><div class="authcard">
+      <div class="authlogo"></div>
+      <h2>The owner shared their home's energy with you</h2>
+      <p>Live solar, Powerwalls, pool and AC, as it happens. Dollar amounts, bills and controls stay private.</p>
+      <div class="ln">This link works until Oct 25</div>
+      <button class="primary" id="haveLook" style="width:100%;box-sizing:border-box;margin-top:16px">Have a look</button>
+      <p class="fine">Add to Home Screen after opening, then paste the link once more if asked.</p>
+    </div></div>
+  </div>
+  <div class="fbar" style="margin-top:12px"><button class="link" id="welcomeAgain" hidden>Show the welcome card again</button></div>
+
+  <div class="fsub">Anonymous · no link, or a Home Screen app without the cookie</div>
+  <div class="phone authphone"><div class="screen"></div>
+    <div class="auth"><div class="authcard">
+      <div class="authlogo"></div>
+      <h2>Solstice is private</h2>
+      <p>This is one home's energy monitor. If someone sent you a link, open it, or paste it here.</p>
+      <form class="mockform"><label>Share link<input placeholder="Paste the link" autocomplete="off"></label><button class="primary" type="submit">Open</button></form>
+      <button class="olink" id="ownerToggle" type="button">I'm the owner</button>
+      <form class="mockform" id="ownerForm" hidden><label>Owner key<input type="password" placeholder="From your password manager" autocomplete="off"></label><button class="primary" type="submit">Unlock</button></form>
+    </div></div>
+  </div>
+
+  <div class="fsub">Revoked · the owner turned the link off</div>
+  <div class="phone authphone" style="height:520px"><div class="screen"></div>
+    <div class="auth"><div class="authcard">
+      <div class="authlogo" style="filter:grayscale(1) brightness(.8);box-shadow:none"></div>
+      <h2>This link was turned off</h2>
+      <p>Ask the owner for a new one.</p>
+      <p class="fine">An expired link shows "This link has expired" on the same card. Neither has an input.</p>
+    </div></div>
+  </div>
+
+  <!-- ================================================================ 7 · FROST WIPE -->
+  <div class="sect fsect" id="f7"><b>7</b>Owner preview · the Frost wipe</div>
+  <p class="fcap">The owner flips "Preview as a guest". Frost grows from the switch over 450 ms. At 300 ms, under the frost, the app refetches as a guest. From 750 to 1350 ms the frost clears from the top down, and each veil fades in as it is uncovered. Owner-only rows disappear, "Shared with you" appears and the preview pill drops in. Exit runs it backwards: frost rises from the bottom, the owner data reloads, then the frost clears from the top. With Calm mode on (try the switch in the demo) or reduced motion, a 150 ms crossfade replaces the sweep.</p>
+  <div class="stills">
+    <figure><div class="still"><i style="width:60%"></i><i></i><i style="width:80%"></i><i class="v"></i><i style="width:70%"></i><i></i><i style="width:50%"></i><span class="ssw"></span><span class="sf" style="clip-path:circle(38% at 78% 77%)"></span></div><figcaption><b>0–450 ms</b>frost grows from the switch</figcaption></figure>
+    <figure><div class="still"><i style="width:60%"></i><i></i><i style="width:80%"></i><i class="v"></i><i style="width:70%"></i><i></i><i style="width:50%"></i><span class="ssw"></span><span class="sf" style="background:rgba(242,244,248,.14);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)"></span></div><figcaption><b>300 ms</b>guest data loads under the frost</figcaption></figure>
+    <figure><div class="still"><i style="width:60%"></i><i></i><i style="width:80%"></i><i class="v"></i><i style="width:70%"></i><i></i><i style="width:50%"></i><span class="sf" style="clip-path:inset(56% 0 0 0)"></span></div><figcaption><b>750–1350 ms</b>top-down clear, veils fade in</figcaption></figure>
+  </div>
+  <div class="fbar"><button class="link" id="fwBtn">Preview as a guest</button><span class="fine">or flip the switch in the phone</span></div>
+  <div class="phone" id="fw">
+    <div class="gpill" id="fwPill"><i></i>Previewing as a guest<button class="link" id="fwExit">Exit</button></div>
+    <div class="screen"><section class="view on">
+      <div class="hello"><div><h3>Settings</h3><p id="fwSub">Solstice · local on your Mac</p></div></div>
+      <div class="sect" data-guest>Shared with you</div>
+      <div class="group" data-guest>
+        <div class="row" style="--c:#e6e8ee"><div class="ri">◐</div><div class="rt">Shared by the owner<small>link expires Oct 25</small></div></div>
+        <div class="row tap" style="--c:var(--out)" tabindex="0"><div class="ri">⇠</div><div class="rt">Leave<small>Forget this link on this device</small></div><div class="chev">›</div></div>
+      </div>
+      <div class="sect">Connections</div>
+      <div class="group">
+        <div class="row" style="--c:#e82127" data-owner><div class="ri">T</div><div class="rt">Tesla Fleet API<small>Solstice Home Energy · Home</small></div><div class="rv"><span style="color:var(--batt)">Live</span></div></div>
+        <div class="row" style="--c:var(--home)"><div class="ri">☁</div><div class="rt">Open-Meteo weather<small>tilt 27° · facing 244°</small></div><div class="rv"><span style="color:var(--batt)">Live</span></div></div>
+        <div class="row tap" style="--c:var(--solar)" data-owner><div class="ri">$</div><div class="rt">PEC bills<small>3 saved · next due Oct 12</small></div><div class="chev">›</div></div>
+        <div class="row tap" style="--c:var(--grid)" data-owner><div class="ri">≡</div><div class="rt">All data<small>Raw live status and site info</small></div><div class="chev">›</div></div>
+      </div>
+      <div class="sect">Your system</div>
+      <div class="group">
+        <div class="row" style="--c:var(--batt)"><div class="ri">▮</div><div class="rt">Powerwalls<small>Powerwall 2 + Powerwall 2</small></div><div class="rv">27 kWh · 10 kW</div></div>
+        <div class="row" style="--c:var(--solar)"><div class="ri">☀</div><div class="rt">Solar<small>30 × SunPower 320 W</small></div><div class="rv">9.6 kW DC</div></div>
+        <div class="row" style="--c:var(--warn)"><div class="ri">⛨</div><div class="rt">Backup reserve<small>Set in the Tesla app</small></div><div class="rv">20%</div></div>
+        <div class="row" style="--c:var(--home)"><div class="ri">$</div><div class="rt">Utility<small><span data-money="$•.••••/kWh" data-ov="owner's rate"></span> all-in · <span data-money="$•.••••/kWh" data-ov="owner's rate"></span> export credit</small></div><div class="rv">PEC</div></div>
+        <div class="row" style="--c:var(--mute)"><div class="ri">⌂</div><div class="rt">Installed<small data-owner>Gateway firmware 25.10.1</small></div><div class="rv">Dec 2020</div></div>
+      </div>
+      <div class="sect">Your data</div>
+      <div class="group">
+        <div class="row tap" style="--c:var(--home)" data-owner><div class="ri">⇩</div><div class="rt">Export CSV<small>Every 5-minute reading</small></div><div class="chev">›</div></div>
+        <div class="row" style="--c:var(--grid)"><div class="ri">✦</div><div class="rt">Calm mode<small>Less motion; follows your system setting</small></div><div class="sw" id="calmSw"></div></div>
+      </div>
+      <div class="sect" data-owner>Alerts · in app</div>
+      <div class="group" data-owner>
+        <div class="row" style="--c:var(--out)"><div class="ri">⚡</div><div class="rt">Grid outage started or ended</div><div class="sw on"></div></div>
+        <div class="row" style="--c:var(--grid)"><div class="ri">≈</div><div class="rt">Bill doesn’t match Tesla<small>Gap over 5%</small></div><div class="sw on"></div></div>
+      </div>
+      <div class="sect" data-owner>Sharing</div>
+      <div class="group" data-owner>
+        <div class="row tap" style="--c:var(--home)"><div class="ri">⇗</div><div class="rt">Share this app</div><div class="rv">2 active links</div><div class="chev">›</div></div>
+        <div class="row" style="--c:#e6e8ee"><div class="ri">◐</div><div class="rt">Preview as a guest<small>see what they see</small></div><div class="sw" id="fwSw" role="switch" aria-checked="false" tabindex="0"></div></div>
+        <div class="row tap" style="--c:var(--solar)"><div class="ri">@</div><div class="rt">Name shown on invites</div><div class="rv">The owner</div><div class="chev">›</div></div>
+        <div class="row tap" style="--c:var(--grid)"><div class="ri">▣</div><div class="rt">Owner on 3 devices<small>sign out others</small></div><div class="chev">›</div></div>
+      </div>
+      <div class="sect">Preview</div>
+      <div class="group">
+        <div class="row" style="--c:var(--out)"><div class="ri">⚡</div><div class="rt">Preview outage mode<small>What the app looks like when the grid goes down</small></div><div class="sw red"></div></div>
+      </div>
+    </section></div>
+    <div class="frostwipe" id="fwLayer"></div>
+  </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><div class="ti" id="toastI"></div><div><b id="toastT"></b><span id="toastS"></span></div></div>
+<p class="fine endnote">Illustrative data. No price, loan, bill or location figures are shown.</p>
+
+<script>
+const $ = id => document.getElementById(id);
+const V = t => `<data class="veil">${t}</data>`;
+const svgText = (x, y, t, { size = 9.5, fill = 'rgba(242,244,248,.4)', anchor = 'start', font = 'JetBrains Mono' } = {}) => `<text x="${x}" y="${y}" fill="${fill}" font-size="${size}" font-family="${font}" text-anchor="${anchor}">${t}</text>`;
+const path = pts => pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join('');
+const clock12 = h => `${(h + 11) % 12 + 1} ${h % 24 < 12 ? 'AM' : 'PM'}`;
+
+/* ---------- toast (the app's, pinned to the phone column) ---------- */
+function toast(icon, bg, title, sub) {
+  const t = $('toast'), col = document.querySelector('.col').getBoundingClientRect();
+  if (innerWidth > 900) { t.style.left = (col.left + 12) + 'px'; t.style.width = (col.width - 24) + 'px'; } else { t.style.left = '12px'; t.style.width = ''; }
+  $('toastI').textContent = icon; $('toastI').style.background = bg; $('toastT').textContent = title; $('toastS').textContent = sub;
+  t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 4500);
+}
+document.addEventListener('click', e => {
+  if (e.target.closest('.veil, .card.locked')) toast('🔒', 'rgba(255,255,255,.14)', 'Private to the owner', 'Dollar amounts, bills and controls stay with the owner.');
+});
+
+/* ---------- 1 · next 48 hours (synthetic, same drawing as now.js) ---------- */
+(function fc48() {
+  const H0 = 14, cap = 27, reserve = .2, P = []; let soc = .64, imp = 0, full = null, atRes = 0;
+  for (let k = 0; k <= 48; k++) {
+    const hd = (H0 + k) % 24, day = Math.floor((H0 + k) / 24);
+    const s = hd > 7 && hd < 19 ? Math.sin(Math.PI * (hd - 7) / 12) * 5.6 * (day === 1 ? .9 : 1) : 0;
+    const h = 2.4 + (hd >= 13 && hd < 21 ? 1.5 : 0) + (hd >= 17 && hd < 22 ? .8 : 0) + (hd >= 10 && hd < 19 ? .15 : 0);
+    P.push({ k, hd, day, s, h, soc });
+    if (k < 48) { const n = s - h;
+      if (n > 0) soc += Math.min(n, 10, (1 - soc) * cap) / cap;
+      else { const d = Math.min(-n, 10, Math.max(0, (soc - reserve) * cap)); soc -= d / cap; imp += -n - d; }
+      if (soc >= .995 && full == null) full = k + 1; if (soc <= reserve + .005) atRes++; }
+  }
+  const maxKw = Math.max(4, ...P.map(p => Math.max(p.s, p.h))), X = k => 8 + k / 48 * 294, Yk = v => 118 - v / maxKw * 100, Ys = v => 118 - v * 100;
+  let o = '';
+  P.forEach(p => { if (p.hd >= 20 || p.hd < 7) o += `<rect x="${X(p.k)}" y="14" width="${X(1) - X(0) + .5}" height="104" fill="rgba(255,255,255,.025)"/>`; });
+  [0, 24, 48].forEach(k => o += `<line x1="${X(k)}" x2="${X(k)}" y1="14" y2="118" stroke="rgba(255,255,255,.1)"/>`);
+  o += svgText(X(0), 134, 'now') + svgText(X(24), 134, '+24h', { anchor: 'middle' }) + svgText(X(48), 134, '+48h', { anchor: 'end' });
+  o += `<path d="M${X(0)} 118${P.map(p => `L${X(p.k).toFixed(1)} ${Yk(p.s).toFixed(1)}`).join('')}L${X(48)} 118Z" fill="rgba(255,193,94,.3)" stroke="#ffc15e" stroke-width="1.2"/>`;
+  o += `<path d="${path(P.map(p => [X(p.k), Yk(p.h)]))}" fill="none" stroke="#6cc4ff" stroke-width="1.3" stroke-opacity=".8"/>`;
+  o += `<path d="${path(P.map(p => [X(p.k), Ys(p.soc)]))}" fill="none" stroke="#4ef0a6" stroke-width="2.2" style="filter:drop-shadow(0 0 3px #4ef0a6)"/>`;
+  o += `<line x1="8" x2="302" y1="${Ys(reserve)}" y2="${Ys(reserve)}" stroke="rgba(255,122,102,.6)" stroke-dasharray="3 3"/>`;
+  const pk = P.reduce((a, p) => p.soc > a.soc ? p : a, P[0]);
+  o += `<circle cx="${X(pk.k)}" cy="${Ys(pk.soc)}" r="3.5" fill="#4ef0a6"/>${svgText(X(pk.k), Ys(pk.soc) - 7, Math.round(pk.soc * 100) + '%', { anchor: 'middle', fill: '#4ef0a6' })}`;
+  $('fc48').innerHTML = o;
+  const when = k => `${['Fri', 'Sat', 'Sun'][Math.floor((H0 + k) / 24)]} ${clock12((H0 + k) % 24)}`;
+  $('fcTxt').innerHTML = `${full ? `Powerwalls should be <b style="color:var(--batt)">full by ${when(full)}</b>. ` : `Powerwalls peak around <b style="color:var(--batt)">${Math.round(pk.soc * 100)}%</b> (${when(pk.k)}); the home uses most of the solar as it's made. `}`
+    + `${atRes ? `They'll sit at the reserve for about ${atRes} of the next 48 hours, so ` : ''}you'll buy about <b style="color:var(--grid)">${Math.round(imp)} kWh</b> from PEC over the next two days (≈ ${V('$•••')}).`;
+  // next 12 hours strip
+  const T = [96, 97, 96, 94, 91, 88, 85, 83, 82, 81, 80, 79];
+  $('wx12').innerHTML = T.map((t, i) => { const hd = (H0 + i) % 24, kw = hd > 7 && hd < 19 ? Math.sin(Math.PI * (hd - 7) / 12) * 5.6 : 0;
+    return `<div class="${i ? '' : 'now'}"><span>${i ? `${(hd + 11) % 12 + 1}${hd < 12 ? 'a' : 'p'}` : 'Now'}</span><span class="ic">${hd >= 7 && hd < 20 ? (i === 3 ? '⛅' : '☀') : '☾'}</span><span>${t}°</span><i class="kb" style="height:${4 + kw * 4}px"></i><span class="kw">${kw.toFixed(1)}</span></div>`; }).join('');
+})();
+
+/* ---------- 2 · meter vs Tesla + locked-card skeletons (fixed patterns, not data) ---------- */
+(function hist() {
+  const R = [['Jul', 1078, 1061], ['Aug', 1236, 1219], ['Sep', 1184, 1162]], mx = 1236 * 1.1, bw = 46; let s = '';
+  R.forEach(([m, pec, tes], i) => { const x = 26 + i * (bw + 8), h1 = pec / mx * 100, h2 = tes / mx * 100, g = ((pec - tes) / tes * 100).toFixed(1);
+    s += `<rect x="${x}" y="${112 - h1}" width="${bw}" height="${h1}" rx="5" fill="rgba(196,162,255,.28)"/><rect x="${x + bw * .28}" y="${112 - h2}" width="${bw * .44}" height="${h2}" rx="3" fill="#c4a2ff"/>`;
+    s += svgText(x + bw / 2, 108 - Math.max(h1, h2), `+${g}%`, { anchor: 'middle', fill: 'rgba(242,244,248,.6)', size: 9 }) + svgText(x + bw / 2, 128, m, { anchor: 'middle' }); });
+  s += svgText(26, 146, 'Within ±5% means PEC billed what Tesla measured.', { size: 9, font: 'Manrope' });
+  $('meterChart').innerHTML = s;
+  const K = 'rgba(255,255,255,.16)';
+  const W = [[70, 118, 180], [92, 196, 102], [104, 164, 32], [72, 150, 14], [52, 118, 64]];
+  $('skWater').innerHTML = W.map(([lw, x, w], i) => { const y = 8 + i * 36; return `<rect x="0" y="${y + 8}" width="${lw}" height="9" rx="4.5" fill="${K}"/><rect x="${x}" y="${y + 4}" width="${w}" height="16" rx="4" fill="${K}"/><rect x="${x + w + 5}" y="${y + 8}" width="26" height="8" rx="4" fill="rgba(255,255,255,.1)"/>`; }).join('');
+  const M = [[70, 22], [66, 18], [74, 26], [82, 34], [90, 40], [96, 44], [98, 46], [94, 42], [84, 32], [72, 24], [66, 20], [70, 22]];
+  $('skMonthly').innerHTML = M.map(([a, b], i) => { const x = 6 + i * 25.5; return `<rect x="${x}" y="${104 - a}" width="19" height="${a}" rx="5" fill="rgba(255,255,255,.13)"/><rect x="${x + 4}" y="${104 - b}" width="11" height="${b}" rx="3" fill="${K}"/><rect x="${x + 6}" y="114" width="7" height="7" rx="3.5" fill="rgba(255,255,255,.1)"/>`; }).join('');
+})();
+
+/* ---------- 3 · pool dial, signals, week (same drawing as appliances.js) ---------- */
+(function pool() {
+  const hm = m => { const h = Math.floor(m / 60) % 24, mm = m % 60; return `${h % 12 || 12}${mm ? ':' + String(mm).padStart(2, '0') : ''}${h < 12 ? 'a' : 'p'}`; };
+  const colorFor = n => /high|boost/i.test(n) ? '#ff7a66' : '#6cc4ff';
+  const C = [{ name: 'Pool', rpm: 1800, start: 480, stop: 1080 }, { name: 'High Speed', rpm: 2800, start: 720, stop: 900 }];
+  const P = [{ name: 'Pool', rpm: 1500, start: 600, stop: 1140 }, { name: 'Skim boost', rpm: 2400, start: 840, stop: 900 }];
+  const svg = $('dial24'), cx = 160, cy = 160, A = h => h / 24 * Math.PI * 2 + Math.PI / 2, pt = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+  const arc = (r, m0, m1) => { const h0 = m0 / 60, h1 = m1 / 60, [x0, y0] = pt(r, A(h0)), [x1, y1] = pt(r, A(h1)); return `M${x0} ${y0} A${r} ${r} 0 ${h1 - h0 > 12 ? 1 : 0} 1 ${x1} ${y1}`; };
+  let o = `<defs><filter id="dgl"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter><linearGradient id="dsun" x1="0" x2="1"><stop offset="0" stop-color="#ffc15e" stop-opacity=".1"/><stop offset=".5" stop-color="#ffc15e" stop-opacity=".9"/><stop offset="1" stop-color="#ffc15e" stop-opacity=".1"/></linearGradient></defs>`;
+  for (let h = 0; h < 24; h++) { const [x0, y0] = pt(140, A(h)), [x1, y1] = pt(h % 6 ? 144 : 150, A(h)); o += `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="rgba(255,255,255,${h % 6 ? .12 : .35})"/>`; }
+  [['12a', 0], ['6a', 6], ['12p', 12], ['6p', 18]].forEach(([l, h]) => { const [x, y] = pt(128, A(h)); o += `<text x="${x}" y="${y + 3.5}" text-anchor="middle" fill="rgba(242,244,248,.5)" font-size="10" font-family="JetBrains Mono">${l}</text>`; });
+  o += `<path d="${arc(150, 7 * 60, 19 * 60)}" fill="none" stroke="url(#dsun)" stroke-width="5" stroke-linecap="round"/>`;
+  o += `<circle cx="${cx}" cy="${cy}" r="112" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="18"/><circle cx="${cx}" cy="${cy}" r="88" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="18"/>`;
+  const seg = (r, s, cls) => `<path class="${cls}" d="${arc(r, s.start, s.stop)}" fill="none" stroke="${colorFor(s.name)}" stroke-width="${8 + s.rpm / 3450 * 12}" stroke-linecap="round" filter="url(#dgl)" style="transition:opacity .5s"><title>${s.name} · ${s.rpm.toLocaleString()} RPM · ${hm(s.start)}–${hm(s.stop)}</title></path>`;
+  C.forEach(s => o += seg(112, s, 'dn')); P.forEach(s => o += seg(88, s, 'dr'));
+  const nowH = 14 + 40 / 60, [mx, my] = pt(104, A(nowH)), [mx2, my2] = pt(158, A(nowH));
+  o += `<line x1="${mx}" y1="${my}" x2="${mx2}" y2="${my2}" stroke="#fff" stroke-opacity=".6" stroke-width="1.5"/><circle cx="${mx2}" cy="${my2}" r="3" fill="#fff"/>`;
+  svg.innerHTML = o;
+  const set = m => { svg.querySelectorAll('.dn').forEach(p => p.style.opacity = m === 'rec' ? 0 : m === 'both' ? .55 : .95); svg.querySelectorAll('.dr').forEach(p => p.style.opacity = m === 'now' ? 0 : .95);
+    $('dcLbl').textContent = m === 'now' ? 'Now' : m === 'rec' ? 'Recommended' : 'Now → Recommended';
+    $('dcKwh').innerHTML = m === 'now' ? '5.4 <i>kWh/day</i>' : m === 'rec' ? '2.6 <i>kWh/day</i>' : '5.4 → 2.6 <i>kWh/day</i>';
+    $('dcSub').innerHTML = m === 'now' ? `10 h · ${V('$•••/mo')} · 88% on solar` : m === 'rec' ? `10 h · ${V('$•••/mo')} · 100% on solar` : 'outer: now · inner: recommended';
+    $('schNow').hidden = m !== 'now'; $('schRec').hidden = m === 'now'; document.querySelectorAll('#schMode button').forEach(b => b.classList.toggle('on', b.dataset.m === m)); };
+  $('schMode').onclick = e => { const b = e.target.closest('button'); if (b) set(b.dataset.m); };
+  set('rec');
+  const ring = (v, l, f, c) => { const Cc = 2 * Math.PI * 17; return `<div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="${c}" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="${Cc * f} ${Cc}" transform="rotate(-90 22 22)"/></svg><b>${v}</b><small>${l}</small></div>`; };
+  $('autoSignals').innerHTML = ring('87°', 'water', .87, '#6cc4ff') + ring('5.6', 'sun', .8, '#ffc15e') + ring('97°', 'high', 97 / 105, '#ff9e66') + ring('10%', 'rain', .1, '#c4a2ff') + ring('2/7', 'use days', 2 / 7, '#4ef0a6') + ring('low', 'pollen', .15, '#8d93a8');
+  const days = [['Sat', 9, 1, 5.6], ['Sun', 9, 0, 5.8], ['Mon', 10, 1, 5.2], ['Tue', 9, 0, 6.0], ['Wed', 9, 0, 5.9], ['Thu', 8, 0, 5.1], ['Fri', 9, 1, 5.7]];
+  const X = i => 12 + i * 42, mxS = 6.0, Y = v => 88 - v / mxS * 38, pts = days.map((d, i) => `${X(i) + 15},${Y(d[3])}`);
+  let w = `<defs><linearGradient id="asg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffc15e" stop-opacity=".45"/><stop offset="1" stop-color="#ffc15e" stop-opacity="0"/></linearGradient></defs>`;
+  w += `<path d="M${X(0) + 15},84 L${pts.join(' L')} L${X(6) + 15},84 Z" fill="url(#asg)"/><polyline points="${pts.join(' ')}" fill="none" stroke="#ffc15e" stroke-opacity=".7" stroke-width="1.5"/>`;
+  days.forEach(([d, hrs, boost], i) => { const px = X(i), hh = hrs / 12 * 56, tm = i === 0;
+    w += `${tm ? `<rect x="${px - 2}" y="4" width="34" height="102" rx="8" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.1)"/>` : ''}<rect x="${px + 7}" y="${84 - hh}" width="16" height="${hh}" rx="4" fill="#6cc4ff" opacity="${tm ? 1 : .75}"/>${boost ? `<circle cx="${px + 15}" cy="${84 - hh - 6}" r="3" fill="#ff7a66"/>` : ''}<text x="${px + 15}" y="${84 - hh - (boost ? 14 : 6)}" text-anchor="middle" fill="#f2f4f8" font-size="9.5" font-family="JetBrains Mono">${hrs}h</text><text x="${px + 15}" y="100" text-anchor="middle" fill="rgba(242,244,248,${tm ? .9 : .5})" font-size="9.5" font-family="Manrope">${d}</text>`; });
+  $('autoWeek').innerHTML = w;
+})();
+
+/* ---------- 4 · planner slider label (client-side, live for guests) ---------- */
+$('rPv').oninput = e => { const n = +e.target.value; $('aPv').textContent = '+' + n; $('aPvS').textContent = n ? `${30 + n} panels · roughly $${(n * 320 * 2.75 / 1000).toFixed(1)}k (assumes 320 W modules)` : 'Today: 30 × 320 W SunPower · 9.6 kW DC'; };
+
+/* ---------- 5 · Sharing rows, sheets ---------- */
+document.querySelectorAll('[data-go]').forEach(el => el.addEventListener('click', () => $(el.dataset.go).scrollIntoView({ behavior: 'smooth', block: 'start' })));
+$('expSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; $('expSeg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
+$('createBtn').onclick = () => $('s5b').scrollIntoView({ behavior: 'smooth', block: 'start' });
+document.querySelectorAll('[data-t]').forEach(b => b.onclick = () => toast('✓', 'rgba(255,255,255,.12)', b.dataset.t === 'copy' ? 'Link copied' : 'Share sheet opens', 'Mockup: nothing leaves this page.'));
+(function qr() {
+  let seed = 7, rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648, o = '<rect width="29" height="29" fill="#fff"/>';
+  const finder = (x, y) => `<rect x="${x}" y="${y}" width="7" height="7" fill="#05060a"/><rect x="${x + 1}" y="${y + 1}" width="5" height="5" fill="#fff"/><rect x="${x + 2}" y="${y + 2}" width="3" height="3" fill="#05060a"/>`;
+  for (let y = 2; y < 27; y++) for (let x = 2; x < 27; x++) { const inF = (x < 10 && y < 10) || (x > 18 && y < 10) || (x < 10 && y > 18); if (!inF && rnd() < .48) o += `<rect x="${x}" y="${y}" width="1" height="1" fill="#05060a"/>`; }
+  $('qr').innerHTML = o + finder(2, 2) + finder(20, 2) + finder(2, 20);
+})();
+$('qrBtn').onclick = () => { $('qr').hidden = !$('qr').hidden; };
+function revokeRow(row) {
+  const who = row.dataset.l; if (!confirm(`Turn off the link for ${who}? Anyone using it loses access on their next refresh.`)) return;
+  row.classList.add('off'); row.querySelector('.lm').insertAdjacentHTML('beforeend', ' · <em>revoked now</em>'); $('revokedLinks').prepend(row);
+  toast('✓', 'rgba(255,255,255,.12)', 'Link turned off', who);
+}
+document.querySelectorAll('#activeLinks .rvk').forEach(b => b.onclick = () => revokeRow(b.closest('.lrow')));
+$('revokeAll').onclick = () => { const rows = [...document.querySelectorAll('#activeLinks .lrow')]; if (!rows.length || !confirm(`Turn off all ${rows.length} links?`)) return;
+  rows.forEach(r => { r.classList.add('off'); r.querySelector('.lm').insertAdjacentHTML('beforeend', ' · <em>revoked now</em>'); $('revokedLinks').prepend(r); }); toast('✓', 'rgba(255,255,255,.12)', 'All links turned off', `${rows.length} links`); };
+document.querySelectorAll('[data-d] .rvk').forEach(b => b.onclick = () => { const r = b.closest('.lrow'); r.classList.add('off'); toast('✓', 'rgba(255,255,255,.12)', 'Signed out', r.dataset.d); });
+
+/* ---------- 6 · auth cards ---------- */
+$('haveLook').onclick = () => { $('welcomeAuth').classList.add('gone'); $('welcomeAgain').hidden = false; };
+$('welcomeAgain').onclick = () => { $('welcomeAuth').classList.remove('gone'); $('welcomeAgain').hidden = true; };
+$('ownerToggle').onclick = () => { $('ownerForm').hidden = !$('ownerForm').hidden; };
+document.querySelectorAll('.mockform').forEach(f => f.onsubmit = e => { e.preventDefault(); toast('ⓘ', 'rgba(255,255,255,.12)', 'Mockup only', 'Nothing is sent from this page.'); });
+
+/* ---------- 7 · Frost wipe (§4.5) ---------- */
+(function frost() {
+  const fw = $('fw'), layer = $('fwLayer'), pill = $('fwPill'), sw = $('fwSw'); let busy = false, guest = false;
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const calm = () => document.documentElement.hasAttribute('data-calm') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const blur = px => { layer.style.backdropFilter = layer.style.webkitBackdropFilter = `blur(${px}px)`; };
+  const snap = (props) => { layer.style.transition = 'none'; Object.assign(layer.style, props); void layer.offsetWidth; };
+  const render = g => {
+    fw.querySelectorAll('[data-money]').forEach(el => el.innerHTML = g ? `<data class="veil${calm() ? '' : ' wait'}">${el.dataset.money}</data>` : `<span class="ownv">${el.dataset.ov}</span>`);
+    $('fwSub').textContent = g ? 'Shared by the owner · preview' : 'Solstice · local on your Mac';
+    if (g) fw.dataset.as = 'guest'; else delete fw.dataset.as;
+    sw.classList.toggle('on', g); sw.setAttribute('aria-checked', g); $('fwBtn').textContent = g ? 'Exit the preview' : 'Preview as a guest';
+  };
+  // each veil plays veilin when the top-down clear passes it
+  const reveal = (from, dur) => { const p = fw.getBoundingClientRect();
+    fw.querySelectorAll('.veil.wait').forEach(v => { const f = Math.min(1, Math.max(0, (v.getBoundingClientRect().top - p.top) / p.height)); setTimeout(() => v.classList.remove('wait'), from + f * dur); }); };
+  async function crossfade(g) {
+    snap({ clipPath: 'none', opacity: '0' }); blur(24); layer.classList.add('run'); void layer.offsetWidth;
+    layer.style.transition = 'opacity .15s linear'; layer.style.opacity = '1'; await wait(150);
+    render(g); layer.style.opacity = '0'; await wait(150);
+    layer.classList.remove('run'); layer.style.opacity = ''; if (g) pill.classList.add('show');
+  }
+  async function enter() {
+    if (busy || guest) return; busy = true; guest = true;
+    if (calm()) { await crossfade(true); busy = false; return; }
+    const p = fw.getBoundingClientRect(), s = sw.getBoundingClientRect();
+    layer.style.setProperty('--x', `${s.left + s.width / 2 - p.left}px`); layer.style.setProperty('--y', `${s.top + s.height / 2 - p.top}px`);
+    snap({ clipPath: 'circle(0 at var(--x) var(--y))', opacity: '1' }); blur(0); layer.classList.add('run'); void layer.offsetWidth;
+    layer.style.transition = 'clip-path .45s var(--ease), backdrop-filter .45s var(--ease), -webkit-backdrop-filter .45s var(--ease)';
+    layer.style.clipPath = 'circle(150% at var(--x) var(--y))'; blur(24);
+    await wait(300); render(true); reveal(450, 600);                 // 300 ms: role flips, guest data loads under the frost
+    await wait(450);                                                  // 750 ms: clear from the top down
+    snap({ clipPath: 'inset(0 0 0 0)' }); layer.style.transition = 'clip-path .6s var(--ease)'; layer.style.clipPath = 'inset(100% 0 0 0)';
+    await wait(600); layer.classList.remove('run'); pill.classList.add('show'); busy = false;   // 1350 ms
+  }
+  async function exit() {
+    if (busy || !guest) return; busy = true; guest = false; pill.classList.remove('show');
+    if (calm()) { await crossfade(false); busy = false; return; }
+    snap({ clipPath: 'inset(100% 0 0 0)', opacity: '1' }); blur(24); layer.classList.add('run'); void layer.offsetWidth;
+    layer.style.transition = 'clip-path .45s var(--ease)'; layer.style.clipPath = 'inset(0 0 0 0)';   // frost rises from the bottom
+    await wait(450); render(false);                                                              // owner data reloads under it
+    await wait(300); layer.style.transition = 'clip-path .6s var(--ease)'; layer.style.clipPath = 'inset(100% 0 0 0)';  // top-down clear
+    await wait(600); layer.classList.remove('run'); busy = false;
+  }
+  sw.onclick = () => guest ? exit() : enter();
+  sw.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sw.click(); } };
+  $('fwBtn').onclick = () => guest ? exit() : enter();
+  $('fwExit').onclick = exit;
+  $('calmSw').onclick = () => { const on = $('calmSw').classList.toggle('on'); if (on) document.documentElement.dataset.calm = ''; else delete document.documentElement.dataset.calm; };
+  render(false);
+})();
+</script>
+</body></html>
