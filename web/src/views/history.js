@@ -2,6 +2,8 @@ import { $, fmtDur, clock12, niceDate, localDate, addDays, svgText, path, money,
 import { api } from '../lib/api.js';
 import { yearRingCard, yearModel } from '../scenes/yearring.js';
 import { createFlowsCard, mountFlows } from '../scenes/flows.js';
+import { veil } from '../lib/frost.js';
+import { lockBillCards } from './guest.js';
 
 let range = 'day', day = null;
 
@@ -27,7 +29,7 @@ async function drawDay(S) {
   $('hleg').innerHTML = `<span><i style="background:var(--solar)"></i>Solar kW</span><span><i style="background:var(--home)"></i>Home kW</span><span><i style="background:var(--batt)"></i>Battery %</span>`;
   const rate = S.tariff?.importRateAllIn;
   $('hstats').innerHTML = stat('Solar', t.solar, `peak ${Math.max(0, ...B.map(b => b.solar)).toFixed(1)} kW`) + stat('Home', t.home, `peak ${Math.max(0, ...B.map(b => b.home)).toFixed(1)} kW`) +
-    stat('Bought from PEC', t.import, rate != null ? `≈ $${((t.import ?? 0) * rate).toFixed(2)}` : 'rate unknown') + stat('Powerwall', t.discharge, `out · ${(t.charge ?? 0).toFixed(1)} in`);
+    stat('Bought from PEC', t.import, S.guest ? `≈ ${veil('$•.••')}` : rate != null ? `≈ $${((t.import ?? 0) * rate).toFixed(2)}` : 'rate unknown') + stat('Powerwall', t.discharge, `out · ${(t.charge ?? 0).toFixed(1)} in`);
 }
 const stat = (label, v, sub) => `<div class="stat"><span>${label}</span><b>${v == null ? '—' : v >= 1000 ? (v / 1000).toFixed(1) + '<small>MWh</small>' : v.toFixed(1) + '<small>kWh</small>'}</b><em>${sub}</em></div>`;
 
@@ -51,7 +53,7 @@ async function drawBars(S) {
   $('hleg').innerHTML = `<span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--home)"></i>Home</span><span><i style="background:var(--out)"></i>Outage</span>`;
   const sum = k => rows.reduce((a, r) => a + (r[k] ?? 0), 0), rate = S.tariff?.importRateAllIn, credit = S.tariff?.exportCredit;
   $('hstats').innerHTML = stat('Solar', sum('solar'), `${Math.round(sum('solar') / sum('home') * 100)}% of home use`) + stat('Home', sum('home'), `${(sum('home') / (range === 'year' ? 365 : rows.length)).toFixed(0)} kWh/day avg`) +
-    stat('Bought from PEC', sum('import'), rate != null ? `≈ $${Math.round(sum('import') * rate)}` : 'rate unknown') + stat('Sent to PEC', sum('export'), credit != null ? `≈ $${Math.round(sum('export') * credit)} credit` : 'rate unknown');
+    stat('Bought from PEC', sum('import'), S.guest ? `≈ ${veil()}` : rate != null ? `≈ $${Math.round(sum('import') * rate)}` : 'rate unknown') + stat('Sent to PEC', sum('export'), S.guest ? `≈ ${veil()} credit` : credit != null ? `≈ $${Math.round(sum('export') * credit)} credit` : 'rate unknown');
 }
 
 export async function drawHistoryChart(S) {
@@ -85,7 +87,7 @@ let flowsCard = null, flowsView = null, flowsSeq = 0;
 async function drawFlows(S) {
   const today = localDate(), date = range === 'day' ? day ?? today : today, key = `${range}|${date}`, seq = ++flowsSeq;
   if (!flowsCard) { flowsCard = createFlowsCard(); $('hstats').after(flowsCard); }
-  flowsCard.hidden = range !== 'day' && range !== 'month';
+  flowsCard.hidden = S.guest || (range !== 'day' && range !== 'month');   // owner-only (/api/flows): never a guest's
   if (flowsCard.hidden) { flowsView?.dispose(); flowsView = null; return; }
   const hit = (S.flowsCache ??= {})[key], fresh = hit && (Date.now() - hit.at < 5 * 60e3 || (range === 'day' && date < today));
   if (fresh && flowsView?.alive() && flowsView.key === key && flowsView.data === hit.data) return;   // already showing it
@@ -166,6 +168,8 @@ function drawBillList(S) {
   const R = (S.reconcile ?? []).slice().reverse();
   $('billCount').textContent = `${R.length} saved`;
   $('billList').innerHTML = R.length ? R.map(r => { const ok = r.checks.every(c => c.ok);
+    if (S.guest) return `<div class="bill" style="cursor:default"><div class="bm"><b>${niceDate(r.billDate, { month: 'long', year: 'numeric' })}</b><br>${niceDate(r.period.from)} – ${niceDate(r.period.to)} · ${r.pec.deliveredKwh.toLocaleString()} kWh bought · ${(r.pec.receivedKwh ?? 0).toLocaleString()} sent</div>
+      <div class="bt">${veil()}<small style="color:${ok ? 'var(--batt)' : 'var(--warn)'}">${ok ? '✓ matches Tesla' : '! check'}</small></div></div>`;   // no detail sheet for a guest
     return `<div class="bill" data-bill="${r.billDate}"><div class="bm"><b>${niceDate(r.billDate, { month: 'long', year: 'numeric' })}</b><br>${niceDate(r.period.from)} – ${niceDate(r.period.to)} · ${r.pec.deliveredKwh.toLocaleString()} kWh bought</div>
       <div class="bt">${money2(r.total)}<small style="color:${ok ? 'var(--batt)' : 'var(--warn)'}">${ok ? '✓ matches Tesla' : '! check'}</small></div></div>`; }).join('')
     : '<div class="empty">No bills yet.</div>';
@@ -201,9 +205,9 @@ export function drawBills(S) {
     return `<div class="check"><i class="${Math.abs(h / ph - 1) > .1 ? 'wa' : 'ok'}">${Math.abs(h / ph - 1) > .1 ? '!' : '✓'}</i><div><b>Versus the same dates last year:</b> home use ${h >= ph ? '+' : ''}${Math.round((h / ph - 1) * 100)}%, solar ${s >= ps ? '+' : ''}${Math.round((s / ps - 1) * 100)}%, bought from PEC ${last.tesla.importKwh >= last.lastYear.importKwh ? '+' : ''}${Math.round((last.tesla.importKwh / last.lastYear.importKwh - 1) * 100)}%.</div></div>`; })() : '';
   $('billChecks').innerHTML = `<div class="card"><div class="h"><b>${niceDate(last.billDate, { month: 'long' })} bill check</b><span class="badge ${last.checks.every(c => c.ok) ? 'g' : ''}">${last.checks.every(c => c.ok) ? 'all good' : 'look at this'}</span></div>
     <div style="margin-top:8px">${last.checks.map(c => `<div class="check"><i class="${c.ok ? 'ok' : 'al'}">${c.ok ? '✓' : '!'}</i><div><b>${c.label}.</b> ${c.detail}</div></div>`).join('')}${yoy}</div>${cov}
-    <div class="kv"><span>${niceDate(last.period.from)} – ${niceDate(last.period.to)} · total</span><b>${money2(last.total)}</b>
-    <span>Your rate, all-in</span><b>${last.tariff ? `$${last.tariff.importRateAllIn.toFixed(4)}/kWh` : '—'}</b><span>Solar + Powerwall covered</span><b style="color:var(--batt)">${last.solarShareOfHome ?? '—'}% of home use</b>
-    <span>Without solar it would have been</span><b>${money2(last.withoutSolarCost)}</b></div></div>`;
+    <div class="kv"><span>${niceDate(last.period.from)} – ${niceDate(last.period.to)} · total</span><b>${S.guest ? veil() : money2(last.total)}</b>
+    <span>Your rate, all-in</span><b>${S.guest ? veil('$•.••••/kWh') : last.tariff ? `$${last.tariff.importRateAllIn.toFixed(4)}/kWh` : '—'}</b><span>Solar + Powerwall covered</span><b style="color:var(--batt)">${last.solarShareOfHome ?? '—'}% of home use</b>
+    <span>Without solar it would have been</span><b>${S.guest ? veil() : money2(last.withoutSolarCost)}</b></div></div>`;
 
   // meter vs Tesla per bill
   const mx = Math.max(1, ...R.flatMap(r => [r.pec.deliveredKwh, r.tesla.importKwh ?? 0])) * 1.1, bw = Math.min(46, 280 / R.length);
@@ -214,6 +218,7 @@ export function drawBills(S) {
     s += svgText(x + bw / 2, 128, niceDate(r.billDate, { month: 'short' }), { anchor: 'middle' }); });
   s += svgText(26, 146, 'Within ±5% means PEC billed what Tesla measured.', { size: 9, font: 'Manrope' });
   $('meterChart').innerHTML = s;
+  if (S.guest) return lockBillCards(S, last);   // the three money cards: locked for guests (views/guest.js)
 
   // waterfall for the latest bill
   const t = last.tesla, bt = last.tariff, T = S.tariff, rate = T?.importRateAllIn, fixed = (T?.fixedMonthly ?? 0) + (T?.discounts ?? 0);

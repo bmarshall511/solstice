@@ -468,3 +468,75 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .outage .kv .off i{opacity:.4}
 .outage .wkhead b{min-width:0}
 /* end n-outage */
+
+/* q-share */
+/* Share view (approved mockups/q-share.html; docs/audit-designs/share-view.md §4): the Frost veil and locked cards, the guest
+   chip and badges, the owner's Sharing sheets, the link-open cards on the .auth overlay, and the Frost wipe into and out of
+   "Preview as a guest". Guests are html[data-role=guest]; the owner previewing is html[data-as=guest]. */
+:root{--frost:rgba(8,10,16,.45);--frost-blur:14px;--veil:rgba(242,244,248,.32);--lock:rgba(242,244,248,.55)}
+/* inline veil: shape-preserving decoy text, never a real value */
+.veil{display:inline-flex;align-items:center;gap:5px;font-family:"JetBrains Mono";font-weight:500;color:var(--veil);letter-spacing:.1em;white-space:nowrap;
+  position:relative;overflow:hidden;border-radius:6px;padding:0 3px;background:rgba(255,255,255,.06);filter:blur(.8px);cursor:help;animation:veilin .3s var(--ease) both}
+.veil::before{content:"";flex:none;width:8px;height:10px;border:1.5px solid var(--lock);border-radius:2px;box-shadow:inset 0 -5px 0 var(--lock)} /* padlock */
+.veil::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.16),transparent);transform:translateX(-100%);animation:sweep 5.5s 1.5s infinite}
+.veil.wait{animation-play-state:paused}   /* under the Frost wipe until the clear passes it */
+@keyframes veilin{from{opacity:0;filter:blur(6px)}}
+/* locked card: frosted glass over a deterministic skeleton, same height as the owner's card */
+.card.locked{position:relative;overflow:hidden;cursor:help}
+.card.locked>*:not(.h):not(.lock){filter:blur(6px) saturate(.5);opacity:.5;pointer-events:none;user-select:none}
+.card.locked::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--frost);backdrop-filter:blur(var(--frost-blur));-webkit-backdrop-filter:blur(var(--frost-blur))}
+.card.locked>.h{position:relative;z-index:3}
+.card.locked .lock{position:absolute;inset:0;z-index:2;display:grid;place-content:center;gap:6px;text-align:center;font-size:12.5px;color:var(--dim)}
+.card.locked .lock b{display:block;font-size:14px;color:var(--text);font-weight:600}
+.card.locked .lock i{width:26px;height:26px;border-radius:9px;margin:0 auto 4px;display:grid;place-items:center;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);font-style:normal}
+.skl{display:block;height:9px;border-radius:5px;background:rgba(255,255,255,.16)}
+.kv .skl{margin-top:3px}.kv b .skl{margin-left:auto}
+/* guests and the owner's preview: owner-only UI is not rendered (the server refuses all of it anyway) */
+html[data-role=guest] [data-owner],html[data-as=guest] [data-owner]{display:none!important}
+html:not([data-role=guest]):not([data-as=guest]) [data-guest]{display:none!important}
+html[data-role=guest] :is([data-addbill],#billDue,#billDueNow,#openData,a[href="/api/export.csv"],#alertPrefs,#signOut,#connectBtn,#autoMode,#acMode,#acPresence,#acLinkBtn,#poolApply,#poolRestore,#poolShow,#applyTomorrow,#logClean,button#cleaned,#undoClean,#acApply,#acShow,#billRemove,.card.flows,.card.outage),
+html[data-as=guest] :is([data-addbill],#billDue,#billDueNow,#openData,a[href="/api/export.csv"],#alertPrefs,#signOut,#connectBtn,#autoMode,#acMode,#acPresence,#acLinkBtn,#poolApply,#poolRestore,#poolShow,#applyTomorrow,#logClean,button#cleaned,#undoClean,#acApply,#acShow,#billRemove,.card.flows,.card.outage){display:none!important}
+.chipx.guest{background:rgba(255,255,255,.08);border-color:var(--glass-b);color:var(--text)}
+.chipx.guest i{--c:#f2f4f8;box-shadow:0 0 8px rgba(242,244,248,.6)}
+html[data-as=guest] .phone{border-color:rgba(255,255,255,.32)}
+html[data-calm] .veil::after,html[data-calm] .veil{animation:none}
+/* Share sheet, devices sheet */
+.lbl{display:block;font-size:11px;color:var(--dim);margin:14px 0 6px}
+.seg2.exp button{flex:1;text-align:center}
+.lnk{margin-top:14px;padding:12px;border-radius:16px;background:rgba(0,0,0,.3);border:1px solid var(--glass-b)}
+.lnk code{display:block;font:12px "JetBrains Mono";color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lnk .lb{display:flex;gap:8px;flex-wrap:wrap}.lnk .lb .link{margin-top:10px;padding:7px 14px}
+.qr{display:block;width:180px;height:180px;margin:12px auto 0;border-radius:12px}
+.lrow{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-top:1px solid var(--glass-b)}
+.lrow:first-of-type{border-top:none}
+.lrow .lm{flex:1;min-width:0;font-size:12px;color:var(--dim);line-height:1.45}
+.lrow .lm b{display:block;font-size:13.5px;color:var(--text);font-weight:600}
+.lrow .lm em{font-style:normal;color:var(--mute)}
+.link.rvk{margin:0;flex:none;padding:6px 12px;font-size:12px;color:#ffb3aa;background:rgba(255,90,78,.1);border-color:rgba(255,90,78,.35)}
+.lrow.off{opacity:.45}.lrow.off .link{display:none}
+/* the link-open cards (welcome, private, turned off) on the .auth overlay */
+#gate{transition:opacity .4s var(--ease),backdrop-filter .4s var(--ease),-webkit-backdrop-filter .4s var(--ease)}
+#gate.gone{opacity:0;backdrop-filter:blur(0);-webkit-backdrop-filter:blur(0);pointer-events:none}
+.authcard .ln{margin-top:12px;font:500 12px "JetBrains Mono";color:var(--text)}
+.authcard .fine{margin-top:12px;line-height:1.5}
+.authcard .olink{all:unset;cursor:pointer;display:block;margin:16px auto 0;font-size:12px;color:var(--mute);text-decoration:underline;text-underline-offset:3px}
+.authcard form[hidden]{display:none}
+.authcard .err:empty{display:none}
+.authlogo.off{filter:grayscale(1) brightness(.8);box-shadow:none}
+html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.side){visibility:hidden}   /* nothing behind these two: no data, no site name */
+/* Preview as a guest: the Frost wipe and the pill */
+.frostwipe{position:absolute;inset:0;z-index:40;border-radius:inherit;pointer-events:none;visibility:hidden;
+  background:linear-gradient(180deg,rgba(242,244,248,.09),rgba(242,244,248,.04));
+  clip-path:circle(0 at var(--x) var(--y));backdrop-filter:blur(0);-webkit-backdrop-filter:blur(0)}
+.frostwipe.run{visibility:visible;pointer-events:auto}
+.gpill{position:absolute;left:50%;top:12px;z-index:41;display:flex;align-items:center;gap:10px;padding:6px 6px 6px 14px;border-radius:999px;white-space:nowrap;
+  background:rgba(24,26,34,.95);border:1px solid rgba(255,255,255,.32);box-shadow:0 20px 40px rgba(0,0,0,.4);font-size:12.5px;font-weight:600;
+  transform:translate(-50%,-160%);transition:transform .5s var(--ease)}
+.gpill.show{transform:translate(-50%,0)}
+.gpill i{width:7px;height:7px;border-radius:50%;background:#f2f4f8;box-shadow:0 0 8px rgba(242,244,248,.7)}
+.gpill .link{margin:0;padding:5px 12px;font-size:12px}
+@media (max-width:900px){
+  .gpill{top:calc(env(safe-area-inset-top) + 8px)}
+  html[data-as=guest] .screen{padding-top:calc(env(safe-area-inset-top) + 58px)}
+}
+/* end q-share */

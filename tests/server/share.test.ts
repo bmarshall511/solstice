@@ -131,7 +131,7 @@ describe('opening a link', () => {
 
     const guest = pair(c);
     const who = await call('/api/auth/me', { cookie: guest });
-    expect(await who.json()).toEqual({ mode: 'single', owner: false, guest: true, label: null });   // never the label
+    expect(await who.json()).toEqual({ mode: 'single', owner: false, guest: true, label: null, ownerName: 'The owner', expiresAt: s.expiresAt });   // never the label
     expect((await call('/api/now', { cookie: guest })).status).toBe(200);
 
     const never = await createLink({ label: 'Always', expiresIn: 'never' });
@@ -250,7 +250,7 @@ describe('preview as a guest (owner only)', () => {
     const c = cookieNamed(on, 'solstice_preview')!;
     expect(c).toBe('solstice_preview=1; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600');
     const previewing = both(owner, pair(c));
-    expect(await me(previewing)).toEqual({ mode: 'single', owner: false, guest: true, label: null, preview: true });
+    expect(await me(previewing)).toEqual({ mode: 'single', owner: false, guest: true, label: null, ownerName: 'The owner', expiresAt: null, preview: true });
     const s = await createLink({ label: 'Compare' }), guest = await guestCookie(s.token);
     for (const path of ['/api/settings', '/api/daily?days=30', '/api/reconcile', '/api/status'])
       expect(await (await call(path, { cookie: previewing })).json(), path).toEqual(await (await call(path, { cookie: guest })).json());
@@ -269,7 +269,7 @@ describe('preview as a guest (owner only)', () => {
 
   it('SHARE-13 the flag never escalates: a guest or a stranger holding it is exactly what they were', async () => {
     const s = await createLink({ label: 'Forged' }), guest = await guestCookie(s.token), forged = 'solstice_preview=1';
-    expect(await me(both(guest, forged))).toEqual({ mode: 'single', owner: false, guest: true, label: null });
+    expect(await me(both(guest, forged))).toEqual({ mode: 'single', owner: false, guest: true, label: null, ownerName: 'The owner', expiresAt: s.expiresAt });
     expect((await call('/api/share', { cookie: both(guest, forged) })).status).toBe(401);
     expect(await me(forged)).toEqual({ mode: 'single', owner: false });
     expect((await call('/api/now', { cookie: forged })).status).toBe(401);
@@ -291,5 +291,54 @@ describe('caching', () => {
       expect(r.headers.get('cache-control'), `${cookie.split('=')[0]} ${path}`).toBe('no-store');
       expect(r.headers.get('vary') ?? '', `${cookie.split('=')[0]} ${path}`).toMatch(/\bCookie\b/i);
     }
+  });
+});
+
+describe('the share UI\'s server pieces', () => {
+  it('SHARE-16 "Name shown on invites": the owner sets it in settings; a guest and a preview read it, cleaned; a stranger never does', async () => {
+    const s = await createLink({ label: 'Named' }), guest = await guestCookie(s.token);
+    expect((await me(guest)).ownerName).toBe('The owner');                                  // the default
+    expect((await call('/api/settings', { cookie: owner, method: 'PUT', json: { ownerName: '  Sam\u0007 Example  ' } })).status).toBe(200);
+    expect(await me(guest)).toEqual({ mode: 'single', owner: false, guest: true, label: null, ownerName: 'Sam Example', expiresAt: s.expiresAt });
+    await call('/api/settings', { cookie: owner, method: 'PUT', json: { ownerName: 'x'.repeat(60) } });
+    expect((await me(guest)).ownerName).toBe('x'.repeat(40));
+    await call('/api/settings', { cookie: owner, method: 'PUT', json: { ownerName: 42 } });
+    expect((await me(guest)).ownerName).toBe('The owner');
+    expect(await me()).toEqual({ mode: 'single', owner: false });                          // anonymous: the mode, nothing else
+    await db.q(`UPDATE access_tokens SET revoked_at = now() WHERE id = $1`, [s.id]);
+    expect(await me(guest)).toEqual({ mode: 'single', owner: false, reason: 'revoked' });   // a dead link learns no name either
+    const never = await createLink({ label: 'Never', expiresIn: 'never' });
+    expect((await me(await guestCookie(never.token))).expiresAt).toBeNull();
+  });
+
+  it('SHARE-17 POST /api/auth/leave clears the guest cookie on this device and nothing else', async () => {
+    const s = await createLink({ label: 'Leaver' }), guest = await guestCookie(s.token);
+    const r = await call('/api/auth/leave', { cookie: guest, method: 'POST' });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ ok: true });
+    expect(cookieNamed(r, 'solstice_guest')).toBe('solstice_guest=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+    expect(await row(s.id)).toMatchObject({ revoked_at: null });                           // the link still works elsewhere
+    expect((await redeem(s.token)).status).toBe(200);
+    expect((await call('/api/auth/leave', { method: 'POST' })).status).toBe(200);          // with no cookie: harmless
+    const ownerLeaves = await call('/api/auth/leave', { cookie: owner, method: 'POST' });
+    expect(cookieNamed(ownerLeaves, 'solstice_owner')).toBeNull();                         // the owner stays signed in
+    expect(await me(owner)).toMatchObject({ owner: true });
+  });
+
+  it('SHARE-18 the devices sheet signs one other device out; never this one, and never for a guest', async () => {
+    const other = await ownerCookie(), mine = await ownerCookie();
+    const list = await (await call('/api/auth/devices', { cookie: mine })).json();
+    const me2 = list.find((d: any) => d.current), them = list.find((d: any) => !d.current && d.id === other.split('=')[1].slice(0, 6));
+    expect(me2 && them).toBeTruthy();
+    const s = await createLink({ label: 'Nosy' }), guest = await guestCookie(s.token);
+    expect((await call(`/api/auth/devices/${them.id}/signout`, { cookie: guest, method: 'POST' })).status).toBe(401);
+    expect((await call(`/api/auth/devices/${me2.id}/signout`, { cookie: mine, method: 'POST' })).status).toBe(400);
+    expect((await call('/api/auth/devices/zzzzzz/signout', { cookie: mine, method: 'POST' })).status).toBe(404);
+    expect((await call('/api/auth/devices/bad id!/signout', { cookie: mine, method: 'POST' })).status).toBe(404);
+    const r = await call(`/api/auth/devices/${them.id}/signout`, { cookie: mine, method: 'POST' });
+    expect(await r.json()).toEqual({ ok: true, id: them.id });
+    expect((await call('/api/settings', { cookie: other })).status).toBe(401);              // that device is out
+    expect((await call('/api/settings', { cookie: mine })).status).toBe(200);               // this one is not
+    expect((await call('/api/settings', { cookie: owner })).status).toBe(200);              // nor any other
   });
 });

@@ -23,6 +23,7 @@ export const setPreview = (res: Response, on: boolean) => setCookie(res, PREVIEW
 const OPEN_ROUTES = new Set([
   'POST /api/auth/owner',                                           // trades OWNER_KEY for the owner cookie (rate-limited)
   'POST /api/auth/guest',                                           // trades a share token for the guest cookie (rate-limited)
+  'POST /api/auth/leave',                                           // clears the guest cookie on this device ("Leave"); changes nothing else
   'GET /api/auth/me',                                               // the role, and nothing about the site for a non-owner
   'GET /api/cron/sync', 'GET /api/cron/pool', 'GET /api/cron/nest', // Vercel Cron: keep their Authorization: Bearer CRON_SECRET check
   'GET /auth/callback', 'GET /auth/google/callback',                // OAuth redirects: signed, single-use state from an owner-only route

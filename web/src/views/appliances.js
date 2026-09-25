@@ -1,6 +1,7 @@
 import { $, money, money2, niceDate } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { createPoolTwin } from '../scenes/pooltwin.js';
+import { veil, nameStart } from '../lib/frost.js';
 
 /*
  * Appliances (Insights): the big loads, one at a time. Pool pump first: the flow twin, the schedule dial
@@ -47,7 +48,7 @@ function drawPool(S) {
   const ss = d.spaSession;
   $('poolStats').innerHTML = `<div class="stat"><small>Pump</small><b>${running ? `${Math.round(L.watts)} W · ${L.rpm.toLocaleString()} rpm` : 'off'}</b></div><div class="stat"><small>Today</small><b>${d.todayKwh} kWh${d.shareOfHomePct != null ? ` · ${d.shareOfHomePct}%` : ''}</b></div>
     <div class="stat"><small>Pool · spa · air</small><b>${st.poolTemp ?? '—'}° · ${st.spaTemp ?? '—'}° · ${L?.airTemp ?? '—'}°</b></div><div class="stat"><small>Turnover</small><b>${d.current.turnoverPerDay}× a day</b></div>`
-    + (ss && ss.riseF != null ? `<div class="stat" style="grid-column:1/-1"><small>Spa session · ${ss.spaTemp}° → ${ss.spaSet}°</small><b>${ss.riseF ? `${ss.heatMinutes} min of propane · ${ss.propaneGal} gal ≈ ${money2(ss.propaneUsd)}` : 'already at temperature'} · then ${money2(ss.electricUsdPerHour)}/h pump + blower</b></div>` : '');
+    + (ss && ss.riseF != null ? `<div class="stat" style="grid-column:1/-1"><small>Spa session · ${ss.spaTemp}° → ${ss.spaSet}°</small><b>${ss.riseF ? `${ss.heatMinutes} min of propane · ${ss.propaneGal} gal ≈ ${S.guest ? veil('$•.••') : money2(ss.propaneUsd)}` : 'already at temperature'} · then ${S.guest ? veil('$•.••/h') : `${money2(ss.electricUsdPerHour)}/h`} pump + blower</b></div>` : '');
   $('poolNote').innerHTML = `IntelliFlo VSF on a Quad D.E. 80 filter, ${sp.gallons.toLocaleString()} gal. Streams follow the water: skimmer → pump → filter → heater → returns; green is the spa loop, purple the sheer-descent feed. Speed follows the pump's RPM. Lights are 500 W + 100 W incandescent, the blower 1.1 kW, the UV lamp ~60 W while the pump runs.${d.model.measured.length ? ` Measured: ${d.model.measured.map(m => `${m.rpm}→${Math.round(m.watts)} W`).join(', ')}.` : ''}${d.error ? ` <span style="color:var(--warn)">Last read failed: ${d.error}</span>` : ''}`;
   drawDial(S); drawAutopilot(S);
   $('poolSeason').innerHTML = d.seasons.map(s => `<div class="${s.current ? 'cur' : ''}"><b>${s.kwhPerDay}</b>${s.label}</div>`).join('');
@@ -71,15 +72,16 @@ function drawDial(S) {
   const set = m => { schMode = m; svg.querySelectorAll('.dn').forEach(p => p.style.opacity = m === 'rec' ? 0 : m === 'both' ? .55 : .95); svg.querySelectorAll('.dr').forEach(p => p.style.opacity = m === 'now' ? 0 : .95);
     $('dcLbl').textContent = m === 'now' ? 'Now' : m === 'rec' ? 'Recommended' : 'Now → Recommended';
     $('dcKwh').innerHTML = m === 'now' ? `${C.kwhPerDay} <i>kWh/day</i>` : m === 'rec' ? `${P.kwhPerDay} <i>kWh/day</i>` : `${C.kwhPerDay} → ${P.kwhPerDay} <i>kWh/day</i>`;
-    $('dcSub').textContent = m === 'now' ? `${C.hours} h · ${money(C.costPerMonth)}/mo · ${C.onSolarPct}% on solar` : m === 'rec' ? `${P.hours + P.boostHours} h · ${money(P.costPerMonth)}/mo · ${P.onSolarPct}% on solar` : 'outer: now · inner: recommended';
+    const mo = v => (S.guest ? veil('$•••/mo') : `${money(v)}/mo`);
+    $('dcSub').innerHTML = m === 'now' ? `${C.hours} h · ${mo(C.costPerMonth)} · ${C.onSolarPct}% on solar` : m === 'rec' ? `${P.hours + P.boostHours} h · ${mo(P.costPerMonth)} · ${P.onSolarPct}% on solar` : 'outer: now · inner: recommended';
     $('schNow').hidden = m !== 'now'; $('schRec').hidden = m === 'now'; document.querySelectorAll('#schMode button').forEach(b => b.classList.toggle('on', b.dataset.m === m)); };
   $('schMode').onclick = e => { const b = e.target.closest('button'); if (b) set(b.dataset.m); };
   // Now: what each program costs
-  $('schNow').innerHTML = `<div class="kv" style="margin-top:10px">${C.byProgram.map(p => `<span>${p.name} · ${p.rpm.toLocaleString()} RPM · ${hm(p.start)}–${hm(p.stop)}</span><b${p.kwhPerDay > 5 ? ' style="color:var(--warn)"' : ''}>${p.kwhPerDay} kWh</b>`).join('')}<span>Total per day</span><b>${C.kwhPerDay} kWh · ${money2(d.rate == null ? null : C.kwhPerDay * d.rate)}</b></div>
+  $('schNow').innerHTML = `<div class="kv" style="margin-top:10px">${C.byProgram.map(p => `<span>${p.name} · ${p.rpm.toLocaleString()} RPM · ${hm(p.start)}–${hm(p.stop)}</span><b${p.kwhPerDay > 5 ? ' style="color:var(--warn)"' : ''}>${p.kwhPerDay} kWh</b>`).join('')}<span>Total per day</span><b>${C.kwhPerDay} kWh · ${S.guest ? veil('$•.••') : money2(d.rate == null ? null : C.kwhPerDay * d.rate)}</b></div>
     <p>${C.schedules.length ? 'When two pump programs overlap, the controller runs the faster one. Switch to <b style="color:var(--text)">Recommended</b> to see the fix.' : 'No pump schedules on the controller.'}</p>`;
   // Recommended: deltas, reasons, apply
   const dk = C.kwhPerDay - P.kwhPerDay, dc = C.costPerMonth == null || P.costPerMonth == null ? null : C.costPerMonth - P.costPerMonth, topNow = Math.max(0, ...C.schedules.map(s => s.rpm)), topRec = Math.max(0, ...P.schedules.map(s => s.rpm));
-  $('schDeltas').innerHTML = `<div><small>Electricity</small><b>${dk >= 0 ? '−' : '+'}${Math.abs(dk).toFixed(dk % 1 ? 1 : 0)} kWh</b><span>per day</span></div><div><small>Cost</small><b>${dc == null ? '—' : `${dc >= 0 ? '−' : '+'}$${Math.abs(dc)}`}</b><span>per month</span></div>
+  $('schDeltas').innerHTML = `<div><small>Electricity</small><b>${dk >= 0 ? '−' : '+'}${Math.abs(dk).toFixed(dk % 1 ? 1 : 0)} kWh</b><span>per day</span></div><div><small>Cost</small><b>${S.guest ? veil() : dc == null ? '—' : `${dc >= 0 ? '−' : '+'}$${Math.abs(dc)}`}</b><span>per month</span></div>
     <div><small>Turnover</small><b>${C.turnoverPerDay}× → ${P.turnoverPerDay}×</b><span>${P.turnoverPerDay >= 1 ? 'still one a day' : 'partial in winter'}</span></div><div><small>Top speed</small><b>${topNow.toLocaleString()} → ${topRec.toLocaleString()}</b><span>RPM</span></div>`;
   const Wc = d.model.curve, wAt = r => Wc.reduce((a, c) => Math.abs(c.rpm - r) < Math.abs(a.rpm - r) ? c : a).watts;
   const why = [['⚡', 'Speed³', `Power rises with the cube of RPM. ${topNow ? `${topNow.toLocaleString()} RPM draws ${(wAt(topNow) / 1000).toFixed(1)} kW, ` : ''}${sp.filterRpm.toLocaleString()} RPM draws ${(wAt(sp.filterRpm) / 1000).toFixed(2)} kW.`],
@@ -93,7 +95,7 @@ function drawDial(S) {
   const rs = $('schWhy'); rs.onscroll = () => { const i = Math.round(rs.scrollLeft / (rs.children[0].offsetWidth + 10)); [...$('schDots').children].forEach((x, k) => x.classList.toggle('on', k === i)); };
   $('schSteps').innerHTML = P.schedules.map(s => `<span>${s.name} · speed</span><b>${s.rpm.toLocaleString()} RPM</b><span>${s.name} · schedule</span><b>${hm(s.start)}–${hm(s.stop)} every day</b>`).join('') + `<span>Other pump schedules</span><b>remove</b>`;
   const applied = d.applied;
-  $('schActions').innerHTML = applied ? `<p class="fine" style="margin-top:10px">Applied to ScreenLogic ${new Date(applied.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}. <button class="link" id="poolRestore" style="margin:0 0 0 6px;padding:4px 10px">Restore the previous schedule</button></p>`
+  $('schActions').innerHTML = S.guest ? `<p class="fine" style="margin-top:12px;text-align:center">${nameStart(S.ownerName)} approves changes from their own devices.</p>` : applied ? `<p class="fine" style="margin-top:10px">Applied to ScreenLogic ${new Date(applied.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}. <button class="link" id="poolRestore" style="margin:0 0 0 6px;padding:4px 10px">Restore the previous schedule</button></p>`
     : `<button class="primary" id="poolApply">Apply to ScreenLogic</button><button class="link" id="poolShow">Show the settings instead</button>`;
   const show = $('poolShow'); if (show) show.onclick = () => { const el = $('schSteps'); el.style.display = el.style.display === 'none' ? 'grid' : 'none'; };
   const apply = $('poolApply'); if (apply) apply.onclick = async () => {
@@ -107,6 +109,7 @@ function drawDial(S) {
 function drawAutopilot(S) {
   const d = S.pool, a = d.autopilot; if (!a || a.error) { $('autoStatus').innerHTML = `<i class="off"></i><span>${a?.error ?? 'Autopilot unavailable'}</span>`; return; }
   document.querySelectorAll('#autoMode button').forEach(b => b.classList.toggle('on', b.dataset.m === a.mode));
+  $('autoBadge').textContent = `Autopilot · ${{ off: 'Off', suggest: 'Suggest', auto: 'Auto' }[a.mode] ?? a.mode}`; $('autoBadge').className = `badge${a.mode === 'off' ? '' : ' g'}`;   // a guest's static badge
   $('autoMode').onclick = async e => { const b = e.target.closest('button'); if (!b || b.dataset.m === a.mode) return;
     if (b.dataset.m === 'auto' && !confirm('Auto mode writes tomorrow’s schedule to ScreenLogic every evening without asking. Spa, heater, lights and freeze protection are never touched. Turn it on?')) return;
     await api.poolAutopilot(b.dataset.m).catch(err => alert(err.message)); await load(S); };

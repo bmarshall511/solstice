@@ -150,6 +150,13 @@ export async function endOtherOwnerSessions(req: Request) {
   const id = await ownerSession(req);
   return (await q('DELETE FROM owner_sessions WHERE id <> $1 RETURNING id', [id ?? ''])).length;
 }
+/** Sign one other device out by the short id listOwnerSessions shows. 'current' when that is this device, false when none matches. */
+export async function endOwnerSessionById(req: Request, shortId: string): Promise<boolean | 'current'> {
+  const cur = await ownerSession(req);
+  if (!/^[\w-]{6}$/.test(shortId)) return false;
+  if (cur?.slice(0, 6) === shortId) return 'current';
+  return (await q('DELETE FROM owner_sessions WHERE left(id, 6) = $1 AND id <> $2 RETURNING id', [shortId, cur ?? ''])).length > 0;
+}
 export async function listOwnerSessions(req: Request) {
   const cur = await ownerSession(req);
   return (await q<{ id: string; label: string | null; created_at: string; last_seen: string }>('SELECT id, label, created_at, last_seen FROM owner_sessions ORDER BY last_seen DESC'))
