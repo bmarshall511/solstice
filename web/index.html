@@ -137,6 +137,26 @@
           <div class="landtip" id="landTip">Each bar is one hour of solar production. Red rows are days that came in more than 10% below what the sunlight should have produced.</div>
         </div>
 
+        <div class="card" id="yrCard" hidden>
+          <div class="h"><b>Your year</b><span>drag · tap a day</span></div>
+          <div class="ring3d yr3d" id="yr">
+            <div class="labs" id="yrLabs"></div>
+            <div class="hint" id="yrHint">last year shown where data exists</div>
+            <div class="readout yr" id="yrRead"><b>—</b><small>loading…</small></div>
+          </div>
+          <div class="legend yl">
+            <span><i class="bar" style="background:var(--solar)"></i>Solar</span>
+            <span><i class="bar" style="background:var(--home);opacity:.6"></i>Home</span>
+            <span><i class="bar" style="background:var(--grid)"></i>From PEC</span>
+            <span><i class="tk" style="background:var(--batt)"></i>Full battery</span>
+            <span><i style="background:var(--out)"></i>Outage</span>
+            <span><i class="gh"></i>Last year</span>
+            <span><i class="hd"></i>Today</span>
+          </div>
+          <div class="two" id="yrStats"></div>
+          <p class="fine" id="yrNote">Bars share one scale, so solar, home and PEC heights compare directly.</p>
+        </div>
+
         <div class="sect">Powerwall patterns</div>
         <div class="card">
           <div class="h"><b>Charge level · 30 days</b><span>each row is a day</span></div>
