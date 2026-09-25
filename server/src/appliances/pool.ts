@@ -17,7 +17,7 @@ export { DEFAULTS as POOL_DEFAULTS };
 const UV_W = 60;
 // Typical pool-water temperature by month for central Texas (°F): used only for the season table; the live plan uses the real reading.
 const WATER_BY_MONTH = [55, 57, 62, 70, 78, 84, 88, 88, 84, 75, 65, 58];
-const FREEZE_CIRCUIT = 132; // ScreenLogic's virtual "freeze protection" pump circuit
+export const FREEZE_CIRCUIT = 132; // ScreenLogic's virtual "freeze protection" pump circuit
 
 /* ---------- power and flow models ---------- */
 /**
