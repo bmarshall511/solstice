@@ -1,5 +1,6 @@
 import { $, fmtDur, clock12, niceDate, localDate, addDays, svgText, path, money, money2, toast } from '../lib/util.js';
 import { api } from '../lib/api.js';
+import { yearRingCard, yearModel } from '../scenes/yearring.js';
 
 let range = 'day', day = null;
 
@@ -56,6 +57,25 @@ export async function drawHistoryChart(S) {
   $('dayNav').hidden = range !== 'day';
   $('hdate').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   try { range === 'day' ? await drawDay(S) : await drawBars(S); } catch (e) { $('hchart').innerHTML = svgText(0, 0, 'Could not load history', { anchor: 'middle' }); }
+  try { drawYearRing(S); } catch (e) { console.error(e); }
+}
+
+/* ---------- Year: the year ring card (mockup o-year-ring), Year range only ---------- */
+let ring = null, ringHistory = null; // ringHistory: api.daily(800) for last year's ghost, fetched once when the card first builds (not in the 5-min refresh)
+function drawYearRing(S) {
+  $('yrCard').hidden = range !== 'year';
+  if (range !== 'year') return ring?.hide();
+  ring ??= yearRingCard({ el: $('yr'), labs: $('yrLabs'), read: $('yrRead'), stats: $('yrStats'), note: $('yrNote'), calm: () => S.calm, highs: () => S.highs, onOpen: date => showDay(S, date) });
+  const show = () => ring.show(yearModel({ daily: S.daily ?? [], history: ringHistory ?? [], today: localDate(), outages: S.outages ?? [] }));
+  if (!ringHistory && S.daily) { ringHistory = []; api.daily(800).then(r => { ringHistory = r; if (range === 'year') show(); }, () => { ringHistory = null; }); }
+  show();
+}
+
+/** Open one date in the Day view ("Open this day →" on the year ring). */
+export function showDay(S, date) {
+  day = date; range = 'day';
+  document.querySelectorAll('#hseg button').forEach(x => x.classList.toggle('on', x.dataset.r === 'day'));
+  drawHistoryChart(S); $('screen').scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 export function initHistory(S) {
