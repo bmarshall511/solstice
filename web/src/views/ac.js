@@ -82,4 +82,4 @@ function drawAuto(S) {
 }
 let timer;
 export function initAc(S) { loadAc(S); clearInterval(timer); timer = setInterval(() => loadAc(S), 3 * 60_000); }
-async function loadAc(S) { S.ac = await api.ac().catch(e => ({ error: e.message, configured: false, linked: false })); if (S.ac.plan) drawAc(S); else { $('acBadge').textContent = 'Not set up'; $('acLink').hidden = false; $('acLinkTxt').textContent = S.ac.error ?? 'Nest is not configured.'; } }
+async function loadAc(S) { S.ac = await api.ac().catch(e => ({ error: e.message, configured: false, linked: false })); if (S.ac.plan) drawAc(S); else { $('acBadge').textContent = 'Not set up'; $('acLink').hidden = false; $('acLinkTxt').textContent = S.ac.error ?? 'Nest is not configured.'; } S.onAc?.(); }

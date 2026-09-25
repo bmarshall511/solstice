@@ -158,7 +158,7 @@ const dayRing = createDayRing($('dayRing'), (h, d) => {
   if (h == null) ro.innerHTML = `<b>${Math.round(sum(d.rest) + sum(d.ac) + sum(d.pool))} kWh</b><small>${d.label}</small>${bd(Math.round(sum(d.pool)), Math.round(sum(d.ac)), Math.round(sum(d.rest)))}`;
   else ro.innerHTML = `<b>${(d.rest[h] + d.ac[h] + d.pool[h]).toFixed(1)} kWh</b><small>${h % 12 || 12}${h < 12 ? ' AM' : ' PM'} · solar ${d.solar[h].toFixed(1)} kWh</small>${bd(d.pool[h].toFixed(1), d.ac[h].toFixed(1), d.rest[h].toFixed(1))}`;
 });
-S.ringMode = 'now'; S.onPool = () => safe(drawDayRing)();
+S.ringMode = 'now'; S.onPool = () => safe(drawDayRing)(); S.onAc = () => safe(drawDayRing)();
 $('drModes').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.ringMode = b.dataset.m; document.querySelectorAll('#drModes button').forEach(x => x.classList.toggle('on', x === b)); drawDayRing(); };
 /** Today's hourly loads: pool from the schedule model, AC from the heat model, the rest from Tesla's home load. */
 function drawDayRing() {
@@ -178,7 +178,7 @@ function drawDayRing() {
   dayRing.setData({ rest, ac, pool, solar: sol, label }); dayRing.setHour(localHour());
   const tot = home.reduce((a, b) => a + b, 0), pk = pool.reduce((a, b) => a + b, 0);
   $('insToday').textContent = Math.round(tot);
-  $('drTxt').innerHTML = S.ringMode === 'now' ? (tot ? `The pool pump is about <b style="color:var(--text)">${Math.round(pk / tot * 100)}%</b> of today so far. AC is estimated from your heat model (about ${slope.toFixed(1)} kWh per degree over 80°F) until Nest is linked; everything else is what's left of Tesla's home load.` : 'Waiting for today’s data.')
+  $('drTxt').innerHTML = S.ringMode === 'now' ? (tot ? `The pool pump is about <b style="color:var(--text)">${Math.round(pk / tot * 100)}%</b> of today so far. ${S.ac?.linked && S.ac.learned ? `AC is measured through Nest and Tesla's load steps (${S.ac.learned.acKw.toFixed(1)} kW)` : `AC is estimated from your heat model (about ${slope.toFixed(1)} kWh per degree over 80°F) until Nest is linked`}; everything else is what's left of Tesla's home load.` : 'Waiting for today’s data.')
     : S.ringMode === 'pool' ? `With the smarter schedule the pump moves under the solar curve and drops to about <b style="color:var(--text)">${Math.round(pk)} kWh</b> a day, so nights are just the house idling and the Powerwalls reach the evening fuller.`
     : `Eight more panels lift the gold ribbon by a third. Midday surplus covers more of the AC ramp, and the planner says the batteries would fill on far more days.`;
 }
