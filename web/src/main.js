@@ -140,6 +140,8 @@ function updateOutage() {
 function go(v, anchor) {
   document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x.dataset.v === v));
   document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === v));
+  // the Now twin keeps a WebGL context only while Now is open: disposed on leaving, rebuilt (live framing) on return
+  if (v === 'v-now') { house ??= createHomeView($('house'), 'flow', { onLink: openAppliance }); loadApplDay().catch(() => {}); } else if (house) { house.dispose(); house = null; S.twinReplay = false; }
   if (v === 'v-hist') { land.replay(); drawHistoryChart(S); }
   const sc = $('screen');
   if (anchor) setTimeout(() => sc.scrollTo({ top: $(anchor).getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 50, behavior: 'smooth' }), 60); else sc.scrollTo({ top: 0 });
@@ -161,7 +163,17 @@ $('signOut').onclick = async () => { await api.logout().catch(() => {}); locatio
 $('outSw').onclick = () => { S.preview = !S.preview; S.previewSince = Date.now(); $('outSw').classList.toggle('on', S.preview); updateOutage(); renderLive(S); };
 
 /* ---------------- scenes + loop ---------------- */
-const house = createHomeView($('house'), 'flow');
+let house = createHomeView($('house'), 'flow', { onLink: openAppliance });
+/** POOL / AC labels on the Now twin: Insights → Appliances with that appliance selected. A link only; it changes nothing. */
+function openAppliance(id) { go('v-ins'); $('insSeg').querySelector('[data-p="appl"]')?.click(); $('applStrip').querySelector(`.app[data-id="${id}"]`)?.click(); }
+/** Today hour by hour for the Now twin (/api/appliances/day): at most every 5 minutes while Now is open, never on the 30-second loop. */
+async function loadApplDay() {
+  if (S.guest) return;   // owner-only route (no guest view in server/src/redact.ts): a guest's twin runs live-only, without a 401 a minute
+  const date = localDate();
+  if (S.applDayAt && Date.now() - S.applDayAt < 5 * 60_000 && S.applDay?.date === date) return;
+  S.applDayAt = Date.now();
+  try { S.applDay = await api.applDay(date); } catch (e) { S.applDayAt = 0; throw e; }
+}
 const aurora = createAurora($('aurora')), orb = createOrb($('orb')), land = createLandscape($('land'), $('landTip')), roof = createHomeView($('roof'), 'sun');
 initHistory(S); initPanels(S); initPlanner(S); initAppliances(S); initAc(S);
 const outage = initOutage(S);
@@ -215,9 +227,10 @@ function frame(now) {
   if (r) aurora.set(r);
   aurora.render(T, S.outageActive);
   if (isOn('v-now') && r) orb.render({ soc: r.soc, batteryKw: r.batteryKw, solarKw: r.solarKw, peakKw: S.peakKw ?? 9, maxKw: S.now?.site?.maxPowerKw || 10, out: S.outageActive, dt, t: T });
-  if (isOn('v-now') && r) {
+  if (isOn('v-now') && r && house) {
     const i = S.wx ? S.wx.hourly.time.indexOf(`${localDate()}T${String(Math.floor(localHour())).padStart(2, '0')}:00`) : -1;
-    house.render({ r, cloud: i >= 0 ? S.wx.hourly.cloud_cover[i] / 100 : .1, code: i >= 0 ? S.wx.hourly.weather_code[i] : 0, out: S.outageActive, peakKw: S.peakKw ?? 9, dt, t: T, calm: S.calm });
+    S.twinReplay = house.render({ r, cloud: i >= 0 ? S.wx.hourly.cloud_cover[i] / 100 : .1, code: i >= 0 ? S.wx.hourly.weather_code[i] : 0, out: S.outageActive, peakKw: S.peakKw ?? 9, dt, t: T, calm: S.calm,
+      day: S.applDay, wx: S.wx, pool: S.pool, ac: S.ac, reservePct: S.now?.site?.reservePct })?.replaying ?? false;
   }
   if (isOn('v-hist')) land.render(dt, S.calm);
   if (isOn('v-ins') && insPanel === 'today') dayRing.render(dt, S.calm);
@@ -353,6 +366,7 @@ async function boot() {
   every(5 * 60_000, loadHistory);
   every(15 * 60_000, loadWeather);
   every(5 * 60_000, loadExternal);
+  every(60_000, () => isOn('v-now') ? loadApplDay() : Promise.resolve());   // the Now twin's day (self-limited to every 5 min)
   loadArchive().catch(e => console.warn('archive', e.message));
   // keep history current: sync now, then every 5 min while open; keep going while there are missing days to backfill
   const sync = async () => { const r = await api.sync().catch(() => null); if (r?.filled || r?.done?.includes('lastHistory')) loadHistory().catch(() => {}); if (r?.remaining > 0) setTimeout(sync, 1500);

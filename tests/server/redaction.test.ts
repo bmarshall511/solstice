@@ -375,7 +375,7 @@ describe('everything else is refused to guests', () => {
 
   it('RED-10 every GET without a guest view answers 401 to a guest and to the owner previewing, before its handler runs', async () => {
     const reads = routes().filter(([m, p]) => m === 'GET' && !OPEN.has(`${m} ${p}`) && !redact.GUEST_GET.has(p.toLowerCase()));
-    expect(reads.map(([, p]) => p).sort()).toEqual(['/api/auth/devices', '/api/bills', '/api/export.csv', '/api/flows', '/api/outage', '/api/share', '/api/site', '/auth/google', '/auth/login']);
+    expect(reads.map(([, p]) => p).sort()).toEqual(['/api/appliances/day', '/api/auth/devices', '/api/bills', '/api/export.csv', '/api/flows', '/api/outage', '/api/share', '/api/site', '/auth/google', '/auth/login']);
     for (const [, path] of reads) for (const cookie of [guest, preview]) {
       const r = await call(path, { cookie });
       expect(r.status, `${path} as ${cookie === guest ? 'guest' : 'preview'}`).toBe(401);
