@@ -224,7 +224,7 @@ function sample(h) {
 }
 
 
-/* ---------- live weather (Open-Meteo, ZIP your ZIP) ---------- */
+/* ---------- live weather (Open-Meteo, your ZIP) ---------- */
 const WXURL = 'https://api.open-meteo.com/v1/forecast?latitude=LAT&longitude=LON&current=temperature_2m,cloud_cover,weather_code,is_day,wind_speed_10m&hourly=cloud_cover,weather_code,global_tilted_irradiance,temperature_2m&daily=uv_index_max,sunrise,sunset&tilt=27&azimuth=64&timezone=America%2FChicago&forecast_days=2&temperature_unit=fahrenheit&wind_speed_unit=mph';
 const WMO = c => c === 0 ? 'Clear' : c <= 2 ? 'Partly cloudy' : c === 3 ? 'Overcast' : c <= 48 ? 'Fog' : c <= 67 ? 'Rain' : c <= 82 ? 'Showers' : 'Storms';
 const WICON = (c, day = true) => c === 0 ? (day ? '☀︎' : '☾') : c <= 2 ? '⛅︎' : c <= 48 ? '☁︎' : c >= 95 ? '⛈︎' : '☂︎';

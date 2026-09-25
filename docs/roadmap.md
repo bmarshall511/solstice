@@ -12,7 +12,7 @@ Status legend: ✅ in the mockup · ◻︎ planned, not mocked · ⚠️ depends
 | Tesla Fleet API `calendar_history` (energy, backup) | Wh flows by source→sink, outage events | every 5 min today, once per closed day, backfill on first run | free |
 | SunPower PVS monitor (local) ◻︎ | per-module W / V from the Enphase IQ7XS microinverters (the array has no strings) | LAN poll of the PVS installer port, if it is still online | free · unverified on this unit |
 | Open-Meteo | hourly forecast, sunlight on your panels (tilt 27°, azimuth 244°), cloud, temperature, rainfall, 60+ days of history | browser or server | free, no key |
-| NWS `api.weather.gov` | active severe-weather alerts for LAT, −97.99 | every 10 min | free |
+| NWS `api.weather.gov` | active severe-weather alerts for LAT, LON (`SITE_LAT`, `SITE_LON`) | every 10 min | free |
 | ERCOT dashboards | grid condition (normal / conservation / EEA), demand vs capacity, fuel mix for CO₂ | via the server (CORS blocks the browser) | free |
 | PEC bills | kWh delivered and received, amounts, rates, read type | PDF drop (parsed locally), manual entry, or CSV from SmartHub | — |
 

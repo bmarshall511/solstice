@@ -9,6 +9,7 @@ import { refreshLive, refreshSiteInfo, syncSite, saveEnergyRows, saveSoe } from 
 import { listBills, parsePecPdf, saveBill, type Bill } from './bills.js';
 import { reconcile } from './reconcile.js';
 import { SOLAR, warrantedDcPct, systemYear } from './system.js';
+import { siteLocation, exactLocation } from './site.js';
 import { appliances, comingSoon } from './appliances/index.js';
 import { poolDetail, applyPlan, restorePrevious } from './appliances/pool.js';
 import { readPool } from './appliances/screenlogic.js';
@@ -134,7 +135,7 @@ app.post('/api/admin/import', express.json({ limit: '25mb' }), wrap(async (req, 
 app.use('/api', requireUser);
 
 const settingsFor = async (req: Request) => (req.user ? req.user.settings ?? {} : await kv.get<Record<string, any>>('settings:owner') ?? {}) as Record<string, any>;
-app.get('/api/settings', wrap(async (req, res) => res.json(await settingsFor(req))));
+app.get('/api/settings', wrap(async (req, res) => res.json({ ...await settingsFor(req), location: exactLocation() })));
 app.put('/api/settings', express.json(), wrap(async (req, res) => {
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify(req.body ?? {})]);
   else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ...(req.body ?? {}) });
@@ -368,7 +369,7 @@ async function acSlope(id: string) {
   const rows = await q<{ day: string; kwh: number }>(`SELECT day, (SUM(home_wh) / 1000.0)::float8 kwh FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day`, [id, addDays(localDay(), -120), localDay()]);
   let highs = await kv.get<{ at: number; byDay: Record<string, number> }>('wx:highs');
   if (!highs || Date.now() - highs.at > 12 * 3600_000) { // daily highs for the last 120 days from Open-Meteo's archive
-    const w = await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${process.env.SITE_LAT ?? 'LAT'}&longitude=${process.env.SITE_LON ?? 'LON'}&start_date=${addDays(localDay(), -120)}&end_date=${localDay()}&daily=temperature_2m_max&temperature_unit=fahrenheit&timezone=America%2FChicago`).then(r => r.json()).catch(() => null) as any;
+    const loc = siteLocation(), w = loc && await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${loc.lat}&longitude=${loc.lon}&start_date=${addDays(localDay(), -120)}&end_date=${localDay()}&daily=temperature_2m_max&temperature_unit=fahrenheit&timezone=America%2FChicago`).then(r => r.json()).catch(() => null) as any;
     highs = { at: Date.now(), byDay: Object.fromEntries((w?.daily?.time ?? []).map((d: string, i: number) => [d, w.daily.temperature_2m_max[i]])) }; await kv.set('wx:highs', highs);
   }
   const pts = rows.map(r => ({ t: highs!.byDay[r.day], u: r.kwh })).filter(p => p.t != null && p.t >= 80 && p.u > 5);

@@ -4,18 +4,18 @@ import { q, kv } from '../db.js';
 import { localDay, addDays } from '../tesla/client.js';
 import { planFor, applyPlan, type Plan, type PoolSettings } from './pool.js';
 import type { PoolSnapshot } from './screenlogic.js';
+import { siteLocation } from '../site.js';
 
 export type Mode = 'off' | 'suggest' | 'auto';
 type Daily = { date: string; high: number; rainMm: number; rainPct: number; sunKwhM2: number; hourlySun: number[] };
 export type Signals = { waterTemp: number; sunKwhM2: number; sunPct: number; high: number; heatDays: number; rainPct: number; rainMm: number; rainYesterdayMm: number; useDays: number; pollen: 'low' | 'medium' | 'high' };
 
-const LAT = () => process.env.SITE_LAT ?? 'LAT', LON = () => process.env.SITE_LON ?? 'LON';
-
 /** Open-Meteo: 3 past days + 7 forecast days, daily and hourly sun. Cached for an hour. */
 export async function forecast(): Promise<Daily[]> {
   const cached = await kv.get<{ at: number; days: Daily[] }>('pool:forecast');
   if (cached && Date.now() - cached.at < 3600_000) return cached.days;
-  const u = `https://api.open-meteo.com/v1/forecast?latitude=${LAT()}&longitude=${LON()}&timezone=America%2FChicago&past_days=3&forecast_days=7&temperature_unit=fahrenheit` +
+  const loc = siteLocation(); if (!loc) throw new Error('SITE_LAT and SITE_LON are not set, so there is no forecast');
+  const u = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&timezone=America%2FChicago&past_days=3&forecast_days=7&temperature_unit=fahrenheit` +
     `&daily=temperature_2m_max,precipitation_sum,precipitation_probability_max,shortwave_radiation_sum&hourly=shortwave_radiation`;
   const w = await fetch(u).then(r => r.json()) as any;
   const byDay: Record<string, number[]> = {};

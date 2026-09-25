@@ -1,5 +1,5 @@
 import './style.css';
-import { $, localDate, localHour, addDays, toast, ago, niceDate } from './lib/util.js';
+import { $, localDate, localHour, addDays, toast, ago, niceDate, setSiteLocation } from './lib/util.js';
 import { api, setUnauthorized } from './lib/api.js';
 import { forecast, archive, nwsAlerts } from './lib/weather.js';
 import { learnYield } from './lib/model.js';
@@ -44,7 +44,11 @@ async function loadHistory() {
   drawBillDue();
 }
 
+/** Weather, NWS and the sun need the site's coordinates, which come with /api/settings at boot; ask again if that call failed. */
+async function ensureLocation() { if (!S.location) S.location = setSiteLocation((await api.settings()).location); }
+
 async function loadWeather() {
+  await ensureLocation();
   const w = await forecast();
   S.wx = w;
   const today = localDate(), hourNow = localHour(), recent = {}, eff = {};
@@ -68,6 +72,7 @@ async function loadWeather() {
 
 /** A year of sunlight-on-panel and temperatures, for last year's baseline and the AC analysis. */
 async function loadArchive() {
+  await ensureLocation();
   const to = addDays(localDate(), -3), from = addDays(to, -420), a = await archive(from, to);
   const g = {}; a.hourly.time.forEach((t, i) => { const d = t.slice(0, 10); g[d] = (g[d] ?? 0) + (a.hourly.global_tilted_irradiance[i] ?? 0) / 1000; });
   S.gtiArchive = g;
@@ -192,7 +197,7 @@ function frame(now) {
     const d = new Date(), dayStart = Date.parse(`${localDate(d)}T00:00:00${new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', timeZoneName: 'longOffset' }).formatToParts(d).find(p => p.type === 'timeZoneName').value.replace('GMT', '') || 'Z'}`);
     hudTick += dt;
     const info = roof.render({ r, now: d, dayStart, cloud: S.roofWx?.cc ?? .1, code: S.roofWx?.code ?? 0, out: S.outageActive, peakKw: S.peakKw ?? 9, dt, t: T, calm: S.calm });
-    if (hudTick > .5) { hudTick = 0; S.roofWx = roofHud(S, info, d); $('rfKw').textContent = r ? r.solarKw.toFixed(1) : '—'; }
+    if (hudTick > .5) { hudTick = 0; if (S.location) S.roofWx = roofHud(S, info, d); $('rfKw').textContent = r ? r.solarKw.toFixed(1) : '—'; }
   }
 }
 requestAnimationFrame(frame);
@@ -257,6 +262,7 @@ async function boot() {
   }
   started = true;
   const prefs = await api.settings().catch(() => ({}));
+  S.location = setSiteLocation(prefs.location);  // exact coordinates + ZIP from the server env; weather, NWS and the sun wait for them
   if (typeof prefs.calm === 'boolean') { S.calm = prefs.calm; $('calmSw').classList.toggle('on', S.calm); }
   const every = (ms, fn) => { const run = () => fn().catch(e => console.warn(e.message)); run(); setInterval(run, ms); };
   every(30_000, loadNow);                 // live status (the server asks Tesla at most every ~25 s)

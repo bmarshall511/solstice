@@ -13,6 +13,7 @@ export function drawSettings(S) {
   $('setTesla').textContent = `Solstice Home Energy · ${site.name ?? 'energy site'}`;
   $('setTeslaV').innerHTML = h.stale ? '<span style="color:var(--warn)">No data</span>' : `<span style="color:var(--batt)">Live</span>`;
   $('setWx').innerHTML = S.wx ? '<span style="color:var(--batt)">Live</span>' : '—';
+  $('setZip').textContent = S.location?.zip ?? '—';
   const row = (c, i, title, sub, v) => `<div class="row" style="--c:${c}"><div class="ri">${i}</div><div class="rt">${title}${sub ? `<small>${sub}</small>` : ''}</div><div class="rv">${v}</div></div>`;
   $('sysGroup').innerHTML =
     row('var(--batt)', '▮', 'Powerwalls', `${site.batteries?.map(b => b.name).join(' + ') ?? ''}`, `${site.capacityKwh ?? '—'} kWh · ${site.maxPowerKw ?? '—'} kW`) +

@@ -1016,8 +1016,8 @@ const STR = 'ABCDEF'.split('');
 const panelFx = Array.from({ length: PANELS }, (_, i) => ({ row: Math.floor(i / 10), col: i % 10, str: Math.floor(i / 5), name: `${STR[Math.floor(i / 5)]}${i % 5 + 1}`, fx: i === 12 ? .93 : 1 + (Math.sin(i * 12.9) * .012) }));
 let SOIL_NOW = SOIL;
 const shadeF = (pi, h) => pi.str === 5 && h > 16.3 ? Math.max(.55, 1 - (h - 16.3) * .22) : 1; // string F: afternoon shade on the lower corner
-/* sun position (NOAA approximation) for LAT°N 97.99°W */
-const LAT = LAT, LON = LON, RAD = Math.PI / 180;
+/* sun position (NOAA approximation) for the site at LAT, LON */
+const LAT = 0, LON = 0, RAD = Math.PI / 180; // LAT, LON placeholders: the site's coordinates live in the server env (SITE_LAT, SITE_LON)
 function sunAt(date) {
   const start = new Date(Date.UTC(date.getUTCFullYear(), 0, 0)), doy = Math.floor((date - start) / 864e5);
   const hr = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600, g = 2 * Math.PI / 365 * (doy - 1 + (hr - 12) / 24);
