@@ -12,8 +12,9 @@ import { initHistory, drawHistoryChart, landscapeData, drawSocHeat, drawRecords,
 import { initPanels, drawPerformance, roofHud } from './views/panels.js';
 import { drawAlerts, initPlanner, drawAC, drawOvernight, drawHealth, initOutage } from './views/insights.js';
 import { drawSettings, drawConnections, openRawData } from './views/settings.js';
-import { initAppliances, poolTwin } from './views/appliances.js';
+import { initAppliances, poolTwin, drawPool } from './views/appliances.js';
 import { initAc, thermalTwin, drawAc } from './views/ac.js';
+import { initLearn } from './views/learn.js';
 import { createDayRing } from './scenes/dayring.js';
 import { explainOnTap } from './lib/frost.js';
 import { fillGuestBill } from './views/guest.js';
@@ -48,6 +49,7 @@ async function loadHistory() {
   Object.assign(S, { daily, monthly, gridDays, records, outages, overnight, reconcile: reconcile.map(b => billRow(b, daily)) });
   S.tariff = S.reconcile.findLast(r => r.tariff?.importRateAllIn > 0)?.tariff ?? null; // learned from the newest parsed bill (server: currentTariff); null = rate unknown
   S.profile = Array.from({ length: 24 }, (_, h) => profile.hours.find(x => x.hour === h)?.home ?? 2);
+  S.fcConf = profile.conf ?? null;   // r-learning: the 48-hour forecast's confidence tiers
   computeModel();
   [drawSocHeat, drawRecords, drawOutages, drawBills, drawOvernight, drawAC, drawPerformance, drawAlerts, drawSettings, renderStatic, renderWeather].forEach(f => safe(f)(S));
   if (isOn('v-hist')) drawHistoryChart(S);
@@ -178,6 +180,7 @@ async function loadApplDay() {
   try { S.applDay = await api.applDay(date); } catch (e) { S.applDayAt = 0; throw e; }
 }
 const aurora = createAurora($('aurora')), orb = createOrb($('orb')), land = createLandscape($('land'), $('landTip')), roof = createHomeView($('roof'), 'sun');
+$('roofBars').onclick = e => { const on = !S.roofBars; S.roofBars = on; e.currentTarget.classList.toggle('on', on); e.currentTarget.setAttribute('aria-pressed', on); $('roofBarsKey').classList.toggle('on', on); roof.setBars(on); };   // mockup p-roof-veil
 initHistory(S); initPanels(S); initPlanner(S); initAppliances(S); initAc(S);
 const outage = initOutage(S);
 let applSel = 'pool';
@@ -246,7 +249,7 @@ function frame(now) {
     const d = new Date(), dayStart = Date.parse(`${localDate(d)}T00:00:00${new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', timeZoneName: 'longOffset' }).formatToParts(d).find(p => p.type === 'timeZoneName').value.replace('GMT', '') || 'Z'}`);
     hudTick += dt;
     const info = roof.render({ r, now: d, dayStart, cloud: S.roofWx?.cc ?? .1, code: S.roofWx?.code ?? 0, out: S.outageActive, peakKw: S.peakKw ?? 9, dt, t: T, calm: S.calm });
-    if (hudTick > .5) { hudTick = 0; if (S.location) S.roofWx = roofHud(S, info, d); $('rfKw').textContent = r ? r.solarKw.toFixed(1) : '—'; }
+    if (hudTick > .5) { hudTick = 0; if (S.location) { S.roofWx = roofHud(S, info, d); roof.setHours(S.roofWx.hours); } roof.setDust(S.dust?.score); $('rfKw').textContent = r ? r.solarKw.toFixed(1) : '—'; }
   }
 }
 requestAnimationFrame(frame);
@@ -316,6 +319,7 @@ async function reloadAll() {
   const prefs = await api.settings().catch(() => null);
   if (prefs) S.location = setSiteLocation(prefs.location);
   initAppliances(S); initAc(S); $('rPv').dispatchEvent(new Event('input'));
+  initLearn(S);
   await Promise.allSettled([loadNow(), loadHistory(), loadExternal(), loadWeather()]);
   if (isOn('v-hist')) safe(drawHistoryChart)(S);
 }
@@ -364,6 +368,7 @@ async function boot() {
   setCalm(S.calm);
   if (!S.guest) { S.ownerName = typeof prefs.ownerName === 'string' && prefs.ownerName.trim() ? prefs.ownerName.trim() : 'The owner'; refreshSharing(); }
   if (S.asGuest) { ensurePreviewChrome(); applyRole({ guest: true, preview: true, ownerName: S.ownerName }); }   // a preview survives a reload (the server's flag lasts an hour)
+  S.onModels = () => { safe(renderWeather)(S); if (S.pool) safe(drawPool)(S); }; initLearn(S);   // r-learning: the model report (owner only) and its badge text
   const welcome = S.guest && !S.asGuest ? pendingWelcome() : null;
   if (welcome) showGate('welcome', { welcomeKey: welcome });
   const every = (ms, fn) => { const run = () => fn().catch(e => console.warn(e.message)); run(); setInterval(run, ms); };

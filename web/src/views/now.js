@@ -4,6 +4,7 @@ import { forecast48 } from '../lib/model.js';
 import { roadModel } from '../lib/road48data.js';
 import { createRoad48, webgl2 } from '../scenes/road48.js';
 import { veil } from '../lib/frost.js';
+import { fc48Header } from '../lib/conf.js';
 
 /** How the current flows split between sources and sinks (Tesla reports only the four totals). */
 function splitFlows(r) {
@@ -129,6 +130,7 @@ export function renderWeather(S) {
   const reserveHits = P.filter(p => p.soc <= (site.reservePct ?? 20) / 100 + .005);
   $('fcTxt').innerHTML = `${fc.full ? `Powerwalls should be <b style="color:var(--batt)">full by ${when(fc.full)}</b>. ` : `Powerwalls peak around <b style="color:var(--batt)">${Math.round(peakBatt.soc * 100)}%</b> (${when(peakBatt.t)}); your home uses most of the solar as it's made. `}` +
     `${reserveHits.length ? `They'll sit at the reserve for about ${reserveHits.length} of the next 48 hours, so ` : ''}you'll buy about <b style="color:var(--grid)">${Math.round(fc.importKwh)} kWh</b> from PEC over the next two days (${S.guest ? `≈ ${veil('$•••')}` : S.tariff ? `≈ $${(fc.importKwh * S.tariff.importRateAllIn).toFixed(0)}` : 'rate unknown'}).`;
+  const fh = fc48Header(S.fcConf, S.models); if (fh) $('road48').closest('.card').querySelector('.h span').textContent = fh;   // r-learning: forecast confidence
   // the 3D road (scenes/road48.js, mockup l-forecast48) replaces the chart; the SVG above stays as the fallback without WebGL2
   const gl = webgl2(); $('fc48').style.display = gl ? '' : 'block'; $('road48').hidden = $('road48Tip').hidden = !gl;
   roadArgs = { fc, w, when, soc0: S.live.soc / 100, capKwh: site.capacityKwh || 27, maxKw: site.maxPowerKw || 10, reservePct: site.reservePct ?? 20 };

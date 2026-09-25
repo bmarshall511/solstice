@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { touchOrbit } from '../lib/touchorbit.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { sunAt, siteLocation, RAD, hourLabel, localDate, localHour } from '../lib/util.js';
+import { HOURS, FIRST, FLAT_KW, CAP_KW, veilAlpha } from '../lib/roofhours.js';
 
 /*
  * One model of the real house, used in two views:
@@ -110,6 +111,39 @@ function buildExtras(g, X, PAL) {
   return { group: ex, strip, tick, water, spaW, rotor, fan, stream, streamCurve, exhaust, cond: [CX, CZ], feeds, anchors: { ac: [CX, .95, CZ], pool: [PX, .75, PUMPZ] } };
 }
 
+/* ---------- 'sun' view dust veil (mockup p-roof-veil): one noise field, painted as a second layer on the panel texture ---------- */
+const TW = 256, TH = 400, clamp01 = v => Math.max(0, Math.min(1, v));
+const hash = (x, y, s) => { const h = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453; return h - Math.floor(h); };
+function vnoise(x, y, s) { const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash(xi, yi, s), b = hash(xi + 1, yi, s), c = hash(xi, yi + 1, s), d = hash(xi + 1, yi + 1, s); return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v; }
+let dustLayers = null;
+/** The dust layers (light for the panel colour, dark for the output glow), built once on first use. */
+function dust() {
+  if (dustLayers) return dustLayers;
+  const f = new Float32Array(TW * TH);
+  for (let y = 0; y < TH; y++) for (let x = 0; x < TW; x++) {
+    let n = 0, amp = .5, fr = 1; for (let o = 0; o < 4; o++) { n += amp * vnoise(x / TW * 5 * fr, y / TH * 8 * fr, o); amp *= .5; fr *= 2; }
+    const down = 1 - x / TW; // canvas x = 0 maps to the panel's down-slope (eave) edge, where dust settles
+    const grad = .35 + .65 * Math.pow(down, 1.8), speck = hash(x, y, 9) > .992 ? .5 : 0, lip = x < TW * .06 ? .35 : 0;
+    f[y * TW + x] = clamp01(clamp01((n - .3) * 1.6) * grad + speck + lip);
+  }
+  const layer = rgb => { const c = document.createElement('canvas'); c.width = TW; c.height = TH; const x = c.getContext('2d'), im = x.createImageData(TW, TH);
+    for (let i = 0; i < TW * TH; i++) { im.data[i * 4] = rgb[0]; im.data[i * 4 + 1] = rgb[1]; im.data[i * 4 + 2] = rgb[2]; im.data[i * 4 + 3] = f[i] * 255; }
+    x.putImageData(im, 0, 0); return c; };
+  return (dustLayers = { light: layer([188, 166, 130]), dark: layer([44, 36, 28]) });
+}
+function paintPanel(x, a) { // the panel texture (as the flow view draws it), then the veil
+  const w = TW, h = TH; x.globalAlpha = 1; x.fillStyle = '#12182b'; x.fillRect(0, 0, w, h); x.strokeStyle = 'rgba(150,170,220,.28)'; x.lineWidth = 3;
+  for (let i = 1; i < 6; i++) { x.beginPath(); x.moveTo(i * w / 6, 0); x.lineTo(i * w / 6, h); x.stroke(); } for (let j = 1; j < 10; j++) { x.beginPath(); x.moveTo(0, j * h / 10); x.lineTo(w, j * h / 10); x.stroke(); }
+  x.strokeStyle = 'rgba(210,220,240,.55)'; x.lineWidth = 8; x.strokeRect(0, 0, w, h);
+  if (a > 0) { x.globalAlpha = a; x.drawImage(dust().light, 0, 0); x.globalAlpha = 1; }
+}
+function paintGlow(x, a) { // the same layer dims the output glow where dust sits
+  x.globalAlpha = 1; x.fillStyle = '#fff'; x.fillRect(0, 0, TW, TH); if (a > 0) { x.globalAlpha = a; x.drawImage(dust().dark, 0, 0); x.globalAlpha = 1; }
+}
+function canvasTex(paint) { const c = document.createElement('canvas'); c.width = TW; c.height = TH; const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  t.userData.redraw = a => { paint(c.getContext('2d'), a); t.needsUpdate = true; }; t.userData.redraw(0); return t; }
+
 const flowMat = (u, side = THREE.FrontSide) => new THREE.ShaderMaterial({ uniforms: u, side,
   vertexShader: `varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
   fragmentShader: `varying vec2 vUv;uniform vec3 uColor;uniform float uT,uOn,uDir,uLen,uSpeed;
@@ -120,10 +154,11 @@ function buildHouse(mode, PAL) {
   const edgeMats = [];
   const mat = (c, r = .8, m = .05) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m });
   const wall = mat(0x3b3f47), roofM = mat(0x2a2c32, .85, .05), trim = mat(0x4a4f58, .6);
-  const panelMat = new THREE.MeshStandardMaterial({ roughness: .25, metalness: .55, emissive: 0x1a2a66, emissiveIntensity: 0, map: tex(256, 400, (x, w, h) => {
+  const panelMat = new THREE.MeshStandardMaterial({ roughness: .25, metalness: .55, emissive: 0x1a2a66, emissiveIntensity: 0, map: mode === 'sun' ? canvasTex(paintPanel) : tex(256, 400, (x, w, h) => {
     x.fillStyle = '#12182b'; x.fillRect(0, 0, w, h); x.strokeStyle = 'rgba(150,170,220,.28)'; x.lineWidth = 3;
     for (let i = 1; i < 6; i++) { x.beginPath(); x.moveTo(i * w / 6, 0); x.lineTo(i * w / 6, h); x.stroke(); } for (let j = 1; j < 10; j++) { x.beginPath(); x.moveTo(0, j * h / 10); x.lineTo(w, j * h / 10); x.stroke(); }
     x.strokeStyle = 'rgba(210,220,240,.55)'; x.lineWidth = 8; x.strokeRect(0, 0, w, h); }) });
+  if (mode === 'sun') panelMat.emissiveMap = canvasTex(paintGlow);   // Panels → Live roof: the dust veil also dims the output glow
   const winMat = new THREE.MeshStandardMaterial({ color: 0x6f7a8e, roughness: .08, metalness: .6, emissive: 0xffc98a, emissiveIntensity: 0 });
   const g = new THREE.Group(); g.rotation.y = THETA;
 
@@ -299,7 +334,52 @@ export function createHomeView(host, mode = 'flow', opts = {}) {
     return up;
   }
 
-  /* ---------------- 'sun' view (Panels → Live roof): unchanged ---------------- */
+  /* ---------------- 'sun' view (Panels → Live roof), with the dust veil and hour bars of mockup p-roof-veil ---------------- */
+  // Hour bars: one InstancedMesh of 2 × 15 thin boxes (gold "produced" first so it writes depth, then the white .25 "expected"), standing
+  // in a row on the lawn below the panel face (house-local x = RAIL_X), 6 AM at the north end to 8 PM at the south end.
+  const RAIL_X = -11, RAIL_Z0 = -10, RAIL_Z1 = 7.5, KW_M = .26, BAR_W = .3, PAIR = .2, zAt = i => RAIL_Z0 + i * (RAIL_Z1 - RAIL_Z0) / (HOURS - 1);
+  let bars = null, rail = null, hrLbls = [], barsOn = false, hoursKey = null, dustA = null;
+  function setBars(on) { barsOn = !!on; if (!bars) return; bars.visible = rail.visible = barsOn; hrLbls.forEach(l => l.d.style.display = barsOn ? 'block' : 'none'); }
+  /** Hh = roofHours(): { exp, act } in kW per hour. Rebuilds the 30 instance matrices only when the numbers change. */
+  function setHours(Hh) {
+    if (!bars || !Hh) return; const key = JSON.stringify(Hh); if (key === hoursKey) return; hoursKey = key;
+    const gold = new THREE.Color().setHex(PAL.solar, THREE.LinearSRGBColorSpace), m4 = new THREE.Matrix4(), aCol = bars.geometry.attributes.aCol, aA = bars.geometry.attributes.aA;
+    for (let i = 0; i < HOURS; i++) {
+      const z = zAt(i), exp = Hh.exp[i] ?? 0, act = Hh.act[i];
+      bars.setMatrixAt(i, m4.makeScale(1, act == null ? .001 : Math.max(.04, act * KW_M), 1).setPosition(RAIL_X, .02, z - PAIR)); aCol.setXYZ(i, gold.r, gold.g, gold.b); aA.setX(i, act == null ? 0 : .95);
+      bars.setMatrixAt(HOURS + i, m4.makeScale(1, Math.max(.04, exp * KW_M), 1).setPosition(RAIL_X, .02, z + PAIR)); aCol.setXYZ(HOURS + i, 1, 1, 1); aA.setX(HOURS + i, .25);
+    }
+    bars.instanceMatrix.needsUpdate = aCol.needsUpdate = aA.needsUpdate = true;
+    // a faint baseline under the row, plus the 9.45 kW microinverter ceiling once an hourly mean reaches 9.2 kW
+    const segs = [RAIL_X, .03, RAIL_Z0 - .6, RAIL_X, .03, RAIL_Z1 + .6], CAP = CAP_KW * KW_M + .02;
+    if (Hh.act.some(a => a != null && a >= FLAT_KW)) segs.push(RAIL_X, CAP, RAIL_Z0 - .6, RAIL_X, CAP, RAIL_Z1 + .6);
+    rail.geometry.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3)); rail.geometry.computeBoundingSphere();
+  }
+  /** Dust score 0–100 from the Cleaning check: the veil texture is redrawn only when the score changes. */
+  function setDust(score) { const a = veilAlpha(score); if (twin || a === dustA) return; dustA = a; H.panelMat.map.userData.redraw(a); H.panelMat.emissiveMap.userData.redraw(a); }
+  if (!twin) {
+    const bGeo = new THREE.BoxGeometry(BAR_W, 1, BAR_W); bGeo.translate(0, .5, 0);
+    bGeo.setAttribute('aCol', new THREE.InstancedBufferAttribute(new Float32Array(HOURS * 2 * 3), 3)); bGeo.setAttribute('aA', new THREE.InstancedBufferAttribute(new Float32Array(HOURS * 2), 1));
+    const bMat = new THREE.ShaderMaterial({ transparent: true, fog: false,
+      vertexShader: `attribute vec3 aCol;attribute float aA;varying vec3 vC;varying float vA;varying float vS;
+        void main(){vC=aCol;vA=aA;vS=.78+.22*abs(normal.x)+.12*normal.y;vec4 p=vec4(position,1.);
+        #ifdef USE_INSTANCING
+        p=instanceMatrix*p;
+        #endif
+        gl_Position=projectionMatrix*modelViewMatrix*p;}`,
+      fragmentShader: `varying vec3 vC;varying float vA;varying float vS;void main(){gl_FragColor=vec4(vC*vS,vA);}` });
+    bars = new THREE.InstancedMesh(bGeo, bMat, HOURS * 2); bars.frustumCulled = false; H.group.add(bars);
+    rail = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .22, fog: false })); rail.frustumCulled = false; H.group.add(rail);
+    // three hour labels under the row (clamped inside the canvas)
+    hrLbls = [0, 7, 14].map(i => { const d = document.createElement('div'); d.className = 'lax hr'; d.textContent = hourLabel(FIRST + i); host.appendChild(d); return { d, p: H.local(RAIL_X, 0, zAt(i)) }; });
+    setHours({ exp: Array(HOURS).fill(0), act: Array(HOURS).fill(null) }); setBars(false);
+  }
+  const lv = new THREE.Vector3();
+  function placeLabels() { if (!barsOn || !sz.w) return;
+    for (const l of hrLbls) { lv.copy(l.p).project(camera); if (lv.z > 1) { l.d.style.display = 'none'; continue; } l.d.style.display = 'block';
+      const hw = l.d.offsetWidth / 2, x = clampN((lv.x + 1) / 2 * sz.w, hw + 4, sz.w - hw - 4), y = clampN((1 - lv.y) / 2 * sz.h + 3, 4, sz.h - 18);
+      l.d.style.left = x + 'px'; l.d.style.top = y + 'px'; } }
+
   function renderSun({ r, now = new Date(), dayStart, cloud = .1, code = 0, peakKw = 9, dt, t, calm }) {
     const sp = sunAt(now), up = light(sp, cloud, code, dt, t);
     if (dayStart && pathDay !== dayStart && siteLocation()) { pathDay = dayStart; drawSunPath(dayStart); } // the path waits for the site's location
@@ -310,12 +390,13 @@ export function createHomeView(host, mode = 'flow', opts = {}) {
     if (r) H.pwLeds.forEach(l => l.material.color.set(r.batteryKw < -.05 ? 0x4ef0a6 : r.batteryKw > .05 ? 0xffc15e : 0x9aa3b0));
     Object.values(H.flows).forEach(f => { f.uOn.value = 0; });
     controls.autoRotate = !calm && controls.autoRotate;
-    controls.update(); renderer.render(scene, camera); css.render(scene, camera);
+    controls.update(); renderer.render(scene, camera); css.render(scene, camera); placeLabels();
     return { el: sp.el, az: sp.az, inc: Math.acos(Math.max(-1, Math.min(1, H.panelNormal.dot(sd)))) / RAD };
   }
 
-  const view = { render: twin ? null : renderSun, dispose };
+  const view = { render: twin ? null : renderSun, dispose, ...(twin ? {} : { setBars, setHours, setDust }) };
   const cleanup = [];
+  if (!twin) cleanup.push(() => hrLbls.forEach(l => l.d.remove()));
   function dispose() {
     cleanup.forEach(f => f()); ro.disconnect(); controls.dispose();
     scene.traverse(o => { o.geometry?.dispose(); for (const m of [o.material].flat().filter(Boolean)) { for (const x of Object.values(m)) if (x?.isTexture) x.dispose(); m.dispose(); } });
