@@ -3,9 +3,10 @@ import { q, kv } from '../db.js';
 import { readPool, writePoolPlan, configured, type PoolSnapshot } from './screenlogic.js';
 import { localDay, addDays } from '../tesla/client.js';
 import type { Appliance, ApplianceSummary } from './index.js';
+import { autopilot, type Mode } from './autopilot.js';
 
-export type PoolSettings = { gallons: number; filterRpm: number; boostRpm: number; poolCircuit: number; boostCircuit: number; featureCircuits: number[] };
-const DEFAULTS: PoolSettings = { gallons: 15000, filterRpm: 1500, boostRpm: 2400, poolCircuit: 6, boostCircuit: 8, featureCircuits: [5] };
+export type PoolSettings = { gallons: number; filterRpm: number; boostRpm: number; poolCircuit: number; boostCircuit: number; featureCircuits: number[]; autopilot: Mode };
+const DEFAULTS: PoolSettings = { gallons: 15000, filterRpm: 1500, boostRpm: 2400, poolCircuit: 6, boostCircuit: 8, featureCircuits: [5], autopilot: 'suggest' };
 // Typical pool-water temperature by month for central Texas (°F): used only for the season table; the live plan uses the real reading.
 const WATER_BY_MONTH = [55, 57, 62, 70, 78, 84, 88, 88, 84, 75, 65, 58];
 const FREEZE_CIRCUIT = 132; // ScreenLogic's virtual "freeze protection" pump circuit
@@ -55,13 +56,13 @@ const onSolarPct = (prof: ReturnType<typeof hourlyRpm>, W: (r: number) => number
 
 /* ---------- the optimizer ---------- */
 export type Plan = ReturnType<typeof planFor>;
-export function planFor(o: { waterTemp: number; solarKw: number[]; settings: PoolSettings; W: (r: number) => number; rate: number; month: number; names: Map<number, string> }) {
+export function planFor(o: { waterTemp: number; solarKw: number[]; settings: PoolSettings; W: (r: number) => number; rate: number; month: number; names: Map<number, string>; force?: { hours: number; boost: number } }) {
   const { waterTemp: t, settings: s, W } = o;
   // how much water to move: at least one turnover, more when warm (algae pressure and use), less when cold; and the 1 h per 10 °F rule of thumb
   const turnovers = t >= 85 ? 1.25 : t >= 70 ? 1 : t >= 60 ? .75 : .6;
   const turnoverH = s.gallons * turnovers / (gpmAt(s.filterRpm) * 60);
-  const hours = Math.min(12, Math.max(4, Math.round(Math.max(turnoverH, t / 10))));
-  const boostH = t >= 70 ? 1 : 0;
+  const hours = o.force?.hours ?? Math.min(12, Math.max(4, Math.round(Math.max(turnoverH, t / 10))));
+  const boostH = o.force?.boost ?? (t >= 70 ? 1 : 0);
   // put the run where the sun is: the contiguous window with the most solar
   let best = 8, bestSum = -1;
   for (let st = 5; st + hours <= 20; st++) { const sum = o.solarKw.slice(st, st + hours).reduce((a, v) => a + v, 0); if (sum > bestSum) { bestSum = sum; best = st; } }
@@ -93,7 +94,7 @@ const solarProfile = async (siteId: string) => {
 };
 
 /* ---------- the appliance ---------- */
-export async function poolDetail(siteId: string, settingsAll: Record<string, any>, rate: number, opts: { fresh?: boolean } = {}) {
+export async function poolDetail(siteId: string, settingsAll: Record<string, any>, rate: number, opts: { fresh?: boolean; act?: boolean } = {}) {
   const settings: PoolSettings = { ...DEFAULTS, ...(settingsAll.pool ?? {}) };
   let snap = await kv.get<PoolSnapshot>(`${siteId}:pool:last`) ?? null, error: string | null = null;
   if (configured() && (opts.fresh || !snap || Date.now() - snap.at > 60_000)) {
@@ -117,7 +118,9 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   const todayKwh = prof.slice(0, hourNow).reduce((a, h) => a + W(h.rpm) * h.frac, 0) / 1000;
   const home = await q<{ kwh: number }>(`SELECT (SUM(home_wh) / 1000.0)::float8 kwh FROM energy WHERE site_id = $1 AND day = $2`, [siteId, localDay()]);
   const applied = await kv.get<any>(`${siteId}:pool:applied`) ?? null;
-  return { id: 'pool', name: 'Pool pump', linked: configured() && !!snap, error, settings, snapshot: snap,
+  const auto = await autopilot(siteId, { settings, mode: settings.autopilot, W, rate, names, snap, waterTemp, currentHours: hoursOn(prof), act: !!opts.act }).catch(e => ({ error: e.message as string }));
+  const pending = await kv.get<any>(`${siteId}:pool:pending`) ?? null;
+  return { id: 'pool', autopilot: auto, pending, name: 'Pool pump', linked: configured() && !!snap, error, settings, snapshot: snap,
     live: snap?.pump ? { watts: snap.pump.watts, rpm: snap.pump.rpm, running: snap.pump.running, gpm: snap.pump.gpm, at: snap.at, waterTemp, airTemp: snap.airTemp, freezeMode: snap.freezeMode,
       on: snap.circuits.filter(c => c.on).map(c => c.name), activeRpm: Math.max(0, ...snap.circuits.filter(c => c.on).map(c => speeds.get(c.id) ?? 0)) } : null,
     model: { measured: await measuredPoints(siteId), curve: [1000, 1500, 1800, 2400, 3000, 3450].map(r => ({ rpm: r, watts: Math.round(W(r)) })) },

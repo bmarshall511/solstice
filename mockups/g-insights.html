@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Solstice · Insights redesign mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+body{overflow:auto;background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.stage{position:static;padding:24px 0 60px;align-items:flex-start}
+.phone{height:auto;max-height:none;overflow:visible}
+.screen{position:static;padding:34px 20px 40px;overflow:visible}
+.view{display:block}
+/* sub-navigation: Insights becomes four short panels instead of one long scroll */
+.seg{position:sticky;top:0;z-index:5;display:flex;gap:4px;margin:14px -4px 0;padding:4px;border-radius:999px;background:rgba(8,10,16,.75);border:1px solid var(--glass-b);backdrop-filter:blur(18px)}
+.seg button{all:unset;cursor:pointer;flex:1;text-align:center;font-size:12px;font-weight:600;padding:8px 0;border-radius:999px;color:var(--dim);transition:.2s}
+.seg button.on{background:rgba(255,255,255,.12);color:var(--text)}
+.panel{display:none}.panel.on{display:block;animation:in .4s var(--ease)}
+/* the 3D day ring */
+.ring3d{position:relative;height:330px;margin:10px -16px 0;border-radius:20px;overflow:hidden;touch-action:none}
+.ring3d canvas{display:block;width:100%;height:100%}
+.readout{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;width:150px}
+.readout b{display:block;font:300 30px Manrope;letter-spacing:-.02em;line-height:1}
+.readout small{display:block;font-size:11px;color:var(--dim);margin-top:4px}
+.readout .bd{display:flex;justify-content:center;gap:8px;margin-top:8px;font:500 10.5px "JetBrains Mono"}
+.readout .bd span{display:flex;align-items:center;gap:4px}
+.readout .bd i{width:6px;height:6px;border-radius:50%}
+.modes{display:flex;gap:6px;margin-top:10px}
+.modes button{all:unset;cursor:pointer;flex:1;text-align:center;font-size:11.5px;font-weight:600;padding:8px 0;border-radius:12px;background:var(--glass);border:1px solid var(--glass-b);color:var(--dim)}
+.modes button.on{background:rgba(255,193,94,.14);border-color:rgba(255,193,94,.45);color:var(--text)}
+.hint{position:absolute;right:12px;bottom:10px;font-size:10.5px;color:var(--mute)}
+.pool3d{height:340px;background:radial-gradient(60% 50% at 50% 60%,rgba(108,196,255,.08),transparent 70%)}
+.lbl3d{font:11px Manrope;color:var(--dim);background:rgba(8,10,16,.55);border:1px solid var(--glass-b);padding:4px 8px;border-radius:10px;white-space:nowrap;backdrop-filter:blur(8px);transform:translate(-50%,-100%)}
+.lbl3d b{display:block;font:500 11px "JetBrains Mono";color:var(--text)}.lbl3d.dim{opacity:.45}
+.hud{position:absolute;left:12px;bottom:10px;font:500 11px "JetBrains Mono";color:var(--text);background:rgba(0,0,0,.35);padding:6px 9px;border-radius:10px;line-height:1.5;pointer-events:none}
+.circ{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.circ button{all:unset;cursor:pointer;font-size:11.5px;font-weight:600;padding:7px 11px;border-radius:999px;background:var(--glass);border:1px solid var(--glass-b);color:var(--dim)}
+.circ button.on{background:rgba(78,240,166,.14);border-color:rgba(78,240,166,.45);color:var(--text)}
+/* compact "worth knowing" strip */
+.strip{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;margin:12px -20px 0;padding:0 20px}
+.tile{flex:0 0 220px;padding:12px 14px;border-radius:18px;background:var(--glass);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.45}
+.tile b{display:block;color:var(--text);font-size:13px;margin-bottom:3px}
+.tile.warn{border-color:rgba(255,193,94,.35)}.tile.good{border-color:rgba(78,240,166,.3)}
+/* appliances */
+.apps{display:flex;gap:8px;margin-top:12px;overflow-x:auto;scrollbar-width:none}
+.app{flex:0 0 auto;padding:8px 12px;border-radius:999px;background:var(--glass);border:1px solid var(--glass-b);font-size:12px;color:var(--dim);display:flex;gap:6px;align-items:center}
+.app.on{background:rgba(108,196,255,.14);border-color:rgba(108,196,255,.4);color:var(--text)}
+.app i{width:7px;height:7px;border-radius:50%;background:var(--mute)}.app.on i{background:var(--batt);box-shadow:0 0 8px var(--batt)}.app.dim{opacity:.55}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.stat{padding:10px 12px;border-radius:16px;background:rgba(0,0,0,.22);border:1px solid var(--glass-b)}
+.stat small{display:block;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:600}
+.stat b{display:block;font:500 14px "JetBrains Mono";margin-top:4px}
+.dial{display:block;width:100%;margin-top:8px}
+.primary{display:block;text-align:center;margin-top:12px;padding:12px;border-radius:14px;background:var(--solar);color:#1a1200;font-weight:700;font-size:13px}
+.season{display:flex;gap:6px;margin-top:12px}
+.season div{flex:1;padding:8px 6px;border-radius:12px;background:var(--glass);border:1px solid var(--glass-b);text-align:center;font-size:11px;color:var(--dim)}
+.season div b{display:block;font:500 13px "JetBrains Mono";color:var(--text)}
+.season div.cur{border-color:rgba(255,193,94,.45);background:rgba(255,193,94,.1)}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.status{display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:12px;color:var(--dim);line-height:1.45}.status i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--batt);box-shadow:0 0 10px var(--batt);margin-top:5px;animation:blink 2s infinite}.status b{color:var(--text)}
+.signals{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-top:14px}.signals div{text-align:center}.signals svg{display:block;width:100%}.signals b{display:block;font:500 10.5px "JetBrains Mono";margin-top:2px}.signals small{display:block;font-size:9px;color:var(--mute);letter-spacing:.06em;text-transform:uppercase}
+.wkhead{display:flex;justify-content:space-between;align-items:baseline;margin-top:16px;font-size:12px;color:var(--dim)}.wkhead span{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600}.wkhead b{font:500 11px "JetBrains Mono";color:var(--text)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.chips span{font-size:11px;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);color:var(--dim)}
+.tline{margin-top:14px;position:relative;padding-left:18px}.tline:before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:1px;background:rgba(255,255,255,.12)}
+.tline div{position:relative;display:flex;gap:8px;font-size:12px;color:var(--dim);padding:5px 0;min-width:0}.tline i{position:absolute;left:-16px;top:10px;width:7px;height:7px;border-radius:50%;background:var(--batt);box-shadow:0 0 8px var(--batt)}.tline i.w{background:var(--solar);box-shadow:0 0 8px var(--solar)}
+.tline span{flex:none;width:44px;font:500 10.5px "JetBrains Mono";color:var(--mute);padding-top:1px}.tline p{margin:0;line-height:1.45;min-width:0}.tline em{font-style:normal;color:var(--batt);font:500 10.5px "JetBrains Mono";margin-left:6px}
+.dialwrap{position:relative;margin:6px -6px 0}.dialwrap svg{display:block;width:100%}
+.dialc{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;width:190px}
+.dialc small{display:block;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600}
+.dialc b{display:block;font:300 40px Manrope;letter-spacing:-.03em;line-height:1.05;margin-top:2px}.dialc b i{font:400 13px Manrope;color:var(--dim);font-style:normal}
+.dialc span{display:block;font:500 10px "JetBrains Mono";color:var(--dim);margin-top:4px;white-space:nowrap}
+.deltas{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.deltas div{padding:10px 12px;border-radius:14px;background:rgba(78,240,166,.07);border:1px solid rgba(78,240,166,.22);min-width:0}
+.deltas small{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:600}.deltas b{display:block;font:500 15px "JetBrains Mono";color:var(--batt);margin-top:4px;white-space:nowrap}.deltas span{display:block;font-size:11px;color:var(--dim);margin-top:2px;white-space:nowrap}
+.reasons{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;margin:12px -16px 0;padding:0 16px}
+.reasons div{flex:0 0 78%;scroll-snap-align:start;padding:12px 14px;border-radius:18px;background:linear-gradient(160deg,rgba(255,255,255,.07),rgba(255,255,255,.03));border:1px solid var(--glass-b)}
+.reasons i{display:inline-flex;width:26px;height:26px;border-radius:9px;align-items:center;justify-content:center;font-style:normal;font-size:13px;background:rgba(255,193,94,.14);color:var(--solar);border:1px solid rgba(255,193,94,.3)}
+.reasons b{display:block;margin-top:8px;font-size:13.5px}.reasons p{margin-top:4px;font-size:12.5px}
+.dots{display:flex;gap:5px;justify-content:center;margin-top:10px}.dots i{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.18)}.dots i.on{background:var(--solar)}
+.seg2{display:flex;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid var(--glass-b)}.seg2 button{all:unset;cursor:pointer;font-size:11px;font-weight:600;padding:5px 10px;border-radius:999px;color:var(--dim)}.seg2 button.on{background:rgba(78,240,166,.18);color:var(--text)}
+.inputs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px}.inputs div{padding:9px 10px;border-radius:14px;background:rgba(0,0,0,.22);border:1px solid var(--glass-b);position:relative;padding-left:18px}.inputs i{position:absolute;left:8px;top:13px;width:5px;height:5px;border-radius:50%}.inputs b{display:block;font:500 12px "JetBrains Mono"}.inputs small{display:block;font-size:10px;color:var(--mute);margin-top:2px}
+.rules{display:grid;gap:8px;margin-top:12px}.rules div{font-size:12px;color:var(--dim);line-height:1.5;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.04)}.rules b{display:block;color:var(--text);font-size:12.5px;margin-bottom:2px}
+.log{margin-top:12px;display:grid;gap:6px}.log div{display:flex;gap:10px;font-size:12px;color:var(--dim)}.log span{flex:none;width:48px;font:500 11px "JetBrains Mono";color:var(--mute);padding-top:1px}.log p{margin:0;line-height:1.45}.log em{font-style:normal;color:var(--batt);font:500 11px "JetBrains Mono";margin-left:6px}
+.hero{display:flex;align-items:baseline;gap:12px;margin-top:10px;flex-wrap:nowrap}.hero b{font:300 38px Manrope;letter-spacing:-.03em;color:var(--batt);white-space:nowrap;flex:none}.hero span{font-size:12px;color:var(--dim);line-height:1.4}
+.tlab{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-top:14px}.tlab b{font:500 12px "JetBrains Mono";color:var(--text)}
+.tl2{position:relative;height:66px;margin-top:4px}.tl2 svg{position:absolute;inset:0;width:100%;height:100%}
+.tl2 i{position:absolute;bottom:12px;border-radius:5px 5px 2px 2px;opacity:.9}.tl2 i em{position:absolute;left:4px;top:-13px;font:600 9.5px Manrope;font-style:normal;white-space:nowrap;color:var(--text)}
+.tl2 u{position:absolute;bottom:0;text-decoration:none;font:10px "JetBrains Mono";color:var(--mute)}
+.why{margin-top:14px;display:grid;gap:8px}.why div{display:flex;gap:10px;align-items:flex-start}.why i{flex:none;width:20px;height:20px;border-radius:50%;background:rgba(255,193,94,.15);border:1px solid rgba(255,193,94,.4);color:var(--solar);font:600 10.5px Manrope;font-style:normal;display:flex;align-items:center;justify-content:center;margin-top:1px}.why p{margin:0;font-size:12.5px}.why p b{color:var(--text)}
+.tiles .stat b{font-size:16px}
+.tiles .stat b.up{color:var(--batt)}.tiles .stat b.dn{color:var(--warn)}
+</style>
+</head>
+<body>
+<div class="stage">
+  <aside class="side">
+    <div class="k">Mockup · Insights redesign</div>
+    <h2>One page, four short panels, one 3D scene.</h2>
+    <p>The long scroll becomes a sticky switcher: <b>Today · Appliances · Planner · Home</b>. Everything that's on Insights now is still here, just grouped and shorter.</p>
+    <p style="margin-top:12px">The centrepiece is a <b>three.js Day Ring</b>: 24 hours around a circle, each bar stacked by what used the power (pool pump, AC, everything else) with your solar as a gold ribbon outside it. Drag to spin, tap an hour to read it. The <b>modes</b> morph the same ring live: as built, with the smarter pool schedule, with 8 more panels. The Planner sliders drive it too.</p>
+    <div class="demo"><h4>What's real</h4>
+      <p>Pool hours come from ScreenLogic. AC is estimated from your heat model (kWh per degree above 80°F) until Nest is linked. "Everything else" is the remainder of Tesla's home load. Solar is real.</p>
+      <p>Bars here use sample numbers shaped like your September profile.</p></div>
+  </aside>
+
+  <div class="phone"><div class="screen"><section class="view on">
+    <div class="hello"><div><h3>Insights</h3><p>From your real data</p></div><div class="wx"><b>92</b>kWh today</div></div>
+    <div class="seg" id="seg"><button class="on" data-p="today">Today</button><button data-p="appl">Appliances</button><button data-p="plan">Planner</button><button data-p="home">Home</button></div>
+
+    <!-- ================= TODAY ================= -->
+    <div class="panel on" id="p-today">
+      <div class="card">
+        <div class="h"><b>Your day in loads</b><span>drag to spin · tap an hour</span></div>
+        <div class="ring3d" id="ring"><div class="readout" id="ro"><b>92 kWh</b><small>today · tap an hour</small><div class="bd"><span><i style="background:#6cc4ff"></i>pool 26</span><span><i style="background:#ff9e66"></i>AC 38</span><span><i style="background:#8d93a8"></i>rest 28</span></div></div><div class="hint">◐ 5:20 PM</div></div>
+        <div class="modes" id="modes"><button class="on" data-m="now">As built</button><button data-m="pool">Smarter pool</button><button data-m="panels">+8 panels</button></div>
+        <div class="legend" style="margin-top:10px"><span><i style="background:#6cc4ff"></i>Pool pump</span><span><i style="background:#ff9e66"></i>AC (est.)</span><span><i style="background:#8d93a8"></i>Everything else</span><span><i style="background:#ffc15e"></i>Solar</span></div>
+        <p id="modeTxt">The pool pump was <b style="color:var(--text)">28%</b> of today and ran mostly at night on stored power. AC dominates 1–8 PM, right as solar fades: that's the stretch the Powerwalls carry.</p>
+      </div>
+      <div class="sect">Worth knowing</div>
+      <div class="strip">
+        <div class="tile warn"><b>Powerwalls rarely fill up</b>0 of the last 30 days hit 100% (typical peak 41%). More panels would help them more than more batteries.</div>
+        <div class="tile warn"><b>Pool pump: 26 kWh/day</b>Two programs cost $70/mo of the $84. A smarter schedule is ready in Appliances.</div>
+        <div class="tile"><b>September +16% vs last year</b>Cooling degree-days +25%; solar per unit sunlight unchanged.</div>
+        <div class="tile good"><b>Tomorrow: 71 kWh of sun</b>Clear until 3 PM, then clouds. Batteries full by 1:40 PM.</div>
+      </div>
+    </div>
+
+    <!-- ================= APPLIANCES ================= -->
+    <div class="panel" id="p-appl">
+      <div class="apps"><div class="app on"><i></i>Pool pump · 289 W</div><div class="app dim"><i></i>AC · Nest, next</div><div class="app dim"><i></i>+ add</div></div>
+      <div class="card">
+        <div class="h"><b>Pool &amp; spa · live</b><span class="badge g">Linked · ScreenLogic</span></div>
+        <div class="ring3d pool3d" id="pool3d"><div class="hud" id="poolHud">Pool · 1,800 RPM · 289 W</div></div>
+        <div class="circ" id="circ">
+          <button class="on" data-c="pool">Pool</button><button data-c="spa">Spa</button><button data-c="waterfall">Waterfall</button><button data-c="jets">Jets</button><button data-c="blower">Air blower</button><button data-c="heater">Heater</button><button data-c="lights">Lights</button>
+        </div>
+        <p class="fine" style="margin-top:8px">Every chip is something you can see: <b>Pool</b> streams water skimmer → pump → filter → returns and the surface ripples · <b>Spa</b> reroutes the streams into the spa loop with the spillover · <b>Waterfall</b> lights the purple feed and drops a curtain · <b>Jets</b> arc inside the spa · <b>Air blower</b> bubbles rise · <b>Heater</b> the core glows and steam rises, streams turn warm · <b>Lights</b> the water glows with light cones. Particle speed follows the pump's RPM. Tap the chips to preview.</p>
+        <div class="two" style="margin-top:10px"><div class="stat"><small>Pump</small><b>289 W · 1,800 rpm</b></div><div class="stat"><small>Today</small><b>25.5 kWh · 37%</b></div><div class="stat"><small>Pool · spa</small><b>86° · 89°</b></div><div class="stat"><small>Turnover</small><b>5.5×</b></div></div>
+      </div>
+      <div class="card sched">
+        <div class="h"><b>Pump schedule</b><span class="seg2" id="schMode"><button data-m="now">Now</button><button data-m="rec" class="on">Recommended</button><button data-m="both">Both</button></span></div>
+        <div class="dialwrap">
+          <svg viewBox="0 0 320 320" id="dial24"></svg>
+          <div class="dialc"><small id="dcLbl">Recommended</small><b id="dcKwh">2 <i>kWh/day</i></b><span id="dcSub">10 h · $7/mo · 100% on solar</span></div>
+        </div>
+        <div id="nowOnly" hidden>
+          <div class="kv" style="margin-top:10px">
+            <span>Waterfall · 3,400 RPM · 12a–5a</span><b style="color:var(--warn)">13.8 kWh</b>
+            <span>High Speed · 3,000 RPM · 12p–6p</span><b style="color:var(--warn)">10.6 kWh</b>
+            <span>Pool · 1,800 RPM · 8a–12p, 8p–10p</span><b>2.6 kWh</b>
+            <span>Total per day</span><b>26 kWh · $2.77</b>
+          </div>
+          <p>Two programs do almost all of it, and they overlap the efficient Pool run. Switch to <b style="color:var(--text)">Recommended</b> to see the fix.</p>
+        </div>
+        <div id="recOnly">
+        <div class="deltas">
+          <div><small>Electricity</small><b>−24 kWh</b><span>per day</span></div>
+          <div><small>Cost</small><b>−$77</b><span>per month</span></div>
+          <div><small>Turnover</small><b>5.5× → 1.6×</b><span>still one a day</span></div>
+          <div><small>Top speed</small><b>3,400 → 2,400</b><span>RPM</span></div>
+        </div>
+        <div class="reasons" id="reasons">
+          <div><i>⚡</i><b>Speed³</b><p>Power rises with the cube of RPM. 3,400 RPM draws 2.7 kW, 1,500 draws 0.17 kW: 16× less for the same water.</p></div>
+          <div><i>↻</i><b>One turnover</b><p>15,000 gal at ~45 GPM is 5.5 h. Warm water gets 9 h. Today's schedule does it 5.5 times.</p></div>
+          <div><i>☀</i><b>Under the sun</b><p>10 AM–7 PM sits inside your solar curve, so the pump runs on free power and the Powerwalls reach evening fuller.</p></div>
+          <div><i>✦</i><b>Still clean</b><p>A 1 h skim boost at 2 PM, the robot handles the floor, and the D.E. filter runs at lower pressure.</p></div>
+          <div><i>🔒</i><b>Untouched</b><p>Freeze protection, spa, heater, lights. The waterfall stays a manual feature with its 3 h timer.</p></div>
+        </div>
+        <div class="dots" id="dots"></div>
+        <a class="primary">Apply to ScreenLogic</a><button class="link">Show the settings instead</button>
+        </div>
+      </div>
+      <div class="card auto">
+        <div class="h"><b>Autopilot</b><span class="seg2" id="auto"><button>Off</button><button>Suggest</button><button class="on">Auto</button></span></div>
+        <div class="status"><i></i><span>Re-plans tomorrow tonight at <b>8:15 PM</b> · last change Tue 22 · never touches spa, heater, lights or freeze protection</span></div>
+        <div class="signals" id="signals"></div>
+        <div class="wkhead"><span>Next 7 days</span><b>Tomorrow 8 h · no boost · rain</b></div>
+        <svg class="mini" viewBox="0 0 310 110" id="wk"></svg>
+        <div class="legend" style="justify-content:flex-start"><span><i style="background:#6cc4ff"></i>Filter hours</span><span><i style="background:#ff7a66"></i>Skim boost</span><span><i style="background:rgba(255,193,94,.6)"></i>Sun forecast</span></div>
+        <div class="chips">
+          <span>4–12 h/day</span><span>1,200–1,800 RPM</span><span>under the solar curve</span><span>one change a day</span><span>+1 h after rain</span><span>+2 h heat wave</span><span>+1 h heavy use</span><span>−1 h below 70°F</span><span>freeze: hands off</span>
+        </div>
+        <div class="tline">
+          <div><i></i><span>Tue 22</span><p>Skim boost added at 2 PM after Monday's storm <em>+0.8 kWh</em></p></div>
+          <div><i></i><span>Sun 20</span><p>Run moved 10a → 11a, clouds until 11 <em>on solar 96 → 100%</em></p></div>
+          <div><i></i><span>Wed 16</span><p>Hours 8 → 9, water crossed 85°F <em>+0.2 kWh</em></p></div>
+          <div><i class="w"></i><span>Sep 1</span><p>Filter at 210 h since the last D.E. cleaning <em>reminder</em></p></div>
+        </div>
+      </div>
+      <div class="season"><div><b>1</b>Dec–Feb</div><div><b>1.8</b>Mar–May</div><div><b>2.1</b>Jun–Aug</div><div class="cur"><b>2</b>Sep–Nov</div></div>
+      <p class="fine" style="margin-top:6px">kWh per day by season, the baseline Autopilot adjusts from each day’s data.</p>
+    </div>
+
+    <!-- ================= PLANNER ================= -->
+    <div class="panel" id="p-plan">
+      <div class="card">
+        <div class="h"><b>What if you added…</b><span>the Day Ring morphs with these</span></div>
+        <div class="slider"><label>Solar panels <b>+8</b></label><input type="range" min="0" max="20" step="2" value="8"><small>38 panels · roughly $8.8k (400 W modules)</small></div>
+        <div class="slider"><label>Powerwalls <b>+0</b></label><input type="range" min="0" max="2" value="0"><small>Today: 2 × Powerwall 2 · 27 kWh</small></div>
+        <div class="slider"><label>New daily usage <b>+0 kWh</b></label><input type="range" min="0" max="30" step="2" value="0"><small>EV, pool heater, heat pump… (added 5–11 PM)</small></div>
+        <div class="tiles"><div class="stat"><small>Covered by solar + battery</small><b class="up">48% → 60%</b></div><div class="stat"><small>PEC energy cost / yr</small><b class="up">$1,537 → $1,105</b></div><div class="stat"><small>Payback</small><b>20 yrs</b></div><div class="stat"><small>Days batteries full</small><b class="up">19 → 112</b></div></div>
+        <div class="rec"><b>For your home, panels beat batteries.</b> 8 more panels save about $432 a year. Another Powerwall saves $61, because the batteries only fill 19 days a year. Extra batteries mainly buy outage time: 7 h of evening backup instead of 5.</div>
+        <button class="link">Full comparison table</button>
+      </div>
+      <div class="card">
+        <div class="h"><b>Your system so far</b><span>installed Dec 2020</span></div>
+        <div class="tiles"><div class="stat"><small>Saves per year</small><b>$•,•••</b></div><div class="stat"><small>Net cost</small><b>$••.•k</b></div><div class="stat"><small>Energy payback</small><b>37 yrs</b></div><div class="stat"><small>Loan</small><b>$•••/mo</b></div></div>
+        <p>Energy savings alone don't pay this back: your export credit is small and the batteries mostly buy outage protection, which this number doesn't value.</p>
+      </div>
+    </div>
+
+    <!-- ================= HOME ================= -->
+    <div class="panel" id="p-home">
+      <div class="card">
+        <div class="h"><b>Heat &amp; your AC</b><span>every 80°F+ day</span></div>
+        <div class="tiles"><div class="stat"><small>kWh per degree over 80</small><b>2.9</b></div><div class="stat"><small>Yesterday, 96°F high</small><b>46 kWh on AC</b></div></div>
+        <svg class="mini" viewBox="0 0 310 120" id="acSvg"></svg>
+        <p>Usage climbs about 2.9 kWh for every degree of daily high. Two outlier days are flagged in the chart.</p>
+      </div>
+      <div class="card">
+        <div class="h"><b>Overnight baseline</b><span>1–5 AM</span></div>
+        <div class="tiles"><div class="stat"><small>This week</small><b>2.6 kW</b></div><div class="stat"><small>Without the waterfall</small><b class="up">≈ 0.9 kW</b></div></div>
+        <p>The waterfall program is most of what runs at night. Once the pool schedule changes, this should drop to what the house really idles at.</p>
+      </div>
+      <div class="card">
+        <div class="h"><b>Data health</b><span class="badge g">All live</span></div>
+        <div class="tiles"><div class="stat"><small>Tesla</small><b>28 s ago</b></div><div class="stat"><small>History</small><b>399 days</b></div><div class="stat"><small>ScreenLogic</small><b>1 min ago</b></div><div class="stat"><small>PEC bills</small><b>6</b></div></div>
+      </div>
+    </div>
+  </section></div></div>
+</div>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+/* ---------- sample day, shaped like the real September profile (kWh per hour) ---------- */
+const base = Array.from({length:24},(_,h)=> h<6||h>22 ? 1.1 : 1.3);
+const ac   = Array.from({length:24},(_,h)=> .6 + 3.0*Math.max(0,Math.sin((h-9)/12*Math.PI))**1.6);
+const poolNow = Array.from({length:24},(_,h)=> h<5?2.74 : h>=8&&h<12?.29 : h>=12&&h<18?1.76 : h>=20&&h<22?.29 : 0);
+const poolSmart = Array.from({length:24},(_,h)=> h>=10&&h<19 ? (h===14?.8:.17) : 0);
+const solar = Array.from({length:24},(_,h)=> Math.max(0, 7.2*Math.sin((h-6.6)/12.4*Math.PI))**1 * (h>6&&h<19?1:0));
+const MODES = { now:{pool:poolNow,solar}, pool:{pool:poolSmart,solar}, panels:{pool:poolNow,solar:solar.map(v=>v*1.33)} };
+const COL = { base:0x8d93a8, ac:0xff9e66, pool:0x6cc4ff, solar:0xffc15e };
+
+/* ---------- scene ---------- */
+const el = document.getElementById('ring'), W = el.clientWidth, H = el.clientHeight;
+const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true}); renderer.setPixelRatio(Math.min(2,devicePixelRatio)); renderer.setSize(W,H); el.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const cam = new THREE.PerspectiveCamera(38, W/H, .1, 100); cam.position.set(0, 9.6, 6.2);
+const ctl = new OrbitControls(cam, renderer.domElement); ctl.enableZoom=false; ctl.enablePan=false; ctl.minPolarAngle=.35; ctl.maxPolarAngle=1.0; ctl.target.set(0,.6,0); ctl.enableDamping=true;
+scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x0a0c14, 1.1));
+const key = new THREE.DirectionalLight(0xffffff, 1.4); key.position.set(4,8,5); scene.add(key);
+const R = 3.1, SEG = 24, ang = h => (h/24)*Math.PI*2 - Math.PI/2; // midnight at the back-top, noon at the front
+const hourGroup = new THREE.Group(); scene.add(hourGroup);
+const bars = [];
+const mat = c => new THREE.MeshStandardMaterial({color:c, roughness:.55, metalness:.1, emissive:c, emissiveIntensity:.08});
+for (let h=0; h<24; h++) {
+  const g = new THREE.Group(); g.rotation.y = -ang(h);
+  const parts = {};
+  for (const k of ['base','ac','pool']) { const m = new THREE.Mesh(new THREE.BoxGeometry(.5,1,.42), mat(COL[k])); m.geometry.translate(0,.5,0); m.position.x = R; parts[k]=m; g.add(m); }
+  const s = new THREE.Mesh(new THREE.BoxGeometry(.18,1,.62), new THREE.MeshStandardMaterial({color:COL.solar, transparent:true, opacity:.55, emissive:COL.solar, emissiveIntensity:.25})); s.geometry.translate(0,.5,0); s.position.x = R+.55; parts.solar=s; g.add(s);
+  hourGroup.add(g); bars.push({h, parts, g});
+}
+const disc = new THREE.Mesh(new THREE.RingGeometry(R-.45, R+.95, 96), new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:.05, side:THREE.DoubleSide})); disc.rotation.x=-Math.PI/2; scene.add(disc);
+// "now" marker
+const nowH = 17.33, hand = new THREE.Mesh(new THREE.BoxGeometry(.05,.02,R+1.2), new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:.35})); hand.position.y=.02; hand.geometry.translate(0,0,(R+1.2)/2); hand.rotation.y = -ang(nowH)+Math.PI/2; scene.add(hand);
+const SCALE = .32; let target = {}, cur = {};
+function setMode(m) { const d = MODES[m]; target = {}; bars.forEach(b => { const h=b.h; target[h] = { base: base[h]*SCALE, ac: ac[h]*SCALE, pool: d.pool[h]*SCALE, solar: d.solar[h]*SCALE }; }); }
+setMode('now'); bars.forEach(b => cur[b.h] = {...target[b.h]});
+function layout() { bars.forEach(b => { const c = cur[b.h]; let y=0; for (const k of ['base','ac','pool']) { b.parts[k].scale.y = Math.max(.001,c[k]); b.parts[k].position.y = y; y += c[k]; } b.parts.solar.scale.y = Math.max(.001,c.solar); }); }
+/* hover / tap → readout */
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(); let picked = null, spin = true;
+const fmt = v => v.toFixed(1);
+function readout(h, m) {
+  const ro = document.getElementById('ro'); const d = MODES[m];
+  if (h==null) { const tot = (a)=>a.reduce((x,y)=>x+y,0); ro.innerHTML = `<b>${Math.round(tot(base)+tot(ac)+tot(d.pool))} kWh</b><small>${m==='now'?'today':m==='pool'?'with the smarter pool schedule':'with 8 more panels'}</small><div class="bd"><span><i style="background:#6cc4ff"></i>pool ${Math.round(tot(d.pool))}</span><span><i style="background:#ff9e66"></i>AC ${Math.round(tot(ac))}</span><span><i style="background:#8d93a8"></i>rest ${Math.round(tot(base))}</span></div>`; return; }
+  const lbl = `${h%12||12}${h<12?' AM':' PM'}`;
+  ro.innerHTML = `<b>${fmt(base[h]+ac[h]+d.pool[h])} kWh</b><small>${lbl} · solar ${fmt(d.solar[h])} kWh</small><div class="bd"><span><i style="background:#6cc4ff"></i>${fmt(d.pool[h])}</span><span><i style="background:#ff9e66"></i>${fmt(ac[h])}</span><span><i style="background:#8d93a8"></i>${fmt(base[h])}</span></div>`;
+}
+let mode='now';
+function pick(e) { const r = renderer.domElement.getBoundingClientRect(); ptr.set(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1); ray.setFromCamera(ptr, cam);
+  const hit = ray.intersectObjects(hourGroup.children, true)[0]; const h = hit ? bars.find(b => b.g === hit.object.parent)?.h : null;
+  if (h !== picked) { picked = h; bars.forEach(b => Object.values(b.parts).forEach(p => p.material.emissiveIntensity = b.h===h ? .6 : (p===b.parts.solar?.25:.08))); readout(h, mode); } }
+renderer.domElement.addEventListener('pointermove', pick); renderer.domElement.addEventListener('pointerdown', e => { spin=false; pick(e); });
+document.getElementById('modes').onclick = e => { const b = e.target.closest('button'); if (!b) return; document.querySelectorAll('#modes button').forEach(x => x.classList.toggle('on', x===b)); mode = b.dataset.m; setMode(mode); readout(picked, mode);
+  document.getElementById('modeTxt').innerHTML = mode==='now' ? 'The pool pump was <b style="color:var(--text)">28%</b> of today and ran mostly at night on stored power. AC dominates 1–8 PM, right as solar fades: that’s the stretch the Powerwalls carry.'
+    : mode==='pool' ? 'With the smarter schedule the pump moves under the solar curve and shrinks to <b style="color:var(--text)">2 kWh</b>. Nights are now just the house idling, so the Powerwalls reach the evening fuller.'
+    : 'Eight more panels lift the gold ribbon by a third. Midday surplus finally covers the AC ramp until about 5 PM, and the batteries fill on <b style="color:var(--text)">112</b> days a year instead of 19.'; };
+let t=0; (function frame(){ requestAnimationFrame(frame); t+=.016; if (spin) hourGroup.rotation.y += .0025, disc.rotation.z += .0025, hand.rotation.y += .0025;
+  bars.forEach(b => { for (const k in target[b.h]) cur[b.h][k] += (target[b.h][k]-cur[b.h][k])*.08; }); layout(); ctl.update(); renderer.render(scene, cam); })();
+
+/* ---------- pool & spa flow twin (holographic) ---------- */
+(function poolTwin(){
+  const el = document.getElementById('pool3d'); let built=false, renderer, labels, scene, cam, ctl; const P={}; let t=0;
+  const ST = { pool:true, spa:false, waterfall:false, jets:false, blower:false, heater:false, lights:false };
+  const RPM = { pool:1800, spa:3190, waterfall:3400, jets:3450, blower:2790 };
+  const C = { cyan:0x6cc4ff, green:0x4ef0a6, purple:0xc4a2ff, gold:0xffc15e, heat:0xff7a4a, white:0xffffff };
+  const lerp=(a,b,k)=>a+(b-a)*k;
+  const rrect = (w,h,r) => { const s=new THREE.Shape(); s.moveTo(-w/2+r,-h/2); s.lineTo(w/2-r,-h/2); s.absarc(w/2-r,-h/2+r,r,-Math.PI/2,0,false); s.lineTo(w/2,h/2-r); s.absarc(w/2-r,h/2-r,r,0,Math.PI/2,false); s.lineTo(-w/2+r,h/2); s.absarc(-w/2+r,h/2-r,r,Math.PI/2,Math.PI,false); s.lineTo(-w/2,-h/2+r); s.absarc(-w/2+r,-h/2+r,r,Math.PI,Math.PI*1.5,false); return s; };
+  const glass = (c, op=.10) => new THREE.MeshPhysicalMaterial({ color:c, transparent:true, opacity:op, roughness:.15, metalness:0, transmission:0, emissive:c, emissiveIntensity:.08, side:THREE.DoubleSide, depthWrite:false });
+  const edges = (geo, c, op=.9) => new THREE.LineSegments(new THREE.EdgesGeometry(geo, 20), new THREE.LineBasicMaterial({ color:c, transparent:true, opacity:op }));
+  const waterMat = () => new THREE.ShaderMaterial({ transparent:true, depthWrite:false, uniforms:{ uT:{value:0}, uGlow:{value:0}, uFlow:{value:0}, uSize:{value:new THREE.Vector2(1,1)} },
+    vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+    fragmentShader:`varying vec2 vUv;uniform float uT,uGlow,uFlow;uniform vec2 uSize;
+      void main(){vec2 p=(vUv-.5)*uSize; float r=length(p/(uSize*.5)); float base=.22+.18*(1.-r);
+        float rings=0.; for(int i=0;i<3;i++){ float ph=fract(uT*.18+float(i)/3.); float rr=ph*1.15; rings+=smoothstep(.03,.0,abs(r-rr))*(1.-ph)*.5; }
+        float lanes=smoothstep(.85,1.,sin(p.x*4.+uT*2.2*uFlow)*.5+.5)*uFlow*.35*(1.-r*.7);
+        float shimmer=(sin(p.x*9.+uT*1.3)*sin(p.y*11.-uT*1.1))*.05;
+        vec3 col=mix(vec3(.26,.62,1.),vec3(.45,.95,1.),uGlow*.8);
+        float a=base+rings*(.4+uFlow)+lanes+shimmer+uGlow*.25; gl_FragColor=vec4(col*(1.+uGlow*.6),clamp(a,0.,.9));}` });
+  // particles that travel along a curve; count and speed follow the pump
+  function stream(curve, color, n, size=.045){ const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(new Array(n*3).fill(0),3));
+    const m=new THREE.PointsMaterial({ color, size, transparent:true, opacity:0, depthWrite:false, blending:THREE.AdditiveBlending }); const pts=new THREE.Points(g,m); pts.userData={curve,n,off:Math.random()}; scene.add(pts); return pts; }
+  function advance(s, on, speed){ s.material.opacity=lerp(s.material.opacity, on?.95:0, .08); const a=s.geometry.attributes.position; for(let i=0;i<s.userData.n;i++){ const u=(t*speed*.25+i/s.userData.n+s.userData.off)%1; const p=s.userData.curve.getPointAt(u); a.setXYZ(i,p.x,p.y,p.z);} a.needsUpdate=true; }
+  const curve = pts => new THREE.CatmullRomCurve3(pts.map(p=>new THREE.Vector3(...p)), false, 'catmullrom', .2);
+  const tube = (cv, c) => { const m=new THREE.Mesh(new THREE.TubeGeometry(cv,64,.035,6,false), new THREE.MeshBasicMaterial({ color:c, transparent:true, opacity:.14 })); scene.add(m); return m; };
+  const label = (txt, x,y,z, cls='') => { const d=document.createElement('div'); d.className='lbl3d '+cls; d.innerHTML=txt; const o=new CSS2DObject(d); o.position.set(x,y,z); scene.add(o); return d; };
+  function build(){
+    built=true; const W=el.clientWidth, H=el.clientHeight;
+    renderer=new THREE.WebGLRenderer({antialias:true, alpha:true}); renderer.setPixelRatio(Math.min(2,devicePixelRatio)); renderer.setSize(W,H); el.prepend(renderer.domElement);
+    labels=new CSS2DRenderer(); labels.setSize(W,H); labels.domElement.style.cssText='position:absolute;inset:0;pointer-events:none'; el.appendChild(labels.domElement);
+    scene=new THREE.Scene(); cam=new THREE.PerspectiveCamera(30, W/H, .1, 100); cam.position.set(8.2, 7.6, 9.6);
+    ctl=new OrbitControls(cam, renderer.domElement); ctl.enableZoom=false; ctl.enablePan=false; ctl.minPolarAngle=.5; ctl.maxPolarAngle=1.15; ctl.target.set(1.3,.2,-.5); ctl.enableDamping=true; ctl.autoRotate=true; ctl.autoRotateSpeed=.45;
+    scene.add(new THREE.AmbientLight(0xffffff,.6));
+    // floor: fading grid
+    const grid=new THREE.GridHelper(16,32,0x6cc4ff,0x6cc4ff); grid.material.transparent=true; grid.material.opacity=.07; scene.add(grid);
+    const fade=new THREE.Mesh(new THREE.CircleGeometry(9,64), new THREE.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{},vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,fragmentShader:`varying vec2 vUv;void main(){float r=length(vUv-.5)*2.;gl_FragColor=vec4(.02,.024,.04,smoothstep(.45,1.,r));}`})); fade.rotation.x=-Math.PI/2; fade.position.y=.01; scene.add(fade);
+    // pool: glass volume + neon edge + water plane
+    const PW=7.4, PH=3.8, PR=1.1, px=-1.3, pz=.2, D=1.0;
+    const poolGeo=new THREE.ExtrudeGeometry(rrect(PW,PH,PR),{depth:D,bevelEnabled:false,curveSegments:24});
+    const poolVol=new THREE.Mesh(poolGeo, glass(C.cyan,.06)); poolVol.rotation.x=Math.PI/2; poolVol.position.set(px,.02,pz); scene.add(poolVol);
+    const poolEdge=edges(poolGeo, C.cyan, .8); poolEdge.rotation.x=Math.PI/2; poolEdge.position.set(px,.02,pz); scene.add(poolEdge);
+    const wg=new THREE.ShapeGeometry(rrect(PW,PH,PR),24); { const pos=wg.attributes.position, uv=wg.attributes.uv; for(let i=0;i<pos.count;i++) uv.setXY(i,pos.getX(i)/PW+.5,pos.getY(i)/PH+.5); uv.needsUpdate=true; }
+    P.water=new THREE.Mesh(wg, waterMat()); P.water.material.uniforms.uSize.value.set(PW,PH); P.water.rotation.x=-Math.PI/2; P.water.position.set(px,.03,pz); scene.add(P.water);
+    // spa: raised glass cylinder + ring
+    const sx=3.9, sz=.2, SR=1.25, SH=.55;
+    const spaGeo=new THREE.CylinderGeometry(SR,SR,SH,48,1,true); const spaVol=new THREE.Mesh(spaGeo, glass(C.green,.07)); spaVol.position.set(sx,SH/2,sz); scene.add(spaVol);
+    const ring=(y,c,op)=>{ const r=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(new THREE.Path().absarc(0,0,SR,0,Math.PI*2,false).getPoints(64).map(p=>new THREE.Vector3(p.x,0,p.y))), new THREE.LineBasicMaterial({color:c,transparent:true,opacity:op})); r.position.set(sx,y,sz); scene.add(r); return r; };
+    ring(0.01,C.green,.5); P.spaRing=ring(SH,C.green,.9);
+    P.spa=new THREE.Mesh(new THREE.CircleGeometry(SR,48), waterMat()); P.spa.material.uniforms.uSize.value.set(2,2); P.spa.rotation.x=-Math.PI/2; P.spa.position.set(sx,SH-.02,sz); scene.add(P.spa);
+    // waterfall ledge: a floating neon bar behind the pool
+    const ledgeGeo=new THREE.BoxGeometry(2.2,.12,.4); const ledge=new THREE.Mesh(ledgeGeo, glass(C.purple,.15)); ledge.position.set(-1.3,1.15,-1.75); scene.add(ledge); const le=edges(ledgeGeo,C.purple,.9); le.position.copy(ledge.position); scene.add(le);
+    // equipment pad: pump, filter, heater as glass blocks with neon edges
+    const block=(geo,c,x,y,z)=>{ const m=new THREE.Mesh(geo, glass(c,.12)); m.position.set(x,y,z); scene.add(m); const e=edges(geo,c,.9); e.position.set(x,y,z); scene.add(e); return {m,e}; };
+    const padGeo=new THREE.BoxGeometry(3.4,.06,1.5); const pad=block(padGeo,0x8d93a8,4.4,.03,-2.6); pad.e.material.opacity=.35;
+    P.pump=block(new THREE.BoxGeometry(.7,.5,.5), C.cyan, 3.3,.3,-2.6);
+    P.rotor=new THREE.Mesh(new THREE.TorusGeometry(.19,.02,8,32), new THREE.MeshBasicMaterial({color:C.cyan})); P.rotor.position.set(3.3,.3,-2.34); scene.add(P.rotor);
+    P.rotor2=new THREE.Mesh(new THREE.BoxGeometry(.32,.03,.03), new THREE.MeshBasicMaterial({color:C.white})); P.rotor2.position.copy(P.rotor.position); scene.add(P.rotor2);
+    P.filter=block(new THREE.CylinderGeometry(.32,.32,.95,24), 0xe1d7b3, 4.35,.53,-2.6);
+    P.heater=block(new THREE.BoxGeometry(.8,.65,.65), C.heat, 5.35,.38,-2.6);
+    P.heaterCore=new THREE.Mesh(new THREE.BoxGeometry(.5,.35,.35), new THREE.MeshBasicMaterial({color:C.heat,transparent:true,opacity:0})); P.heaterCore.position.set(5.35,.38,-2.6); scene.add(P.heaterCore);
+    // pipes with particle streams: suction (skimmer → pump), pump → filter → heater, returns to pool, spa loop, waterfall feed
+    const cvSuck=curve([[1.4,.1,-1.3],[1.4,.1,-2.1],[2.4,.15,-2.6],[2.95,.3,-2.6]]);
+    const cvPad=curve([[3.65,.3,-2.6],[4.0,.5,-2.6],[4.7,.5,-2.6],[4.95,.38,-2.6]]);
+    const cvRet=curve([[5.75,.38,-2.6],[6.1,.3,-2.6],[6.1,.1,-1.4],[3.0,.05,-1.2],[.5,.05,-1.3],[-3.0,.05,-1.0]]);
+    const cvSpa=curve([[6.1,.3,-1.9],[6.1,.6,-.9],[5.2,.6,-.2],[4.9,.55,.0]]);
+    const cvSpaBack=curve([[3.9,.3,1.6],[3.9,.1,2.4],[1.4,.1,2.4],[1.4,.1,-1.2]]);
+    const cvFall=curve([[-3.3,.1,1.4],[-3.9,.1,-.9],[-3.9,.8,-2.0],[-2.4,1.15,-1.75]]);
+    [[cvSuck,C.cyan],[cvPad,C.cyan],[cvRet,C.cyan],[cvSpa,C.green],[cvSpaBack,C.green],[cvFall,C.purple]].forEach(([c,col])=>tube(c,col));
+    P.sSuck=stream(cvSuck,C.cyan,40); P.sPad=stream(cvPad,C.cyan,30); P.sRet=stream(cvRet,C.cyan,90); P.sSpa=stream(cvSpa,C.green,40); P.sSpaBack=stream(cvSpaBack,C.green,50); P.sFall=stream(cvFall,C.purple,50);
+    // waterfall curtain, spillover, jets, bubbles, steam, light cones
+    P.curtain=stream(curve([[0,1.1,-1.7],[0,.6,-1.6],[0,.05,-1.45]]), C.white, 160, .03); P.curtain.position.set(-1.3,0,0); P.curtain.userData.spread=1.0;
+    P.spill=stream(curve([[2.65,.5,.2],[2.55,.3,.2],[2.45,.05,.2]]), C.green, 40, .03); P.spill.userData.spread=.3;
+    P.jets=stream(curve([[0,0,0],[1,0,0]]), 0xdff4ff, 140, .03); P.jets.userData.jets=true;
+    P.bubbles=stream(curve([[0,0,0],[0,1,0]]), C.white, 160, .03); P.bubbles.userData.bubbles=true;
+    P.steam=stream(curve([[5.35,.7,-2.6],[5.4,1.3,-2.6],[5.3,1.9,-2.5]]), 0xffc9a8, 50, .07); P.steam.userData.spread=.3;
+    const cone=(x,z,r)=>{ const c=new THREE.Mesh(new THREE.ConeGeometry(r,1.2,32,1,true), new THREE.MeshBasicMaterial({color:C.cyan,transparent:true,opacity:0,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false})); c.position.set(x,.62,z); scene.add(c); return c; };
+    P.conePool=cone(px,pz,2.4); P.coneSpa=cone(sx,sz,1.0); P.coneSpa.position.y=1.1;
+    P.lightPool=new THREE.PointLight(C.cyan,0,8,1.5); P.lightPool.position.set(px,.5,pz); scene.add(P.lightPool);
+    // floating labels
+    P.lPump=label('Pump<br><b>289 W · 1,800 rpm</b>',3.0,.85,-2.6);
+    P.lHeat=label('Heater<br><b>off · spa set 98°</b>',5.35,1.25,-2.6,'dim');
+    P.lPool=label('Pool<br><b>86°F</b>',px-1.6,.3,pz+1.2);
+    P.lSpa=label('Spa<br><b>89°F</b>',sx+.2,1.0,sz+.9);
+    P.lFall=label('Waterfall<br><b>off</b>',-1.3,1.55,-1.75,'dim');
+    renderer.domElement.addEventListener('pointerdown',()=>ctl.autoRotate=false);
+  }
+  function frame(){ requestAnimationFrame(frame); if(!el.offsetParent) return; if(!built) build(); t+=.016;
+    const running=ST.pool||ST.spa||ST.waterfall||ST.jets||ST.blower; const rpm=running?Math.max(...Object.keys(RPM).filter(k=>ST[k]).map(k=>RPM[k])):0; const watts=rpm?Math.round(287*Math.pow(rpm/1800,3.55)):0; const sp=rpm/3450;
+    P.rotor.rotation.z+=sp*.5; P.rotor2.rotation.z+=sp*.5; P.rotor.material.color.setHex(running?C.cyan:0x445);
+    const flow=lerp(P.water.material.uniforms.uFlow.value, running&&!ST.spa?.4+sp:0, .06); P.water.material.uniforms.uFlow.value=flow; P.spa.material.uniforms.uFlow.value=ST.spa||ST.jets?.8:0;
+    P.water.material.uniforms.uT.value=t; P.spa.material.uniforms.uT.value=t;
+    advance(P.sSuck, running, 1+sp*3); advance(P.sPad, running, 1+sp*3); advance(P.sRet, running&&!ST.spa, 1+sp*3); advance(P.sSpa, ST.spa, 2+sp*3); advance(P.sSpaBack, ST.spa, 2+sp*3); advance(P.sFall, ST.waterfall, 2.5);
+    // curtain: spread particles across the ledge width and fall; spill: thin sheet; jets: arcs in the spa; bubbles: rise in the spa; steam: rise above the heater
+    const spreadAdv=(s,on,speed,w)=>{ s.material.opacity=lerp(s.material.opacity,on?.9:0,.08); const a=s.geometry.attributes.position; for(let i=0;i<s.userData.n;i++){ const u=(t*speed+i*.618)%1; const p=s.userData.curve.getPointAt(u); a.setXYZ(i,p.x+(i/s.userData.n-.5)*w*2,p.y,p.z+Math.sin(i*3.1)*.05);} a.needsUpdate=true; };
+    spreadAdv(P.curtain, ST.waterfall, .9, 1.0); spreadAdv(P.spill, ST.spa, 1.2, .3); spreadAdv(P.steam, ST.heater, .35, .25);
+    { const s=P.jets; s.material.opacity=lerp(s.material.opacity,ST.jets?.9:0,.08); const a=s.geometry.attributes.position; for(let i=0;i<s.userData.n;i++){ const ang=(i%14)/14*Math.PI*2, u=((t*1.4)+i*.37)%1; a.setXYZ(i,3.9+Math.cos(ang)*(1.15-u*.95),.55+Math.sin(u*Math.PI)*.08,.2+Math.sin(ang)*(1.15-u*.95)); } a.needsUpdate=true; }
+    { const s=P.bubbles; s.material.opacity=lerp(s.material.opacity,ST.blower?.9:0,.08); const a=s.geometry.attributes.position; for(let i=0;i<s.userData.n;i++){ const u=((t*.9)+i*.41)%1, r=.15+u*.9; a.setXYZ(i,3.9+Math.cos(i*2.4)*r,.06+u*.5,.2+Math.sin(i*1.7)*r); } a.needsUpdate=true; }
+    P.heaterCore.material.opacity=lerp(P.heaterCore.material.opacity, ST.heater?.55+Math.sin(t*5)*.15:0,.07); P.heater.e.material.color.setHex(ST.heater?C.heat:0x6e727a);
+    const glow=lerp(P.water.material.uniforms.uGlow.value, ST.lights?1:0, .06); P.water.material.uniforms.uGlow.value=glow; P.spa.material.uniforms.uGlow.value=glow; P.conePool.material.opacity=glow*.08; P.coneSpa.material.opacity=glow*.1; P.lightPool.intensity=glow*3;
+    P.spaRing.material.color.setHex(ST.spa||ST.jets||ST.blower?C.green:0x3a5a4a);
+    P.lPump.innerHTML=`Pump<br><b>${watts.toLocaleString()} W · ${rpm.toLocaleString()} rpm</b>`; P.lPump.classList.toggle('dim',!running);
+    P.lHeat.innerHTML=`Heater<br><b>${ST.heater?'heating spa → 98°':'off · spa set 98°'}</b>`; P.lHeat.classList.toggle('dim',!ST.heater);
+    P.lFall.innerHTML=`Waterfall<br><b>${ST.waterfall?'on · ~85 gpm':'off'}</b>`; P.lFall.classList.toggle('dim',!ST.waterfall);
+    P.lSpa.innerHTML=`Spa<br><b>89°F${ST.jets?' · jets':''}${ST.blower?' · air':''}</b>`;
+    document.getElementById('poolHud').innerHTML=`${running?Object.keys(RPM).filter(k=>ST[k]).map(k=>k==='blower'?'Air blower':k[0].toUpperCase()+k.slice(1)).join(' + '):'Pump off'} · ${rpm.toLocaleString()} RPM · ${watts.toLocaleString()} W${ST.heater?' · heater':''}${ST.lights?' · lights':''}`;
+    ctl.update(); renderer.render(scene,cam); labels.render(scene,cam); }
+  requestAnimationFrame(frame);
+  document.getElementById('circ').onclick=e=>{ const b=e.target.closest('button'); if(!b) return; ST[b.dataset.c]=!ST[b.dataset.c]; b.classList.toggle('on',ST[b.dataset.c]); };
+})();
+
+/* ---------- sub-navigation ---------- */
+document.getElementById('seg').onclick = e => { const b = e.target.closest('button'); if (!b) return; document.querySelectorAll('#seg button').forEach(x => x.classList.toggle('on', x===b)); document.querySelectorAll('.panel').forEach(p => p.classList.toggle('on', p.id === 'p-'+b.dataset.p)); };
+
+/* ---------- 24-h schedule dial: arcs morph between now and recommended ---------- */
+(function dial(){
+  const svg=document.getElementById('dial24'), cx=160, cy=160; const A=h=>h/24*Math.PI*2+Math.PI/2; const pt=(r,a)=>[cx+r*Math.cos(a),cy+r*Math.sin(a)];
+  const arc=(r,h0,h1)=>{ const [x0,y0]=pt(r,A(h0)),[x1,y1]=pt(r,A(h1)); return `M${x0} ${y0} A${r} ${r} 0 ${h1-h0>12?1:0} 1 ${x1} ${y1}`; };
+  const NOW=[{h0:0,h1:5,rpm:3400,c:'#c4a2ff',n:'Waterfall'},{h0:8,h1:12,rpm:1800,c:'#6cc4ff',n:'Pool'},{h0:12,h1:18,rpm:3000,c:'#ff7a66',n:'High Speed'},{h0:20,h1:22,rpm:1800,c:'#6cc4ff',n:'Pool'}];
+  const REC=[{h0:10,h1:19,rpm:1500,c:'#6cc4ff',n:'Filter'},{h0:14,h1:15,rpm:2400,c:'#ff7a66',n:'Skim boost'}];
+  let o=`<defs><filter id="gl"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <linearGradient id="sun" x1="0" x2="1"><stop offset="0" stop-color="#ffc15e" stop-opacity=".1"/><stop offset=".5" stop-color="#ffc15e" stop-opacity=".9"/><stop offset="1" stop-color="#ffc15e" stop-opacity=".1"/></linearGradient></defs>`;
+  for(let h=0;h<24;h++){ const [x0,y0]=pt(140,A(h)),[x1,y1]=pt(h%6?144:150,A(h)); o+=`<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="rgba(255,255,255,${h%6?.12:.35})" stroke-width="1"/>`; }
+  [['12a',0],['6a',6],['12p',12],['6p',18]].forEach(([l,h])=>{ const [x,y]=pt(128,A(h)); o+=`<text x="${x}" y="${y+3.5}" text-anchor="middle" fill="rgba(242,244,248,.5)" font-size="10" font-family="JetBrains Mono">${l}</text>`; });
+  o+=`<path d="${arc(150,7,19)}" fill="none" stroke="url(#sun)" stroke-width="5" stroke-linecap="round"/>`;
+  o+=`<circle cx="${cx}" cy="${cy}" r="112" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="18"/><circle cx="${cx}" cy="${cy}" r="88" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="18"/>`;
+  const seg=(r,s,id)=>`<path id="${id}" d="${arc(r,s.h0,s.h1)}" fill="none" stroke="${s.c}" stroke-width="${8+s.rpm/3450*12}" stroke-linecap="round" opacity="0" filter="url(#gl)"><title>${s.n} · ${s.rpm.toLocaleString()} RPM · ${s.h0}–${s.h1}h</title></path>`;
+  NOW.forEach((x,i)=>o+=seg(112,x,'n'+i)); REC.forEach((x,i)=>o+=seg(88,x,'r'+i));
+  // now marker
+  const [mx,my]=pt(104,A(17.33)),[mx2,my2]=pt(158,A(17.33)); o+=`<line x1="${mx}" y1="${my}" x2="${mx2}" y2="${my2}" stroke="#fff" stroke-opacity=".6" stroke-width="1.5"/><circle cx="${mx2}" cy="${my2}" r="3" fill="#fff"/>`;
+  svg.innerHTML=o;
+  const set=(m)=>{ NOW.forEach((_,i)=>svg.getElementById('n'+i).style.opacity = m==='rec'?0:m==='both'?.55:.95); REC.forEach((_,i)=>svg.getElementById('r'+i).style.opacity = m==='now'?0:.95);
+    document.getElementById('dcLbl').textContent = m==='now'?'Now':m==='rec'?'Recommended':'Now → Recommended';
+    document.getElementById('dcKwh').innerHTML = m==='now'?'26 <i>kWh/day</i>':m==='rec'?'2 <i>kWh/day</i>':'26 → 2 <i>kWh/day</i>';
+    document.getElementById('dcSub').textContent = m==='now'?'17 h · $84/mo · 45% on solar':m==='rec'?'10 h · $7/mo · 100% on solar':'outer: now · inner: recommended';
+    document.getElementById('nowOnly').hidden = m!=='now'; document.getElementById('recOnly').hidden = m==='now'; };
+  svg.querySelectorAll('path[id]').forEach(p=>p.style.transition='opacity .5s');
+  set('rec');
+  document.getElementById('schMode').onclick=e=>{ const b=e.target.closest('button'); if(!b) return; document.querySelectorAll('#schMode button').forEach(x=>x.classList.toggle('on',x===b)); set(b.dataset.m); };
+  const rs=document.getElementById('reasons'), dots=document.getElementById('dots'); dots.innerHTML=[...rs.children].map((_,i)=>`<i class="${i?'':'on'}"></i>`).join('');
+  rs.addEventListener('scroll',()=>{ const i=Math.round(rs.scrollLeft/(rs.children[0].offsetWidth+10)); [...dots.children].forEach((d,k)=>d.classList.toggle('on',k===i)); });
+})();
+
+/* ---------- autopilot: signal rings + next 7 days ---------- */
+(function auto(){
+  const SIG=[['86°','water',.86,'#6cc4ff'],['71','sun kWh',.79,'#ffc15e'],['97°','high',.92,'#ff9e66'],['60%','rain',.6,'#c4a2ff'],['3/7','use days',.43,'#4ef0a6'],['low','pollen',.15,'#8d93a8']];
+  document.getElementById('signals').innerHTML=SIG.map(([v,l,f,c])=>{ const C=2*Math.PI*17; return `<div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="${c}" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="${C*f} ${C}" transform="rotate(-90 22 22)"/></svg><b>${v}</b><small>${l}</small></div>`; }).join('');
+  const days=[['Wed',9,1,7.1],['Thu',8,0,4.2],['Fri',10,1,6.8],['Sat',10,1,7.0],['Sun',9,1,7.3],['Mon',9,0,6.9],['Tue',9,1,7.2]]; const X=i=>12+i*42, Y=v=>88-v/8*38;
+  let o=`<defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffc15e" stop-opacity=".45"/><stop offset="1" stop-color="#ffc15e" stop-opacity="0"/></linearGradient></defs>`;
+  const pts=days.map((d,i)=>`${X(i)+15},${Y(d[3])}`); o+=`<path d="M${X(0)+15},84 L${pts.join(' L')} L${X(6)+15},84 Z" fill="url(#sg)"/><polyline points="${pts.join(' ')}" fill="none" stroke="#ffc15e" stroke-opacity=".7" stroke-width="1.5"/>`;
+  days.forEach(([d,h,b,sun],i)=>{ const x=X(i), hh=h/12*56; const tomorrow=i===0; o+=`${tomorrow?`<rect x="${x-2}" y="4" width="34" height="102" rx="8" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.1)"/>`:''}<rect x="${x+7}" y="${84-hh}" width="16" height="${hh}" rx="4" fill="#6cc4ff" opacity="${tomorrow?1:.75}"/>${b?`<circle cx="${x+15}" cy="${84-hh-6}" r="3" fill="#ff7a66"/>`:''}<text x="${x+15}" y="${84-hh-(b?14:6)}" text-anchor="middle" fill="#f2f4f8" font-size="9.5" font-family="JetBrains Mono">${h}h</text><text x="${x+15}" y="100" text-anchor="middle" fill="rgba(242,244,248,${tomorrow?.9:.5})" font-size="9.5" font-family="Manrope">${d}</text>`; });
+  o+=`<text x="${X(1)+15}" y="${84-8/12*56-18}" text-anchor="middle" fill="#c4a2ff" font-size="9" font-family="Manrope">rain</text>`;
+  document.getElementById('wk').innerHTML=o; })();
+document.getElementById('auto').onclick = e => { const b=e.target.closest('button'); if(!b) return; document.querySelectorAll('#auto button').forEach(x=>x.classList.toggle('on',x===b)); };
+
+/* ---------- AC scatter ---------- */
+(function ac(){ let s=''; const pts=[]; for(let i=0;i<40;i++){ const t=82+Math.random()*16, u=30+(t-80)*2.9+(Math.random()-.5)*14; pts.push([t,u]); }
+  pts.forEach(([t,u],i)=>{ const x=20+(t-80)/20*280, y=110-(u-20)/70*95; const out = i===7||i===21; s+=`<circle cx="${x}" cy="${y}" r="3.2" fill="${out?'#ff7a66':'rgba(108,196,255,.75)'}"/>`; });
+  s+=`<line x1="20" y1="${110-(30-20)/70*95}" x2="300" y2="${110-(30+20*2.9-20)/70*95}" stroke="rgba(255,255,255,.5)" stroke-dasharray="3 3"/>`;
+  s+=`<text x="20" y="118" fill="rgba(242,244,248,.4)" font-size="8.5" font-family="JetBrains Mono">80°</text><text x="300" y="118" text-anchor="end" fill="rgba(242,244,248,.4)" font-size="8.5" font-family="JetBrains Mono">100°</text>`;
+  document.getElementById('acSvg').innerHTML=s; })();
+</script>
+</body>
+</html>

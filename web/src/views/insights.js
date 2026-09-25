@@ -36,6 +36,8 @@ export function initPlanner(S) {
     $('aPwS').textContent = q.powerwalls ? `${2 + q.powerwalls} Powerwalls · ${27 + q.powerwalls * 13.5} kWh · roughly $${(q.powerwalls * 11.5).toFixed(1)}k` : 'Today: 2 × Powerwall 2 · 27 kWh';
     const B = r.baseline, U = r.upgraded, k = v => v >= 1000 ? (v / 1000).toFixed(1) + ' MWh' : Math.round(v) + ' kWh';
     const row = (label, a, b, f, better) => { const d = b - a, cls = Math.abs(d) < 1e-6 ? '' : (better === 'up' ? d > 0 : d < 0) ? 'up' : 'dn'; return `<span>${label}</span><span class="n">${f(a)}</span><b class="${cls}">${f(b)}</b>`; };
+    $('planTiles').innerHTML = `<div class="stat"><small>Covered by solar + battery</small><b class="${U.selfPowered > B.selfPowered ? 'up' : ''}">${B.selfPowered}% → ${U.selfPowered}%</b></div><div class="stat"><small>PEC energy cost / yr</small><b class="${U.netCost < B.netCost ? 'up' : ''}">${money(B.netCost)} → ${money(U.netCost)}</b></div>
+      <div class="stat"><small>Payback</small><b>${r.paybackYears ? r.paybackYears + ' yrs' : r.cost ? 'never' : '—'}</b></div><div class="stat"><small>Days batteries full</small><b class="${U.batteryFullDays > B.batteryFullDays ? 'up' : ''}">${B.batteryFullDays} → ${U.batteryFullDays}</b></div>`;
     $('cmp').innerHTML = `<span class="hd">Last 12 months</span><span class="hd">As built</span><span class="hd">With it</span>` +
       row('Solar produced', B.solarKwh, U.solarKwh, k, 'up') + row('Covered by solar + battery', B.selfPowered, U.selfPowered, v => v + '%', 'up') +
       row('Bought from PEC', B.importKwh, U.importKwh, k, 'dn') + row('Sent to PEC', B.exportKwh, U.exportKwh, k, 'up') +
@@ -62,6 +64,7 @@ export function drawAC(S) {
   if (pts.length < 10) return;
   const n = pts.length, mx = pts.reduce((a, p) => a + p.t, 0) / n, my = pts.reduce((a, p) => a + p.u, 0) / n;
   const slope = pts.reduce((a, p) => a + (p.t - mx) * (p.u - my), 0) / pts.reduce((a, p) => a + (p.t - mx) ** 2, 0), icpt = my - slope * mx;
+  S.acSlope = slope;
   const tMin = Math.min(...pts.map(p => p.t)) - 2, tMax = Math.max(...pts.map(p => p.t)) + 2, uMin = Math.min(...pts.map(p => p.u)) - 5, uMax = Math.max(...pts.map(p => p.u)) + 5;
   const X = t => 30 + (t - tMin) / (tMax - tMin) * 272, Y = u => 140 - (u - uMin) / (uMax - uMin) * 128;
   let o = ''; [uMin, (uMin + uMax) / 2, uMax].forEach(u => o += `<line x1="30" x2="302" y1="${Y(u)}" y2="${Y(u)}" stroke="rgba(255,255,255,.06)"/>` + svgText(0, Y(u) + 3, Math.round(u), { size: 8.5 }));

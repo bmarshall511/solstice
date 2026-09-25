@@ -334,6 +334,28 @@ app.post('/api/appliances/pool/apply', wrap(async (req, res) => {
   if (!d.snapshot) return res.status(409).json({ error: d.error ?? 'ScreenLogic is not linked' });
   res.json(await applyPlan(id, d.plan, d.snapshot, d.settings));
 }));
+app.post('/api/appliances/pool/apply-tomorrow', wrap(async (req, res) => {
+  const id = site(req), d = await poolDetail(id, await settingsFor(req), await rateFor(id), { fresh: true });
+  if (!d.snapshot) return res.status(409).json({ error: d.error ?? 'ScreenLogic is not linked' });
+  if (!d.pending) return res.status(409).json({ error: 'Nothing is waiting to be applied' });
+  const r = await applyPlan(id, d.pending.plan, d.snapshot, d.settings);
+  await kv.set(`${id}:pool:pending`, null as any);
+  res.json(r);
+}));
+app.post('/api/appliances/pool/autopilot', express.json(), wrap(async (req, res) => {
+  const mode = String(req.body?.mode ?? ''); if (!['off', 'suggest', 'auto'].includes(mode)) return res.status(400).json({ error: 'mode must be off, suggest or auto' });
+  const cur = (await settingsFor(req)).pool ?? {};
+  if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ pool: { ...cur, autopilot: mode } })]);
+  else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), pool: { ...cur, autopilot: mode } });
+  res.json({ ok: true, mode });
+}));
+/** Nightly (8:15 PM Central): Autopilot re-plans tomorrow for every site; Auto mode writes it, Suggest stores it. */
+app.get('/api/cron/pool', wrap(async (req, res) => {
+  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'unauthorized' });
+  const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL'), out: Record<string, unknown> = {};
+  for (const s of sites) { const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; out[s.id] = await poolDetail(s.id, settings, await rateFor(s.id), { fresh: true, act: true }).then(d => d.autopilot).catch(e => ({ error: e.message })); }
+  res.json(out);
+}));
 app.post('/api/appliances/pool/restore', wrap(async (req, res) => { await restorePrevious(site(req), await readPool()); res.json({ ok: true }); }));
 
 /* ---------- CSV export ---------- */

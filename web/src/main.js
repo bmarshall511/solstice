@@ -12,7 +12,8 @@ import { initHistory, drawHistoryChart, landscapeData, drawSocHeat, drawRecords,
 import { initPanels, drawPerformance, roofHud } from './views/panels.js';
 import { drawAlerts, initPlanner, drawAC, drawOvernight, drawHealth } from './views/insights.js';
 import { drawSettings, openRawData } from './views/settings.js';
-import { initAppliances } from './views/appliances.js';
+import { initAppliances, poolTwin } from './views/appliances.js';
+import { createDayRing } from './scenes/dayring.js';
 
 /** All app state lives here; views read from it. */
 const S = { calm: matchMedia('(prefers-reduced-motion: reduce)').matches, preview: false };
@@ -22,6 +23,7 @@ const isOn = id => $(id).classList.contains('on');
 /* ---------------- loading ---------------- */
 async function loadNow() {
   S.now = await api.now();
+  api.day(localDate()).then(d => { S.today = d; safe(drawDayRing)(); }).catch(() => {});
   if (!S.live || (S.now.reading && S.now.reading.ts >= S.live.ts)) S.live = S.now.reading;
   updateOutage();
   safe(renderStatic)(S);
@@ -58,7 +60,7 @@ async function loadWeather() {
   S.gtiToday = soFar;
   S.highs = { ...(S.highsArchive ?? {}), ...Object.fromEntries(w.daily.time.map((d, i) => [d, w.daily.temperature_2m_max[i]])) };
   computeModel();
-  safe(renderWeather)(S); safe(renderStatic)(S);
+  safe(renderWeather)(S); safe(renderStatic)(S); safe(drawDayRing)();
   [drawPerformance, drawAC, drawAlerts, drawSettings].forEach(f => safe(f)(S));
   const ld = landscapeData(S); if (ld) land.setData(ld);
 }
@@ -129,6 +131,40 @@ const house = createHomeView($('house'), 'flow');
 const aurora = createAurora($('aurora')), orb = createOrb($('orb')), land = createLandscape($('land'), $('landTip')), roof = createHomeView($('roof'), 'sun');
 buildFlow(); initHistory(S); initPanels(S); initPlanner(S); initAppliances(S);
 
+/* ---------------- Insights: four panels + the Day Ring ---------------- */
+let insPanel = 'today';
+$('insSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; insPanel = b.dataset.p; document.querySelectorAll('#insSeg button').forEach(x => x.classList.toggle('on', x === b)); document.querySelectorAll('#v-ins .panel').forEach(p => p.classList.toggle('on', p.id === 'ip-' + insPanel)); poolTwin()?.resize(); dayRing.resize(); };
+const dayRing = createDayRing($('dayRing'), (h, d) => {
+  const ro = $('drRead'); if (!d) return;
+  const sum = a => a.reduce((x, y) => x + y, 0), bd = (p, a, r) => `<div class="bd"><span><i style="background:#6cc4ff"></i>${p}</span><span><i style="background:#ff9e66"></i>${a}</span><span><i style="background:#8d93a8"></i>${r}</span></div>`;
+  if (h == null) ro.innerHTML = `<b>${Math.round(sum(d.rest) + sum(d.ac) + sum(d.pool))} kWh</b><small>${d.label}</small>${bd(Math.round(sum(d.pool)), Math.round(sum(d.ac)), Math.round(sum(d.rest)))}`;
+  else ro.innerHTML = `<b>${(d.rest[h] + d.ac[h] + d.pool[h]).toFixed(1)} kWh</b><small>${h % 12 || 12}${h < 12 ? ' AM' : ' PM'} · solar ${d.solar[h].toFixed(1)} kWh</small>${bd(d.pool[h].toFixed(1), d.ac[h].toFixed(1), d.rest[h].toFixed(1))}`;
+});
+S.ringMode = 'now'; S.onPool = () => safe(drawDayRing)();
+$('drModes').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.ringMode = b.dataset.m; document.querySelectorAll('#drModes button').forEach(x => x.classList.toggle('on', x === b)); drawDayRing(); };
+/** Today's hourly loads: pool from the schedule model, AC from the heat model, the rest from Tesla's home load. */
+export function drawDayRing() {
+  const day = S.today; if (!day || !day.buckets?.length) return;
+  const home = Array(24).fill(0), solar = Array(24).fill(0);
+  day.buckets.forEach(b => { const h = Math.floor(b.t); if (h < 24) { home[h] += b.home / 12; solar[h] += b.solar / 12; } });
+  const p = S.pool, curve = p?.model?.curve, W = r => r && curve ? curve.reduce((a, c) => Math.abs(c.rpm - r) < Math.abs(a.rpm - r) ? c : a).watts : 0;
+  const hourly = src => Array.from({ length: 24 }, (_, h) => src?.[h] ? W(src[h].rpm) * src[h].frac / 1000 : 0);
+  const poolNow = hourly(p?.current?.hourly), pool = S.ringMode === 'pool' ? hourly(p?.plan?.hourly) : poolNow;
+  const high = S.highs?.[localDate()], slope = S.acSlope ?? 2.5, acDay = high != null ? Math.max(0, (high - 80) * slope) : 0;
+  const w = Array.from({ length: 24 }, (_, h) => Math.max(0, Math.sin((h - 8) / 15 * Math.PI)) ** 1.5), ws = w.reduce((a, b) => a + b, 0) || 1;
+  const ac = w.map(v => Math.min(acDay * v / ws, Math.max(0, home[w.indexOf(v)] - poolNow[w.indexOf(v)])));
+  const rest = home.map((v, h) => Math.max(0, v - ac[h] - poolNow[h])); // the house minus the pump's real share, whatever mode is shown
+  const sol = S.ringMode === 'panels' ? solar.map(v => v * (1 + 8 * 400 / 9600)) : solar;
+  const label = S.ringMode === 'now' ? 'today so far' : S.ringMode === 'pool' ? 'with the smarter pool schedule' : 'with 8 more panels';
+  dayRing.setData({ rest, ac, pool, solar: sol, label }); dayRing.setHour(localHour());
+  const tot = home.reduce((a, b) => a + b, 0), pk = pool.reduce((a, b) => a + b, 0);
+  $('insToday').textContent = Math.round(tot);
+  $('drTxt').innerHTML = S.ringMode === 'now' ? (tot ? `The pool pump is about <b style="color:var(--text)">${Math.round(pk / tot * 100)}%</b> of today so far. AC is estimated from your heat model (about ${slope.toFixed(1)} kWh per degree over 80°F) until Nest is linked; everything else is what's left of Tesla's home load.` : 'Waiting for today’s data.')
+    : S.ringMode === 'pool' ? `With the smarter schedule the pump moves under the solar curve and drops to about <b style="color:var(--text)">${Math.round(pk)} kWh</b> a day, so nights are just the house idling and the Powerwalls reach the evening fuller.`
+    : `Eight more panels lift the gold ribbon by a third. Midday surplus covers more of the AC ramp, and the planner says the batteries would fill on far more days.`;
+}
+$('planMore').onclick = () => { $('cmp').hidden = !$('cmp').hidden; $('planFine').hidden = $('cmp').hidden; };
+
 let HIDDEN = false; document.addEventListener('visibilitychange', () => HIDDEN = document.hidden);
 let last = performance.now(), T = 0, tick = 0, hudTick = 0;
 function frame(now) {
@@ -145,6 +181,8 @@ function frame(now) {
     house.render({ r, cloud: i >= 0 ? S.wx.hourly.cloud_cover[i] / 100 : .1, code: i >= 0 ? S.wx.hourly.weather_code[i] : 0, out: S.outageActive, peakKw: S.peakKw ?? 9, dt, t: T, calm: S.calm });
   }
   if (isOn('v-hist')) land.render(dt, S.calm);
+  if (isOn('v-ins') && insPanel === 'today') dayRing.render(dt, S.calm);
+  if (isOn('v-ins') && insPanel === 'appl') poolTwin()?.render(dt, S.calm);
   if (isOn('v-roof')) {
     const d = new Date(), dayStart = Date.parse(`${localDate(d)}T00:00:00${new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', timeZoneName: 'longOffset' }).formatToParts(d).find(p => p.type === 'timeZoneName').value.replace('GMT', '') || 'Z'}`);
     hudTick += dt;

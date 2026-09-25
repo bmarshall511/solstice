@@ -224,37 +224,85 @@
 
       <!-- ================= INSIGHTS ================= -->
       <section class="view" id="v-ins">
-        <div class="hello"><div><h3>Insights</h3><p>From your real data</p></div></div>
-        <div id="alerts"></div>
-        <div class="sect">Appliances</div>
-        <div class="apps" id="applStrip"></div>
-        <div class="card" id="poolLive"><div class="h"><b>Pool pump</b><span class="badge">connecting…</span></div></div>
-        <div class="card" id="poolNow" hidden></div>
-        <div class="card" id="poolPlan" hidden></div>
-        <div class="card" id="poolSeason" hidden></div>
-        <div class="card" id="planner">
-          <div class="h"><b>What if you added…</b><span>replays your last 12 months</span></div>
-          <div class="slider"><label>Solar panels <b id="aPv">+0</b></label><input type="range" id="rPv" min="0" max="20" step="2" value="8"><small id="aPvS">—</small></div>
-          <div class="slider"><label>Powerwalls <b id="aPw">+0</b></label><input type="range" id="rPw" min="0" max="2" step="1" value="0"><small id="aPwS">—</small></div>
-          <div class="slider"><label>New daily usage <b id="aUse">+0 kWh</b></label><input type="range" id="rUse" min="0" max="30" step="2" value="0"><small>EV, pool heater, heat pump… (added 5–11 PM)</small></div>
-          <div class="cmp" id="cmp"></div>
-          <div class="rec" id="planRec">Calculating…</div>
-          <div class="rec" id="sysPay"></div>
-          <p class="fine" id="planFine"></p>
+        <div class="hello"><div><h3>Insights</h3><p>From your real data</p></div><div class="wx"><b id="insToday">—</b>kWh today</div></div>
+        <div class="seg" id="insSeg"><button class="on" data-p="today">Today</button><button data-p="appl">Appliances</button><button data-p="plan">Planner</button><button data-p="home">Home</button></div>
+
+        <div class="panel on" id="ip-today">
+          <div class="card">
+            <div class="h"><b>Your day in loads</b><span>drag to spin · tap an hour</span></div>
+            <div class="ring3d" id="dayRing"><div class="readout" id="drRead"><b>—</b><small>loading…</small></div><div class="hint" id="drHint"></div></div>
+            <div class="modes" id="drModes"><button class="on" data-m="now">As built</button><button data-m="pool">Smarter pool</button><button data-m="panels">+8 panels</button></div>
+            <div class="legend" style="margin-top:10px"><span><i style="background:#6cc4ff"></i>Pool pump</span><span><i style="background:#ff9e66"></i>AC (est.)</span><span><i style="background:#8d93a8"></i>Everything else</span><span><i style="background:#ffc15e"></i>Solar</span></div>
+            <p id="drTxt">—</p>
+          </div>
+          <div class="sect">Worth knowing</div>
+          <div class="strip" id="alerts"></div>
         </div>
-        <div class="card">
-          <div class="h"><b>Heat &amp; your AC</b><span>every 80°F+ day · real highs</span></div>
-          <svg class="mini" id="acChart" viewBox="0 0 310 170"></svg>
-          <p id="acTxt">—</p>
+
+        <div class="panel" id="ip-appl">
+          <div class="apps" id="applStrip"></div>
+          <div class="card" id="poolLive"><div class="h"><b>Pool &amp; spa · live</b><span class="badge" id="poolBadge">connecting…</span></div>
+            <div class="ring3d pool3d" id="poolTwin"><div class="hud" id="poolHud">—</div></div>
+            <div class="circ" id="poolCirc"></div>
+            <div class="two" id="poolStats"></div>
+            <p class="fine" id="poolNote"></p>
+          </div>
+          <div class="card sched" id="poolSched" hidden>
+            <div class="h"><b>Pump schedule</b><span class="seg2" id="schMode"><button data-m="now">Now</button><button data-m="rec" class="on">Recommended</button><button data-m="both">Both</button></span></div>
+            <div class="dialwrap"><svg viewBox="0 0 320 320" id="dial24"></svg><div class="dialc"><small id="dcLbl">—</small><b id="dcKwh">—</b><span id="dcSub"></span></div></div>
+            <div id="schNow" hidden></div>
+            <div id="schRec">
+              <div class="deltas" id="schDeltas"></div>
+              <div class="reasons" id="schWhy"></div><div class="dots" id="schDots"></div>
+              <div class="kv" id="schSteps" style="display:none"></div>
+              <div id="schActions"></div>
+            </div>
+          </div>
+          <div class="card auto" id="poolAuto" hidden>
+            <div class="h"><b>Autopilot</b><span class="seg2" id="autoMode"><button data-m="off">Off</button><button data-m="suggest">Suggest</button><button data-m="auto">Auto</button></span></div>
+            <div class="status" id="autoStatus"></div>
+            <div class="signals" id="autoSignals"></div>
+            <div class="wkhead"><span>Next 7 days</span><b id="autoTomorrow"></b></div>
+            <svg class="mini" viewBox="0 0 310 110" id="autoWeek"></svg>
+            <div class="legend" style="justify-content:flex-start"><span><i style="background:#6cc4ff"></i>Filter hours</span><span><i style="background:#ff7a66"></i>Skim boost</span><span><i style="background:rgba(255,193,94,.6)"></i>Sun forecast</span></div>
+            <div id="autoPending"></div>
+            <div class="chips"><span>4–12 h/day</span><span>1,200–1,800 RPM</span><span>under the solar curve</span><span>one change a day</span><span>+1 h after rain</span><span>+2 h heat wave</span><span>+1 h heavy use</span><span>−1 h below 70°F</span><span>freeze: hands off</span></div>
+            <div class="tline" id="autoLog"></div>
+          </div>
+          <div class="season" id="poolSeason" hidden></div>
+          <p class="fine" id="poolSeasonNote" hidden>kWh per day by season, the baseline Autopilot adjusts from each day’s data.</p>
         </div>
-        <div class="card">
-          <div class="h"><b>Overnight baseline</b><span>1–5 AM average</span></div>
-          <svg class="mini" id="nightChart" viewBox="0 0 310 110"></svg>
-          <p id="nightTxt">—</p>
+
+        <div class="panel" id="ip-plan">
+          <div class="card" id="planner">
+            <div class="h"><b>What if you added…</b><span>the Day Ring morphs with these</span></div>
+            <div class="slider"><label>Solar panels <b id="aPv">+0</b></label><input type="range" id="rPv" min="0" max="20" step="2" value="8"><small id="aPvS">—</small></div>
+            <div class="slider"><label>Powerwalls <b id="aPw">+0</b></label><input type="range" id="rPw" min="0" max="2" step="1" value="0"><small id="aPwS">—</small></div>
+            <div class="slider"><label>New daily usage <b id="aUse">+0 kWh</b></label><input type="range" id="rUse" min="0" max="30" step="2" value="0"><small>EV, pool heater, heat pump… (added 5–11 PM)</small></div>
+            <div class="tiles" id="planTiles"></div>
+            <div class="rec" id="planRec">Calculating…</div>
+            <button class="link" id="planMore">Full comparison table</button>
+            <div class="cmp" id="cmp" hidden></div>
+            <p class="fine" id="planFine" hidden></p>
+          </div>
+          <div class="card"><div class="h"><b>Your system so far</b><span>installed Dec 2020</span></div><div class="rec" id="sysPay" style="margin-top:10px"></div></div>
         </div>
-        <div class="card">
-          <div class="h"><b>Data health</b><span class="badge g" id="dhBadge">—</span></div>
-          <div id="dhList" style="margin-top:8px"></div>
+
+        <div class="panel" id="ip-home">
+          <div class="card">
+            <div class="h"><b>Heat &amp; your AC</b><span>every 80°F+ day · real highs</span></div>
+            <svg class="mini" id="acChart" viewBox="0 0 310 170"></svg>
+            <p id="acTxt">—</p>
+          </div>
+          <div class="card">
+            <div class="h"><b>Overnight baseline</b><span>1–5 AM average</span></div>
+            <svg class="mini" id="nightChart" viewBox="0 0 310 110"></svg>
+            <p id="nightTxt">—</p>
+          </div>
+          <div class="card">
+            <div class="h"><b>Data health</b><span class="badge g" id="dhBadge">—</span></div>
+            <div id="dhList" style="margin-top:8px"></div>
+          </div>
         </div>
       </section>
 
