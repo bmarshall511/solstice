@@ -18,6 +18,8 @@ export { DEFAULTS as POOL_DEFAULTS };
 const UV_W = 60;
 // Typical pool-water temperature by month for central Texas (°F): used only for the season table; the live plan uses the real reading.
 const WATER_BY_MONTH = [55, 57, 62, 70, 78, 84, 88, 88, 84, 75, 65, 58];
+/** Meteorological season of a 0-based month: 0 Dec–Feb, 1 Mar–May, 2 Jun–Aug, 3 Sep–Nov. */
+const seasonOf = (m: number) => Math.floor((m + 1) % 12 / 3);
 export const FREEZE_CIRCUIT = 132; // ScreenLogic's virtual "freeze protection" pump circuit
 
 /* ---------- power and flow models ---------- */
@@ -87,8 +89,8 @@ export function planFor(o: { waterTemp: number; solarKw: number[]; settings: Poo
   const turnoverH = s.gallons * turnovers / (gpmAt(s.filterRpm, s.designGpm) * 60);
   const hours = o.force?.hours ?? Math.min(12, Math.max(4, Math.round(Math.max(turnoverH, t / 10))));
   const boostH = o.force?.boost ?? ((s.uv ? t >= 85 : t >= 70) ? 1 : 0); // with UV sanitizing the flow, long low runs matter more than boosts
-  // put the run where the sun is: the contiguous window with the most solar
-  let best = 8, bestSum = -1;
+  // put the run where the sun is: the contiguous window with the most solar; with no solar data, the default 08:00 start
+  let best = 8, bestSum = 0;
   for (let st = 5; st + hours <= 20; st++) { const sum = o.solarKw.slice(st, st + hours).reduce((a, v) => a + v, 0); if (sum > bestSum) { bestSum = sum; best = st; } }
   const start = best, stop = best + hours;
   const boostAt = boostH ? o.solarKw.slice(start, stop).reduce((bi, v, i, arr) => v > arr[bi] ? i : bi, 0) + start : null;
@@ -183,29 +185,30 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   if (configured() && (opts.fresh || !snap || Date.now() - snap.at > 60_000)) {
     try { snap = await readPool(); await recordReading(siteId, snap); } catch (e: any) { error = e.message; }
   }
-  const W = powerModel(await measuredPoints(siteId)), solarKw = await solarProfile(siteId), month = new Date().getMonth();
+  const W = powerModel(await measuredPoints(siteId)), solarKw = await solarProfile(siteId), month = Number(localDay().slice(5, 7)) - 1; // Chicago month, not the host's
   const names = new Map((snap?.circuits ?? []).map(c => [c.id, c.name]));
   const { speeds, schedules: pumpSched } = pumpSchedules(snap);
   const current = pumpSched.map(s => ({ ...s, rpm: speeds.get(s.circuitId) ?? 0, name: names.get(s.circuitId) ?? `Circuit ${s.circuitId}` }));
   const prof = hourlyRpm(current, speeds), kwh = dayKwh(prof, W) + (settings.uv ? hoursOn(prof) * UV_W / 1000 : 0);
   // the other circuits (blower, lights) and the UV lamp: integrated from readings taken while the app was open (gaps capped at 10 min)
   const rd = await q<{ ts: string; hour: number; running: boolean; circuits: number[] }>(`SELECT ts::text, hour::int, running, circuits FROM pool_readings WHERE site_id = $1 AND day = $2 ORDER BY ts`, [siteId, localDay()]);
-  const extraHourly = Array(24).fill(0); let extraKwh = 0;
-  for (let i = 1; i < rd.length; i++) { const dtH = Math.min(600_000, Number(rd[i].ts) - Number(rd[i - 1].ts)) / 3600_000; const w = (rd[i - 1].circuits ?? []).reduce((a, c) => a + (settings.loads[String(c)] ?? 0), 0) + (rd[i - 1].running && settings.uv ? UV_W : 0); extraHourly[rd[i - 1].hour] += w * dtH / 1000; extraKwh += w * dtH / 1000; }
+  const extraHourly = Array(24).fill(0); let extraKwh = 0, readUvKwh = 0;
+  for (let i = 1; i < rd.length; i++) { const dtH = Math.min(600_000, Number(rd[i].ts) - Number(rd[i - 1].ts)) / 3600_000, uvW = rd[i - 1].running && settings.uv ? UV_W : 0; const w = (rd[i - 1].circuits ?? []).reduce((a, c) => a + (settings.loads[String(c)] ?? 0), 0) + uvW; extraHourly[rd[i - 1].hour] += w * dtH / 1000; extraKwh += w * dtH / 1000; readUvKwh += uvW * dtH / 1000; }
   const extraNowW = snap ? snap.circuits.filter(c => c.on).reduce((a, c) => a + (settings.loads[String(c.id)] ?? 0), 0) + (snap.pump?.running && settings.uv ? UV_W : 0) : 0;
-  const lightH = await q<{ h: number }>(`SELECT COUNT(*)::int h FROM pool_readings WHERE site_id = $1 AND day >= $2 AND circuits ?| array['3','4']`, [siteId, addDays(localDay(), -30)]);
+  const lightH = await q<{ h: number }>(`SELECT COUNT(*)::int h FROM pool_readings WHERE site_id = $1 AND day >= $2 AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(circuits) c WHERE c = ANY(array['3','4']))`, [siteId, addDays(localDay(), -30)]);
   const waterTemp = snap?.bodies[0]?.temp ?? WATER_BY_MONTH[month];
   const plan = planFor({ waterTemp, solarKw, settings, W, rate, month, names });
   const seasons = [[11, 'Dec–Feb'], [2, 'Mar–May'], [5, 'Jun–Aug'], [8, 'Sep–Nov']].map(([m, label]) => {
     const months = [m as number, ((m as number) + 1) % 12, ((m as number) + 2) % 12], avg = Math.round(months.reduce((a, i) => a + WATER_BY_MONTH[i], 0) / 3);
     const p = planFor({ waterTemp: avg, solarKw, settings, W, rate, month: m as number, names });
-    return { label, waterTemp: p.waterTemp, hours: p.hours, boostHours: p.boostHours, rpm: settings.filterRpm, kwhPerDay: p.kwhPerDay, costPerMonth: p.costPerMonth, current: [11, 0, 1].includes(month) ? m === 11 : Math.floor(month / 3) === Math.floor((m as number) / 3) };
+    return { label, waterTemp: p.waterTemp, hours: p.hours, boostHours: p.boostHours, rpm: settings.filterRpm, kwhPerDay: p.kwhPerDay, costPerMonth: p.costPerMonth, current: seasonOf(month) === seasonOf(m as number) };
   });
   // today so far, in 15-minute steps up to the current quarter-hour: the pump's measured watts where a reading exists for the
   // quarter-hour, the schedule × curve otherwise; the UV lamp while the pump runs; plus the other circuits from readings
+  // (extraKwh without its UV share, so the lamp is counted once)
   const nowQ = quarterOf(Date.now()), measured = await measuredQuarters(siteId, localDay());
   const pumpWh = quarterWh(prof, W, measured).slice(0, nowQ), runs = prof.flatMap(h => h.slices).slice(0, nowQ).map((r, i) => (measured[i] ?? r) > 0);
-  const todayKwh = (pumpWh.reduce((a, v) => a + v, 0) + (settings.uv ? runs.filter(Boolean).length * UV_W / 4 : 0)) / 1000 + extraKwh;
+  const todayKwh = (pumpWh.reduce((a, v) => a + v, 0) + (settings.uv ? runs.filter(Boolean).length * UV_W / 4 : 0)) / 1000 + extraKwh - readUvKwh;
   const home = await q<{ kwh: number }>(`SELECT (SUM(home_wh) / 1000.0)::float8 kwh FROM energy WHERE site_id = $1 AND day = $2`, [siteId, localDay()]);
   const applied = await kv.get<any>(`${siteId}:pool:applied`) ?? null;
   const auto = await autopilot(siteId, { settings, mode: settings.autopilot, W, rate, names, snap, waterTemp, currentHours: hoursOn(prof), act: !!opts.act }).catch(e => ({ error: e.message as string }));
@@ -220,7 +223,7 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
       on: snap.circuits.filter(c => c.on).map(c => c.name), activeRpm: Math.max(0, ...snap.circuits.filter(c => c.on).map(c => speeds.get(c.id) ?? 0)) } : null,
     model: { measured: await measuredPoints(siteId), curve: [1000, 1500, 1800, 2400, 3000, 3450].map(r => ({ rpm: r, watts: Math.round(W(r)) })) },
     current: { schedules: current, hours: Math.round(hoursOn(prof) * 10) / 10, kwhPerDay: Math.round(kwh * 10) / 10, costPerMonth: usd(kwh * 30.4, rate), onSolarPct: onSolarPct(prof, W, solarKw),
-      turnoverPerDay: Math.round(prof.reduce((a, h) => a + h.slices.reduce((b, r) => b + gpmAt(r) * 15, 0), 0) / settings.gallons * 100) / 100, hourly: prof,
+      turnoverPerDay: Math.round(prof.reduce((a, h) => a + h.slices.reduce((b, r) => b + gpmAt(r, settings.designGpm) * 15, 0), 0) / settings.gallons * 100) / 100, hourly: prof,
       byProgram: current.map(s => { const p = hourlyRpm([s], speeds); return { name: s.name, rpm: s.rpm, start: s.start, stop: s.stop, kwhPerDay: Math.round(dayKwh(p, W) * 10) / 10 }; }) },
     plan, seasons, solarKw, todayKwh: Math.round(todayKwh * 10) / 10, todayCost: usd(todayKwh, rate, true), shareOfHomePct: home[0]?.kwh ? Math.round(todayKwh / home[0].kwh * 100) : null,
     rate, applied, conf: { kwhPerDay: await confidenceFor(siteId, 'pool.kwhDay') } }; // learning layer: trust in every kWh/day figure above

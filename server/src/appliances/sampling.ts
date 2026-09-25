@@ -2,10 +2,13 @@
 //  - Nest: a thermostat sample, with Autopilot's acTick, every 5 minutes from 10:00 to 22:00 Chicago time in cooling season
 //    (May–October by calendar month; the app has no daily-high rule to reuse), every 15 minutes otherwise.
 //  - Pool: a read-only ScreenLogic status read (pump RPM and watts, circuits, temperatures) every 15 minutes while the current pump
-//    schedule has the pump on, plus checks at 02:00 and 05:00. With Pool 10a–7p and High Speed 2p–3p that is 36 + 2 = 38 reads a day.
-//    Readings go to pool_readings. Only readPool is imported from screenlogic.ts: nothing here can write to the controller.
-// Sampling slots are aligned to the clock (:00, :05, … or :00, :15, :30, :45) and claimed in kv, so overlapping invocations agree
-// and a slot is sampled once. A tick with nothing due returns before touching the database, so Neon can suspend between samples.
+//    schedule has the pump on, plus checks at 02:05 and 05:05. With Pool 10a–7p and High Speed 2p–3p that is 36 + 2 = 38 reads a day.
+//    Reads sit 5 minutes into each quarter-hour (:05, :20, :35, :50): schedules start and change speed on the quarter-hour, and a
+//    read right then can catch the pump priming. Readings go to pool_readings. Only readPool is imported from screenlogic.ts:
+//    nothing here can write to the controller.
+// Sampling slots are aligned to the clock (Nest :00, :05, … or :00, :15, :30, :45; pool :05, :20, :35, :50) and claimed in kv, so
+// overlapping invocations agree and a slot is sampled once. A tick with nothing due returns before touching the database, so Neon
+// can suspend between samples.
 import { q, kv } from '../db.js';
 import { rfc3339 } from '../tesla/client.js';
 import { configured as poolConfigured, readPool, type PoolSnapshot } from './screenlogic.js';
@@ -19,9 +22,11 @@ export const TICK_MIN = 5;
 export const COOLING_MONTHS: readonly number[] = [5, 6, 7, 8, 9, 10];
 /** The daytime window of 5-minute Nest samples in cooling season, minutes of the Chicago day, [from, to). */
 export const COOLING_WINDOW = { from: 10 * 60, to: 22 * 60 };
-/** The overnight pool checks, minutes of the Chicago day: 02:00 and 05:00. */
-export const POOL_CHECKS: readonly number[] = [2 * 60, 5 * 60];
+/** The overnight pool checks, minutes of the Chicago day: 02:05 and 05:05. */
+export const POOL_CHECKS: readonly number[] = [2 * 60 + 5, 5 * 60 + 5];
 export const POOL_READ_MIN = 15;
+/** Pool read slots start this many minutes into each quarter-hour (:05, :20, :35, :50), clear of a schedule's start or speed change. */
+export const POOL_READ_OFFSET_MIN = 5;
 
 /** Chicago calendar month (1–12) and minute of the day. */
 export function chicago(now: number) {
@@ -38,28 +43,32 @@ export function nestInterval(now: number): 5 | 15 {
 export const slotStart = (now: number, intervalMin: number) => Math.floor(now / (intervalMin * MIN)) * intervalMin * MIN;
 /** Whether this is the slot's first cron tick (every tick for 5-minute slots; the :00/:15/:30/:45 tick for 15-minute slots). */
 export const firstTick = (now: number, intervalMin: number) => now - slotStart(now, intervalMin) < TICK_MIN * MIN;
+/** Start of the pool read slot `now` falls in: quarter-hours shifted by POOL_READ_OFFSET_MIN (…:05, :20, :35, :50). */
+export const poolSlotStart = (now: number) => slotStart(now - POOL_READ_OFFSET_MIN * MIN, POOL_READ_MIN) + POOL_READ_OFFSET_MIN * MIN;
+/** Whether this is the pool read slot's first cron tick (the :05/:20/:35/:50 tick). */
+export const poolFirstTick = (now: number) => now - poolSlotStart(now) < TICK_MIN * MIN;
 
 /** Whether a Nest sample is due at this tick, given the last sample time (null: none yet). */
 export function nestDue(now: number, lastAt: number | null) {
   const i = nestInterval(now);
   return firstTick(now, i) && (lastAt == null || lastAt < slotStart(now, i));
 }
-/** Whether this quarter-hour gets a pool read: an overnight check, or the pump is scheduled on (`scheduled`: 96 quarter-hours). */
+/** Whether the quarter-hour holding `minute` gets a pool read: an overnight check, or the pump is scheduled on (`scheduled`: 96 quarter-hours). */
 export function poolReadQuarter(minute: number, scheduled: readonly boolean[] | null) {
   const qi = Math.floor(minute / POOL_READ_MIN);
   return POOL_CHECKS.some(c => Math.floor(c / POOL_READ_MIN) === qi) || !!scheduled?.[qi];
 }
 /** Whether a pool read is due at this tick, given the pump's scheduled quarter-hours and the last read (null: none yet). */
 export function poolDue(now: number, scheduled: readonly boolean[] | null, lastAt: number | null) {
-  return firstTick(now, POOL_READ_MIN) && (lastAt == null || lastAt < slotStart(now, POOL_READ_MIN)) && poolReadQuarter(chicago(now).minute, scheduled);
+  return poolFirstTick(now) && (lastAt == null || lastAt < poolSlotStart(now)) && poolReadQuarter(chicago(now).minute, scheduled);
 }
 /** The minutes of the day a pool read happens for a set of pump schedules, in order. */
 export const poolReadMinutes = (schedules: Parameters<typeof scheduledQuarters>[0]) => {
   const sched = scheduledQuarters(schedules);
-  return Array.from({ length: 96 }, (_, i) => i * POOL_READ_MIN).filter(m => poolReadQuarter(m, sched));
+  return Array.from({ length: 96 }, (_, i) => i * POOL_READ_MIN + POOL_READ_OFFSET_MIN).filter(m => poolReadQuarter(m, sched));
 };
 /** False when no sample or read could be due at this tick; the caller then returns without touching the database or a device. */
-export const tickMayBeDue = (now: number) => firstTick(now, nestInterval(now)) || firstTick(now, POOL_READ_MIN);
+export const tickMayBeDue = (now: number) => firstTick(now, nestInterval(now)) || poolFirstTick(now);
 
 const debug = (now: number, what: string) => console.debug(`[solstice] cron ${new Date(now).toISOString()}: ${what}`);
 /** Take the slot starting at `from` for `key`: true only when no claim at or after `from` is recorded. Atomic, so two overlapping invocations can't both win. */
@@ -84,15 +93,15 @@ export async function nestTick(siteId: string, now: number, sample: () => Promis
 
 /**
  * Read the pool read-only when due. The schedule comes from the last snapshot (kv `pool:last`), or right after Autopilot applied
- * a plan (which clears it) from `pool:applied`; with neither, only the overnight checks read. A read in this quarter-hour (the app's
- * or an earlier tick's) counts. A failed read is logged and skipped until the next due quarter-hour: the slot is claimed first.
+ * a plan (which clears it) from `pool:applied`; with neither, only the overnight checks read. A read in this slot (the app's or an
+ * earlier tick's) counts. A failed read is logged and skipped until the next due quarter-hour: the slot is claimed first.
  */
 export async function poolTick(siteId: string, now: number) {
   if (!poolConfigured()) return { skipped: 'pool not configured' };
-  if (!firstTick(now, POOL_READ_MIN)) { debug(now, 'pool skipped (reads on the quarter-hour)'); return { skipped: 'not due' }; }
+  if (!poolFirstTick(now)) { debug(now, 'pool skipped (reads at :05, :20, :35 and :50)'); return { skipped: 'not due' }; }
   const last = await kv.get<PoolSnapshot | null>(`${siteId}:pool:last`) ?? null;
   const sched = last?.pump ? pumpSchedules(last).schedules : (await kv.get<{ plan?: { schedules?: Array<{ circuitId: number; start: number; stop: number }> } } | null>(`${siteId}:pool:applied`))?.plan?.schedules ?? null;
-  const from = slotStart(now, POOL_READ_MIN);
+  const from = poolSlotStart(now);
   if (!poolReadQuarter(chicago(now).minute, sched ? scheduledQuarters(sched) : null)) { debug(now, 'pool skipped (pump not scheduled)'); return { skipped: 'pump not scheduled' }; }
   if (last && last.at >= from) { debug(now, 'pool already read this quarter-hour'); return { skipped: 'already read' }; }
   if (!(await claimSlot(poolReadKey(siteId), now, from))) { debug(now, 'pool already tried this quarter-hour'); return { skipped: 'already tried' }; }

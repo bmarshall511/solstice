@@ -40,11 +40,13 @@ describe('AC planFor', () => {
     expect(p.coastTo).toBe(21);
     expect(p.why[2]).toBe('Heat wave: pre-cool starts at 11:00 so the system never falls behind');
   });
-  // BUG-8 · today the step moves to 11:00 but precoolFrom stays 12 and the text says "from 12:00 to 17:00".
-  it.fails('BUG-8: in a heat wave precoolFrom and the text agree with the 11:00 step', () => {
+  // BUG-8 · fixed: the step moved to 11:00 but precoolFrom stayed 12 and the text said "from 12:00 to 17:00". The pre-cool
+  // window now starts at 11:00 on a heat-wave day, so the step, precoolFrom, the text and the savings use the same hours.
+  it('BUG-8: in a heat wave precoolFrom and the text agree with the 11:00 step', () => {
     const p = plan({ high: 101, hourlySun: sun14 });
     expect(p.precoolFrom).toBe(11);
     expect(p.why[0]).toContain('from 11:00');
+    expect([p.kwhSaved, p.costSavedMonth]).toEqual([.3, 1]);   // six pre-cool hours, not five: was [.6, 2]
   });
 
   it('19: no pre-cool on a mild day, a cloudy day or a humid day', () => {

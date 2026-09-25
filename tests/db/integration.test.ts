@@ -140,14 +140,15 @@ describe('poolDetail', () => {
     expect(d.spaSession).toMatchObject({ spaTemp: 95, spaSet: 102, riseF: 7, heatMinutes: 11, propaneGal: .78, propaneUsd: 2.34, pumpWattsAtSpa: 2195, electricUsdPerHour: .36 });
   });
 
-  // BUG-7 · today current.turnoverPerDay uses the 120 GPM default whatever settings.designGpm says (latent: the default is 120).
-  it.fails('BUG-7: the current schedule’s turnover uses settings.designGpm', async () => {
+  // BUG-7 · fixed: current.turnoverPerDay used the 120 GPM default whatever settings.designGpm said (latent: the default is
+  // 120), so designGpm 100 reported 2 turnovers a day.
+  it('BUG-7: the current schedule’s turnover uses settings.designGpm', async () => {
     const d = await poolDetail('p-gpm', { pool: { designGpm: 100 } }, RATE);
     expect(d.current.turnoverPerDay).toBe(1.67);
   });
-  it('BUG-7 (today): designGpm 100 still reports the 120 GPM turnover', async () => {
-    const d = await poolDetail('p-gpm', { pool: { designGpm: 100 } }, RATE);
-    expect(d.current.turnoverPerDay).toBe(2);
+  it('BUG-7 (fixed): designGpm 100 reports 1.67 turnovers; the 120 GPM default still reports 2', async () => {
+    expect((await poolDetail('p-gpm', { pool: { designGpm: 100 } }, RATE)).current.turnoverPerDay).toBe(1.67);
+    expect((await poolDetail('p-gpm', {}, RATE)).current.turnoverPerDay).toBe(2);
   });
 
   describe('the season table highlights the current season', () => {
@@ -160,36 +161,45 @@ describe('poolDetail', () => {
         labels.push(d.seasons.filter(s => s.current).map(s => s.label).join(','));
       }
     });
-    // BUG-4 · today months 3, 4, 6, 7, 9 and 10 (0-based) highlight the next season: April shows Jun–Aug, October shows Dec–Feb.
-    it.fails('BUG-4: every month highlights its own season', () => {
+    // BUG-4 · fixed: months 3, 4, 6, 7, 9 and 10 (0-based) used to highlight the next season (April showed Jun–Aug, October
+    // showed Dec–Feb). The flag now compares meteorological seasons.
+    it('BUG-4: every month highlights its own season', () => {
       expect(labels).toEqual(['Dec–Feb', 'Dec–Feb', 'Mar–May', 'Mar–May', 'Mar–May', 'Jun–Aug', 'Jun–Aug', 'Jun–Aug', 'Sep–Nov', 'Sep–Nov', 'Sep–Nov', 'Dec–Feb']);
     });
-    it('BUG-4 (today): April highlights Jun–Aug and October highlights Dec–Feb', () => {
-      expect([labels[3], labels[9]]).toEqual(['Jun–Aug', 'Dec–Feb']);
+    it('BUG-4 (fixed): April highlights Mar–May and October highlights Sep–Nov', () => {
+      expect([labels[3], labels[9]]).toEqual(['Mar–May', 'Sep–Nov']);
     });
   });
 
   describe('the last evening of a month in production (UTC)', () => {
-    // 2026-01-31 19:30 CST is already February in UTC. BUG-6 · today poolDetail and pollenFor read new Date().getMonth(),
-    // so from 18:00 CST (19:00 CDT) on the last day of every month the plan and the pollen signal use next month.
+    // 2026-01-31 19:30 CST is already February in UTC. BUG-6 · fixed: poolDetail and pollenFor read new Date().getMonth(), so
+    // from 18:00 CST (19:00 CDT) on the last day of every month the plan and the pollen signal used next month (February,
+    // 'medium'). They now read the Chicago date.
     const at = Date.parse('2026-02-01T01:30:00Z');
-    it.fails('BUG-6: the plan month and pollen follow the Chicago date', async () => {
+    it('BUG-6: the plan month and pollen follow the Chicago date', async () => {
       vi.setSystemTime(at); await seedForecast();
       const d = await poolDetail('p-monthend', {}, RATE);
       expect(d.plan.month).toBe(0);
       expect((d.autopilot as any).signals.pollen).toBe('low');
     });
-    it('BUG-6 (today): the plan says February with February pollen', async () => {
+    it('BUG-6 (fixed): the plan says January with January pollen until Chicago midnight, then February', async () => {
       vi.setSystemTime(at); await seedForecast();
       expect(localDay()).toBe('2026-01-31');
       const d = await poolDetail('p-monthend', {}, RATE);
-      expect(d.plan.month).toBe(1);
-      expect((d.autopilot as any).signals.pollen).toBe('medium');
+      expect(d.plan.month).toBe(0);
+      expect((d.autopilot as any).signals.pollen).toBe('low');
+      vi.setSystemTime(Date.parse('2026-02-01T06:30:00Z')); await seedForecast();   // 00:30 CST on February 1
+      expect(localDay()).toBe('2026-02-01');
+      const next = await poolDetail('p-monthend', {}, RATE);
+      expect(next.plan.month).toBe(1);
+      expect((next.autopilot as any).signals.pollen).toBe('medium');
     });
   });
 });
 
 /* ---------------------------------------------------------------- BUG-1 through the real code paths */
+// Fixed: the predicates match numeric circuit ids through jsonb_array_elements_text. Before, none of the three signals fired
+// (why [], 9 h, useDays 0, lightReadings30d 0).
 describe('BUG-1: pool-use signals never fire (jsonb ?| on numeric circuit ids)', () => {
   beforeAll(async () => {
     // yesterday at noon: blower, pool light and pump on
@@ -197,22 +207,22 @@ describe('BUG-1: pool-use signals never fire (jsonb ?| on numeric circuit ids)',
   });
   const suggest = () => autopilot('p-used', { settings: POOL_DEFAULTS, mode: 'suggest', W: W0, rate: RATE, names: NAMES, snap: null, waterTemp: 88, currentHours: 9, act: false });
 
-  it.fails('BUG-1: yesterday’s use adds an hour to tomorrow’s plan', async () => {
+  it('BUG-1: yesterday’s use adds an hour to tomorrow’s plan', async () => {
     const a = await suggest();
     expect(a.tomorrow.why).toContain('+1 h: the pool was used yesterday');
     expect(a.tomorrow.plan.hours).toBe(10);
   });
-  it.fails('BUG-1: the use-days signal counts yesterday', async () => {
+  it('BUG-1: the use-days signal counts yesterday', async () => {
     expect((await suggest()).signals.useDays).toBe(1);
   });
-  it.fails('BUG-1: the pool-light readings are counted', async () => {
+  it('BUG-1: the pool-light readings are counted', async () => {
     const d = await poolDetail('p-used', {}, RATE);
     expect(d.extras.lightReadings30d).toBeGreaterThan(0);
   });
-  it('BUG-1 (today): none of the three signals fire', async () => {
+  it('BUG-1 (fixed): all three signals fire', async () => {
     const a = await suggest();
-    expect([a.tomorrow.why, a.tomorrow.plan.hours, a.signals.useDays]).toEqual([[], 9, 0]);
-    expect((await poolDetail('p-used', {}, RATE)).extras.lightReadings30d).toBe(0);
+    expect([a.tomorrow.why, a.tomorrow.plan.hours, a.signals.useDays]).toEqual([['+1 h: the pool was used yesterday'], 10, 1]);
+    expect((await poolDetail('p-used', {}, RATE)).extras.lightReadings30d).toBe(1);
   });
 });
 
@@ -389,7 +399,7 @@ describe('syncSite with a fake Tesla client', () => {
 
 /* ---------------------------------------------------------------- the 5-minute cron's sampling and the 15-minute pool energy */
 describe('cron sampling and 15-minute pool energy on PGlite (Q17, Q18, Q23)', () => {
-  const T10 = Date.parse('2026-09-25T10:00:00-05:00'); // Friday 10:00 CDT: cooling season, 5-minute Nest samples
+  const T10 = Date.parse('2026-09-25T10:05:00-05:00'); // Friday 10:05 CDT: cooling season (5-minute Nest samples) and a pool read slot
   const tick = (t: number) => { vi.setSystemTime(t + 2_000); return cronTick(t, { sites: async () => ['cron-s'], acTick: id => acTick(id, {}, RATE, SLOPE) }); };
 
   it('a due tick claims its slots in kv, samples Nest through acTick and stores a pool reading; a repeat invocation skips both', async () => {
@@ -427,6 +437,19 @@ describe('cron sampling and 15-minute pool energy on PGlite (Q17, Q18, Q23)', ()
     await recordReading('p-today', poolSnapshot(Date.parse('2026-09-25T12:05:00-05:00'), { rpm: 2400, watts: 300 }));
     await kv.set('p-today:pool:last', poolSnapshot(NOW - 30_000));
     expect((await poolDetail('p-today', {}, RATE)).todayKwh).toBe(1.6);  // the 12:00 quarter-hour measured at 300 W: 1.638 kWh
+  });
+
+  it('poolDetail: the UV lamp is counted once in today so far, however many readings saw it', async () => {
+    // pump-only readings every 5 minutes 08:00–11:55 at exactly the model's 1,500 RPM watts, so the pump energy is unchanged;
+    // they used to add the lamp again from the readings (+0.235 kWh: 2.0 instead of 1.8)
+    for (let m = 8 * 60; m < 12 * 60; m += 5) {
+      const hm = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+      await recordReading('p-uv', poolSnapshot(Date.parse(`2026-09-25T${hm}:00-05:00`), { watts: W0(1500) }));
+    }
+    await kv.set('p-uv:pool:last', poolSnapshot(NOW - 30_000));
+    const d = await poolDetail('p-uv', {}, RATE);
+    expect(d.todayKwh).toBe(1.8);                         // same as with no readings (p-today above)
+    expect(d.extras.todayKwh).toBe(.24);                  // the readings' UV lamp still shows in the extras (47 × 5 min at 60 W)
   });
 });
 

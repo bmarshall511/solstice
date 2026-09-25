@@ -116,7 +116,7 @@ export type AcPlan = { date: string; steps: AcStep[]; precool: boolean; precoolF
 export function planFor(o: { date: string; high: number; sunKwhM2: number; hourlySun: number[]; settings: AcSettings; acKw: number | null; slope: number; rate: number | null; humidity: number | null; control?: boolean }): AcPlan {
   const s = o.settings, why: string[] = [], steps: AcStep[] = [];
   const sunny = o.sunKwhM2 >= 4.5, hot = o.high >= 88, humid = (o.humidity ?? 0) >= s.humidityCap;
-  const peak = o.hourlySun.reduce((bi, v, i, a) => v > a[bi] ? i : bi, 0), from = Math.max(11, peak - 2), to = Math.min(17, peak + 3);
+  const peak = o.hourlySun.reduce((bi, v, i, a) => v > a[bi] ? i : bi, 0), from = o.high >= 100 ? 11 : Math.max(11, peak - 2), to = Math.min(17, peak + 3);
   const precool = sunny && hot && !humid && s.presence === 'home' && !o.control; // control day (learn/ac.ts): hold the band so savings can be measured
   const low = s.band.homeLo, mid = Math.min(s.band.homeHi, Math.max(low, Math.round((s.band.homeLo + s.band.homeHi) / 2)));
   const night = Math.max(s.band.nightLo, Math.min(s.band.nightHi, mid));
@@ -127,7 +127,7 @@ export function planFor(o: { date: string; high: number; sunKwhM2: number; hourl
     steps.push({ hour: to, coolF: Math.min(s.coastF, s.band.homeHi), why: 'coast on the Powerwalls' });
     why.push(`Pre-cool to ${deep}° from ${from}:00 to ${to}:00 while the panels peak (${(Math.round(o.sunKwhM2 * 10) / 10)} kWh/m² of sun, high ${Math.round(o.high)}°)`);
     why.push(`Coast to ${Math.min(s.coastF, s.band.homeHi)}° until ${Math.min(21, to + 4)}:00 so the batteries carry a lighter evening`);
-    if (o.high >= 100) { steps[1].hour = 11; why.push('Heat wave: pre-cool starts at 11:00 so the system never falls behind'); }
+    if (o.high >= 100) why.push('Heat wave: pre-cool starts at 11:00 so the system never falls behind');
   } else why.push(o.control ? 'Control day: holding the comfort band (1 in 5 hot, sunny days) so Solstice can measure what pre-cooling saves' : !hot ? `Mild day (high ${Math.round(o.high)}°): no pre-cool needed` : !sunny ? 'Cloudy: no solar surplus to pre-cool with' : humid ? `Humidity ${o.humidity}%: no coast, holding ${mid}°` : 'Holding the comfort band');
   steps.push({ hour: precool ? Math.min(21, to + 4) : 21, coolF: mid, why: 'evening, comfort band' });
   steps.push({ hour: s.nightFrom, coolF: night, why: 'night band' });
