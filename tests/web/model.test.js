@@ -58,9 +58,9 @@ describe('forecast48', () => {
     expect(r.full).toBe('2026-09-25T10:00');
     expect(r.points.map(p => round(p.g, 3))).toEqual([-14.579, -16, 0]);
   });
-  // BUG-10 · today `low` starts as { soc: 1, h: 0 } and only becomes { soc, t } after the third row, so a short
-  // forecast returns an object with the wrong keys.
-  it.fails('BUG-10: with fewer than three rows, low is { soc: 1, t: null }', () => {
+  // BUG-10 · fixed: `low` started as { soc: 1, h: 0 } and only became { soc, t } after the third row, so a short
+  // forecast returned an object with the wrong keys.
+  it('BUG-10: with fewer than three rows, low is { soc: 1, t: null }', () => {
     const r = run('2026-09-25T10:00', [0, 500], { soc0: 50, profile: flat(2) });
     expect(r.low).toStrictEqual({ soc: 1, t: null });
   });
