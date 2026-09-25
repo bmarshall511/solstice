@@ -9,8 +9,15 @@ import { cronTick } from '../../server/src/appliances/sampling.js';
 import { acDetail, acTick } from '../../server/src/appliances/ac.js';
 import { readPool, writePoolPlan } from '../../server/src/appliances/screenlogic.js';
 import { readNest, setCool } from '../../server/src/appliances/nest.js';
-import { syncSite } from '../../server/src/sync.js';
+import { syncSite, saveEnergyRows } from '../../server/src/sync.js';
 import { teslaFor, localDay } from '../../server/src/tesla/client.js';
+import { saveBill, parsePecText } from '../../server/src/bills.js';
+import { runLearn } from '../../server/src/learn/nightly.js';
+import { logPrediction, forgetWritten } from '../../server/src/learn/store.js';
+import { untrim, learnAcKey, controlKey } from '../../server/src/learn/ac.js';
+import { WX_KEY } from '../../server/src/learn/wx.js';
+import { PEC_BILL } from '../fixtures/pec-bill.js';
+import { BELL } from '../fixtures/forecast.js';
 import { forecastDays, type Daily } from '../fixtures/forecast.js';
 import { poolSnapshot, CIRCUITS } from '../fixtures/screenlogic.js';
 import { nestState } from '../fixtures/nest.js';
@@ -29,6 +36,18 @@ vi.mock(import('../../server/src/appliances/nest.js'), async importOriginal => {
     nestExchangeCode: blocked('nestExchangeCode'), setHeat: blocked('setHeat'), setMode: blocked('setMode'), setEco: blocked('setEco') };
 });
 vi.mock(import('../../server/src/tesla/client.js'), async importOriginal => ({ ...(await importOriginal()), teslaFor: vi.fn() }));
+vi.mock(import('../../server/src/pdf.js'), () => ({ pdfToLayoutText: vi.fn() }));
+// Counts every round trip to PGlite, so the learning layer's nightly job can be held to its query budget.
+const pg = vi.hoisted(() => ({ queries: 0 }));
+vi.mock('@electric-sql/pglite', async importOriginal => {
+  const real = await importOriginal<typeof import('@electric-sql/pglite')>();
+  function PGlite(this: unknown, ...args: unknown[]) {
+    const db = new (real.PGlite as any)(...args), query = db.query.bind(db);
+    db.query = (...a: unknown[]) => { pg.queries++; return query(...a); };
+    return db;
+  }
+  return { ...real, PGlite: PGlite as unknown as typeof real.PGlite };
+});
 
 const NOW = Date.parse('2026-09-25T18:00:00Z'); // Friday 13:00 CDT
 const RATE = .1064, SLOPE = 2.5;
@@ -402,5 +421,251 @@ describe('cron sampling and 15-minute pool energy on PGlite (Q17, Q18, Q23)', ()
     await recordReading('p-today', poolSnapshot(Date.parse('2026-09-25T12:05:00-05:00'), { rpm: 2400, watts: 300 }));
     await kv.set('p-today:pool:last', poolSnapshot(NOW - 30_000));
     expect((await poolDetail('p-today', {}, RATE)).todayKwh).toBe(1.6);  // the 12:00 quarter-hour measured at 300 W: 1.638 kWh
+  });
+});
+
+/* ---------------------------------------------------------------- learning layer (server/src/learn): hooks, control days, trims, nightly */
+describe('learning layer: prediction hooks, control days and trims on PGlite', () => {
+  const settingsAuto = { ac: { autopilot: 'auto' } };
+  const nest = (o: Parameters<typeof nestState>[1]) => vi.mocked(readNest).mockImplementation(async () => nestState(Date.now(), o));
+  const preds = (site: string) => q<{ model: string; target_day: string; predicted: number; unit: string; inputs: Record<string, any> }>(
+    `SELECT model, target_day, predicted, unit, inputs FROM predictions WHERE site_id = $1 ORDER BY model`, [site]);
+  beforeEach(() => forgetWritten());
+
+  it('the pool cron logs tomorrow’s kWh with the schedule it assumes (Auto); Off logs nothing', async () => {
+    await autopilot('lp-pool', { settings: { ...POOL_DEFAULTS, autopilot: 'auto' }, mode: 'auto', W: W0, rate: RATE, names: NAMES, snap: poolSnapshot(Date.now()), waterTemp: 88, currentHours: 9, act: true });
+    const [p] = await preds('lp-pool');
+    expect(p).toMatchObject({ model: 'pool.kwhDay', target_day: '2026-09-26', unit: 'kWh' });
+    expect(p.inputs).toMatchObject({ mode: 'auto', hours: 9, boostHours: 1, sched: [[480, 1020, 1500], [720, 780, 2400]], uvKwh: .54, waterTemp: 88 });
+    expect(Object.keys(p.inputs).filter(k => /rate|cost|usd|price/i.test(k))).toEqual([]);
+    await autopilot('lp-pool-off', { settings: { ...POOL_DEFAULTS, autopilot: 'off' }, mode: 'off', W: W0, rate: RATE, names: NAMES, snap: poolSnapshot(Date.now()), waterTemp: 88, currentHours: 9, act: true });
+    expect(await preds('lp-pool-off')).toEqual([]);
+    await kv.set('lp-pool:pool:last', poolSnapshot(NOW - 30_000));
+    expect((await poolDetail('lp-pool', {}, RATE)).conf).toEqual({ kwhPerDay: 'unscored' });
+  });
+
+  it('an eligible AC day logs both savings once, with conf; a re-read inserts nothing', async () => {
+    const d = await acDetail('lp-ac', {}, RATE, SLOPE);
+    expect([d.plan.precool, d.plan.control, d.plan.shiftedKwh, d.plan.eveningAvoidedKwh, d.plan.trim]).toEqual([true, false, 1.7, 1.7, null]);
+    expect(d.plan.conf).toEqual({ shiftedKwh: 'estimated', eveningAvoidedKwh: 'estimated' });
+    forgetWritten(); // a new instance: the database's unique key still keeps the first prediction
+    await acDetail('lp-ac', {}, RATE, SLOPE);
+    const p = await preds('lp-ac');
+    expect(p.map(x => [x.model, x.target_day, x.predicted])).toEqual([['ac.eveningAvoided', '2026-09-25', 1.7], ['ac.shifted', '2026-09-25', 1.7]]);
+    expect(p[0].inputs).toMatchObject({ high: 90, precool: true, control: false, mid: 76, depth: 2, from: 11, to: 15, coastFrom: 15, coastTo: 19, coastF: 78, trim: null });
+  });
+
+  it('the 5th eligible day is a control day: the plain comfort band, control: true on the prediction, the same all day', async () => {
+    await kv.set(controlKey('lp-ctl'), { count: 4, days: {} });
+    const d = await acDetail('lp-ctl', {}, RATE, SLOPE);
+    expect(d.plan.steps.map(s => [s.hour, s.coolF])).toEqual([[7, 76], [21, 76], [22, 76]]);
+    expect([d.plan.precool, d.plan.control, d.plan.shiftedKwh, d.plan.eveningAvoidedKwh]).toEqual([false, true, 0, 0]);
+    expect(d.plan.why[0]).toContain('Control day');
+    expect(await kv.get(controlKey('lp-ctl'))).toEqual({ count: 5, days: { '2026-09-25': true } });
+    const p = await preds('lp-ctl');
+    expect(p.map(x => [x.model, x.predicted, x.inputs.control, x.inputs.precool, x.inputs.from, x.inputs.coastTo])).toEqual([['ac.eveningAvoided', 0, true, false, 11, 19], ['ac.shifted', 0, true, false, 11, 19]]);
+    expect((await acDetail('lp-ctl', {}, RATE, SLOPE)).plan.control).toBe(true);     // decided once for the day
+    expect(await kv.get(controlKey('lp-ctl'))).toEqual({ count: 5, days: { '2026-09-25': true } });
+    nest({ coolF: 74 });
+    await acTick('lp-ctl', settingsAuto, RATE, SLOPE);                                  // 13:00: the control plan says 76°, so Auto steps up
+    expect(setCool).toHaveBeenLastCalledWith('dev-test', 76, 'auto');
+  });
+
+  it('a learned coast trim applies automatically with its reason; acTick writes the trimmed step through the guard; untrim undoes it', async () => {
+    const trim = { what: 'coast', amount: -30, unit: 'min', reason: 'the house reached 78° early', day: '2026-09-25' };
+    for (const site of ['lp-trim', 'lp-plain']) await kv.set(learnAcKey(site), { at: NOW, day: '2026-09-25', trim: site === 'lp-trim' ? trim : null, measured: null, warmupFPerH: 2, coolKw: null });
+    const d = await acDetail('lp-trim', {}, RATE, SLOPE);
+    expect(d.plan.steps.map(s => [s.hour, s.coolF])).toEqual([[7, 76], [11, 74], [15, 78], [18.5, 76], [22, 76]]);
+    expect([d.plan.coastTo, d.plan.trim]).toEqual([18.5, { what: 'coast', amount: -30, unit: 'min', reason: 'the house reached 78° early', warmupFPerH: null, from: 19, to: 18.5 }]);
+    expect(d.plan.why.at(-1)).toBe('Trimmed: coast ends at 6:30 PM instead of 7 PM, because the house reached 78° early');
+    expect([d.plan.shiftedKwh, d.plan.eveningAvoidedKwh]).toEqual([1.7, 1.5]);
+    // 18:40: the trimmed plan is back to 76°, the untrimmed one still coasting at 78°; the thermostat reads 78°
+    vi.setSystemTime(Date.parse('2026-09-25T18:40:00-05:00'));
+    await seedForecast();
+    nest({ coolF: 78 });
+    await acTick('lp-plain', settingsAuto, RATE, SLOPE);
+    expect(setCool).not.toHaveBeenCalled();
+    await acTick('lp-trim', settingsAuto, RATE, SLOPE);
+    expect(setCool).toHaveBeenCalledWith('dev-test', 76, 'auto');
+    expect((await kv.get<any[]>('lp-trim:ac:log'))?.[0]).toMatchObject({ text: 'Set 76° (evening, comfort band)' });
+    // undo: the trim is marked undone and logged; the plan runs untrimmed
+    expect(await untrim('lp-trim', '2026-09-25')).toMatchObject({ what: 'coast', undone: true });
+    const u = await acDetail('lp-trim', {}, RATE, SLOPE);
+    expect([u.plan.coastTo, u.plan.trim, u.plan.why.at(-1)]).toEqual([19, null, 'Today’s learned trim was undone, so the plan runs untrimmed']);
+    expect((await kv.get<any[]>('lp-trim:ac:log'))?.[0]).toMatchObject({ text: 'Undid today’s learned trim (coast -30 min)', delta: 'undone' });
+    expect(await untrim('lp-plain', '2026-09-25')).toBeNull();
+  });
+
+  it('a depth trim still reaches the thermostat 2° at a time, once per 30 minutes, and not at all with Autopilot Off', async () => {
+    await kv.set(learnAcKey('lp-depth'), { at: NOW, day: '2026-09-25', trim: { what: 'depth', amount: 1, unit: '°F', reason: 'flat out', day: '2026-09-25' }, measured: null, warmupFPerH: null, coolKw: null });
+    expect((await acDetail('lp-depth', {}, RATE, SLOPE)).plan.steps[1]).toMatchObject({ hour: 11, coolF: 75 });
+    nest({ coolF: 78 });
+    await acTick('lp-depth', { ac: { autopilot: 'off' } }, RATE, SLOPE);
+    expect(setCool).not.toHaveBeenCalled();
+    await acTick('lp-depth', settingsAuto, RATE, SLOPE);
+    expect(setCool).toHaveBeenLastCalledWith('dev-test', 76, 'auto');                // the guard's 2° step toward 75°
+    await kv.set('nest:setpointWrite:dev-test', { at: Date.now(), f: 76 });           // what the real setCool records
+    nest({ coolF: 76 });
+    await acTick('lp-depth', settingsAuto, RATE, SLOPE);
+    expect(setCool).toHaveBeenCalledTimes(1);                                         // one write per 30 minutes
+    vi.setSystemTime(NOW + 31 * 60_000);
+    await acTick('lp-depth', settingsAuto, RATE, SLOPE);
+    expect(setCool).toHaveBeenLastCalledWith('dev-test', 75, 'auto');
+    await kv.set('nest:setpointWrite:dev-test', null);
+  });
+});
+
+describe('learning layer: the nightly job on seeded PGlite data', () => {
+  const S = 'learn', RUN = Date.parse('2026-09-25T05:20:00-05:00'); // the nightly sync cron (10:15 UTC) runs the job right after the sync
+  const day0 = '2026-08-21', days = Array.from({ length: 35 }, (_, i) => new Date(Date.parse(day0 + 'T12:00:00Z') + i * 864e5).toISOString().slice(0, 10)); // … 2026-09-24
+  const ts = (d: string, h: number, m = 0) => `${d}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00-05:00`;
+  // 5-minute energy (integer Wh so float4 sums are exact): solar = the BELL fixture × 80 Wh, home 1.5 kW (0.48 kW 1–5 AM), 0.24 kW bought 18–24
+  const energyDay = (d: string, skipHours: number[] = [], toHour = 24) => Array.from({ length: toHour * 12 }, (_, i) => {
+    const h = Math.floor(i / 12), t = ts(d, h, (i % 12) * 5);
+    return skipHours.includes(h) ? null : { ts: t, epoch: Date.parse(t), day: d, hour: h, solar: BELL[h] * 80, home: h >= 1 && h <= 4 ? 40 : 125, imp: h >= 18 ? 20 : 0, exp: 0, chg: 0, dis: 0 };
+  }).filter(r => r != null);
+  // Nest every 10 minutes 10:00–21:00. Pre-cool days: 74° from 11 to 16 with the AC on half the time, then the coast warming at `rate` °F/h
+  // to 78°. Control days: 76° all day, the AC on a third of the time. Plain days: 76°, idle.
+  const nestDay = (d: string, kind: 'pre' | 'control' | 'plain', rate = 1) => Array.from({ length: 67 }, (_, i) => {
+    const h = 10 + i / 6, at = Date.parse(ts(d, Math.floor(h), Math.round((h % 1) * 60)));
+    if (kind === 'plain') return { at, h, indoor: 76, hvac: 'OFF', cool: 76 };
+    if (kind === 'control') return { at, h, indoor: 76, hvac: h >= 11 && h < 20 && i % 3 === 0 ? 'COOLING' : 'OFF', cool: 76 };
+    if (h < 11) return { at, h, indoor: 76, hvac: 'OFF', cool: 76 };
+    if (h < 16) return { at, h, indoor: Math.max(74, 76 - (h - 11)), hvac: i % 2 ? 'COOLING' : 'OFF', cool: 74 };
+    const f = Math.min(78, 74 + rate * (h - 16));
+    return { at, h, indoor: Math.round(f * 100) / 100, hvac: f >= 78 ? 'COOLING' : 'OFF', cool: h < 20 ? 78 : 76 };
+  }).map(r => ({ ...r, d, hour: Math.floor(r.h + 1e-9) }));
+  const AC_DAYS: Array<[string, 'pre' | 'control', number]> = [['2026-09-16', 'pre', 1], ['2026-09-17', 'control', 0], ['2026-09-18', 'pre', 1], ['2026-09-19', 'pre', 2],
+    ['2026-09-20', 'control', 0], ['2026-09-21', 'pre', 2], ['2026-09-23', 'pre', 1]];
+  const metric = async (day: string, m: string) => (await one<{ value: number }>(`SELECT value FROM daily_metrics WHERE site_id = $1 AND day = $2 AND metric = $3`, [S, day, m]))?.value;
+
+  beforeAll(async () => {
+    vi.setSystemTime(RUN);
+    const [a] = await q<{ id: number }>(`INSERT INTO tesla_accounts (user_id, access_token, refresh_token, expires_at) VALUES (NULL, 'test-access', 'test-refresh', 0) RETURNING id`);
+    await q(`INSERT INTO sites (id, user_id, tesla_account_id, name, info) VALUES ($1, NULL, $2, 'Test Site', $3)`, [S, a.id, JSON.stringify(siteInfo('2026-01-10'))]);
+    await saveEnergyRows(S, [...days.flatMap(d => energyDay(d, d === '2026-09-24' ? [5, 6] : [])), ...energyDay('2026-09-25', [], 5), ...energyDay('2026-09-25', [], 6).slice(60, 63)]);
+    // battery % every 15 minutes: 40 + 2 × hour
+    const soe = ['2026-09-22', '2026-09-23', '2026-09-24', '2026-09-25'].flatMap(d => Array.from({ length: d === '2026-09-25' ? 22 : 96 }, (_, i) => ({ t: ts(d, Math.floor(i / 4), (i % 4) * 15), d, h: Math.floor(i / 4) })));
+    await q(`INSERT INTO soe (site_id, ts, epoch, day, hour, soe) SELECT $1, * FROM unnest($2::text[], $3::bigint[], $4::text[], $5::smallint[], $6::real[])`,
+      [S, soe.map(x => x.t), soe.map(x => Date.parse(x.t)), soe.map(x => x.d), soe.map(x => x.h), soe.map(x => 40 + 2 * x.h)]);
+    const nr = [...AC_DAYS.map(([d, k, r]) => nestDay(d, k, r)), nestDay('2026-09-22', 'plain'), nestDay('2026-09-24', 'plain')].flat();
+    await q(`INSERT INTO nest_readings (site_id, ts, day, hour, indoor_f, humidity, mode, hvac, cool_f, heat_f, eco)
+      SELECT $1, t, d, h, f, 45, 'COOL', hv, c, NULL, false FROM unnest($2::bigint[], $3::text[], $4::smallint[], $5::real[], $6::text[], $7::real[]) u(t, d, h, f, hv, c)`,
+      [S, nr.map(r => r.at), nr.map(r => r.d), nr.map(r => r.hour), nr.map(r => r.indoor), nr.map(r => r.hvac), nr.map(r => r.cool)]);
+    // pool: clean-filter days at 150 W; the last three days at 125 W (1,500 RPM) and 700 W in the 2,400 RPM boost hour; overnight checks with the pump off
+    const pool = ['2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04', '2026-09-05', '2026-09-22', '2026-09-23', '2026-09-24'].flatMap(d => [
+      { t: Date.parse(ts(d, 2, 1)), d, h: 2, run: false, w: 0, rpm: 0 }, { t: Date.parse(ts(d, 5, 1)), d, h: 5, run: false, w: 0, rpm: 0 },
+      ...Array.from({ length: 36 }, (_, i) => { const h = 10 + Math.floor(i / 4), boost = h === 14; return { t: Date.parse(ts(d, h, (i % 4) * 15 + 1)), d, h, run: true,
+        w: boost ? 700 : d >= '2026-09-22' ? 125 : 150, rpm: boost ? 2400 : 1500 }; })]);
+    await q(`INSERT INTO pool_readings (site_id, ts, day, hour, running, watts, rpm) SELECT $1, * FROM unnest($2::bigint[], $3::text[], $4::smallint[], $5::boolean[], $6::real[], $7::real[])`,
+      [S, pool.map(p => p.t), pool.map(p => p.d), pool.map(p => p.h), pool.map(p => p.run), pool.map(p => p.w), pool.map(p => p.rpm)]);
+    // the newest bill ends 2026-09-10, so the current cycle runs to 2026-10-10
+    await saveBill(S, { ...parsePecText(PEC_BILL), billDate: '2026-09-12', period: { from: '2026-08-11', to: '2026-09-10', days: 31 } });
+    // Open-Meteo on the panel plane: the BELL × 125 W/m² every day (5.25 kWh/m²), 90° afternoons, no rain
+    const wxDays = Array.from({ length: 34 }, (_, i) => new Date(Date.parse('2026-08-25T12:00:00Z') + i * 864e5).toISOString().slice(0, 10)); // … 2026-09-27
+    const time = wxDays.flatMap(d => Array.from({ length: 24 }, (_, h) => `${d}T${String(h).padStart(2, '0')}:00`));
+    await kv.set(WX_KEY, { at: RUN, w: { hourly: { time, global_tilted_irradiance: time.map(t => BELL[+t.slice(11, 13)] * 125), temperature_2m: time.map(t => +t.slice(11, 13) >= 12 && +t.slice(11, 13) < 19 ? 90 : 80) },
+      daily: { time: wxDays, temperature_2m_max: wxDays.map(() => 95), precipitation_sum: wxDays.map(() => 0) } } });
+    // predictions made earlier: yesterday's forecast hours, the pool plan, tonight's always-on, a finished billing cycle, the AC days
+    const made = (d: string, h: number, m = 15) => Date.parse(ts(d, h, m));
+    await logPrediction(S, [
+      { model: 'fc48.solar', day: '2026-09-24', hour: 12, horizon: 7, value: 6.76, madeAt: made('2026-09-24', 5) },
+      { model: 'fc48.solar', day: '2026-09-24', hour: 12, horizon: 1, value: 99, madeAt: made('2026-09-24', 12, 30) }, // made after the hour began: never scored
+      { model: 'fc48.home', day: '2026-09-24', hour: 12, horizon: 7, value: 1.5, madeAt: made('2026-09-24', 5) },
+      { model: 'fc48.soc', day: '2026-09-24', hour: 12, horizon: 7, value: 70, madeAt: made('2026-09-24', 5) },
+      { model: 'pool.kwhDay', day: '2026-09-24', value: 2.3, madeAt: made('2026-09-23', 20), inputs: { sched: [[600, 1140, 1500], [840, 900, 2400]], uvKwh: .54 } },
+      { model: 'home.alwaysOn', day: '2026-09-24', value: .6, madeAt: made('2026-09-23', 5) },
+      { model: 'bill.cycleImport', day: '2026-09-24', horizon: 5, value: 40, madeAt: made('2026-09-19', 5), inputs: { from: '2026-08-25', to: '2026-09-24' } },
+      ...AC_DAYS.flatMap(([d, k]) => (['ac.shifted', 'ac.eveningAvoided'] as const).map(model => ({ model, day: d, value: k === 'pre' ? (model === 'ac.shifted' ? 2.1 : 1.7) : 0, madeAt: made(d, 7),
+        inputs: { high: 95, sunKwhM2: 6, precool: k === 'pre', control: k === 'control', mid: 76, depth: 2, from: 11, to: 16, coastFrom: 16, coastTo: 20, coastF: 78, acKw: 3 } }))),
+    ]);
+  });
+
+  it('scores yesterday’s predictions into daily_metrics with exact arithmetic, and updates model_scores', async () => {
+    pg.queries = 0;
+    const r = await runLearn(S, { now: RUN });
+    const queries = pg.queries;
+    expect(r.errors).toEqual([]);
+    expect(r.scored.sort()).toEqual(['ac.eveningAvoided', 'ac.shifted', 'bill.cycleImport', 'fc48.home', 'fc48.soc', 'fc48.solar', 'home.alwaysOn', 'pool.kwhDay']);
+    // 48-hour forecast, 12:00 yesterday: 6.76 predicted vs 5.76 kWh made (the 12:30 prediction is not scored)
+    expect(await metric('2026-09-24', 'score:fc48.solar:pred')).toBeCloseTo(6.76, 6);
+    expect(await metric('2026-09-24', 'score:fc48.solar:actual')).toBeCloseTo(5.76, 6);
+    expect(await metric('2026-09-24', 'score:fc48.solar:ape')).toBeCloseTo(1 / 5.76, 6);
+    expect(await metric('2026-09-24', 'score:fc48.solar:n')).toBe(1);
+    expect(await metric('2026-09-24', 'score:fc48.solar:abs@h7-24')).toBeCloseTo(1, 6);
+    expect(await metric('2026-09-24', 'score:fc48.home:abs')).toBe(0);
+    expect(await metric('2026-09-24', 'score:fc48.soc:err')).toBe(6);                  // 70 predicted, 64% measured
+    // pool: 32 quarter-hours at 125 W + 4 at 700 W + the plan's 0.54 kWh of UV = 2.24 kWh, every scheduled quarter-hour covered
+    expect(await metric('2026-09-24', 'pool.coverage')).toBe(1);
+    expect(await metric('2026-09-24', 'score:pool.kwhDay:actual')).toBeCloseTo(2.24, 6);
+    expect(await metric('2026-09-24', 'score:pool.kwhDay:ape')).toBeCloseTo(.06 / 2.24, 6);
+    // always-on: 0.48 kW from 1 to 5 AM (no AC then); 0.6 predicted
+    expect(await metric('2026-09-24', 'home.alwaysOn_kw')).toBeCloseTo(.48, 6);
+    expect(await metric('2026-09-24', 'score:home.alwaysOn:ape')).toBeCloseTo(.25, 6);
+    // a billing cycle that ended yesterday: 31 days × 1.44 kWh bought
+    expect(await metric('2026-09-24', 'score:bill.cycleImport:actual')).toBeCloseTo(44.64, 4);
+    // AC on 2026-09-23 against the two control days: 7.5 − 5 = 2.5 kWh shifted; 4 − 0 = 4 kWh avoided in the evening
+    expect(await metric('2026-09-23', 'score:ac.shifted:actual')).toBeCloseTo(2.5, 6);
+    expect(await metric('2026-09-23', 'score:ac.eveningAvoided:actual')).toBeCloseTo(4, 6);
+    const ms = await q<{ window: string; n: number; mae: number; mape: number; bias: number; last_day: string }>(
+      `SELECT "window", n, mae, mape, bias, last_day FROM model_scores WHERE site_id = $1 AND model = 'fc48.solar' ORDER BY "window"`, [S]);
+    expect(ms.map(x => x.window)).toEqual(['30d', '365d', '7d']);
+    expect(ms[0]).toMatchObject({ n: 1, last_day: '2026-09-24' });
+    expect([ms[0].mae, ms[0].mape, ms[0].bias]).toEqual([expect.closeTo(1, 6), expect.closeTo(1 / 5.76, 6), expect.closeTo(1 / 5.76, 6)]);
+    expect(await one(`SELECT COUNT(*)::int n FROM model_scores WHERE site_id = $1`, [S])).toEqual({ n: 24 }); // 8 models × 3 windows
+    expect(r.tiers).toMatchObject({ 'fc48.solar': 'learning', 'ac.shifted': 'measured', 'ac.eveningAvoided': 'measured' });
+    // budget: a fixed number of round trips, no per-model or per-row queries
+    expect(r.queries).toBeLessThanOrEqual(24);
+    expect(queries).toBeLessThanOrEqual(26);
+    expect(r.ms).toBeLessThan(5000);
+    console.info(`[learning] nightly job on seeded data: ${queries} PGlite round trips (${r.queries} counted by the job), ${r.ms} ms`);
+  });
+
+  it('measured AC savings from control days, and today’s trim from the last three pre-cool days, left for the plan in kv', async () => {
+    const ac = await kv.get<any>(learnAcKey(S));
+    expect(ac.measured).toEqual({ measured: true, shiftedKwh: 2.5, eveningAvoidedKwh: 1.6, precoolDays: 5, controlDays: 2 });
+    expect(ac.trim).toEqual({ what: 'coast', amount: -30, unit: 'min', warmupFPerH: 2, day: '2026-09-25',
+      reason: 'the house reached 78° by 6 PM on Sep 19 and 6 PM on Sep 21, over an hour before the coast ended (warming about 2 °F an hour)' });
+  });
+
+  it('opens the anomalies that fire (a short energy day, the pump drawing less), and today’s predictions are logged', async () => {
+    const open = await q<{ kind: string; day: string; severity: string; detail: any }>(`SELECT kind, day, severity, detail FROM anomalies WHERE site_id = $1 AND resolved_at IS NULL ORDER BY kind`, [S]);
+    expect(open.map(a => [a.kind, a.day, a.severity])).toEqual([['data.gap.energy', '2026-09-24', 'warn'], ['pump.below_baseline@1500', '2026-09-24', 'warn']]);
+    expect(open[1].detail).toMatchObject({ expected: 150, measured: 125, action: 'filter_cleaned', persisted: '3 of the last 3 covered days' });
+    const p = await q<{ model: string; n: number }>(`SELECT model, COUNT(*)::int n FROM predictions WHERE site_id = $1 AND made_at = $2 GROUP BY model ORDER BY model`, [S, RUN]);
+    expect(p).toEqual([{ model: 'bill.cycleImport', n: 1 }, { model: 'fc48.home', n: 48 }, { model: 'fc48.soc', n: 48 }, { model: 'fc48.solar', n: 48 }, { model: 'home.alwaysOn', n: 1 }]);
+    const first = await one<{ target_day: string; target_hour: number; inputs: any }>(`SELECT target_day, target_hour, inputs FROM predictions WHERE site_id = $1 AND model = 'fc48.soc' AND made_at = $2 AND horizon = 1`, [S, RUN]);
+    expect(first).toEqual({ target_day: '2026-09-25', target_hour: 6, inputs: { k: 1, yieldK: 7.68, soc0: 50, capKwh: 27, maxKw: 10, reservePct: 20, startHour: 5 } });
+    expect(await one(`SELECT target_day, horizon, predicted, inputs FROM predictions WHERE site_id = $1 AND model = 'bill.cycleImport' AND made_at = $2`, [S, RUN]))
+      .toEqual({ target_day: '2026-10-10', horizon: 15, predicted: 44.6, inputs: { from: '2026-09-10', to: '2026-10-10', elapsedDays: 15, importSoFar: 21.6, exportSoFar: 0 } });
+    expect(await one(`SELECT target_day, predicted FROM predictions WHERE site_id = $1 AND model = 'home.alwaysOn' AND made_at = $2`, [S, RUN])).toEqual({ target_day: '2026-09-26', predicted: .48 });
+    const last = await kv.get<any>(`${S}:learn:last`);
+    expect(last).toMatchObject({ at: RUN, predicted: 146, anomalies: { opened: ['pump.below_baseline@1500', 'data.gap.energy'], resolved: [], open: 2 } });
+    expect((await kv.get<any[]>(`${S}:learn:log`))?.map(e => e.delta)).toEqual(expect.arrayContaining(['−30 min', 'measured', 'warn']));
+  });
+
+  it('a rerun is idempotent; once the day is complete the gap resolves and the pump anomaly stays open (one row)', async () => {
+    await saveEnergyRows(S, energyDay('2026-09-24').filter(r => r.hour === 5 || r.hour === 6));
+    const r = await runLearn(S, { now: RUN + 60_000 });
+    expect([r.errors, r.predicted, r.anomalies.opened, r.anomalies.resolved]).toEqual([[], 0, [], ['data.gap.energy']]);
+    const rows = await q<{ kind: string; open: boolean }>(`SELECT kind, resolved_at IS NULL AS open FROM anomalies WHERE site_id = $1 ORDER BY kind`, [S]);
+    expect(rows).toEqual([{ kind: 'data.gap.energy', open: false }, { kind: 'pump.below_baseline@1500', open: true }]);
+    expect(await metric('2026-09-24', 'energy.buckets')).toBe(288);
+    expect(await metric('2026-09-24', 'score:fc48.solar:ape')).toBeCloseTo(1 / 5.76, 6);
+  });
+
+  it('the pump anomaly resolves after three covered days back within 5% of the clean baseline, and a new firing opens a new row', async () => {
+    const ins = (d: string, w: number) => q(`INSERT INTO pool_readings (site_id, ts, day, hour, running, watts, rpm) SELECT $1, t, $2, 12, true, $3, 1500 FROM unnest($4::bigint[]) t`,
+      [S, d, w, Array.from({ length: 5 }, (_, i) => Date.parse(ts(d, 12, i * 5)))]);
+    for (const d of ['2026-09-25', '2026-09-26', '2026-09-27']) await ins(d, 149);
+    vi.setSystemTime(Date.parse('2026-09-28T05:20:00-05:00'));
+    const r = await runLearn(S, { now: Date.now() });
+    expect(r.anomalies.resolved).toContain('pump.below_baseline@1500');
+    for (const d of ['2026-09-28', '2026-09-29', '2026-09-30']) await ins(d, 120);
+    vi.setSystemTime(Date.parse('2026-10-01T05:20:00-05:00'));
+    const r2 = await runLearn(S, { now: Date.now() });
+    expect(r2.anomalies.opened).toContain('pump.below_baseline@1500');
+    expect(await q(`SELECT day, resolved_at IS NULL AS open FROM anomalies WHERE site_id = $1 AND kind = 'pump.below_baseline@1500' ORDER BY id`, [S]))
+      .toEqual([{ day: '2026-09-24', open: false }, { day: '2026-09-30', open: true }]);
   });
 });

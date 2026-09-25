@@ -154,3 +154,48 @@ describe('/api/whatif replays stored hours with a different system', () => {
     expect(w.system).toMatchObject({ priceUsd: 10000, taxCreditPct: 30, netUsd: 7000, monthlyPayment: 111, savesPerYear: 1, paybackYears: 7000 });
   });
 });
+
+describe('learning layer routes (owner-only)', () => {
+  it('GET /api/models and POST /api/appliances/ac/untrim answer 401 without the owner cookie', async () => {
+    expect((await fetch(base + '/api/models')).status).toBe(401);
+    expect((await fetch(base + '/api/appliances/ac/untrim', { method: 'POST' })).status).toBe(401);
+  });
+
+  it('GET /api/models: every model with its tier, badge and scores, open anomalies, the log and the AC trim state', async () => {
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+    await q(`INSERT INTO model_scores (site_id, model, "window", mae, mape, bias, n, last_day, updated_at) VALUES ('s', 'fc48.solar', '30d', 1.1, .04, -.01, 20, $1, 0)`, [day]);
+    await q(`INSERT INTO anomalies (site_id, day, kind, severity, detail, opened_at) VALUES ('s', $1, 'data.gap.energy', 'warn', $2, 1)`,
+      [day, JSON.stringify({ title: 'Energy history has a gap', body: 'b', expected: 288, measured: 200 })]);
+    const r = await get('/api/models');
+    expect(r.status).toBe(200);
+    const m = await r.json();
+    expect(Object.keys(m)).toEqual(['summary', 'lastRun', 'models', 'anomalies', 'log', 'ac']);
+    expect(m.models.map((x: any) => x.id)).toEqual(['fc48.solar', 'fc48.home', 'fc48.soc', 'pool.kwhDay', 'ac.shifted', 'ac.eveningAvoided', 'bill.cycleImport', 'home.alwaysOn']);
+    // the r-learning mockup's row fields
+    expect(Object.keys(m.models[0])).toEqual(['id', 'label', 'unit', 'abs', 'dot', 't', 'v', 'tier', 'confidence', 'n', 'need', 'mape', 'mae', 'mad', 'bias', 'base', 'spark',
+      'improvement', 'bands', 'note', 'help', 'scores', 'days']);
+    expect(m.models[0]).toMatchObject({ label: 'Next 48 h solar', dot: 'learned', t: 'l', v: '±4%', tier: 'learned', n: 20, need: 14, mape: 4, bias: -1, note: '20 days scored', help: null });
+    expect(m.models[3]).toMatchObject({ id: 'pool.kwhDay', dot: 'unscored', t: 'u', v: 'unscored', help: 'needs pool readings through at least 80% of the pump’s scheduled hours' });
+    expect(m.models[4]).toMatchObject({ id: 'ac.shifted', dot: 'estimated', v: 'estimated' });
+    expect(m.summary).toEqual({ learned: 1, measured: 0, total: 8, improvement: null, headline: null });
+    expect(m.anomalies).toEqual([{ id: expect.any(Number), kind: 'data.gap.energy', day, severity: 'warn', openedAt: 1, title: 'Energy history has a gap', body: 'b',
+      detail: { title: 'Energy history has a gap', body: 'b', expected: 288, measured: 200 } }]);
+    expect(m.ac).toEqual({ trim: null, measured: null, warmupFPerH: null, control: { every: 5, eligibleDays: 0, nextIn: 5, today: null } });
+    expect(JSON.stringify(m)).not.toMatch(/usd|price|loan|rate"|cost/i);
+  });
+
+  it('POST /api/appliances/ac/untrim: 409 with no trim today; with one it is undone and returned', async () => {
+    expect((await send('POST', '/api/appliances/ac/untrim', {})).status).toBe(409);
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+    await kv.set('s:learn:ac', { at: 0, day, trim: { what: 'coast', amount: -30, unit: 'min', reason: 'r', day }, measured: null, warmupFPerH: null, coolKw: null });
+    const r = await send('POST', '/api/appliances/ac/untrim', {});
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ ok: true, trim: { what: 'coast', amount: -30, day, undone: true } });
+    expect((await (await get('/api/models')).json()).ac.trim).toMatchObject({ undone: true });
+  });
+
+  it('/api/profile carries the 48-hour forecast’s confidence next to the profile it is built on', async () => {
+    const p = await (await get('/api/profile')).json();
+    expect(p.conf).toEqual({ 'fc48.solar': 'learned', 'fc48.home': 'unscored', 'fc48.soc': 'unscored' });
+  });
+});

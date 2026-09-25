@@ -20,6 +20,9 @@ import { acDetail, acTick } from './appliances/ac.js';
 import { cronTick } from './appliances/sampling.js';
 import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest } from './appliances/nest.js';
 import { pvsRouter } from './pvs.js';
+import { runLearn } from './learn/nightly.js';
+import { learnRouter } from './learn/api.js';
+import { confidenceMap } from './learn/confidence.js';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -123,8 +126,11 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
   if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'unauthorized' });
   const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL');
   const out: Record<string, unknown> = {};
+  const t0 = Date.now();
   for (const s of sites) out[s.id] = await syncSite(s.id, Math.floor(50_000 / sites.length), { nightly: true }).catch(e => ({ error: e.message }));
   await q(`DELETE FROM readings WHERE ts < $1`, [Date.now() - 3 * 864e5]); // live snapshots are short-lived; history lives in `energy`
+  // learning layer (server/src/learn/nightly.ts): score yesterday's predictions, trims, anomalies, today's predictions; skips what won't fit by 55 s
+  for (const s of sites) out[`learn:${s.id}`] = await runLearn(s.id, { deadline: t0 + 55_000 }).catch(e => ({ error: e.message }));
   res.json(out);
 }));
 
@@ -214,7 +220,8 @@ app.get('/api/monthly', wrap(async (req, res) => {
 app.get('/api/profile', wrap(async (req, res) => {
   const days = Number(req.query.days ?? 14), to = localDay(), from = addDays(to, -days);
   res.json({ days, hours: await q(`SELECT hour::int, (SUM(home_wh) / 1000.0 / $4)::float8 home, (SUM(solar_wh) / 1000.0 / $4)::float8 solar
-    FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY hour ORDER BY hour`, [site(req), from, to, days]) });
+    FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY hour ORDER BY hour`, [site(req), from, to, days]),
+    conf: await confidenceMap(site(req), ['fc48.solar', 'fc48.home', 'fc48.soc']) }); // learning layer: trust in the 48-hour forecast built on this profile
 }));
 
 app.get('/api/grid-days', wrap(async (req, res) => {
@@ -329,7 +336,7 @@ const rateFor = async (id: string) => (await currentTariff(id))?.importRateAllIn
 app.get('/api/appliances', wrap(async (req, res) => {
   const id = site(req), settings = await settingsFor(req), rate = await rateFor(id);
   const list = await Promise.all(appliances.filter(a => a.available()).map(a => a.summary(id, settings, rate).catch(e => ({ id: a.id, name: a.name, status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message }))));
-  if (nestConfigured()) list.push(await acDetail(id, settings, rate, await acSlope(id)).then(d => ({ id: 'ac', name: 'AC', status: d.linked ? 'linked' as const : 'estimated' as const, watts: d.state?.hvac === 'COOLING' ? Math.round(d.learned.acKw * 1000) : 0, kwhPerDay: d.todayKwh, savesPerMonth: d.plan.costSavedMonth })).catch(e => ({ id: 'ac', name: 'AC', status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message })));
+  if (nestConfigured()) list.push(await acDetail(id, settings, rate, await acSlope(id)).then(d => ({ id: 'ac', name: 'AC', status: d.linked ? 'linked' as const : 'estimated' as const, watts: d.state?.hvac === 'COOLING' ? Math.round(d.learned.acKw * 1000) : 0, kwhPerDay: d.todayKwh, savesPerMonth: null })).catch(e => ({ id: 'ac', name: 'AC', status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message })));
   res.json([...list, ...comingSoon()]);
 }));
 app.get('/api/appliances/pool', wrap(async (req, res) => res.json(await poolDetail(site(req), await settingsFor(req), await rateFor(site(req)), { fresh: req.query.fresh === '1' }))));
@@ -392,6 +399,8 @@ app.post('/api/appliances/ac/settings', express.json(), wrap(async (req, res) =>
   const id = site(req); if (patch.presence) { const rec = await kv.get<any>(`${id}:ac:plan`); if (rec) { rec.lastStepHour = null; await kv.set(`${id}:ac:plan`, rec); } await acTick(id, await settingsFor(req), await rateFor(id), await acSlope(id)).catch(() => {}); }
   res.json({ ok: true, ac: next });
 }));
+/* ---------- learning layer: GET /api/models (the model report), POST /api/appliances/ac/untrim (server/src/learn/api.ts) ---------- */
+app.use('/api', learnRouter);
 /**
  * Fires every 5 minutes; sampling.ts decides what is due. Nest (with acTick: AC learning and due plan steps) every 5 minutes 10:00–22:00
  * in cooling season, every 15 minutes otherwise; a read-only pool read every 15 minutes of scheduled pump hours plus 02:00 and 05:00.

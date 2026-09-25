@@ -87,6 +87,22 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS pvs_readings (ts timestamptz, sn text, kw numeric, v numeric, temp_c numeric, PRIMARY KEY (ts, sn))`,
   // Single-owner mode: one row per device that opened the owner link (no account, no user row). Deleting a row signs that device out.
   `CREATE TABLE IF NOT EXISTS owner_sessions (id text PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now(), last_seen timestamptz NOT NULL DEFAULT now(), label text)`,
+  // Learning layer (server/src/learn/). Every prediction the app makes, with the inputs it used (a key whitelist, never a rate or
+  // a dollar figure). Immutable: the first row for a key stands. `horizon` is hours (forecast) or days (bill cycle) ahead, 0 otherwise.
+  `CREATE TABLE IF NOT EXISTS predictions (id bigserial PRIMARY KEY, site_id text NOT NULL, model text NOT NULL, target_day text NOT NULL,
+     target_hour smallint NOT NULL DEFAULT -1, horizon smallint NOT NULL DEFAULT 0, predicted double precision NOT NULL, unit text NOT NULL,
+     made_at bigint NOT NULL, inputs jsonb NOT NULL DEFAULT '{}')`,
+  `DO $$ BEGIN CREATE UNIQUE INDEX IF NOT EXISTS predictions_key ON predictions(site_id, model, target_day, target_hour, horizon); EXCEPTION WHEN duplicate_table OR unique_violation THEN NULL; END $$`,
+  `DO $$ BEGIN CREATE INDEX IF NOT EXISTS predictions_day ON predictions(site_id, target_day); EXCEPTION WHEN duplicate_table OR unique_violation THEN NULL; END $$`,
+  // Each day's measured values and prediction scores (metric 'score:<model>:<abs|ape|err|den|pred|actual|n>'), computed nightly.
+  `CREATE TABLE IF NOT EXISTS daily_metrics (site_id text NOT NULL, day text NOT NULL, metric text NOT NULL, value double precision, PRIMARY KEY (site_id, day, metric))`,
+  // Rolling error per model and window ('7d', '30d', '365d'); last_day is the newest scored day (the confidence formula's freshness).
+  `CREATE TABLE IF NOT EXISTS model_scores (site_id text NOT NULL, model text NOT NULL, "window" text NOT NULL, mae double precision, mape double precision,
+     bias double precision, n int NOT NULL, last_day text, updated_at bigint NOT NULL, PRIMARY KEY (site_id, model, "window"))`,
+  // Anomalies found by the nightly rules: one open row per kind; a firing after resolution opens a new row.
+  `CREATE TABLE IF NOT EXISTS anomalies (id bigserial PRIMARY KEY, site_id text NOT NULL, day text NOT NULL, kind text NOT NULL, severity text NOT NULL,
+     detail jsonb NOT NULL DEFAULT '{}', opened_at bigint NOT NULL, resolved_at bigint)`,
+  `DO $$ BEGIN CREATE UNIQUE INDEX IF NOT EXISTS anomalies_open ON anomalies(site_id, kind) WHERE resolved_at IS NULL; EXCEPTION WHEN duplicate_table OR unique_violation THEN NULL; END $$`,
 ];
 
 let migrated: Promise<void> | null = null;
