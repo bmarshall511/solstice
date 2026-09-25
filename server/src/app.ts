@@ -19,6 +19,7 @@ import { readPool } from './appliances/screenlogic.js';
 import { acDetail, acTick } from './appliances/ac.js';
 import { cronTick } from './appliances/sampling.js';
 import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest } from './appliances/nest.js';
+import { pvsRouter } from './pvs.js';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -126,6 +127,10 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
   await q(`DELETE FROM readings WHERE ts < $1`, [Date.now() - 3 * 864e5]); // live snapshots are short-lived; history lives in `energy`
   res.json(out);
 }));
+
+/* ---------- per-panel data from the SunPower PVS6 (server/src/pvs.ts; owner-only like every /api route, no Tesla site needed) ----------
+ *  POST /api/pvs/readings (the LAN relay, scripts/pvs-relay.mjs) · GET /api/pvs/day?date=YYYY-MM-DD · GET /api/pvs/latest */
+app.use('/api/pvs', pvsRouter);
 
 /* ======================= everything below needs a signed-in user ======================= */
 app.use('/api', requireUser);
