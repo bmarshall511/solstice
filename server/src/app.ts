@@ -20,6 +20,7 @@ import { acDetail, acTick } from './appliances/ac.js';
 import { cronTick } from './appliances/sampling.js';
 import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest } from './appliances/nest.js';
 import { pvsRouter } from './pvs.js';
+import { flowsFor, FlowsInputError } from './flows.js';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -197,6 +198,12 @@ app.get('/api/day', wrap(async (req, res) => {
     buckets: b.map(x => ({ t: t(x.ts), solar: r2(x.solar_wh * 12 / 1000), home: r2(x.home_wh * 12 / 1000), grid: r2((x.import_wh - x.export_wh) * 12 / 1000), battery: r2((x.discharge_wh - x.charge_wh) * 12 / 1000) })),
     soe: s.map(x => ({ t: t(x.ts), soc: x.soe })),
     totals: await one(`SELECT ${kwhCols} FROM energy WHERE site_id = $1 AND day = $2`, [id, date]) });
+}));
+
+/** History "Where every kWh went": seven paths for a day or the 30 days ending on `date`, with pool/AC and "unaccounted" (flows.ts). */
+app.get('/api/flows', wrap(async (req, res) => {
+  try { res.json(await flowsFor(site(req), String(req.query.range ?? 'day'), req.query.date == null ? undefined : String(req.query.date), await settingsFor(req))); }
+  catch (e) { if (e instanceof FlowsInputError) return res.status(400).json({ error: e.message }); throw e; }
 }));
 
 app.get('/api/daily', wrap(async (req, res) => {
