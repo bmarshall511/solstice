@@ -86,8 +86,8 @@ export function planFor(o: { waterTemp: number; solarKw: number[]; settings: Poo
   const turnoverH = s.gallons * turnovers / (gpmAt(s.filterRpm, s.designGpm) * 60);
   const hours = o.force?.hours ?? Math.min(12, Math.max(4, Math.round(Math.max(turnoverH, t / 10))));
   const boostH = o.force?.boost ?? ((s.uv ? t >= 85 : t >= 70) ? 1 : 0); // with UV sanitizing the flow, long low runs matter more than boosts
-  // put the run where the sun is: the contiguous window with the most solar
-  let best = 8, bestSum = -1;
+  // put the run where the sun is: the contiguous window with the most solar; with no solar data, the default 08:00 start
+  let best = 8, bestSum = 0;
   for (let st = 5; st + hours <= 20; st++) { const sum = o.solarKw.slice(st, st + hours).reduce((a, v) => a + v, 0); if (sum > bestSum) { bestSum = sum; best = st; } }
   const start = best, stop = best + hours;
   const boostAt = boostH ? o.solarKw.slice(start, stop).reduce((bi, v, i, arr) => v > arr[bi] ? i : bi, 0) + start : null;

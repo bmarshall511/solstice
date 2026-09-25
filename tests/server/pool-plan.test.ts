@@ -87,14 +87,15 @@ describe('pool planFor', () => {
     expect(p.uvKwh).toBe(0);
   });
 
-  // BUG-2 · today, with all-zero solar, bestSum = −1 makes the first window win: the run starts at 05:00 in the dark (5–13).
-  it.fails('BUG-2: with no solar data the run starts at 08:00 (8–16)', () => {
+  // BUG-2 · fixed: with all-zero solar, bestSum = −1 made the first window win and the run started at 05:00 in the dark (5–13;
+  // 88 °F gave 5–14 with boostAt 5). No window beats a zero sum now, so the run keeps the default 08:00 start.
+  it('BUG-2: with no solar data the run starts at 08:00 (8–16)', () => {
     const p = plan(75, ZERO24);
     expect([p.start, p.stop]).toEqual([8, 16]);
   });
-  it('BUG-2 (today): with no solar data the run starts at 05:00', () => {
-    expect([plan(75, ZERO24).start, plan(75, ZERO24).stop]).toEqual([5, 13]);
-    expect(shape(plan(88, ZERO24))).toEqual({ hours: 9, boost: 1, start: 5, stop: 14, boostAt: 5 });
+  it('BUG-2 (fixed): with no solar data the run starts at 08:00', () => {
+    expect([plan(75, ZERO24).start, plan(75, ZERO24).stop]).toEqual([8, 16]);
+    expect(shape(plan(88, ZERO24))).toEqual({ hours: 9, boost: 1, start: 8, stop: 17, boostAt: 8 });
   });
 });
 
