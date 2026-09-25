@@ -436,3 +436,14 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .flows .landtip b{color:var(--text)}
 .flows .kv{margin-top:12px}
 /* end m-flows */
+
+/* l-forecast48 */
+/* Next 48 hours road on Now (mockups/l-forecast48.html, scenes/road48.js); the SVG chart is only the no-WebGL2 fallback */
+:root{--rest:#8d93a8}
+.road{height:260px;touch-action:pan-y;cursor:grab;outline:none;background:radial-gradient(120% 90% at 25% 100%,rgba(108,196,255,.06),rgba(0,0,0,.16))}
+.road:active{cursor:grabbing}
+.road .hud{top:10px;bottom:auto}
+.road .rl{position:absolute;left:0;top:0;padding:2px 6px;border-radius:7px;background:rgba(8,10,16,.62);border:1px solid rgba(255,255,255,.08);pointer-events:none;display:none;will-change:transform}
+.landtip .ph{color:var(--mute)}
+#fc48{display:none}
+/* end l-forecast48 */
