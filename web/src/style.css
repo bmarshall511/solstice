@@ -43,7 +43,7 @@ body.out .island .ir{display:block}
 .hello h3{font-size:25px;font-weight:600;letter-spacing:-.02em}
 .hello p{font-size:13px;color:var(--dim);margin-top:2px;display:flex;align-items:center;gap:6px}
 .sync{width:6px;height:6px;border-radius:50%;background:var(--batt);box-shadow:0 0 8px var(--batt)}
-.wx{text-align:right;font-size:12.5px;color:var(--dim)}
+.wx{flex:none;white-space:nowrap;text-align:right;font-size:12.5px;color:var(--dim)}
 .wx b{display:block;font-size:22px;color:var(--text);font-weight:400}
 
 /* outage banner */
@@ -73,8 +73,10 @@ body.out .orbtxt p b{color:var(--solar)}
 
 /* cards */
 .card{background:var(--glass);border:1px solid var(--glass-b);border-radius:var(--r-lg);padding:16px;margin-top:12px;position:relative}
-.card .h{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--dim)}
-.card .h b{color:var(--text);font-weight:600;font-size:15px}
+.card .h{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12.5px;color:var(--dim)}
+.card .h b{flex:none;max-width:calc(100% - 82px);color:var(--text);font-weight:600;font-size:15px}
+.card .h>span{min-width:0;text-align:right}
+.card .h>.seg2{flex:none}.card .h:has(>.seg2)>b{flex:0 1 auto}
 .card p{font-size:13px;color:var(--dim);line-height:1.55;margin-top:8px}
 .badge{font-size:11px;font-weight:600;padding:4px 9px;border-radius:999px;background:rgba(255,122,102,.14);color:var(--warn);border:1px solid rgba(255,122,102,.3)}
 .badge.g{background:rgba(78,240,166,.12);color:var(--batt);border-color:rgba(78,240,166,.3)}
