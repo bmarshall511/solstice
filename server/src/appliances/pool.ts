@@ -152,8 +152,8 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   const prof = hourlyRpm(current, speeds), kwh = dayKwh(prof, W) + (settings.uv ? hoursOn(prof) * UV_W / 1000 : 0);
   // the other circuits (blower, lights) and the UV lamp: integrated from readings taken while the app was open (gaps capped at 10 min)
   const rd = await q<{ ts: string; hour: number; running: boolean; circuits: number[] }>(`SELECT ts::text, hour::int, running, circuits FROM pool_readings WHERE site_id = $1 AND day = $2 ORDER BY ts`, [siteId, localDay()]);
-  const extraHourly = Array(24).fill(0); let extraKwh = 0;
-  for (let i = 1; i < rd.length; i++) { const dtH = Math.min(600_000, Number(rd[i].ts) - Number(rd[i - 1].ts)) / 3600_000; const w = (rd[i - 1].circuits ?? []).reduce((a, c) => a + (settings.loads[String(c)] ?? 0), 0) + (rd[i - 1].running && settings.uv ? UV_W : 0); extraHourly[rd[i - 1].hour] += w * dtH / 1000; extraKwh += w * dtH / 1000; }
+  const extraHourly = Array(24).fill(0); let extraKwh = 0, readUvKwh = 0;
+  for (let i = 1; i < rd.length; i++) { const dtH = Math.min(600_000, Number(rd[i].ts) - Number(rd[i - 1].ts)) / 3600_000, uvW = rd[i - 1].running && settings.uv ? UV_W : 0; const w = (rd[i - 1].circuits ?? []).reduce((a, c) => a + (settings.loads[String(c)] ?? 0), 0) + uvW; extraHourly[rd[i - 1].hour] += w * dtH / 1000; extraKwh += w * dtH / 1000; readUvKwh += uvW * dtH / 1000; }
   const extraNowW = snap ? snap.circuits.filter(c => c.on).reduce((a, c) => a + (settings.loads[String(c.id)] ?? 0), 0) + (snap.pump?.running && settings.uv ? UV_W : 0) : 0;
   const lightH = await q<{ h: number }>(`SELECT COUNT(*)::int h FROM pool_readings WHERE site_id = $1 AND day >= $2 AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(circuits) c WHERE c = ANY(array['3','4']))`, [siteId, addDays(localDay(), -30)]);
   const waterTemp = snap?.bodies[0]?.temp ?? WATER_BY_MONTH[month];
@@ -165,9 +165,10 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   });
   // today so far, in 15-minute steps up to the current quarter-hour: the pump's measured watts where a reading exists for the
   // quarter-hour, the schedule × curve otherwise; the UV lamp while the pump runs; plus the other circuits from readings
+  // (extraKwh without its UV share, so the lamp is counted once)
   const nowQ = quarterOf(Date.now()), measured = await measuredQuarters(siteId, localDay());
   const pumpWh = quarterWh(prof, W, measured).slice(0, nowQ), runs = prof.flatMap(h => h.slices).slice(0, nowQ).map((r, i) => (measured[i] ?? r) > 0);
-  const todayKwh = (pumpWh.reduce((a, v) => a + v, 0) + (settings.uv ? runs.filter(Boolean).length * UV_W / 4 : 0)) / 1000 + extraKwh;
+  const todayKwh = (pumpWh.reduce((a, v) => a + v, 0) + (settings.uv ? runs.filter(Boolean).length * UV_W / 4 : 0)) / 1000 + extraKwh - readUvKwh;
   const home = await q<{ kwh: number }>(`SELECT (SUM(home_wh) / 1000.0)::float8 kwh FROM energy WHERE site_id = $1 AND day = $2`, [siteId, localDay()]);
   const applied = await kv.get<any>(`${siteId}:pool:applied`) ?? null;
   const auto = await autopilot(siteId, { settings, mode: settings.autopilot, W, rate, names, snap, waterTemp, currentHours: hoursOn(prof), act: !!opts.act }).catch(e => ({ error: e.message as string }));

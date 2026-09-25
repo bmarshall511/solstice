@@ -413,4 +413,17 @@ describe('cron sampling and 15-minute pool energy on PGlite (Q17, Q18, Q23)', ()
     await kv.set('p-today:pool:last', poolSnapshot(NOW - 30_000));
     expect((await poolDetail('p-today', {}, RATE)).todayKwh).toBe(1.6);  // the 12:00 quarter-hour measured at 300 W: 1.638 kWh
   });
+
+  it('poolDetail: the UV lamp is counted once in today so far, however many readings saw it', async () => {
+    // pump-only readings every 5 minutes 08:00–11:55 at exactly the model's 1,500 RPM watts, so the pump energy is unchanged;
+    // they used to add the lamp again from the readings (+0.235 kWh: 2.0 instead of 1.8)
+    for (let m = 8 * 60; m < 12 * 60; m += 5) {
+      const hm = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+      await recordReading('p-uv', poolSnapshot(Date.parse(`2026-09-25T${hm}:00-05:00`), { watts: W0(1500) }));
+    }
+    await kv.set('p-uv:pool:last', poolSnapshot(NOW - 30_000));
+    const d = await poolDetail('p-uv', {}, RATE);
+    expect(d.todayKwh).toBe(1.8);                         // same as with no readings (p-today above)
+    expect(d.extras.todayKwh).toBe(.24);                  // the readings' UV lamp still shows in the extras (47 × 5 min at 60 W)
+  });
 });
