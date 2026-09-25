@@ -11,6 +11,7 @@ export type PoolSettings = { gallons: number; spaGallons: number; designGpm: num
 // other circuits' draws (W): 1.5 HP blower, 500 W pool light, 100 W spa light, ~60 W UV lamp while the pump runs.
 const DEFAULTS: PoolSettings = { gallons: 14995, spaGallons: 1000, designGpm: 120, filterRpm: 1500, boostRpm: 2400, poolCircuit: 6, boostCircuit: 8, featureCircuits: [5], autopilot: 'suggest', uv: true,
   heaterBtu: 400_000, propaneUsdPerGal: 3.0, loads: { '2': 1100, '3': 500, '4': 100 } };
+export { DEFAULTS as POOL_DEFAULTS };
 const UV_W = 60;
 // Typical pool-water temperature by month for central Texas (°F): used only for the season table; the live plan uses the real reading.
 const WATER_BY_MONTH = [55, 57, 62, 70, 78, 84, 88, 88, 84, 75, 65, 58];
@@ -52,7 +53,7 @@ export function hourlyRpm(schedules: Sched[], speeds: Map<number, number>) {
   }
   return out;
 }
-const dayKwh = (prof: ReturnType<typeof hourlyRpm>, W: (r: number) => number) => prof.reduce((a, h) => a + W(h.rpm) * h.frac, 0) / 1000;
+export const dayKwh = (prof: ReturnType<typeof hourlyRpm>, W: (r: number) => number) => prof.reduce((a, h) => a + W(h.rpm) * h.frac, 0) / 1000;
 const hoursOn = (prof: ReturnType<typeof hourlyRpm>) => prof.reduce((a, h) => a + h.frac, 0);
 const onSolarPct = (prof: ReturnType<typeof hourlyRpm>, W: (r: number) => number, solarKw: number[]) => {
   const tot = dayKwh(prof, W); if (!tot) return 0;
@@ -91,7 +92,7 @@ export async function recordReading(siteId: string, snap: PoolSnapshot) {
       snap.bodies[0]?.temp ?? null, snap.airTemp, JSON.stringify(snap.circuits.filter(c => c.on).map(c => c.id))]);
   await kv.set(`${siteId}:pool:last`, snap);
 }
-const measuredPoints = (siteId: string) => q<{ rpm: number; watts: number }>(`SELECT rpm::int rpm, PERCENTILE_CONT(.5) WITHIN GROUP (ORDER BY watts)::float8 watts
+export const measuredPoints = (siteId: string) => q<{ rpm: number; watts: number }>(`SELECT rpm::int rpm, PERCENTILE_CONT(.5) WITHIN GROUP (ORDER BY watts)::float8 watts
   FROM pool_readings WHERE site_id = $1 AND running AND rpm > 0 AND watts > 0 GROUP BY rpm HAVING COUNT(*) >= 3`, [siteId]);
 const solarProfile = async (siteId: string) => {
   const rows = await q<{ hour: number; kw: number }>(`SELECT hour::int, (SUM(solar_wh) / 1000.0 / 14)::float8 kw FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY hour`, [siteId, addDays(localDay(), -14), localDay()]);

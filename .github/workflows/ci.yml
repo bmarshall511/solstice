@@ -1,0 +1,27 @@
+# Typecheck, tests and the production build on every pull request and every push to main.
+# A gate only: Vercel does not deploy from git, and this workflow never deploys. No secrets are used: the tests run on
+# in-memory PGlite and block every network call except the in-process app.
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        node: [22, 24] # 22 = engines/.nvmrc; 24 = Vercel's current project setting, until that mismatch is fixed
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

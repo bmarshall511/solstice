@@ -12,6 +12,8 @@
   },
   "include": [
     "server/src",
-    "api"
+    "api",
+    "tests",
+    "vitest.config.ts"
   ]
 }
