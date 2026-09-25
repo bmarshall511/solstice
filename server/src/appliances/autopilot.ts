@@ -27,9 +27,9 @@ export async function forecast(): Promise<Daily[]> {
   return days;
 }
 
-/** Days in the last week with the spa, jets, blower or lights seen on (a proxy for swimming). */
+/** Days in the last week with the spa, jets, blower or lights seen on (a proxy for swimming). `circuits` holds numbers, so match on their text (`?|` only matches string elements). */
 export async function useDays(siteId: string) {
-  const r = await q<{ n: number }>(`SELECT COUNT(DISTINCT day)::int n FROM pool_readings WHERE site_id = $1 AND day >= $2 AND circuits ?| array['1','2','3','4','7']`, [siteId, addDays(localDay(), -7)]);
+  const r = await q<{ n: number }>(`SELECT COUNT(DISTINCT day)::int n FROM pool_readings WHERE site_id = $1 AND day >= $2 AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(circuits) c WHERE c = ANY(array['1','2','3','4','7']))`, [siteId, addDays(localDay(), -7)]);
   return r[0]?.n ?? 0;
 }
 const pollenFor = (month: number): Signals['pollen'] => [2, 3].includes(month) ? 'high' : [1, 4, 11].includes(month) ? 'medium' : 'low';
@@ -58,7 +58,7 @@ export async function autopilot(siteId: string, o: { settings: PoolSettings; mod
   const days = await forecast(), today = localDay(), ti = days.findIndex(d => d.date === today);
   const use = await useDays(siteId), pollen = pollenFor(new Date().getMonth());
   const heatDaysAt = (i: number) => { let n = 0; for (let k = i; k >= 0 && days[k].high >= 95; k--) n++; return n; };
-  const yesterdayUsed = !!(await q(`SELECT 1 FROM pool_readings WHERE site_id = $1 AND day = $2 AND circuits ?| array['1','2','3','4','7'] LIMIT 1`, [siteId, addDays(today, -1)])).length;
+  const yesterdayUsed = !!(await q(`SELECT 1 FROM pool_readings WHERE site_id = $1 AND day = $2 AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(circuits) c WHERE c = ANY(array['1','2','3','4','7'])) LIMIT 1`, [siteId, addDays(today, -1)])).length;
   const week = [], plans: Array<ReturnType<typeof planDay>> = [];
   for (let i = ti + 1; i < Math.min(days.length, ti + 8); i++) {
     const p = planDay({ day: days[i], prev: days[i - 1], heatDays: heatDaysAt(i), useYesterday: i === ti + 1 && yesterdayUsed, waterTemp: o.waterTemp, settings: o.settings, W: o.W, rate: o.rate, names: o.names, pollen });

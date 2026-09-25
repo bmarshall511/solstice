@@ -153,7 +153,7 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   const extraHourly = Array(24).fill(0); let extraKwh = 0;
   for (let i = 1; i < rd.length; i++) { const dtH = Math.min(600_000, Number(rd[i].ts) - Number(rd[i - 1].ts)) / 3600_000; const w = (rd[i - 1].circuits ?? []).reduce((a, c) => a + (settings.loads[String(c)] ?? 0), 0) + (rd[i - 1].running && settings.uv ? UV_W : 0); extraHourly[rd[i - 1].hour] += w * dtH / 1000; extraKwh += w * dtH / 1000; }
   const extraNowW = snap ? snap.circuits.filter(c => c.on).reduce((a, c) => a + (settings.loads[String(c.id)] ?? 0), 0) + (snap.pump?.running && settings.uv ? UV_W : 0) : 0;
-  const lightH = await q<{ h: number }>(`SELECT COUNT(*)::int h FROM pool_readings WHERE site_id = $1 AND day >= $2 AND circuits ?| array['3','4']`, [siteId, addDays(localDay(), -30)]);
+  const lightH = await q<{ h: number }>(`SELECT COUNT(*)::int h FROM pool_readings WHERE site_id = $1 AND day >= $2 AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(circuits) c WHERE c = ANY(array['3','4']))`, [siteId, addDays(localDay(), -30)]);
   const waterTemp = snap?.bodies[0]?.temp ?? WATER_BY_MONTH[month];
   const plan = planFor({ waterTemp, solarKw, settings, W, rate, month, names });
   const seasons = [[11, 'Dec–Feb'], [2, 'Mar–May'], [5, 'Jun–Aug'], [8, 'Sep–Nov']].map(([m, label]) => {

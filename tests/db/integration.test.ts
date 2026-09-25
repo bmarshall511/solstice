@@ -171,6 +171,8 @@ describe('poolDetail', () => {
 });
 
 /* ---------------------------------------------------------------- BUG-1 through the real code paths */
+// Fixed: the predicates match numeric circuit ids through jsonb_array_elements_text. Before, none of the three signals fired
+// (why [], 9 h, useDays 0, lightReadings30d 0).
 describe('BUG-1: pool-use signals never fire (jsonb ?| on numeric circuit ids)', () => {
   beforeAll(async () => {
     // yesterday at noon: blower, pool light and pump on
@@ -178,22 +180,22 @@ describe('BUG-1: pool-use signals never fire (jsonb ?| on numeric circuit ids)',
   });
   const suggest = () => autopilot('p-used', { settings: POOL_DEFAULTS, mode: 'suggest', W: W0, rate: RATE, names: NAMES, snap: null, waterTemp: 88, currentHours: 9, act: false });
 
-  it.fails('BUG-1: yesterday’s use adds an hour to tomorrow’s plan', async () => {
+  it('BUG-1: yesterday’s use adds an hour to tomorrow’s plan', async () => {
     const a = await suggest();
     expect(a.tomorrow.why).toContain('+1 h: the pool was used yesterday');
     expect(a.tomorrow.plan.hours).toBe(10);
   });
-  it.fails('BUG-1: the use-days signal counts yesterday', async () => {
+  it('BUG-1: the use-days signal counts yesterday', async () => {
     expect((await suggest()).signals.useDays).toBe(1);
   });
-  it.fails('BUG-1: the pool-light readings are counted', async () => {
+  it('BUG-1: the pool-light readings are counted', async () => {
     const d = await poolDetail('p-used', {}, RATE);
     expect(d.extras.lightReadings30d).toBeGreaterThan(0);
   });
-  it('BUG-1 (today): none of the three signals fire', async () => {
+  it('BUG-1 (fixed): all three signals fire', async () => {
     const a = await suggest();
-    expect([a.tomorrow.why, a.tomorrow.plan.hours, a.signals.useDays]).toEqual([[], 9, 0]);
-    expect((await poolDetail('p-used', {}, RATE)).extras.lightReadings30d).toBe(0);
+    expect([a.tomorrow.why, a.tomorrow.plan.hours, a.signals.useDays]).toEqual([['+1 h: the pool was used yesterday'], 10, 1]);
+    expect((await poolDetail('p-used', {}, RATE)).extras.lightReadings30d).toBe(1);
   });
 });
 
