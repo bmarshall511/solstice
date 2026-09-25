@@ -83,6 +83,8 @@
 
         <div class="card">
           <div class="h"><b>Next 48 hours</b><span>forecast · your usage + Open-Meteo</span></div>
+          <div class="ring3d road" id="road48" aria-label="Next 48 hours road. Drag sideways to move through time, tap an hour for its numbers."><div class="hud">—</div></div>
+          <div class="landtip" id="road48Tip"><span class="ph">Tap any hour on the road for its numbers.</span></div>
           <svg class="mini" id="fc48" viewBox="0 0 310 150"></svg>
           <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--home)"></i>Home</span><span><i style="background:var(--batt)"></i>Battery %</span></div>
           <p id="fcTxt" style="margin-top:10px">Waiting for the forecast…</p>

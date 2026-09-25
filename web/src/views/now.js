@@ -1,6 +1,8 @@
 import { $, fmtDur, clock12, hourLabel, kwh, localHour, localDate, svgText, path } from '../lib/util.js';
 import { WMO, WICON } from '../lib/weather.js';
 import { forecast48 } from '../lib/model.js';
+import { roadModel } from '../lib/road48data.js';
+import { createRoad48, webgl2 } from '../scenes/road48.js';
 
 /** How the current flows split between sources and sinks (Tesla reports only the four totals). */
 function splitFlows(r) {
@@ -96,6 +98,7 @@ export function renderStatic(S) {
 }
 
 /* ---------- weather + 48h forecast ---------- */
+let road = null, roadArgs = null;
 export function renderWeather(S) {
   const w = S.wx; if (!w) return;
   const c = w.current, now = localDate(), h = Math.floor(localHour());
@@ -125,6 +128,10 @@ export function renderWeather(S) {
   const reserveHits = P.filter(p => p.soc <= (site.reservePct ?? 20) / 100 + .005);
   $('fcTxt').innerHTML = `${fc.full ? `Powerwalls should be <b style="color:var(--batt)">full by ${when(fc.full)}</b>. ` : `Powerwalls peak around <b style="color:var(--batt)">${Math.round(peakBatt.soc * 100)}%</b> (${when(peakBatt.t)}); your home uses most of the solar as it's made. `}` +
     `${reserveHits.length ? `They'll sit at the reserve for about ${reserveHits.length} of the next 48 hours, so ` : ''}you'll buy about <b style="color:var(--grid)">${Math.round(fc.importKwh)} kWh</b> from PEC over the next two days (${S.tariff ? `≈ $${(fc.importKwh * S.tariff.importRateAllIn).toFixed(0)}` : 'rate unknown'}).`;
+  // the 3D road (scenes/road48.js, mockup l-forecast48) replaces the chart; the SVG above stays as the fallback without WebGL2
+  const gl = webgl2(); $('fc48').style.display = gl ? '' : 'block'; $('road48').hidden = $('road48Tip').hidden = !gl;
+  roadArgs = { fc, w, when, soc0: S.live.soc / 100, capKwh: site.capacityKwh || 27, maxKw: site.maxPowerKw || 10, reservePct: site.reservePct ?? 20 };
+  if (gl) (road ??= createRoad48($('road48'), $('road48Tip'), { model: () => roadModel({ ...roadArgs, pool: S.pool, ac: S.ac }), calm: () => S.calm })).refresh();
   const rainy = w.daily.precipitation_probability_max.slice(w.daily.time.indexOf(now), w.daily.time.indexOf(now) + 3).reduce((a, b) => Math.max(a, b ?? 0), 0);
   $('wxSum').innerHTML = rainy > 40 ? `There's a ${rainy}% chance of rain in the next few days. Storm Watch will top up the Powerwalls if a storm is forecast.` : 'No storms expected, so Storm Watch stays on standby.';
 }
