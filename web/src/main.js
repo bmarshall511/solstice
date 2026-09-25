@@ -11,7 +11,7 @@ import { renderLive, renderStatic, renderWeather } from './views/now.js';
 import { initHistory, drawHistoryChart, landscapeData, drawSocHeat, drawRecords, drawOutages, drawBills, openBillSheet } from './views/history.js';
 import { initPanels, drawPerformance, roofHud } from './views/panels.js';
 import { drawAlerts, initPlanner, drawAC, drawOvernight, drawHealth } from './views/insights.js';
-import { drawSettings, openRawData } from './views/settings.js';
+import { drawSettings, drawConnections, openRawData } from './views/settings.js';
 import { initAppliances, poolTwin } from './views/appliances.js';
 import { initAc, thermalTwin, drawAc } from './views/ac.js';
 import { createDayRing } from './scenes/dayring.js';
@@ -158,7 +158,9 @@ const dayRing = createDayRing($('dayRing'), (h, d) => {
   if (h == null) ro.innerHTML = `<b>${Math.round(sum(d.rest) + sum(d.ac) + sum(d.pool))} kWh</b><small>${d.label}</small>${bd(Math.round(sum(d.pool)), Math.round(sum(d.ac)), Math.round(sum(d.rest)))}`;
   else ro.innerHTML = `<b>${(d.rest[h] + d.ac[h] + d.pool[h]).toFixed(1)} kWh</b><small>${h % 12 || 12}${h < 12 ? ' AM' : ' PM'} · solar ${d.solar[h].toFixed(1)} kWh</small>${bd(d.pool[h].toFixed(1), d.ac[h].toFixed(1), d.rest[h].toFixed(1))}`;
 });
-S.ringMode = 'now'; S.onPool = () => safe(drawDayRing)(); S.onAc = () => safe(drawDayRing)();
+/** Settings › Connections and Data health follow the latest sync, pool and Nest reads (health waits for its first /api/status). */
+const refreshStatus = () => { safe(drawConnections)(S); if ('status' in S) safe(drawHealth)(S, S.status); };
+S.ringMode = 'now'; S.onPool = () => { safe(drawDayRing)(); refreshStatus(); }; S.onAc = () => { safe(drawDayRing)(); refreshStatus(); };
 $('drModes').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.ringMode = b.dataset.m; document.querySelectorAll('#drModes button').forEach(x => x.classList.toggle('on', x === b)); drawDayRing(); };
 /** Today's hourly loads: pool from the schedule model, AC from the heat model, the rest from Tesla's home load. */
 function drawDayRing() {
@@ -301,10 +303,10 @@ async function boot() {
   loadArchive().catch(e => console.warn('archive', e.message));
   // keep history current: sync now, then every 5 min while open; keep going while there are missing days to backfill
   const sync = async () => { const r = await api.sync().catch(() => null); if (r?.filled || r?.done?.includes('lastHistory')) loadHistory().catch(() => {}); if (r?.remaining > 0) setTimeout(sync, 1500);
-    S.syncInfo = r; $('sideDays').textContent = r?.remaining ? `loading… ${r.remaining} days left` : $('sideDays').textContent; };
+    S.syncInfo = r; $('sideDays').textContent = r?.remaining ? `loading… ${r.remaining} days left` : $('sideDays').textContent; refreshStatus(); };
   sync(); setInterval(sync, 5 * 60_000);
-  setInterval(async () => { const s = await api.status().catch(() => null); safe(drawHealth)(S, s); }, 60_000);
-  api.status().then(s => safe(drawHealth)(S, s)).catch(() => {});
+  setInterval(async () => { const s = await api.status().catch(() => null); S.status = s; safe(drawHealth)(S, s); }, 60_000);
+  api.status().then(s => { S.status = s; safe(drawHealth)(S, s); }).catch(() => {});
 }
 boot();
 

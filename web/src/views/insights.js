@@ -93,11 +93,30 @@ export function drawOvernight(S) {
 }
 
 /* ---------- data health ---------- */
+/**
+ * Is Tesla's backup_history refresh failing right now? The server retries it on every sync while it fails and only hourly once it
+ * succeeds, so the latest sync's own errors say it; before the first sync answers, a stored error from the last 30 minutes does.
+ * Returns the error message, or null.
+ */
+export function backupError(S) {
+  if (S.syncInfo) return S.syncInfo.errors?.find(e => e.startsWith('lastBackups:'))?.slice(12).trim() ?? null;
+  const e = S.now?.health?.errors?.lastBackups;
+  return e && Date.now() - e.at < 30 * 60_000 ? e.message : null;
+}
+export const httpCode = message => /HTTP (\d{3})/.exec(message ?? '')?.[1] ?? null;
+
 export function drawHealth(S, status) {
   const h = S.now?.health ?? {}, row = (ok, label, v) => `<div class="health"><i style="${ok ? '' : 'background:var(--warn);box-shadow:0 0 8px var(--warn)'}"></i>${label}<b>${v}</b></div>`;
-  const errs = Object.entries(h.errors ?? {}).filter(([, e]) => e && Date.now() - e.at < 30 * 60_000);
+  const errs = Object.entries(h.errors ?? {}).filter(([k, e]) => k !== 'lastBackups' && e && Date.now() - e.at < 30 * 60_000);
+  const bk = backupError(S), code = httpCode(bk), p = S.pool, a = S.ac;
+  const poolOk = !!p?.linked && !p.error, nestOk = !!a?.linked && !a.error;
   $('dhList').innerHTML = row(!h.stale, 'Tesla live status', h.lastLive ? ago(h.lastLive) : '—') + row(true, 'Energy history (5-min)', h.lastHistory ? ago(h.lastHistory) : '—') +
+    row(!bk, 'Backup history (Tesla)', bk ? `${code ? code + ' · ' : ''}retrying` : 'ok') +
     row(!!status, 'History stored', status ? `${status.backfill.daysDone} days` : '—') + row(!!S.wx, 'Open-Meteo weather', S.wx ? 'live' : '—') + row(!!S.ercot, 'ERCOT grid status', S.ercot ? S.ercot.condition : '—') +
+    row(poolOk, 'ScreenLogic', p?.snapshot?.at ? ago(p.snapshot.at) : p?.error ? 'read failed' : p ? 'not linked' : '—') +
+    row(nestOk, 'Nest', a?.state?.at ? ago(a.state.at) : a?.error ? 'read failed' : a ? (a.configured ? 'not linked' : 'not set up') : '—') +
     errs.map(([k, e]) => row(false, `${k} error`, e.message.slice(0, 40))).join('');
-  $('dhBadge').textContent = h.stale || errs.length ? 'check' : 'all good'; $('dhBadge').className = 'badge' + (h.stale || errs.length ? '' : ' g');
+  // issues: what used to turn the badge to "check" (Tesla stale, recent errors), plus the backup history, ScreenLogic and Nest once loaded
+  const n = (h.stale ? 1 : 0) + errs.length + (bk ? 1 : 0) + (p && !poolOk ? 1 : 0) + (a && !nestOk && (a.configured || a.error) ? 1 : 0);
+  $('dhBadge').textContent = n ? `${n} issue${n === 1 ? '' : 's'}` : 'all good'; $('dhBadge').className = 'badge' + (n ? '' : ' g');
 }

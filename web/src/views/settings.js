@@ -1,5 +1,6 @@
 import { $, niceDate, ago } from '../lib/util.js';
 import { api } from '../lib/api.js';
+import { backupError, httpCode } from './insights.js';
 
 const PREFS = [['outage', 'var(--out)', '⚡', 'Grid outage started or ended'], ['lowBatt', 'var(--solar)', '↓', 'Battery low during an outage', 'Below 30%'],
   ['solar', 'var(--warn)', '☀', 'Solar underperforming', '≥ 8% below baseline'], ['nws', 'var(--home)', '⛈', 'Severe weather (NWS)'], ['bill', 'var(--grid)', '≈', 'Bill doesn’t match Tesla', 'Gap over 5%'],
@@ -8,12 +9,25 @@ let prefs = {};
 api.settings().then(p => { prefs = p.alerts ?? {}; document.querySelectorAll('[data-pref]').forEach(el => el.classList.toggle('on', prefs[el.dataset.pref] !== false)); }).catch(() => {});
 const load = () => prefs;
 
-export function drawSettings(S) {
-  const site = S.now?.site ?? {}, h = S.now?.health ?? {}, t = S.tariff;
+/** Settings › Connections: Tesla (with the backup-history retry line), Open-Meteo, ScreenLogic and Nest. */
+export function drawConnections(S) {
+  const site = S.now?.site ?? {}, h = S.now?.health ?? {}, bk = backupError(S), code = httpCode(bk);
+  const on = t => `<span style="color:var(--batt)">${t}</span>`, off = t => `<span style="color:var(--warn)">${t}</span>`;
   $('setTesla').textContent = `Solstice Home Energy · ${site.name ?? 'energy site'}`;
+  $('setTeslaBk').textContent = bk ? `Tesla backup history · retrying${code ? ` (HTTP ${code})` : ''}` : ''; $('setTeslaBk').style.display = bk ? '' : 'none';
   $('setTeslaV').innerHTML = h.stale ? '<span style="color:var(--warn)">No data</span>' : `<span style="color:var(--batt)">Live</span>`;
   $('setWx').innerHTML = S.wx ? '<span style="color:var(--batt)">Live</span>' : '—';
   $('setZip').textContent = S.location?.zip ?? '—';
+  const p = S.pool, a = S.ac, name = a?.state?.name ?? 'Thermostat';
+  $('setPool').textContent = `pool & spa${p?.snapshot?.at ? ` · read ${ago(p.snapshot.at)}` : ''}`;
+  $('setPoolV').innerHTML = !p ? '—' : p.error ? off('Read failed') : p.linked ? on('Linked') : off('Not linked');
+  $('setNest').textContent = a?.state ? `${/thermostat/i.test(name) ? name : `${name} thermostat`} · sampled ${ago(a.state.at)}` : 'thermostat';
+  $('setNestV').innerHTML = !a ? '—' : a.error ? off('Read failed') : a.linked ? on('Linked') : off(a.configured ? 'Not linked' : 'Not set up');
+}
+
+export function drawSettings(S) {
+  const site = S.now?.site ?? {}, t = S.tariff;
+  drawConnections(S);
   const row = (c, i, title, sub, v) => `<div class="row" style="--c:${c}"><div class="ri">${i}</div><div class="rt">${title}${sub ? `<small>${sub}</small>` : ''}</div><div class="rv">${v}</div></div>`;
   $('sysGroup').innerHTML =
     row('var(--batt)', '▮', 'Powerwalls', `${site.batteries?.map(b => b.name).join(' + ') ?? ''}`, `${site.capacityKwh ?? '—'} kWh · ${site.maxPowerKw ?? '—'} kW`) +
