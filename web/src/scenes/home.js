@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { touchOrbit } from '../lib/touchorbit.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { sunAt, siteLocation, RAD, hourLabel } from '../lib/util.js';
 
@@ -99,6 +100,7 @@ export function createHomeView(host, mode = 'flow') {
   const camera = new THREE.PerspectiveCamera(mode === 'flow' ? 32 : 40, 1, .1, 500);
   const controls = new OrbitControls(camera, canvas);
   Object.assign(controls, { enableDamping: true, enablePan: false, enableZoom: false, maxPolarAngle: Math.PI * .48 });
+  touchOrbit(controls);
   if (mode === 'flow') { camera.position.copy(H.local(-38, 19, 12)); controls.target.copy(H.local(-3, 2.2, 3.5)); }
   else { camera.position.copy(H.local(-30, 17, 20)); controls.target.copy(H.local(-1, 2.5, 0)); controls.autoRotate = true; controls.autoRotateSpeed = .25; }
 

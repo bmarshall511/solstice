@@ -1,5 +1,5 @@
 :root{
-  --bg:#05060a; --text:#f2f4f8; --dim:rgba(242,244,248,.62); --mute:rgba(242,244,248,.38);
+  --bg:#05060a; --text:#f2f4f8; --dim:rgba(242,244,248,.62); --mute:rgba(242,244,248,.5);
   --glass:rgba(255,255,255,.055); --glass-b:rgba(255,255,255,.11);
   --solar:#ffc15e; --batt:#4ef0a6; --home:#6cc4ff; --grid:#c4a2ff; --warn:#ff7a66; --out:#ff5a4e;
   --r-lg:26px; --r-md:20px; --ease:cubic-bezier(.2,.8,.2,1);
@@ -132,7 +132,7 @@ body.out .orbtxt p b{color:var(--solar)}
 .mini{display:block;width:100%;margin-top:6px}
 
 /* 3D production landscape */
-.land{position:relative;height:320px;margin:10px -16px 0;touch-action:none}
+.land{position:relative;height:320px;margin:10px -16px 0;touch-action:pan-y}
 .land canvas{display:block}
 .landtip{margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(0,0,0,.28);border:1px solid var(--glass-b);font:12px "JetBrains Mono";color:var(--dim);min-height:40px;line-height:1.5}
 .landtip b{color:var(--solar);font-weight:500}
@@ -141,7 +141,7 @@ body.out .orbtxt p b{color:var(--solar)}
 .lax.w{color:var(--warn)}
 
 /* panels view */
-.roof3d{position:relative;height:300px;margin:6px -16px 0;touch-action:none;border-radius:0;overflow:hidden}
+.roof3d{position:relative;height:300px;margin:6px -16px 0;touch-action:pan-y;border-radius:0;overflow:hidden}
 .roof3d canvas{display:block}
 .roofhud{position:absolute;left:12px;top:10px;z-index:2;padding:6px 10px;border-radius:12px;background:rgba(8,10,16,.55);border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(8px);font:11px 'JetBrains Mono';color:#fff;line-height:1.5;pointer-events:none}
 .chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:5px 10px;border-radius:999px;background:rgba(108,196,255,.12);color:var(--home);border:1px solid rgba(108,196,255,.3)}
@@ -327,7 +327,7 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .panel{display:none}.panel.on{display:block;animation:in .4s var(--ease)}
 .seg2{display:flex;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid var(--glass-b)}.seg2 button{all:unset;cursor:pointer;font-size:11px;font-weight:600;padding:5px 10px;border-radius:999px;color:var(--dim)}.seg2 button.on{background:rgba(78,240,166,.18);color:var(--text)}
 /* Day Ring */
-.ring3d{position:relative;height:330px;margin:10px -16px 0;border-radius:20px;overflow:hidden;touch-action:none}
+.ring3d{position:relative;height:330px;margin:10px -16px 0;border-radius:20px;overflow:hidden;touch-action:pan-y}
 .ring3d canvas{display:block;width:100%;height:100%}
 .readout{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;width:170px}
 .readout b{display:block;font:300 30px Manrope;letter-spacing:-.02em;line-height:1}

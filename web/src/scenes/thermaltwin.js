@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { touchOrbit } from '../lib/touchorbit.js';
 
 /*
  * Thermal twin (Insights → Appliances → AC): a holographic cutaway of the house. Interior colour is indoor temperature,
@@ -11,7 +12,7 @@ export function createThermalTwin(el) {
   const W = el.clientWidth || 353, H = el.clientHeight || 340;
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(W, H); el.prepend(renderer.domElement);
   const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(32, W / H, .1, 100); cam.position.set(7.5, 5.2, 8);
-  const ctl = new OrbitControls(cam, renderer.domElement); ctl.enableZoom = false; ctl.enablePan = false; ctl.minPolarAngle = .6; ctl.maxPolarAngle = 1.3; ctl.target.set(0, 1.2, 0); ctl.enableDamping = true; ctl.autoRotate = true; ctl.autoRotateSpeed = .4;
+  const ctl = new OrbitControls(cam, renderer.domElement); ctl.enableZoom = false; ctl.enablePan = false; ctl.minPolarAngle = .6; ctl.maxPolarAngle = 1.3; ctl.target.set(0, 1.2, 0); ctl.enableDamping = true; ctl.autoRotate = true; ctl.autoRotateSpeed = .4; touchOrbit(ctl);
   scene.add(new THREE.AmbientLight(0xffffff, .7));
   const grid = new THREE.GridHelper(20, 40, C.cyan, C.cyan); grid.material.transparent = true; grid.material.opacity = .06; scene.add(grid);
   const fade = new THREE.Mesh(new THREE.CircleGeometry(10, 64), new THREE.ShaderMaterial({ transparent: true, depthWrite: false, vertexShader: `varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`, fragmentShader: `varying vec2 vUv;void main(){float r=length(vUv-.5)*2.;gl_FragColor=vec4(.02,.024,.04,smoothstep(.45,1.,r));}` })); fade.rotation.x = -Math.PI / 2; fade.position.y = .01; scene.add(fade);

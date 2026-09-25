@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { touchOrbit } from '../lib/touchorbit.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
 /*
@@ -27,7 +28,7 @@ export function createPoolTwin(el) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(W, H); el.prepend(renderer.domElement);
   const labels = new CSS2DRenderer(); labels.setSize(W, H); labels.domElement.style.cssText = 'position:absolute;inset:0;pointer-events:none'; el.appendChild(labels.domElement);
   const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(34, W / H, .1, 100); cam.position.set(4.2, 9.6, 9.4);
-  const ctl = new OrbitControls(cam, renderer.domElement); ctl.enableZoom = false; ctl.enablePan = false; ctl.minPolarAngle = .4; ctl.maxPolarAngle = 1.05; ctl.target.set(1.6, 0, .9); ctl.enableDamping = true; ctl.autoRotate = true; ctl.autoRotateSpeed = .45;
+  const ctl = new OrbitControls(cam, renderer.domElement); ctl.enableZoom = false; ctl.enablePan = false; ctl.minPolarAngle = .4; ctl.maxPolarAngle = 1.05; ctl.target.set(1.6, 0, .9); ctl.enableDamping = true; ctl.autoRotate = true; ctl.autoRotateSpeed = .45; touchOrbit(ctl);
   scene.add(new THREE.AmbientLight(0xffffff, .6));
   const grid = new THREE.GridHelper(20, 40, C.cyan, C.cyan); grid.material.transparent = true; grid.material.opacity = .07; scene.add(grid);
   const fade = new THREE.Mesh(new THREE.CircleGeometry(9, 64), new THREE.ShaderMaterial({ transparent: true, depthWrite: false, vertexShader: `varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`, fragmentShader: `varying vec2 vUv;void main(){float r=length(vUv-.5)*2.;gl_FragColor=vec4(.02,.024,.04,smoothstep(.45,1.,r));}` })); fade.rotation.x = -Math.PI / 2; fade.position.y = .01; scene.add(fade);

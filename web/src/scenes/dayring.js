@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { touchOrbit } from '../lib/touchorbit.js';
 
 /*
  * Day Ring (Insights → Today): 24 hours around a ring. Each hour is a bar stacked by what used the power
@@ -13,7 +14,7 @@ export function createDayRing(el, onPick) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(W, H); el.prepend(renderer.domElement);
   const scene = new THREE.Scene();
   const cam = new THREE.PerspectiveCamera(38, W / H, .1, 100); cam.position.set(0, 9.6, 6.2);
-  const ctl = new OrbitControls(cam, renderer.domElement); ctl.enableZoom = false; ctl.enablePan = false; ctl.minPolarAngle = .35; ctl.maxPolarAngle = 1.0; ctl.target.set(0, .6, 0); ctl.enableDamping = true;
+  const ctl = new OrbitControls(cam, renderer.domElement); ctl.enableZoom = false; ctl.enablePan = false; ctl.minPolarAngle = .35; ctl.maxPolarAngle = 1.0; ctl.target.set(0, .6, 0); ctl.enableDamping = true; touchOrbit(ctl);
   scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x0a0c14, 1.1));
   const key = new THREE.DirectionalLight(0xffffff, 1.4); key.position.set(4, 8, 5); scene.add(key);
   const R = 3.1, group = new THREE.Group(); scene.add(group);
