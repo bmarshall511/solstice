@@ -87,6 +87,11 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS pvs_readings (ts timestamptz, sn text, kw numeric, v numeric, temp_c numeric, PRIMARY KEY (ts, sn))`,
   // Single-owner mode: one row per device that opened the owner link (no account, no user row). Deleting a row signs that device out.
   `CREATE TABLE IF NOT EXISTS owner_sessions (id text PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now(), last_seen timestamptz NOT NULL DEFAULT now(), label text)`,
+  // Guest share links (share.ts): only the SHA-256 of each token is stored; the token itself is shown to the owner once. The label is
+  // the owner's private name for the link and never reaches a guest. expires_at NULL = never. Revoked rows are pruned after 30 days.
+  `CREATE TABLE IF NOT EXISTS access_tokens (
+     id text PRIMARY KEY, token_hash text UNIQUE NOT NULL, label text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+     expires_at timestamptz, revoked_at timestamptz, opened_count int NOT NULL DEFAULT 0, last_opened_at timestamptz, last_ua text)`,
 ];
 
 let migrated: Promise<void> | null = null;

@@ -1,5 +1,6 @@
 // Solstice access. Single-owner mode (the default): the owner cookie below. MULTI_USER (off, rule 5): email + password
 // accounts (scrypt), opaque session cookie (only its SHA-256 is stored). Also the signed OAuth `state`.
+// The gate that decides owner / guest / anonymous for every /api and /auth request is in access.ts; guest links are in share.ts.
 import { randomBytes, scrypt as _scrypt, timingSafeEqual, createHash, createHmac } from 'node:crypto';
 import { promisify } from 'node:util';
 import type { Request, Response, NextFunction } from 'express';
@@ -20,7 +21,7 @@ export async function verifyPassword(pw: string, stored: string) {
 export type User = { id: number; email: string; name: string | null; role: string; settings: Record<string, unknown> };
 declare global { namespace Express { interface Request { user?: User; siteId?: string } } }
 
-function readCookie(req: Request, name: string) {
+export function readCookie(req: Request, name: string) {
   return (req.headers.cookie ?? '').split(';').map(c => c.trim().split('=')).find(([k]) => k === name)?.[1];
 }
 const secure = (req: Request) => req.headers['x-forwarded-proto'] === 'https' || req.secure;
@@ -98,11 +99,13 @@ export const safeEqual = (a: string, b: string) => timingSafeEqual(digest(a), di
 export const checkOwnerKey = (key: string) => { const k = ownerKey(); return !!k && safeEqual(key.trim(), k); };
 
 const sessionMac = (id: string, key: string) => createHmac('sha256', key).update(`owner-session.${id}`).digest('base64url');
-function setOwnerCookie(res: Response, value: string, maxAge: number) {
-  // Secure everywhere except local development over plain http (NODE_ENV not production and not on Vercel).
+/** Set (or, with maxAge 0, clear) one of Solstice's cookies: HttpOnly, SameSite=Lax, whole site. Secure everywhere except local
+ *  development over plain http (NODE_ENV not production and not on Vercel). */
+export function setCookie(res: Response, name: string, value: string, maxAge: number) {
   const sec = process.env.NODE_ENV === 'production' || process.env.VERCEL ? '; Secure' : '';
-  res.append('Set-Cookie', `${OWNER_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${sec}`);
+  res.append('Set-Cookie', `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.max(0, Math.floor(maxAge))}${sec}`);
 }
+const setOwnerCookie = (res: Response, value: string, maxAge: number) => setCookie(res, OWNER_COOKIE, value, maxAge);
 
 /** A short, non-identifying device label for the devices list ("iPhone · Safari"). */
 export function deviceLabel(ua = '') {
@@ -162,30 +165,17 @@ export function ownerAttemptLimited(ip: string, now = Date.now()) {
   recent.push(now); attempts.set(ip, recent);
   return recent.length > 5;
 }
+/** POST /api/auth/guest: after 5 failed share links in a minute from one client IP, refuse (429) until the minute passes.
+ *  Only failures count, so a guest re-opening a good link is never limited. Tokens are 192-bit; this is hygiene too. */
+const guestFailures = new Map<string, number[]>();
+export const guestAttempts = {
+  limited(ip: string, now = Date.now()) { return (guestFailures.get(ip) ?? []).filter(t => now - t < 60_000).length >= 5; },
+  failed(ip: string, now = Date.now()) {
+    if (guestFailures.size > 5000) for (const [k, v] of guestFailures) if (now - v[v.length - 1] > 60_000) guestFailures.delete(k);
+    guestFailures.set(ip, [...(guestFailures.get(ip) ?? []).filter(t => now - t < 60_000), now]);
+  },
+};
 export const clientIp = (req: Request) => String(req.headers['x-real-ip'] ?? req.ip ?? 'unknown');
-
-/* Every route under /api and /auth needs the owner cookie, except these. Paths are compared lower-cased and without a
- * trailing slash, because Express matches routes case-insensitively and ignores a trailing slash. */
-const OPEN_ROUTES = new Set([
-  'POST /api/auth/owner',                                           // trades OWNER_KEY for the cookie (rate-limited)
-  'GET /api/auth/me',                                               // { mode, owner } and nothing else for a non-owner
-  'GET /api/cron/sync', 'GET /api/cron/pool', 'GET /api/cron/nest', // Vercel Cron: keep their Authorization: Bearer CRON_SECRET check
-  'GET /auth/callback', 'GET /auth/google/callback',                // OAuth redirects: signed, single-use state from an owner-only route
-]);
-/** Mounted on /api and /auth before every route. Anything not in OPEN_ROUTES, reads included, is 401 without the owner cookie. */
-export async function requireOwner(req: Request, res: Response, next: NextFunction) {
-  try {
-    res.set('Cache-Control', 'no-store');   // owner data never sits in a browser, proxy or CDN cache
-    const method = req.method === 'HEAD' ? 'GET' : req.method;
-    const path = (req.baseUrl + req.path).toLowerCase().replace(/\/+$/, '');
-    if (OPEN_ROUTES.has(`${method} ${path}`)) return next();
-    if (!(await ownerSession(req, res))) return res.status(401).json({ error: 'owner_required' });
-    // Belt and braces beyond SameSite=Lax: owner writes must come from the app's own pages (curl sends no Sec-Fetch-Site).
-    const site = req.headers['sec-fetch-site'];
-    if (method !== 'GET' && method !== 'OPTIONS' && site && site !== 'same-origin' && site !== 'none') return res.status(403).json({ error: 'cross_site' });
-    next();
-  } catch (e) { next(e); }
-}
 
 /** OAuth `state` for the single-owner Tesla and Nest links: minted only by owner-only routes (/auth/login, /auth/google),
  *  bound to its flow, short-lived, HMAC'd with SESSION_SECRET, and single-use (the callback claims the nonce in kv). */

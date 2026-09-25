@@ -9,8 +9,10 @@ const serverEnv = { TZ: 'UTC', DATABASE_URL: DB }; // UTC is what the Vercel fun
 export default defineConfig({
   test: {
     projects: [
+      // several server files (auth, bills-privacy, sync-window, share, redaction) start PGlite and the app in beforeAll; run
+      // in parallel that can take longer than the 10 s default, so they get the db project's budget
       { test: { name: 'server', environment: 'node', include: ['tests/server/**/*.test.ts'], env: serverEnv,
-                setupFiles: ['tests/setup.ts', 'tests/server/pure-mocks.ts'] } },
+                setupFiles: ['tests/setup.ts', 'tests/server/pure-mocks.ts'], testTimeout: 20_000, hookTimeout: 30_000 } },
       // one fresh in-memory PGlite per file (default isolation); budget: at most three files
       { test: { name: 'db', environment: 'node', include: ['tests/db/**/*.test.ts'], env: serverEnv,
                 setupFiles: ['tests/setup.ts'], testTimeout: 20_000, hookTimeout: 30_000 } },
