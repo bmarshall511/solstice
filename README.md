@@ -34,6 +34,22 @@ Solstice has no accounts. Every `/api` and `/auth` route is private to the owner
 - Without the cookie the app shows "Solstice is private" and every API call answers 401. If `OWNER_KEY` is unset or shorter than 32 characters, the server logs a warning at start and nobody can unlock (it fails closed), locally too.
 - Sign out: `POST /api/auth/signout` (this device), `POST /api/auth/signout-others`; `GET /api/auth/devices` lists signed-in devices. Changing `OWNER_KEY` signs every device out.
 
+## Alerts and push notifications
+
+The server keeps an alerts feed (`GET /api/alerts`, `POST /api/alerts/:id/read`) and pushes each alert to every device that turned notifications on (`POST` / `DELETE /api/push/subscribe`). Kinds: `approval`, `billDue`, `anomaly`, `storm`, `ercot`, `panel`, `digest`. The Settings → Alerts switches silence a kind (`alerts.<kind> = false`; the existing `nws` switch covers storms, `solar` and `baseline` cover their anomalies). The feed always keeps an alert; only the push is rate-limited per kind (`PUSH_LIMITS` in `server/src/notify.ts`). There is no email.
+
+Web Push needs a VAPID key pair in `.env` and the Vercel env (Production and Preview). Nothing is generated into the repo; without the keys alerts are still stored and nothing is pushed.
+
+```bash
+VAPID_PUBLIC_KEY=<base64url, 65-byte P-256 public key>    # served to the app by GET /api/push/key (not secret)
+VAPID_PRIVATE_KEY=<base64url, 32-byte private key>        # secret
+VAPID_SUBJECT=mailto:<an address you read>                # or an https: URL; push services use it to reach you
+# generate a pair once:
+node -e "const c=require('crypto').createECDH('prime256v1');c.generateKeys();console.log('VAPID_PUBLIC_KEY='+c.getPublicKey('base64url')+'\nVAPID_PRIVATE_KEY='+c.getPrivateKey('base64url'))"
+```
+
+Push is sent without a dependency (`server/src/push.ts`: RFC 8291 aes128gcm encryption and an RFC 8292 VAPID JWT on `node:crypto`). Only Apple, Google, Mozilla and Microsoft push endpoints are accepted. Rotating the keys invalidates every subscription, so each device has to subscribe again.
+
 ## What's in it
 
 | Tab | What it shows |

@@ -26,6 +26,8 @@ import { pvsRouter } from './pvs.js';
 import { flowsFor, FlowsInputError } from './flows.js';
 import { outageDetail } from './outage.js';
 
+import { alertRoutes } from './notify.js';
+import { ercotNow, fiveMinuteWatch, nightlyWatch, cronSites } from './watch.js';
 import { runLearn } from './learn/nightly.js';
 import { learnRouter } from './learn/api.js';
 import { confidenceMap } from './learn/confidence.js';
@@ -200,6 +202,7 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
 
   // learning layer (server/src/learn/nightly.ts): score yesterday's predictions, trims, anomalies, today's predictions; skips what won't fit by 55 s
   for (const s of sites) out[`learn:${s.id}`] = await runLearn(s.id, { deadline: t0 + 55_000 }).catch(e => ({ error: e.message }));
+  for (const s of sites) out[`watch:${s.id}`] = await nightlyWatch(s.id);   // watch.ts: bill due and the other nightly alert checks
   res.json(out);
 }));
 
@@ -356,16 +359,7 @@ app.post('/api/events', express.json(), wrap(async (req, res) => {
 app.delete('/api/events/:id', wrap(async (req, res) => { await q('DELETE FROM events WHERE site_id = $1 AND id = $2', [site(req), Number(req.params.id)]); res.json({ ok: true }); }));
 
 /* ---------- ERCOT grid conditions (their CORS blocks browsers) ---------- */
-app.get('/api/ercot', wrap(async (_req, res) => {
-  const cached = await kv.get<{ at: number; data: unknown }>('ercot');
-  if (cached && Date.now() - cached.at < 5 * 60_000) return res.json(cached.data);
-  const [prc, sd] = await Promise.all(['daily-prc', 'supply-demand'].map(n => fetch(`https://www.ercot.com/api/1/services/read/dashboards/${n}.json`).then(r => r.json()))) as [any, any];
-  const latest = (sd.data as any[]).filter(x => x.demand > 0).at(-1);
-  const data = { condition: prc.current_condition?.state ?? null, title: prc.current_condition?.title ?? null, note: prc.current_condition?.condition_note ?? null,
-    eea: prc.current_condition?.eea_level ?? 0, demandMw: latest?.demand ?? null, capacityMw: latest?.capacity ?? null, at: sd.lastUpdated };
-  await kv.set('ercot', { at: Date.now(), data });
-  res.json(data);
-}));
+app.get('/api/ercot', wrap(async (_req, res) => res.json(await ercotNow())));   // watch.ts: the same 5-minute kv cache the alert watch reads
 
 /* ---------- what-if: replay the last 12 months (hourly) with a different system ---------- */
 app.get('/api/whatif', wrap(async (req, res) => {
@@ -486,6 +480,8 @@ app.post('/api/appliances/ac/settings', express.json(), wrap(async (req, res) =>
 }));
 /* ---------- learning layer: GET /api/models (the model report), POST /api/appliances/ac/untrim (server/src/learn/api.ts) ---------- */
 app.use('/api', learnRouter);
+/* ---------- alerts feed and Web Push (notify.ts): /api/alerts, /api/alerts/:id/read, /api/push/key, /api/push/subscribe ---------- */
+alertRoutes(app);
 /**
  * Fires every 5 minutes; sampling.ts decides what is due. Nest (with acTick: AC learning and due plan steps) every 5 minutes 10:00–22:00
  * in cooling season, every 15 minutes otherwise; a read-only pool read every 15 minutes of scheduled pump hours plus 02:00 and 05:00.
@@ -493,10 +489,14 @@ app.use('/api', learnRouter);
  */
 app.get('/api/cron/nest', wrap(async (req, res) => {
   if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'unauthorized' });
-  res.json(await cronTick(Date.now(), {
+  const tick = await cronTick(Date.now(), {
     sites: async () => (await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL')).map(s => s.id),
     acTick: async id => acTick(id, await kv.get<Record<string, any>>('settings:owner') ?? {}, await rateFor(id), await acSlope(id)),
-  }));
+  });
+  // watch.ts: storm, Storm Watch and ERCOT alerts every tick (read-only), plus what other modules register
+  const watch: Record<string, unknown> = {};
+  for (const id of await cronSites()) watch[id] = await fiveMinuteWatch(id);
+  res.json({ ...tick, watch });
 }));
 /* ---------- Google (Nest) OAuth ---------- */
 app.get('/auth/google', (req, res) => { if (!nestConfigured()) return res.status(503).send('Nest is not configured'); res.redirect(nestAuthorizeUrl(signOwnerState('nest', 60 * 60_000))); }); // owner-only; Google's permissions page can take a while
