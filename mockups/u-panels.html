@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Solstice · Per-panel roof and Panel health</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* page scaffolding for the mockup only (same as t-enhancements) */
+html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+body{background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.col{width:100%;max-width:393px;margin:0 auto;padding:28px 0 60px}
+.intro{padding:0 20px}
+.intro .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.intro h2{font-size:30px;line-height:1.1;font-weight:300;letter-spacing:-.02em;margin-bottom:12px}
+.intro p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.frame{margin-top:34px}
+.frame>.sect{margin:0 20px 10px}
+.pagepad{padding:0 20px}
+.cap{margin:12px 20px 0;padding:12px 14px;border-radius:16px;background:rgba(0,0,0,.25);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.55}
+.cap b{color:var(--text);font-weight:600}
+.cap p+p{margin-top:6px}
+.cap .new{color:var(--batt)}
+.cap .same{color:var(--mute)}
+.cap .rl{color:var(--home)}
+.cap code,.wrules code{font:11.5px "JetBrains Mono";color:var(--text)}
+.wrules{margin:34px 20px 0}
+.wrules h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:10px}
+.wrules ul{list-style:none;display:grid;gap:8px}
+.wrules li{font-size:12.5px;color:var(--dim);line-height:1.55;padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b)}
+.wrules li b{color:var(--text);font-weight:600}
+.ghostcard{opacity:.45}
+.ghostcard .h b{max-width:none}
+.pagefine{text-align:center;padding:0 16px 40px}
+
+/* ---------- existing Live roof toggle (as built from p-roof-veil) ---------- */
+.roof3d,.roof3d canvas{touch-action:pan-y}
+.chip.tog{cursor:pointer;background:var(--glass);border-color:var(--glass-b);color:var(--dim);font-family:Manrope,system-ui,sans-serif}
+.chip.tog i{width:6px;height:6px;border-radius:50%;background:var(--mute)}
+.chip.tog.on{background:rgba(108,196,255,.12);border-color:rgba(108,196,255,.3);color:var(--home)}
+.chip.tog.on i{background:var(--solar);box-shadow:0 0 6px var(--solar)}
+
+/* ---------- NEW (frames 1–2): "Per panel" chip, diverging legend, HUD line, pinned readout ---------- */
+.togs{margin-left:auto;display:flex;gap:6px;flex:none}
+.chip.tog.pp.on i{background:linear-gradient(90deg,#2f5fd0,#ffc15e);box-shadow:none;width:10px;border-radius:3px}
+.legend.ppk{display:none;align-items:center;gap:5px 6px}.legend.ppk.on{display:flex}
+.dramp{display:inline-block;width:64px;height:6px;border-radius:3px;background:linear-gradient(90deg,#2f5fd0 0%,#9fb4d8 38%,rgba(242,244,248,.28) 40%,rgba(242,244,248,.28) 80%,#e8d3a6 82%,#ffc15e 100%);vertical-align:1px}
+.roofhud .pp{color:var(--text)}.roofhud .c{color:#9fc0ff}
+.pin{position:absolute;inset:0;pointer-events:none;z-index:3;display:none}
+.pin.on{display:block}
+.pin>svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.pin .ro{position:absolute;left:0;top:0;width:calc(100% - 16px);padding:8px 11px 8px;border-radius:14px;background:rgba(8,10,16,.76);border:1px solid rgba(255,255,255,.18);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);pointer-events:auto;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.ro .rh{display:flex;align-items:center;gap:8px}
+.ro .rh b{font-size:13px;font-weight:700}
+.ro .rh .ag{font:10px "JetBrains Mono";color:var(--mute);margin-left:auto}
+.ro .rh button{all:unset;cursor:pointer;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.1);color:var(--dim);font-size:10px}
+.ro .rb{display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:12px;margin-top:5px;align-items:start}
+.ro .rg{display:grid;grid-template-columns:auto 1fr;gap:1px 8px;font-size:10.5px;color:var(--dim)}
+.ro .rg b{font:500 10.5px "JetBrains Mono";color:var(--text);text-align:right;white-space:nowrap}
+.ro .rg b em{font-style:normal;color:var(--mute)}
+.ro svg.sp{display:block;width:100%;height:50px;margin-top:2px;border-bottom:1px solid rgba(255,255,255,.12)}
+.ro .sk{font-size:9px;color:var(--mute);margin-top:2px;display:flex;align-items:center;gap:4px}
+.ro .sk i{display:inline-block;width:10px;height:0;border-top:1.5px solid #ffc15e}.ro .sk i.d{border-top:1.5px dashed rgba(255,255,255,.6);margin-left:4px}
+.ro .sx{display:flex;justify-content:space-between;font:9px "JetBrains Mono";color:var(--mute);margin-top:1px}
+
+/* ---------- NEW (frames 3–4): Panel health card ---------- */
+.ph .gridw{display:grid;grid-template-columns:12px 1fr;gap:3px 3px;margin-top:12px;align-items:center}
+.ph .edge{grid-column:2;font-size:9px;color:var(--mute);letter-spacing:.1em;text-transform:uppercase;display:flex;justify-content:space-between}
+.ph .rn{font:9px "JetBrains Mono";color:var(--mute);text-align:center}
+.ph .tr{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:3px}
+.ph .tile{all:unset;box-sizing:border-box;cursor:pointer;height:38px;border-radius:6px;display:grid;place-items:center;font:500 9px "JetBrains Mono";color:var(--text);border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);min-width:0}
+.ph .tile.sel{outline:2px solid #fff;outline-offset:1px}
+.ph .tile.miss{background:repeating-linear-gradient(135deg,rgba(255,255,255,.08) 0 3px,transparent 3px 7px);color:var(--mute);border-style:dashed;border-color:rgba(255,255,255,.3)}
+.ph .tile.flag{background:rgba(255,90,78,.4);border-color:var(--out);box-shadow:0 0 10px rgba(255,90,78,.45)}
+.ph .cn{grid-column:2;display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:3px;font:9px "JetBrains Mono";color:var(--mute);text-align:center}
+.ph .legend{justify-content:flex-start;margin-top:10px;align-items:center;gap:5px 6px}
+.ph .legend .hx{display:inline-block;width:12px;height:9px;border-radius:2px;border:1px dashed rgba(255,255,255,.4);background:repeating-linear-gradient(135deg,rgba(255,255,255,.2) 0 2px,transparent 2px 4px);vertical-align:-1px;margin:0 4px 0 6px}
+.ph .legend .rx{display:inline-block;width:12px;height:9px;border-radius:2px;background:rgba(255,90,78,.5);border:1px solid var(--out);vertical-align:-1px;margin:0 4px 0 6px}
+.ph .sub{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);font-weight:600;margin:14px 0 2px}
+.ph .lo{display:grid;grid-template-columns:70px minmax(0,1fr) 58px 34px;align-items:center;gap:8px;padding:7px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12.5px}
+.ph .lo.first{border-top:none}
+.ph .lo .nm{font-weight:600;white-space:nowrap}
+.ph .lo .bar{height:5px;border-radius:3px;background:rgba(255,255,255,.08);position:relative}
+.ph .lo .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+.ph .lo .bar s{position:absolute;top:-3px;bottom:-3px;width:1px;background:rgba(255,255,255,.6)}
+.ph .lo .kw{font:500 11px "JetBrains Mono";text-align:right;color:var(--text);white-space:nowrap}
+.ph .lo .df{font:500 11px "JetBrains Mono";text-align:right;color:#9fc0ff}
+.ph .lo .df.r{color:var(--out)}
+.ph .nr{display:flex;gap:10px;align-items:flex-start;margin-top:12px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px dashed rgba(255,255,255,.2);font-size:12.5px;color:var(--dim)}
+.ph .nr i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--mute);margin-top:5px}
+.ph .nr b{color:var(--text);font-weight:600}
+.ph .nr small{display:block;font-size:11.5px;color:var(--mute);margin-top:2px;line-height:1.45}
+.ph .flagbox{margin-top:12px;padding:12px;border-radius:16px;background:linear-gradient(135deg,rgba(255,90,78,.18),rgba(255,90,78,.06));border:1px solid rgba(255,90,78,.45)}
+.ph .flagbox .ft{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.ph .flagbox .ft b{font-size:14px}
+.ph .flagbox .ft span{font:500 18px "JetBrains Mono";color:var(--out);flex:none}
+.ph .flagbox p{margin-top:4px;color:#ffd6d1;font-size:12.5px}
+.ph .d7{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-top:10px}
+.ph .d7 div{text-align:center;font:500 10px "JetBrains Mono";padding:5px 0 4px;border-radius:8px;background:rgba(255,255,255,.06);color:var(--text)}
+.ph .d7 div.l{background:rgba(255,90,78,.3);color:#ffe1dd}
+.ph .d7 div small{display:block;font:500 8.5px Manrope;color:var(--mute);margin-top:1px}
+.ph .d7 div.l small{color:#ffb3aa}
+.ph .flagbox .kv{margin-top:10px}
+.ph .flagbox .why{font-size:12px;color:var(--dim);margin-top:8px;line-height:1.5}
+.ph .flagbox .why b{color:var(--text)}
+.feeds .ins b{font-size:13.5px}
+.feeds .ntf{display:flex;gap:10px;padding:11px 12px;border-radius:22px;background:rgba(60,64,78,.55);border:1px solid rgba(255,255,255,.08)}
+.feeds .ntf .ic{flex:none;width:38px;height:38px;border-radius:9px;background:radial-gradient(circle at 40% 35%,#ffe2a8,#ffc15e 45%,#c47a1c);box-shadow:inset 0 0 0 1px rgba(255,255,255,.2)}
+.feeds .ntf .bd{flex:1;min-width:0}
+.feeds .ntf .tp{display:flex;justify-content:space-between;gap:8px}
+.feeds .ntf .tp b{font-size:14px;font-weight:700;line-height:1.3;min-width:0}
+.feeds .ntf .tp span{flex:none;font-size:12px;color:rgba(255,255,255,.55)}
+.feeds .ntf p{font-size:13.5px;line-height:1.35;color:rgba(255,255,255,.88);margin-top:1px}
+.feeds .lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:600;margin:18px 4px 6px;line-height:1.5}
+.feeds .lbl code{font:10px "JetBrains Mono";text-transform:none;letter-spacing:0;color:var(--text)}
+</style></head><body>
+<div class="col">
+  <div class="intro">
+    <div class="k">Mockup u · Panels tab</div>
+    <h2>Every panel, by name and place.</h2>
+    <p>The PVS relay now sends each of the 30 microinverters' readings every 5 minutes. This mockup shows how the Panels tab could use them. The Live roof gets a <b style="color:var(--text)">Per panel</b> chip that tints each panel against the array's median, and tapping a panel pins its readout to the roof. A new <b style="color:var(--text)">Panel health</b> card goes under Performance vs sunlight. Panels are always named by where they sit: Row 1 is the top row at the ridge, Row 3 the eave row, and panels count 1 to 10 from the north end (left in the default roof view). Serial numbers are never shown. All numbers are illustrative.</p>
+  </div>
+
+  <!-- ================= Frame 1 · Live roof, Per panel on ================= -->
+  <div class="frame" id="f1">
+    <div class="sect">Frame 1 · Per panel on · Oct 3, 2:35 PM</div>
+    <div class="pagepad">
+      <div class="hello"><div><h3>Panels</h3><p><span>30 × 320 W · 9.6 kW DC · faces 244°</span></p></div><div class="wx"><b>7.1</b>kW right now</div></div>
+      <div class="card">
+        <div class="h"><b>Live roof</b><span>drag to rotate</span></div>
+        <div class="roof3d" id="roof1"><div class="roofhud" id="hud1">—</div><div class="pin" id="pin1"></div></div>
+        <div class="legend" style="justify-content:flex-start">Output<span class="ramp"></span><span>0 → peak</span><span class="togs"><button class="chip tog pp on" data-f="0" aria-pressed="true"><i></i>Per panel</button><button class="chip tog hb" data-f="0" aria-pressed="false"><i></i>Hour bars</button></span></div>
+        <div class="legend ppk on" style="justify-content:flex-start"><span>vs median now</span><span>−15%</span><span class="dramp"></span><span>+10%</span><span>· ±5% no tint · tap a panel</span></div>
+        <div class="legend bl" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Produced</span><span><i style="background:rgba(255,255,255,.25)"></i>Expected from sunlight</span><span>hourly means</span></div>
+      </div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> a <b>Per panel</b> chip beside Hour bars (<b>tap to toggle</b>). When it is on, each panel gets a thin tint over its usual glow: blue when it is making less than the array's median panel right now, gold when it is making more, and no tint within ±5%. While it is on, the shared output glow drops to 40% so the tints read against it. A legend line under the chips gives the scale. The HUD gains one line: how many of the 30 microinverters reported in the latest poll, and the weakest panel's share of the median.</p>
+      <p><b class="same">Unchanged:</b> the house, panels and Powerwalls, the dust veil, the sun path, the output glow whenever Per panel is off, drag to rotate, the Hour bars chip and its legend, and the existing HUD lines. Nothing new stands on the roof: the tint is a second layer on the same 30 panels.</p>
+      <p><b class="rl">Rules:</b> each panel's ratio is its latest AC kW divided by the median of the panels that reported in the same poll. The tint deepens from ±5% to full colour at −15% (the anomaly threshold) or +10% (a panel rarely beats the median by more). While the array median is under 20 W the chip is greyed out and reads "sun down". A tap (under 6 px of movement) selects a panel, but only while Per panel is on; a drag still rotates.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 2 · a panel tapped ================= -->
+  <div class="frame" id="f2">
+    <div class="sect">Frame 2 · Row 3 · 4 tapped</div>
+    <div class="pagepad">
+      <div class="hello"><div><h3>Panels</h3><p><span>30 × 320 W · 9.6 kW DC · faces 244°</span></p></div><div class="wx"><b>7.1</b>kW right now</div></div>
+      <div class="card">
+        <div class="h"><b>Live roof</b><span>drag to rotate</span></div>
+        <div class="roof3d" id="roof2"><div class="roofhud" id="hud2">—</div><div class="pin" id="pin2"></div></div>
+        <div class="legend" style="justify-content:flex-start">Output<span class="ramp"></span><span>0 → peak</span><span class="togs"><button class="chip tog pp on" data-f="1" aria-pressed="true"><i></i>Per panel</button><button class="chip tog hb" data-f="1" aria-pressed="false"><i></i>Hour bars</button></span></div>
+        <div class="legend ppk on" style="justify-content:flex-start"><span>vs median now</span><span>−15%</span><span class="dramp"></span><span>+10%</span><span>· ±5% no tint · tap a panel</span></div>
+        <div class="legend bl" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Produced</span><span><i style="background:rgba(255,255,255,.25)"></i>Expected from sunlight</span><span>hourly means</span></div>
+      </div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> tapping a panel outlines it in white, pauses the slow auto-rotate and pins a readout to it. At 375 px there is no room beside the panel, so the readout is a strip along the bottom of the scene (or just under the HUD when the panel sits low), tied to the panel by a leader line that follows it as you drag. It shows the panel's name, AC kW out and DC kW in now, heat-sink °C, kWh so far today, and that panel's share of the array's kWh today (an even share would be 3.3%). Under those is a sparkline of today's 5-minute AC output (gold) against the median panel (dashed). ✕ or a tap on empty sky closes it. <b>Tap any panel</b> in frame 1 or 2 to try it.</p>
+      <p><b class="same">Unchanged:</b> everything else on the card. The HUD keeps its place top left, and the readout stays clear of it.</p>
+      <p><b class="rl">Rules:</b> the "now" values come from <code>/api/pvs/latest</code> (kw, kwDc, tempC). The kWh comes from <code>/api/pvs/day</code>, where it is the lifetime-counter difference, and the sparkline uses that route's aligned 5-minute series. A reading older than 15 minutes shows its age ("0.21 kW · 40 min ago") in place of "now".</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 3 · Panel health card ================= -->
+  <div class="frame" id="f3">
+    <div class="sect">Frame 3 · Panel health · Oct 3, 5:20 PM</div>
+    <div class="pagepad">
+      <div class="card ghostcard"><div class="h"><b>Performance vs sunlight</b><span>last 30 days</span></div><p style="margin-top:6px">Chart, text and warranty lines as today.</p></div>
+      <div class="card ph" id="ph3"></div>
+      <div class="card ghostcard"><div class="h"><b>Cleaning check</b><span class="badge g">Clean</span></div></div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> a <b>Panel health</b> card between Performance vs sunlight and Cleaning check. Its 3 × 10 grid of tiles is laid out like the roof (ridge row on top, north end on the left). Each tile shows that panel's kWh today and is tinted by it against the median panel, on the same scale as the roof. Below the grid: the three lowest panels with their deficit, any panel that has stopped reporting, and the date the per-panel data starts. Tapping a tile scrolls up to the Live roof with that panel selected (frame 2).</p>
+      <p><b class="same">Unchanged:</b> Performance vs sunlight, Cleaning check and everything else on the tab.</p>
+      <p><b class="rl">Rules:</b> today's kWh is the latest lifetime counter minus today's first reading, so gaps in the relay lose no energy. The median covers the panels that reported in the last 15 minutes. A panel is <b>not reporting</b> when its newest reading is more than 15 minutes (3 polls) older than the relay's newest poll. It gets a hatched tile and is left out of the median and the lowest-three list. If the whole relay goes silent, the card says "Relay last heard 4:40 PM" and no single panel is blamed.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 4 · a real problem ================= -->
+  <div class="frame" id="f4">
+    <div class="sect">Frame 4 · a panel that stays low · Oct 14</div>
+    <div class="pagepad">
+      <div class="card ph" id="ph4"></div>
+      <div class="feeds">
+        <div class="lbl">Insights › How well Solstice knows your home · existing anomaly line</div>
+        <div class="card" style="margin-top:0"><div class="ins lanom" style="--c:var(--warn)"><div class="ic">⚠</div><div><b>Row 2 · 7 is running low</b> <time>· 1 day</time><p>62% of the median panel today, and under 85% on 6 of the last 7 producing days. Shade, soiling or a failing microinverter.</p></div></div></div>
+        <div class="lbl">Push · Settings › Alerts › Panel fault · existing kind <code>panel</code></div>
+        <div class="ntf"><div class="ic"></div><div class="bd"><div class="tp"><b>Panel Row 2 · 7 is running low</b><span>Oct 13</span></div><p>Under 85% of the median panel on 5 of the last 7 days. Tap to see it on the roof.</p></div></div>
+      </div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> a flagged panel's tile turns red, the card header gets a "1 to check" badge, and a red box names the panel with today's share, its last 7 days and one line of diagnosis from DC in vs AC out. The flag opens a learning-layer anomaly of kind <code>panel.low@r2c7</code> (severity warn, action <code>open_panels</code>). That puts it on the existing anomaly line in the Learning card and in the weekly digest's "Worth a look", and sends one push of the existing alert kind <code>panel</code>, already capped at 2 in 24 hours.</p>
+      <p><b class="same">Unchanged:</b> the Learning card, the digest and Settings › Alerts. The Panel fault switch already exists; this is what finally feeds it.</p>
+      <p><b class="rl">Rules:</b> the anomaly fires when a panel's kWh is below 85% of the median panel on 5 of the last 7 days on which the array was producing. A producing day is one where the array made at least 15 kWh and the panel reported for at least 90% of daylight polls; other days are skipped, not counted as good. It clears after 3 producing days in a row at 90% or more. Diagnosis: if the panel's DC in is low too, less light is reaching it (shade or soiling). If DC is normal but AC out is under 90% of DC, the microinverter is losing it.</p>
+    </div>
+  </div>
+
+  <div class="wrules">
+    <h3>Rules in one place</h3>
+    <ul>
+      <li><b>Names:</b> "Row r · c". Row 1 is the ridge row and Row 3 the eave row; c counts 1–10 from the north end. The serial-to-position map lives in the database only (kv <code>pvs:layout</code>), never on screen or in git.</li>
+      <li><b>Tint:</b> the ratio to the median panel. Within ±5%, no tint. Below that, blue that reaches full strength at −15%. Above it, gold that reaches full strength at +10%. The roof uses kW now and the grid uses kWh today, on the same scale. Red appears only for an open <code>panel.low</code> anomaly, never for a single low reading.</li>
+      <li><b>Not reporting:</b> the panel's newest reading is more than 15 minutes (3 polls) behind the relay's newest poll, in daylight. The card line appears at 15 minutes, and a <code>panel</code> push follows after 60 minutes of daylight silence. A silent relay is reported as the relay, not as 30 dead panels.</li>
+      <li><b>Anomaly:</b> below 85% of the median panel on 5 of the last 7 producing days (array ≥ 15 kWh, panel reported ≥ 90% of daylight polls). It clears after 3 producing days in a row at ≥ 90%, and feeds the learning layer's anomaly line, the digest and the existing <code>panel</code> alert.</li>
+      <li><b>Read only:</b> nothing here writes to the PVS, Tesla, the pool or the thermostat.</li>
+    </ul>
+  </div>
+</div>
+<p class="fine pagefine">Illustrative data. No serial numbers, price, loan, bill or location figures are shown.</p>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+/* ---------- helpers (same maths as web/src/lib/util.js; the latitude is a generic, rounded value for sun geometry) ---------- */
+const RAD = Math.PI / 180, LAT = 30, NOON_SHIFT_MIN = 30; // site sits roughly half an hour of solar time west of its zone meridian
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const hourLabel = h => `${(h + 11) % 12 + 1}${h % 24 < 12 ? 'a' : 'p'}`;
+function sunAt(date) {
+  const start = new Date(Date.UTC(date.getUTCFullYear(), 0, 0)), doy = Math.floor((date - start) / 864e5);
+  const hr = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600, g = 2 * Math.PI / 365 * (doy - 1 + (hr - 12) / 24);
+  const eqt = 229.18 * (.000075 + .001868 * Math.cos(g) - .032077 * Math.sin(g) - .014615 * Math.cos(2 * g) - .040849 * Math.sin(2 * g));
+  const dec = .006918 - .399912 * Math.cos(g) + .070257 * Math.sin(g) - .006758 * Math.cos(2 * g) + .000907 * Math.sin(2 * g) - .002697 * Math.cos(3 * g) + .00148 * Math.sin(3 * g);
+  const ha = (((hr - 6) * 60 + eqt - NOON_SHIFT_MIN) / 4 - 180) * RAD, lat = LAT * RAD;
+  const el = 90 - Math.acos(clamp(Math.sin(lat) * Math.sin(dec) + Math.cos(lat) * Math.cos(dec) * Math.cos(ha), -1, 1)) / RAD;
+  return { el, az: (Math.atan2(Math.sin(ha), Math.cos(ha) * Math.sin(lat) - Math.tan(dec) * Math.cos(lat)) / RAD + 540) % 360 };
+}
+const sunVec = ({ el, az }, v = new THREE.Vector3()) => v.set(Math.sin(az * RAD) * Math.cos(el * RAD), Math.sin(el * RAD), -Math.cos(az * RAD) * Math.cos(el * RAD));
+
+/* ---------- dust veil: one noise field, painted as a second layer on the panel CanvasTexture at alpha score/100 × .35 ---------- */
+const TW = 256, TH = 400;
+const hash = (x, y, s) => { const h = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453; return h - Math.floor(h); };
+function vnoise(x, y, s) { const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash(xi, yi, s), b = hash(xi + 1, yi, s), c = hash(xi, yi + 1, s), d = hash(xi + 1, yi + 1, s); return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v; }
+const FIELD = (() => { const f = new Float32Array(TW * TH);
+  for (let y = 0; y < TH; y++) for (let x = 0; x < TW; x++) {
+    let n = 0, amp = .5, fr = 1; for (let o = 0; o < 4; o++) { n += amp * vnoise(x / TW * 5 * fr, y / TH * 8 * fr, o); amp *= .5; fr *= 2; }
+    const down = 1 - x / TW; // canvas x = 0 maps to the panel's down-slope (eave) edge, where dust settles
+    const grad = .35 + .65 * Math.pow(down, 1.8), speck = hash(x, y, 9) > .992 ? .5 : 0, lip = x < TW * .06 ? .35 : 0;
+    f[y * TW + x] = clamp(clamp((n - .3) * 1.6, 0, 1) * grad + speck + lip, 0, 1);
+  } return f; })();
+function layer(rgb) { const c = document.createElement('canvas'); c.width = TW; c.height = TH; const x = c.getContext('2d'), im = x.createImageData(TW, TH);
+  for (let i = 0; i < TW * TH; i++) { im.data[i * 4] = rgb[0]; im.data[i * 4 + 1] = rgb[1]; im.data[i * 4 + 2] = rgb[2]; im.data[i * 4 + 3] = FIELD[i] * 255; }
+  x.putImageData(im, 0, 0); return c; }
+const DUST = layer([188, 166, 130]), DUST_DARK = layer([44, 36, 28]);
+function paintPanel(x, score) { // the app's panel texture, then the veil
+  const w = TW, h = TH; x.globalAlpha = 1; x.fillStyle = '#12182b'; x.fillRect(0, 0, w, h); x.strokeStyle = 'rgba(150,170,220,.28)'; x.lineWidth = 3;
+  for (let i = 1; i < 6; i++) { x.beginPath(); x.moveTo(i * w / 6, 0); x.lineTo(i * w / 6, h); x.stroke(); } for (let j = 1; j < 10; j++) { x.beginPath(); x.moveTo(0, j * h / 10); x.lineTo(w, j * h / 10); x.stroke(); }
+  x.strokeStyle = 'rgba(210,220,240,.55)'; x.lineWidth = 8; x.strokeRect(0, 0, w, h);
+  x.globalAlpha = score / 100 * .35; x.drawImage(DUST, 0, 0); x.globalAlpha = 1;
+}
+function paintGlow(x, score) { // same layer, dimming the output glow where dust sits
+  x.globalAlpha = 1; x.fillStyle = '#fff'; x.fillRect(0, 0, TW, TH); x.globalAlpha = score / 100 * .35; x.drawImage(DUST_DARK, 0, 0); x.globalAlpha = 1;
+}
+function canvasTex(paint) { const c = document.createElement('canvas'); c.width = TW; c.height = TH; const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  t.userData.redraw = score => { paint(c.getContext('2d'), score); t.needsUpdate = true; }; return t; }
+function tex(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; }
+
+/* ---------- the house, from web/src/scenes/home.js buildHouse (panels instanced: 2 draw calls instead of 60) ---------- */
+const TILT = 27 * RAD, W = 14, L = 24, WALL = 3.2, OH = .5;
+const THETA = Math.atan2(Math.sin(154 * RAD), -Math.cos(154 * RAD));
+function buildHouse(score) {
+  const edgeMats = [];
+  const mat = (c, r = .8, m = .05) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m });
+  const wall = mat(0x3b3f47), roofM = mat(0x2a2c32, .85, .05), trim = mat(0x4a4f58, .6);
+  const map = canvasTex(paintPanel), glow = canvasTex(paintGlow); map.userData.redraw(score); glow.userData.redraw(score);
+  const panelMat = new THREE.MeshStandardMaterial({ roughness: .25, metalness: .55, emissive: 0x1a2a66, emissiveIntensity: 0, map, emissiveMap: glow });
+  const winMat = new THREE.MeshStandardMaterial({ color: 0x6f7a8e, roughness: .08, metalness: .6, emissive: 0xffc98a, emissiveIntensity: 0 });
+  const g = new THREE.Group(); g.rotation.y = THETA;
+  function hip(Wd, Ln, wallH, tilt, wallMat, roofMat, over) {
+    const grp = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(Wd, wallH, Ln), wallMat); body.position.y = wallH / 2; body.castShadow = body.receiveShadow = true; grp.add(body);
+    const w = Wd / 2 + over, l = Ln / 2 + over, H = w * Math.tan(tilt), r = Math.max(0, l - w);
+    const A = [-w, 0, -l], B = [w, 0, -l], C = [w, 0, l], D = [-w, 0, l], R1 = [0, H, -r], R2 = [0, H, r];
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute([A, D, R2, A, R2, R1, B, R1, R2, B, R2, C, A, R1, B, D, C, R2].flat(), 3)); geo.computeVertexNormals();
+    const roof = new THREE.Mesh(geo, roofMat.clone()); roof.material.side = THREE.DoubleSide; roof.material.flatShading = true; roof.position.y = wallH; roof.castShadow = roof.receiveShadow = true; grp.add(roof);
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .12 })); e.position.y = wallH; grp.add(e); edgeMats.push(e.material);
+    return { grp, w };
+  }
+  const main = hip(W, L, WALL, TILT, wall, roofM, OH); g.add(main.grp);
+  const patio = hip(7, 6, 2.8, 22 * RAD, mat(0x34373e), mat(0x1f2126, .85), .3); patio.grp.position.set(-5.5, 0, -14.5); g.add(patio.grp);
+  const arr = new THREE.Group(); arr.position.set(-main.w, WALL, 0); arr.rotation.z = TILT; g.add(arr);
+  const pGeo = new THREE.BoxGeometry(1.558, .05, 1.046);
+  const panels = new THREE.InstancedMesh(pGeo, panelMat, 30); panels.castShadow = panels.receiveShadow = true;
+  const eBase = new THREE.EdgesGeometry(pGeo).attributes.position.array, ePos = new Float32Array(eBase.length * 30), m4 = new THREE.Matrix4();
+  let k = 0;
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 10; c++) { const px = .9 + (r + .5) * 1.591, py = .09, pz = 1.2 + (c - 4.5) * 1.079;
+    panels.setMatrixAt(k, m4.makeTranslation(px, py, pz));
+    for (let i = 0; i < eBase.length; i += 3) { const o = k * eBase.length + i; ePos[o] = eBase[i] + px; ePos[o + 1] = eBase[i + 1] + py; ePos[o + 2] = eBase[i + 2] + pz; }
+    k++; }
+  arr.add(panels);
+  const eGeo = new THREE.BufferGeometry(); eGeo.setAttribute('position', new THREE.BufferAttribute(ePos, 3));
+  const panelEdge = new THREE.LineBasicMaterial({ color: 0x8fb8ff, transparent: true, opacity: .15 }); edgeMats.push(panelEdge); arr.add(new THREE.LineSegments(eGeo, panelEdge));
+  [-8.5, -5.5, 1.5, 4.5].forEach(z => { const w = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.2), winMat); w.rotation.y = -Math.PI / 2; w.position.set(-W / 2 - .02, 1.7, z); g.add(w);
+    const f = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.4), trim); f.rotation.y = -Math.PI / 2; f.position.set(-W / 2 - .015, 1.7, z); g.add(f); });
+  const door = new THREE.Mesh(new THREE.PlaneGeometry(5, 2.3), new THREE.MeshStandardMaterial({ roughness: .7, map: tex(256, 256, (x, w, h) => { x.fillStyle = '#2a2d33'; x.fillRect(0, 0, w, h); x.fillStyle = 'rgba(0,0,0,.35)'; for (let j = 1; j < 8; j++) x.fillRect(0, j * h / 8 - 2, w, 4); }) }));
+  door.position.set(2.2, 1.2, L / 2 + .02); g.add(door);
+  const gw = new THREE.Mesh(new THREE.BoxGeometry(.14, .75, .5), mat(0x4a4e57, .5, .2)); gw.position.set(-W / 2 - .08, 1.6, 8.6); g.add(gw);
+  const pwLeds = [];
+  [9.7, 10.6].forEach(z => { const u = new THREE.Mesh(new THREE.BoxGeometry(.16, 1.15, .75), new THREE.MeshStandardMaterial({ color: 0xf2f3f5, roughness: .35 })); u.position.set(-W / 2 - .1, .95, z); u.castShadow = true; g.add(u);
+    const led = new THREE.Mesh(new THREE.PlaneGeometry(.03, .5), new THREE.MeshBasicMaterial({ color: 0x4ef0a6 })); led.rotation.y = -Math.PI / 2; led.position.set(-W / 2 - .19, .75, z - .3); g.add(led); pwLeds.push(led); });
+  // wiring, idle in the sun view (as the app draws it)
+  const X = -W / 2 - .07;
+  const FEED = { solar: [[X, WALL - .05, 6.9], [X, 2.05, 6.9], [X, 2.05, 8.45]], home: [[X, 1.6, 8.3], [X, 1.6, 5.3]], batt: [[X, 1.4, 8.9], [X, 1.4, 9.3]], grid: [[X, 1.25, 8.6], [X, .05, 8.6], [X - 3, .05, 8.6], [X - 3, .05, 14]] };
+  const wireMat = new THREE.ShaderMaterial({ vertexShader: `void main(){gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`, fragmentShader: `void main(){gl_FragColor=vec4(.16,.17,.2,1.);}` });
+  for (const pts of Object.values(FEED)) { const path = new THREE.CurvePath(); for (let i = 0; i < pts.length - 1; i++) path.add(new THREE.LineCurve3(new THREE.Vector3(...pts[i]), new THREE.Vector3(...pts[i + 1])));
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(path, Math.max(12, Math.round(path.getLength() * 12)), .06, 8, false), wireMat)); }
+  g.updateMatrixWorld(true);
+  const panelNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(arr.getWorldQuaternion(new THREE.Quaternion())).normalize();
+  const local = (x, y, z) => g.localToWorld(new THREE.Vector3(x, y, z));
+  return { group: g, panelMat, map, glow, winMat, pwLeds, panelNormal, local, edgeMats, arr, panels, pGeo };
+}
+
+/* ---------- one Live roof ('sun' mode), plus veil and hour bars ---------- */
+const WMO = c => c === 0 ? 'Clear' : c <= 2 ? 'Partly cloudy' : c === 3 ? 'Overcast' : 'Rain';
+const WICON = (c, day = true) => c === 0 ? (day ? '☀︎' : '☾') : c <= 2 ? '⛅︎' : '☁︎';
+const RAIL_X = -11, RAIL_Z0 = -10, RAIL_Z1 = 7.5, KW_M = .26, BAR_W = .3, PAIR = .2; // bars: 0.26 m per kW (10 kW ≈ 2.6 m), row 4 m out from the panel wall
+
+function createRoof(host, hudEl, F) {
+  const canvas = document.createElement('canvas'); canvas.className = 'house-canvas'; host.prepend(canvas);
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true;
+  const scene = new THREE.Scene(); scene.fog = new THREE.Fog(0x1a2030, 45, 140);
+  const H = buildHouse(F.dust); scene.add(H.group);
+
+  const camera = new THREE.PerspectiveCamera(40, 1, .1, 500);
+  const controls = new OrbitControls(camera, canvas);
+  Object.assign(controls, { enableDamping: true, enablePan: false, enableZoom: false, maxPolarAngle: Math.PI * .48 });
+  camera.position.copy(H.local(-30, 17, 20)); controls.target.copy(H.local(-1, 2.5, 0)); controls.autoRotate = true; controls.autoRotateSpeed = .25;
+  canvas.style.touchAction = 'pan-y';
+
+  const sky = { top: { value: new THREE.Color() }, hor: { value: new THREE.Color() }, sunDir: { value: new THREE.Vector3() }, glow: { value: new THREE.Color() }, cloud: { value: 0 }, t: { value: 0 } };
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(300, 32, 16), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, uniforms: sky,
+    vertexShader: `varying vec3 vD;void main(){vD=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+    fragmentShader: `varying vec3 vD;uniform vec3 top,hor,sunDir,glow;uniform float cloud,t;
+    float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+    float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x),f.y);}
+    float fbm(vec2 p){float s=0.,a=.5;for(int i=0;i<5;i++){s+=a*n(p);p*=2.;a*=.5;}return s;}
+    void main(){float y=max(vD.y,0.);vec3 c=mix(hor,top,pow(y,.6));float s=max(dot(vD,normalize(sunDir)),0.);c+=glow*(pow(s,300.)*2.5+pow(s,8.)*.4);
+      vec2 uv=vD.xz/(vD.y+.25)*1.4+vec2(t*.02,0.);float cl=smoothstep(1.-cloud*.95,1.25-cloud*.6,fbm(uv*1.3))*smoothstep(0.,.25,vD.y);
+      c=mix(c,mix(hor,vec3(.85,.88,.92),.35)*(.55+.6*max(0.,normalize(sunDir).y)),cl*.85);gl_FragColor=vec4(c,1.);}` })));
+  const hemi = new THREE.HemisphereLight(0xbfd2ff, 0x2a2d34, .9); scene.add(hemi);
+  const moon = new THREE.DirectionalLight(0x9fbcff, 0); moon.position.set(35, 55, -30); scene.add(moon, moon.target);
+  const nightFill = new THREE.DirectionalLight(0x8fa8d8, 0); scene.add(nightFill, nightFill.target);
+  const sun = new THREE.DirectionalLight(0xfff0d8, 3); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); sun.shadow.bias = -.0005; sun.shadow.normalBias = .04;
+  Object.assign(sun.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, near: 1, far: 160 }); scene.add(sun, sun.target);
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(70, 72), new THREE.MeshStandardMaterial({ color: 0x15171c, roughness: .95 })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+  const sunBall = new THREE.Mesh(new THREE.SphereGeometry(4, 24, 12), new THREE.MeshBasicMaterial({ color: 0xffd48a, fog: false })); scene.add(sunBall);
+
+  // sun path + hour marks + N, exactly as home.js drawSunPath
+  const css = new CSS2DRenderer(); Object.assign(css.domElement.style, { position: 'absolute', inset: 0, pointerEvents: 'none' }); host.appendChild(css.domElement);
+  { const pts = [], v = new THREE.Vector3();
+    for (let h = 4; h <= 22; h += 1 / 6) { const sp = sunAt(new Date(F.dayStart + h * 36e5)); if (sp.el > -1) pts.push(sunVec(sp, v).clone().multiplyScalar(160)); }
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineDashedMaterial({ color: 0xffe0a0, dashSize: 3, gapSize: 2.5, transparent: true, opacity: .75, fog: false }));
+    line.computeLineDistances(); scene.add(line);
+    [8, 10, 12, 14, 16, 18].forEach(h => { const sp = sunAt(new Date(F.dayStart + h * 36e5)); if (sp.el < 1) return;
+      const el = document.createElement('div'); el.className = 'lax'; el.style.color = '#ffe0a0'; el.textContent = hourLabel(h);
+      const o = new CSS2DObject(el); o.position.copy(sunVec(sp, v).multiplyScalar(160)); scene.add(o); });
+    const n = document.createElement('div'); n.className = 'lax'; n.style.cssText = 'color:#fff;font-weight:700;text-shadow:0 1px 4px #000'; n.textContent = 'N';
+    const no = new CSS2DObject(n); no.position.set(0, .1, -30); scene.add(no); }
+
+  // ---- hour bars: ONE InstancedMesh of 2 × 15 thin boxes (gold "produced" first so it writes depth, then the white .25 "expected" ghosts).
+  // They stand in a row on the lawn below the panel face (house-local x = RAIL_X), 6 AM at the north end (left in this view) to 8 PM at the
+  // south end, stopping short of the gateway, Powerwalls and grid run. Tops stay below the panels' eave and clear of the HUD.
+  const HOURS = 15, bGeo = new THREE.BoxGeometry(BAR_W, 1, BAR_W); bGeo.translate(0, .5, 0);
+  const aCol = new Float32Array(HOURS * 2 * 3), aA = new Float32Array(HOURS * 2);
+  const bMat = new THREE.ShaderMaterial({ transparent: true, fog: false,
+    vertexShader: `attribute vec3 aCol;attribute float aA;varying vec3 vC;varying float vA;varying float vS;
+      void main(){vC=aCol;vA=aA;vS=.78+.22*abs(normal.x)+.12*normal.y;vec4 p=vec4(position,1.);
+      #ifdef USE_INSTANCING
+      p=instanceMatrix*p;
+      #endif
+      gl_Position=projectionMatrix*modelViewMatrix*p;}`,
+    fragmentShader: `varying vec3 vC;varying float vA;varying float vS;void main(){gl_FragColor=vec4(vC*vS,vA);}` });
+  const bars = new THREE.InstancedMesh(bGeo, bMat, HOURS * 2);
+  const gold = [1, .757, .369], m4 = new THREE.Matrix4(), zAt = i => RAIL_Z0 + i * (RAIL_Z1 - RAIL_Z0) / (HOURS - 1);
+  for (let i = 0; i < HOURS; i++) {
+    const z = zAt(i), exp = F.exp[i], act = F.act[i];
+    bars.setMatrixAt(i, m4.makeScale(1, act == null ? .001 : Math.max(.04, act * KW_M), 1).setPosition(RAIL_X, .02, z - PAIR)); aCol.set(gold, i * 3); aA[i] = act == null ? 0 : .95;
+    bars.setMatrixAt(HOURS + i, m4.makeScale(1, Math.max(.04, exp * KW_M), 1).setPosition(RAIL_X, .02, z + PAIR)); aCol.set([1, 1, 1], (HOURS + i) * 3); aA[HOURS + i] = .25;
+  }
+  bGeo.setAttribute('aCol', new THREE.InstancedBufferAttribute(aCol, 3)); bGeo.setAttribute('aA', new THREE.InstancedBufferAttribute(aA, 1));
+  bars.frustumCulled = false; H.group.add(bars);
+  // a faint baseline under the row, plus the 9.45 kW microinverter ceiling when an hourly mean reaches 9.2 kW (one LineSegments: the second added draw call)
+  const segs = [RAIL_X, .03, RAIL_Z0 - .6, RAIL_X, .03, RAIL_Z1 + .6], CAP = 9.45 * KW_M + .02;
+  if (F.act.some(a => a != null && a >= 9.2)) segs.push(RAIL_X, CAP, RAIL_Z0 - .6, RAIL_X, CAP, RAIL_Z1 + .6);
+  const rgeo = new THREE.BufferGeometry(); rgeo.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3));
+  const rail = new THREE.LineSegments(rgeo, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: .22, fog: false }));
+  H.group.add(rail);
+  // three hour labels under the row (clamped inside the canvas); with the HUD and N that is 5 overlays
+  const hrLbls = [0, 7, 14].map(i => { const d = document.createElement('div'); d.className = 'lax hr'; d.textContent = hourLabel(6 + i); host.appendChild(d); return { d, p: H.local(RAIL_X, 0, zAt(i)) }; });
+
+  let barsOn = false;
+  function setBars(on) { barsOn = on; bars.visible = rail.visible = on; hrLbls.forEach(l => l.d.style.display = on ? 'block' : 'none'); }
+  setBars(!!F.barsOn);
+  function setDust(score) { H.map.userData.redraw(score); H.glow.userData.redraw(score); }
+
+  // static scene state for this moment (the app recomputes it per frame; here the clock is frozen)
+  const now = new Date(F.now), sp = sunAt(now), sd = sunVec(sp, new THREE.Vector3()), cloud = F.cloud;
+  const C = { nightTop: new THREE.Color(0x05070d), nightHor: new THREE.Color(0x121a2c), duskTop: new THREE.Color(0x2a3560), duskHor: new THREE.Color(0xe79a68),
+    dayTop: new THREE.Color(0x3d6fb0), dayHor: new THREE.Color(0x9fb8d6), grayTop: new THREE.Color(0x4b5360), grayHor: new THREE.Color(0x7d8591) };
+  const ramp = [0x0e1a3a, 0x2d5bff, 0xffc15e, 0xfff3d0].map(c => new THREE.Color(c));
+  const rampAt = t => { t = clamp(t, 0, .999) * 3; const i = Math.floor(t); return ramp[i].clone().lerp(ramp[i + 1], t - i); };
+  const up = clamp((sp.el + 4) / 14, 0, 1), high = clamp(sp.el / 35, 0, 1);
+  sky.top.value.copy(C.nightTop).lerp(C.duskTop, up).lerp(C.dayTop, high).lerp(C.grayTop, cloud * .7 * up);
+  sky.hor.value.copy(C.nightHor).lerp(C.duskHor, up).lerp(C.dayHor, high).lerp(C.grayHor, cloud * .7 * up);
+  sky.sunDir.value.copy(sd); sky.glow.value.set(0xffd9a0).multiplyScalar(up * (1 - cloud * .75)); sky.cloud.value = cloud;
+  scene.fog.color.copy(sky.hor.value).multiplyScalar(.6);
+  sun.position.copy(sd).multiplyScalar(60); sun.intensity = 3.4 * clamp(sp.el / 8, 0, 1) * (1 - cloud * .7); hemi.intensity = .55 + .45 * up;
+  moon.intensity = (1 - up) * 1.1 * (1 - cloud * .5);
+  H.edgeMats.forEach(m => m.opacity = .12 + (1 - up) * .3);
+  sunBall.position.copy(sd).multiplyScalar(160); sunBall.visible = sp.el > -3;
+  const peakKw = 9;
+  H.panelMat.emissive.copy(rampAt(F.solarKw / peakKw).lerp(new THREE.Color(0x2d5bff), (1 - up) * .5));
+  H.panelMat.emissiveIntensity = .12 + (1 - up) * .2 + F.solarKw / peakKw * .9;
+  H.winMat.emissiveIntensity = Math.min(1.6, (1 - up) * (.4 + F.homeKw / 4));
+  H.pwLeds.forEach(l => l.material.color.set(F.battKw < -.05 ? 0x4ef0a6 : F.battKw > .05 ? 0xffc15e : 0x9aa3b0));
+  const inc = Math.acos(clamp(H.panelNormal.dot(sd), -1, 1)) / RAD;
+  const time = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
+  hudEl.innerHTML = `${time} · ${sp.el > 0 ? `☀ ${sp.el.toFixed(0)}° up, ${sp.az.toFixed(0)}°` : '☾ sun down'}<br>${WICON(F.code, sp.el > 0)} ${WMO(F.code)} · ${Math.round(cloud * 100)}% cloud · ${F.temp}°${sp.el > 0 ? `<br>sun hits the panels at ${Math.round(inc)}°` : ''}<br>${F.extra}`;
+
+  function resize() { const r = canvas.getBoundingClientRect(); if (!r.width) return; renderer.setSize(r.width, r.height, false); css.setSize(r.width, r.height); camera.aspect = r.width / r.height; camera.updateProjectionMatrix(); }
+  new ResizeObserver(resize).observe(canvas); resize();
+
+  let visible = true; new IntersectionObserver(es => { visible = es[0].isIntersecting; }).observe(host);
+  const v = new THREE.Vector3();
+  function placeLabels() { if (!barsOn) return; const w = canvas.clientWidth, h = canvas.clientHeight;
+    for (const l of hrLbls) { v.copy(l.p).project(camera); if (v.z > 1) { l.d.style.display = 'none'; continue; } l.d.style.display = 'block';
+      const hw = l.d.offsetWidth / 2, x = clamp((v.x + 1) / 2 * w, hw + 4, w - hw - 4), y = clamp((1 - v.y) / 2 * h + 3, 4, h - 18);
+      l.d.style.left = x + 'px'; l.d.style.top = y + 'px'; } }
+  let t = 0;
+  return {
+    setBars, setDust, camera, controls, canvas, H, hudEl, host,
+    frame(dt) { if (!visible || !host.offsetParent) return; t += dt; sky.t.value = t;
+      nightFill.position.copy(camera.position); nightFill.target.position.copy(controls.target); nightFill.intensity = (1 - up) * .7;
+      controls.update(); F.onFrame?.(); renderer.render(scene, camera); css.render(scene, camera); placeLabels(); },
+  };
+}
+
+/* =====================================================================================================================
+ * NEW in mockup u: per-panel data. Everything below is illustrative, deterministic, and shaped like /api/pvs/latest and
+ * /api/pvs/day. Panel k = r * 10 + c in scene order (r = 0 is the eave row, c = 0 the north end), named "Row (3 − r) · (c + 1)".
+ * ===================================================================================================================== */
+const rnd = s => { const x = Math.sin(s * 12.9898 + 4.1414) * 43758.5453; return x - Math.floor(x); };
+const NAME = k => `Row ${3 - Math.floor(k / 10)} · ${k % 10 + 1}`;
+const K = (row, col) => (3 - row) * 10 + (col - 1);   // Row/col as the owner reads them → scene index
+const median = a => { const s = a.filter(v => v != null).sort((x, y) => x - y), n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
+const hex = h => [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255];
+const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+const COOL0 = hex('#9fb4d8'), COOL1 = hex('#2f5fd0'), WARM0 = hex('#e8d3a6'), WARM1 = hex('#ffc15e');
+/** The one diverging scale (roof and grid): no tint within ±5%, blue to full at −15%, gold to full at +10%. */
+function tint(ratio) {
+  const d = ratio - 1;
+  if (Math.abs(d) <= .05) return { rgb: [1, 1, 1], a: .05, t: 0, side: 0 };
+  if (d < 0) { const t = clamp((-d - .05) / .10, 0, 1); return { rgb: mix(COOL0, COOL1, t), a: .38 + .4 * t, t, side: -1 }; }
+  const t = clamp((d - .05) / .05, 0, 1); return { rgb: mix(WARM0, WARM1, t), a: .34 + .36 * t, t, side: 1 };
+}
+const css = (rgb, a) => `rgba(${rgb.map(v => Math.round(v * 255)).join(',')},${a})`;
+
+/* ---- live day, Oct 3: one median-panel curve (west face, so the peak is mid-afternoon) with two passing clouds ---- */
+const H0 = 7.6, H1 = 19.1, NOW_H = 14 + 35 / 60;
+const shape = h => { const x = (h - H0) / (H1 - H0); if (x <= 0 || x >= 1) return 0;
+  return Math.pow(Math.sin(Math.PI * Math.pow(x, 1.3)), 1.2) * (1 - .38 * Math.exp(-(((h - 11.3) / .25) ** 2)) - .28 * Math.exp(-(((h - 13.2) / .2) ** 2))); };
+const TIMES = []; for (let h = 7; h <= NOW_H + 1e-6; h += 5 / 60) TIMES.push(h);
+const FAC = Array.from({ length: 30 }, (_, k) => 1 + (rnd(k + 1) - .5) * .07 - (k < 10 ? .025 : 0));   // eave row a touch dustier
+FAC[K(3, 4)] = .885; FAC[K(3, 5)] = .935; FAC[K(3, 3)] = .94; FAC[K(1, 9)] = 1.085; FAC[K(1, 10)] = 1.065; FAC[K(2, 2)] = 1.06;
+const AMP = .242;
+const series = k => TIMES.map((h, i) => Math.max(0, AMP * shape(h) * FAC[k] * (1 + (rnd(k * 997 + i) - .5) * .02)));
+const LIVE = Array.from({ length: 30 }, (_, k) => { const s = series(k), kw = s.at(-1);
+  return { k, s, kw, kwDc: kw / .962, tempC: 46 + kw / .25 * 5 + rnd(k + 50) * 2.4, kwh: s.reduce((a, v) => a + v * 5 / 60, 0) }; });
+const LIVE_MED = median(LIVE.map(p => p.kw)), LIVE_ARRAY_KWH = LIVE.reduce((a, p) => a + p.kwh, 0);
+const MED_SERIES = TIMES.map((_, i) => median(LIVE.map(p => p.s[i])));
+LIVE.forEach(p => p.ratio = p.kw / LIVE_MED);
+const WEAK = LIVE.reduce((a, p) => p.ratio < a.ratio ? p : a);
+const arrayKw = LIVE.reduce((a, p) => a + p.kw, 0);
+document.querySelectorAll('.hello .wx b').forEach(b => { if (b.closest('#f1, #f2')) b.textContent = arrayKw.toFixed(1); });
+
+/* ---- the two Live roof frames (same moment; frame 2 opens with Row 3 · 4 selected) ---- */
+const CDT = (y, m, d) => Date.UTC(y, m - 1, d, 5);
+const mkF = () => ({ dayStart: CDT(2026, 10, 3), code: 2, cloud: .3, temp: 91, solarKw: arrayKw, homeKw: 3.2, battKw: -1.9, dust: 30, barsOn: false,
+  exp: [0, 0, .2, 1.0, 2.2, 3.4, 4.6, 5.7, 6.7, 7.4, 7.3, 6.0, 3.9, 1.2, 0],
+  act: [0, 0, .18, .9, 2.0, 2.8, 4.1, 5.0, 6.1, 7.0, null, null, null, null, null],
+  extra: `sun says 7.6 kW · panels <span class="x">${arrayKw.toFixed(1)} kW</span> (${Math.round(arrayKw / 7.6 * 100)}%)` });
+const FR = [mkF(), mkF()]; FR.forEach(F => F.now = F.dayStart + NOW_H * 36e5);
+const clock = h => { const H = Math.floor(h), M = Math.round((h - H) * 60); return `${(H + 11) % 12 + 1}:${String(M).padStart(2, '0')} ${H < 12 ? 'AM' : 'PM'}`; };
+
+function perPanel(R, F, idx, startSel) {
+  const { H, camera, controls, canvas, hudEl, host } = R, pin = document.getElementById('pin' + (idx + 1)), baseHud = hudEl.innerHTML;
+  // one extra InstancedMesh: a thin tint quad just above each panel's glass (the only new draw call; nothing new stands on the roof)
+  const qGeo = new THREE.PlaneGeometry(1.5, .99); qGeo.rotateX(-Math.PI / 2);
+  const aCol = new Float32Array(30 * 3), aA = new Float32Array(30);
+  const qMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, fog: false,
+    vertexShader: `attribute vec3 aCol;attribute float aA;varying vec3 vC;varying float vA;void main(){vC=aCol;vA=aA;vec4 p=vec4(position,1.);
+      #ifdef USE_INSTANCING
+      p=instanceMatrix*p;
+      #endif
+      gl_Position=projectionMatrix*modelViewMatrix*p;}`,
+    fragmentShader: `varying vec3 vC;varying float vA;void main(){gl_FragColor=vec4(vC,vA);}` });
+  const quads = new THREE.InstancedMesh(qGeo, qMat, 30), m4 = new THREE.Matrix4(), POS = [];
+  for (let k = 0; k < 30; k++) { const r = Math.floor(k / 10), c = k % 10, p = new THREE.Vector3(.9 + (r + .5) * 1.591, .122, 1.2 + (c - 4.5) * 1.079); POS.push(p);
+    quads.setMatrixAt(k, m4.makeTranslation(p.x, p.y, p.z)); const t = tint(LIVE[k].ratio); aCol.set(t.rgb, k * 3); aA[k] = t.a; }
+  qGeo.setAttribute('aCol', new THREE.InstancedBufferAttribute(aCol, 3)); qGeo.setAttribute('aA', new THREE.InstancedBufferAttribute(aA, 1));
+  quads.frustumCulled = false; H.arr.add(quads);
+  const selEdge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1.6, .08, 1.09)), new THREE.LineBasicMaterial({ color: 0xffffff, fog: false }));
+  selEdge.visible = false; H.arr.add(selEdge);
+
+  let on = true, sel = null;
+  const hudLine = `<br><span class="pp">30 of 30 reporting · weakest <span class="c">${NAME(WEAK.k)}</span> at ${Math.round(WEAK.ratio * 100)}%</span>`;
+  const glow0 = H.panelMat.emissiveIntensity;   // while Per panel is on the shared output glow drops to 40% so the tints read
+  function setOn(v) { on = v; quads.visible = v; H.panelMat.emissiveIntensity = v ? glow0 * .4 : glow0; hudEl.innerHTML = baseHud + (v ? hudLine : ''); if (!v) select(null); }
+  function select(k) {
+    sel = k; selEdge.visible = k != null; controls.autoRotate = k == null;
+    if (k == null) { pin.classList.remove('on'); pin.innerHTML = ''; return; }
+    selEdge.position.copy(POS[k]).setY(.09);
+    const p = LIVE[k], share = p.kwh / LIVE_ARRAY_KWH * 100;
+    const W = 118, Hh = 50, x = h => (h - 7) / 12.5 * W, y = v => Hh - 2 - v / .3 * (Hh - 4);
+    const line = s => s.map((v, i) => `${i ? 'L' : 'M'}${x(TIMES[i]).toFixed(1)} ${y(v).toFixed(1)}`).join('');
+    pin.innerHTML = `<svg><line id="ld${idx}" stroke="rgba(255,255,255,.75)" stroke-width="1"/><circle id="dt${idx}" r="3.5" fill="#fff"/></svg>
+      <div class="ro" id="ro${idx}"><div class="rh"><b>${NAME(k)}</b><span class="ag">now · ${clock(NOW_H)}</span><button aria-label="Close">✕</button></div>
+      <div class="rb"><div class="rg"><span>AC out</span><b>${p.kw.toFixed(3)} kW <em>${Math.round(p.ratio * 100)}%</em></b>
+        <span>DC in</span><b>${p.kwDc.toFixed(3)} kW</b>
+        <span>Heat sink</span><b>${p.tempC.toFixed(0)} °C</b>
+        <span>Today</span><b>${p.kwh.toFixed(2)} kWh</b>
+        <span>Share</span><b>${share.toFixed(1)}% <em>of array</em></b></div>
+      <div><svg class="sp" viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none"><path d="${line(MED_SERIES)}" fill="none" stroke="rgba(255,255,255,.45)" stroke-width="1" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
+        <path d="${line(p.s)}" fill="none" stroke="#ffc15e" stroke-width="1.5" vector-effect="non-scaling-stroke"/><line x1="${x(NOW_H)}" x2="${x(NOW_H)}" y1="0" y2="${Hh}" stroke="rgba(255,255,255,.25)" vector-effect="non-scaling-stroke"/></svg>
+      <div class="sx"><span>7a</span><span>1p</span><span>7p</span></div><div class="sk"><i></i>panel <i class="d"></i>median</div></div></div></div>`;
+    pin.querySelector('button').onclick = () => select(null);
+    pin.classList.add('on');
+  }
+  // tap vs drag: a pointer that moves under 6 px selects the panel under it (or clears on empty sky)
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(); let down = null;
+  canvas.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
+  canvas.addEventListener('pointerup', e => { if (!down || !on) return; const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]); down = null; if (moved > 6) return;
+    const r = canvas.getBoundingClientRect(); ndc.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObject(H.panels, false)[0]; select(hit ? hit.instanceId : null); });
+  // keep the readout pinned: project the panel each frame, put the box beside it, clear of the HUD
+  const v = new THREE.Vector3();
+  F_HOOK[idx] = () => { if (sel == null) return; const ro = document.getElementById('ro' + idx); if (!ro) return;
+    v.copy(POS[sel]); H.arr.localToWorld(v); v.project(camera);
+    const w = canvas.clientWidth, h = canvas.clientHeight, sx = (v.x + 1) / 2 * w, sy = (1 - v.y) / 2 * h, bw = ro.offsetWidth, bh = ro.offsetHeight;
+    const hb = hudEl.offsetTop + hudEl.offsetHeight + 8, hr = hudEl.offsetLeft + hudEl.offsetWidth;
+    // a full-width strip: docked at the bottom of the scene when the panel is in the upper half, else just under the HUD
+    const bx = 8, by = sy < h * .62 ? h - bh - 8 : hb; ro.style.width = (w - 16) + 'px';
+    ro.style.transform = `translate(${bx}px,${by}px)`;
+    const ex = clamp(sx, bx + 16, bx + w - 32), ey = by > sy ? by : by + bh;
+    const ld = document.getElementById('ld' + idx), dt = document.getElementById('dt' + idx);
+    ld.setAttribute('x1', sx); ld.setAttribute('y1', sy); ld.setAttribute('x2', ex); ld.setAttribute('y2', ey); dt.setAttribute('cx', sx); dt.setAttribute('cy', sy); };
+  setOn(true); if (startSel != null) select(startSel);
+  return { setOn };
+}
+const F_HOOK = [];
+const roofs = [], pps = [];
+FR.forEach((F, i) => { try { F.onFrame = () => F_HOOK[i]?.(); roofs[i] = createRoof(document.getElementById('roof' + (i + 1)), document.getElementById('hud' + (i + 1)), F);
+  pps[i] = perPanel(roofs[i], F, i, i === 1 ? K(3, 4) : null); } catch (e) { console.error('roof' + (i + 1), e); } });
+
+document.querySelectorAll('.chip.tog').forEach(b => b.addEventListener('click', () => {
+  const on = !b.classList.contains('on'), i = +b.dataset.f, card = b.closest('.card'); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
+  if (b.classList.contains('pp')) { card.querySelector('.legend.ppk').classList.toggle('on', on); pps[i]?.setOn(on); }
+  else { card.querySelector('.legend.bl').classList.toggle('on', on); roofs[i]?.setBars(on); }
+}));
+let last = performance.now();
+(function loop(ts) { requestAnimationFrame(loop); const dt = Math.min(.05, ((ts ?? last) - last) / 1000); last = ts ?? last; roofs.forEach(r => r?.frame(dt)); })(last);
+
+/* ---- Panel health card (frames 3 and 4): today's kWh per panel against the median panel ---- */
+function dayKwh(seed, special) { const out = Array.from({ length: 30 }, (_, k) => 1 + (rnd(k * 31 + seed) - .5) * .075 - (k < 10 ? .02 : 0)); Object.entries(special).forEach(([k, f]) => out[k] = f); return out; }
+function renderHealth(el, D) {
+  const med0 = median(D.fac.map((f, k) => k === D.miss?.k ? null : f)), kwh = D.fac.map((f, k) => k === D.miss?.k ? null : f / med0 * D.medKwh);
+  Object.entries(D.exact ?? {}).forEach(([k, r]) => kwh[k] = r * D.medKwh);   // pin the story's panel to its exact share
+  const med = median(kwh), ratio = kwh.map(v => v == null ? null : v / med), arr = kwh.reduce((a, v) => a + (v ?? 0), 0) + (D.miss ? D.miss.kwh : 0);
+  const got = ratio.filter(r => r != null), lo = Math.min(...got), hi = Math.max(...got);
+  const low3 = ratio.map((r, k) => ({ r, k })).filter(x => x.r != null).sort((a, b) => a.r - b.r).slice(0, 3);
+  let rows = '';
+  for (let row = 1; row <= 3; row++) {
+    rows += `<div class="rn">${row}</div><div class="tr">`;
+    for (let col = 1; col <= 10; col++) { const k = K(row, col), r = ratio[k];
+      if (r == null) { rows += `<button class="tile miss" title="${NAME(k)} · not reporting">—</button>`; continue; }
+      const flag = D.flag?.k === k, t = tint(r), bg = t.side === 0 ? '' : `background:${css(t.rgb, .16 + .5 * t.t)};border-color:${css(t.rgb, .55 + .3 * t.t)}`;
+      rows += `<button class="tile${flag ? ' flag' : ''}" style="${flag ? '' : bg}" title="${NAME(k)} · ${kwh[k].toFixed(2)} kWh · ${Math.round(r * 100)}% of median">${kwh[k].toFixed(2)}</button>`; }
+    rows += '</div>';
+  }
+  const loRow = ({ r, k }, i) => { const red = D.flag?.k === k, t = tint(r);
+    return `<div class="lo${i ? '' : ' first'}"><span class="nm">${NAME(k)}</span><span class="bar"><i style="width:${Math.min(100, r / 1.1 * 100)}%;background:${red ? 'var(--out)' : t.side ? css(t.rgb, 1) : 'rgba(242,244,248,.45)'}"></i><s style="left:${100 / 1.1}%"></s></span>
+      <span class="kw">${kwh[k].toFixed(2)} kWh</span><span class="df${red ? ' r' : ''}">−${Math.round((1 - r) * 100)}%</span></div>`; };
+  el.innerHTML = `<div class="h"><b>Panel health</b>${D.badge ? `<span class="badge">${D.badge}</span>` : `<span>${D.sub}</span>`}</div>
+    ${D.badge ? `<p class="fine" style="margin-top:4px">${D.sub}</p>` : ''}
+    <div class="gridw"><span></span><div class="edge"><span>ridge</span><span>kWh today</span></div>${rows}<div class="cn">${Array.from({ length: 10 }, (_, i) => `<span>${i + 1}</span>`).join('')}</div>
+      <span></span><div class="edge"><span>eave · north</span><span>south</span></div></div>
+    <div class="legend"><span>vs median panel</span><span>−15%</span><span class="dramp"></span><span>+10%</span>${D.miss ? '<span><i class="hx"></i>no reading</span>' : ''}${D.flag ? '<span><i class="rx"></i>flagged</span>' : ''}</div>
+    ${D.flag ? D.flagHtml : ''}
+    <div class="kv">
+      <span>Array today · ${D.reporting}</span><b>${arr.toFixed(1)} kWh</b>
+      <span>Median panel</span><b>${med.toFixed(2)} kWh</b>
+      <span>Spread, lowest → highest</span><b>${Math.round(lo * 100)}% → ${Math.round(hi * 100)}%</b>
+      <span>Hottest heat sink today</span><b>${D.hot}</b>
+    </div>
+    <div class="sub">Lowest three</div>${low3.map(loRow).join('')}
+    ${D.miss ? `<div class="nr"><i></i><div><b>${NAME(D.miss.k)} · no reading for ${D.miss.mins} min</b><small>${D.miss.note}</small></div></div>` : ''}
+    <p class="fine" style="margin-top:12px">Since Sep 27 · per-panel data starts the day the PVS relay was installed (${D.days} days so far). Tap a tile to find it on the Live roof.</p>`;
+  el.querySelectorAll('.tile').forEach(t => t.onclick = () => { el.querySelectorAll('.tile.sel').forEach(x => x.classList.remove('sel')); t.classList.add('sel'); });
+}
+renderHealth(document.getElementById('ph3'), {
+  sub: 'today · 5:20 PM', reporting: '29 of 30', medKwh: 1.52, days: 7, hot: 'Row 1 · 8 · 58 °C',
+  fac: dayKwh(3, { [K(3, 4)]: .905, [K(3, 5)]: .94, [K(3, 3)]: .952, [K(1, 9)]: 1.07, [K(1, 10)]: 1.06, [K(2, 2)]: 1.055 }),
+  miss: { k: K(1, 3), mins: 40, kwh: 1.21, note: 'Last seen 4:40 PM at 0.21 kW, with 1.21 kWh so far. Its neighbours are still producing, so this is the panel\'s microinverter or its link to the PVS, not the relay. If it is still silent at 5:40 PM, a Panel fault push goes out.' } });
+renderHealth(document.getElementById('ph4'), {
+  badge: '1 to check', sub: 'today · Oct 14, 6:05 PM · 30 of 30 reporting', reporting: '30 of 30', medKwh: 1.46, days: 18, hot: 'Row 1 · 8 · 55 °C',
+  fac: dayKwh(14, { [K(2, 7)]: .62, [K(3, 4)]: .92, [K(3, 5)]: .94, [K(1, 9)]: 1.06 }),
+  flag: { k: K(2, 7) }, exact: { [K(2, 7)]: .62 },
+  flagHtml: `<div class="flagbox"><div class="ft"><b>Row 2 · 7</b><span>62%</span></div>
+    <p>Consistently low for 6 days: shade, soiling or a failing microinverter.</p>
+    <div class="d7">${[['Th 8', 96], ['Fr 9', 70], ['Sa 10', 64], ['Su 11', 66], ['Mo 12', 63], ['Tu 13', 61], ['We 14', 62]].map(([d, p]) => `<div class="${p < 85 ? 'l' : ''}">${p}<small>${d}</small></div>`).join('')}</div>
+    <div class="kv">
+      <span>Today</span><b>0.91 kWh · median 1.46</b>
+      <span>Now, DC in → AC</span><b>0.090 → 0.087 kW</b>
+      <span>Median DC in</span><b>0.148 kW</b>
+      <span>Conversion</span><b>96% · others 96%</b>
+      <span>Flagged</span><b>Oct 13 · push sent</b>
+    </div>
+    <p class="why"><b>DC in is low too</b>, and the microinverter converts what it gets as well as its neighbours do, so less light is reaching this panel. Look for a new shadow or a patch of dirt or droppings. A failing microinverter would show normal DC in with low AC out.</p>
+    <button class="link" style="margin-top:10px">Show on the Live roof</button></div>` });
+</script></body></html>
