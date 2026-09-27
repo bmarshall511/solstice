@@ -29,6 +29,7 @@ import { outageDetail } from './outage.js';
 import { alertRoutes } from './notify.js';
 import { ercotNow, fiveMinuteWatch, nightlyWatch, cronSites, fiveMinuteSteps, nightlySteps } from './watch.js';
 import { digestRoutes, maybeWeeklyDigest } from './digest.js';
+import { presenceRoutes, setPresence } from './appliances/presence.js';
 import { runLearn } from './learn/nightly.js';
 import { learnRouter } from './learn/api.js';
 import { confidenceMap } from './learn/confidence.js';
@@ -475,6 +476,7 @@ app.post('/api/appliances/ac/settings', express.json(), wrap(async (req, res) =>
   if (patch.presence && !['home', 'away'].includes(patch.presence)) return res.status(400).json({ error: 'bad presence' });
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ ac: next })]);
   else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ac: next });
+  if (patch.presence) await setPresence(site(req), { state: patch.presence, until: null });   // presence.ts: the switch is the manual mark
   // marking away/home takes effect right away when the plan is approved or Autopilot is Auto
   const id = site(req); if (patch.presence) { const rec = await kv.get<any>(`${id}:ac:plan`); if (rec) { rec.lastStepHour = null; await kv.set(`${id}:ac:plan`, rec); } await acTick(id, await settingsFor(req), await rateFor(id), await acSlope(id)).catch(() => {}); }
   res.json({ ok: true, ac: next });
@@ -485,6 +487,9 @@ app.use('/api', learnRouter);
 alertRoutes(app);
 /* ---------- weekly digest (digest.ts): GET /api/digest?week=; built Monday 07:00 Chicago by whichever cron tick comes first ---------- */
 digestRoutes(app);
+/* ---------- presence (appliances/presence.ts): GET/POST /api/presence; a mark re-runs the AC tick like the AC card's switch ---------- */
+presenceRoutes(app, async id => { const rec = await kv.get<any>(`${id}:ac:plan`); if (rec) { rec.lastStepHour = null; await kv.set(`${id}:ac:plan`, rec); }
+  const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; return acTick(id, settings, await rateFor(id), await acSlope(id)); });
 fiveMinuteSteps.digest = maybeWeeklyDigest; nightlySteps.digest = maybeWeeklyDigest;
 /**
  * Fires every 5 minutes; sampling.ts decides what is due. Nest (with acTick: AC learning and due plan steps) every 5 minutes 10:00–22:00

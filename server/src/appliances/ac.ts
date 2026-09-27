@@ -9,6 +9,7 @@ import { lastSetpointWrite } from './nest.js';
 import { guardCoolSetpoint, explainRefusal, GuardRefusal } from './guards.js';
 import { acSavings, learnedPlan, type AppliedTrim } from '../learn/ac.js';
 import type { Tier } from '../learn/confidence.js';
+import { presenceFor } from './presence.js';
 
 export type AcSettings = { band: { homeLo: number; homeHi: number; nightLo: number; nightHi: number }; awayF: number; nightFrom: number; nightTo: number; precoolDepth: number; coastF: number; maxStepF: number; humidityCap: number; autopilot: Mode; presence: 'home' | 'away' };
 const DEFAULTS: AcSettings = { band: { homeLo: 74, homeHi: 78, nightLo: 74, nightHi: 76 }, awayF: 80, nightFrom: 22, nightTo: 7, precoolDepth: 2, coastF: 78, maxStepF: 2, humidityCap: 60, autopilot: 'suggest', presence: 'home' };
@@ -141,6 +142,8 @@ export const stepAt = (plan: AcPlan, hour: number) => [...plan.steps].reverse().
 /* ---------- detail for the app ---------- */
 export async function acDetail(siteId: string, settingsAll: Record<string, any>, rate: number | null, slope: number, opts: { fresh?: boolean } = {}) {
   const settings: AcSettings = { ...DEFAULTS, ...(settingsAll.ac ?? {}), band: { ...DEFAULTS.band, ...(settingsAll.ac?.band ?? {}) } };
+  const presence = await presenceFor(siteId, settingsAll);   // presence.ts: manual "Away until", then Nest Eco, then home
+  settings.presence = presence.state;
   const configured = nestConfigured(), linked = configured && await nestLinked();
   let st = await kv.get<NestState>('nest:last') ?? null, error: string | null = null;
   if (linked && (opts.fresh || !st || Date.now() - st.at > 60_000)) { try { st = await readNest(); await recordNest(siteId, st); } catch (e: any) { error = e.message; } }
@@ -156,7 +159,7 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
   const todayKwh = Math.round(rt.minutes / 60 * acKw * 10) / 10;
   const home = await q<{ kwh: number }>(`SELECT (SUM(home_wh) / 1000.0)::float8 kwh FROM energy WHERE site_id = $1 AND day = $2`, [siteId, today]);
   return { id: 'ac', name: 'AC', configured, linked, error, settings, state: st, learned: { ...learned, acKw, source: learned.coolKw ? 'measured' : 'estimated' }, runtime: rt, todayKwh, shareOfHomePct: home[0]?.kwh ? Math.round(todayKwh / home[0].kwh * 100) : null,
-    plan, currentStep: stepAt(plan, hourNow()), week, applied: applied?.date === today ? applied : null, log, outdoorF: days[ti] ? Math.round(days[ti].high) : null, hourlyOutdoor: null,
+    plan, currentStep: stepAt(plan, hourNow()), week, presence, applied: applied?.date === today ? applied : null, log, outdoorF: days[ti] ? Math.round(days[ti].high) : null, hourlyOutdoor: null,
     equipment: { airHandler: 'Trane TEM4A0C42 · 3.5 ton variable-speed (2018)', heat: 'electric strips (staged)',
       outdoor: learned.heatKw != null ? (learned.heatKw < 5 ? `heat pump (measured ${learned.heatKw.toFixed(1)} kW when heating)` : `straight AC, heating on the strips (measured ${learned.heatKw.toFixed(1)} kW)`) : 'outdoor unit type: Solstice will measure it from the first heating steps this winter' } };
 }
