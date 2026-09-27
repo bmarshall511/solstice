@@ -27,7 +27,8 @@ import { flowsFor, FlowsInputError } from './flows.js';
 import { outageDetail } from './outage.js';
 
 import { alertRoutes } from './notify.js';
-import { ercotNow, fiveMinuteWatch, nightlyWatch, cronSites } from './watch.js';
+import { ercotNow, fiveMinuteWatch, nightlyWatch, cronSites, fiveMinuteSteps, nightlySteps } from './watch.js';
+import { digestRoutes, maybeWeeklyDigest } from './digest.js';
 import { runLearn } from './learn/nightly.js';
 import { learnRouter } from './learn/api.js';
 import { confidenceMap } from './learn/confidence.js';
@@ -482,6 +483,9 @@ app.post('/api/appliances/ac/settings', express.json(), wrap(async (req, res) =>
 app.use('/api', learnRouter);
 /* ---------- alerts feed and Web Push (notify.ts): /api/alerts, /api/alerts/:id/read, /api/push/key, /api/push/subscribe ---------- */
 alertRoutes(app);
+/* ---------- weekly digest (digest.ts): GET /api/digest?week=; built Monday 07:00 Chicago by whichever cron tick comes first ---------- */
+digestRoutes(app);
+fiveMinuteSteps.digest = maybeWeeklyDigest; nightlySteps.digest = maybeWeeklyDigest;
 /**
  * Fires every 5 minutes; sampling.ts decides what is due. Nest (with acTick: AC learning and due plan steps) every 5 minutes 10:00–22:00
  * in cooling season, every 15 minutes otherwise; a read-only pool read every 15 minutes of scheduled pump hours plus 02:00 and 05:00.

@@ -375,8 +375,9 @@ describe('everything else is refused to guests', () => {
 
   it('RED-10 every GET without a guest view answers 401 to a guest and to the owner previewing, before its handler runs', async () => {
     const reads = routes().filter(([m, p]) => m === 'GET' && !OPEN.has(`${m} ${p}`) && !redact.GUEST_GET.has(p.toLowerCase()));
-    // owner-only reads, pinned: a new GET must be added here on purpose (and has no guest view). /api/alerts and /api/push/key: notify.ts
-    expect(reads.map(([, p]) => p).sort()).toEqual(['/api/alerts', '/api/appliances/day', '/api/auth/devices', '/api/bills', '/api/export.csv', '/api/flows', '/api/outage',
+    // owner-only reads, pinned: a new GET must be added here on purpose (and has no guest view). /api/alerts and /api/push/key: notify.ts;
+    // /api/digest: digest.ts
+    expect(reads.map(([, p]) => p).sort()).toEqual(['/api/alerts', '/api/appliances/day', '/api/auth/devices', '/api/bills', '/api/digest', '/api/export.csv', '/api/flows', '/api/outage',
       '/api/push/key', '/api/share', '/api/site', '/auth/google', '/auth/login']);
     for (const [, path] of reads) for (const cookie of [guest, preview]) {
       const r = await call(path, { cookie });

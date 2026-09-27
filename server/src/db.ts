@@ -117,6 +117,8 @@ const SCHEMA = [
   // One row per browser that turned notifications on: the push endpoint (a bearer capability) and its encryption keys. DB only.
   `CREATE TABLE IF NOT EXISTS push_subscriptions (endpoint text PRIMARY KEY, site_id text NOT NULL, p256dh text NOT NULL, auth text NOT NULL,
      ua text, created_at timestamptz NOT NULL DEFAULT now(), last_ok timestamptz, fails int NOT NULL DEFAULT 0)`,
+  // Weekly digests (digest.ts): kWh, counts and confidence tiers only, no rate or dollar figure. One row per ISO week.
+  `CREATE TABLE IF NOT EXISTS digests (site_id text NOT NULL, week text NOT NULL, data jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (site_id, week))`,
 ];
 
 let migrated: Promise<void> | null = null;
