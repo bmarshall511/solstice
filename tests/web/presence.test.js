@@ -1,0 +1,35 @@
+// "Away until…" times (web/src/lib/presence.js, approved mockup mockups/t-enhancements.html frame 4).
+import { describe, it, expect } from 'vitest';
+import { chicagoEpoch, presets, untilLabel, awayButton, awayLines, when, pickedEpoch } from '../../web/src/lib/presence.js';
+
+const now = Date.parse('2026-09-28T14:20:00Z');   // Mon 9:20 AM in Chicago (CDT, UTC−5)
+
+describe('away until', () => {
+  it('reads Chicago wall-clock times on both sides of DST', () => {
+    expect(chicagoEpoch('2026-09-28', 18)).toBe(Date.parse('2026-09-28T23:00:00Z'));
+    expect(chicagoEpoch('2026-12-01', 7)).toBe(Date.parse('2026-12-01T13:00:00Z'));
+    expect(pickedEpoch('2026-09-30T15:30')).toBe(Date.parse('2026-09-30T20:30:00Z'));
+    expect(pickedEpoch('')).toBeNull();
+  });
+  it('offers Tonight 6 PM and Tomorrow morning 7 AM, and drops Tonight after 5:45 PM', () => {
+    expect(presets(now).map(p => [p.id, p.sub])).toEqual([['tonight', '6:00 PM today'], ['morning', '7:00 AM Tuesday']]);
+    expect(presets(Date.parse('2026-09-28T23:00:00Z')).map(p => p.id)).toEqual(['morning']);
+  });
+  it('labels the button and the control as the mockup does', () => {
+    expect(untilLabel(chicagoEpoch('2026-09-28', 18), now)).toBe('6:00 PM');
+    expect(untilLabel(chicagoEpoch('2026-09-29', 7), now)).toBe('7:00 AM Tue');
+    expect(untilLabel(chicagoEpoch('2026-09-30', 15, 30), now)).toBe('Wed 3:30 PM');
+    expect(awayButton(chicagoEpoch('2026-09-28', 18), now)).toBe('Away until 6 PM');
+    expect(when(Date.parse('2026-09-28T14:12:00Z'), now)).toBe('9:12 AM');
+  });
+  it('says what each Autopilot will do, by mode', () => {
+    const ac = { mode: 'auto', awayF: 82, band: { homeLo: 74, homeHi: 78, nightLo: 72, nightHi: 75 }, maxStepF: 2 };
+    const l = awayLines(chicagoEpoch('2026-09-28', 18), now, ac, { mode: 'auto' });
+    expect(l.ac).toBe('Will hold 82° until 6:00 PM, then go back to your 74–78° comfort band, at most 2° per step.');
+    expect(l.pool).toBe('No change. The pump plan doesn’t depend on who is home.');
+    expect(awayLines(chicagoEpoch('2026-09-29', 7), now, ac, { mode: 'suggest' }).ac).toMatch(/tonight instead of the 72–75° night band/);
+    expect(awayLines(chicagoEpoch('2026-09-29', 7), now, ac, { mode: 'suggest' }).pool).toMatch(/tomorrow’s plan is still suggested at 8:15 PM/);
+    expect(awayLines(chicagoEpoch('2026-09-28', 18), now, { ...ac, mode: 'suggest' }, { mode: 'auto' }).ac).toMatch(/^Suggests holding 82°/);
+    expect(awayLines(chicagoEpoch('2026-09-28', 18), now, { ...ac, mode: 'off' }, { mode: 'auto' }).ac).toMatch(/no Nest writes/);
+  });
+});
