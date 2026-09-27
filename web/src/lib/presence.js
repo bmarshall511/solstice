@@ -19,10 +19,12 @@ export const weekday = (ms, style = 'short') => new Date(ms).toLocaleDateString(
 /** "9:12 AM" today, else "Sat 9:12 AM". */
 export const when = (ms, now = Date.now()) => dayOf(ms) === dayOf(now) ? clock(ms) : `${weekday(ms)} ${clock(ms)}`;
 
-/** The two fixed presets: Tonight (6 PM today, while that is still ahead) and Tomorrow morning (7 AM). */
+/** The fixed presets: Until I'm back (no return time, the old indefinite Away), Tonight (6 PM today, while that is still ahead)
+ *  and Tomorrow morning (7 AM). */
 export function presets(now = Date.now()) {
   const today = dayOf(now), tonight = chicagoEpoch(today, 18), morning = chicagoEpoch(addDay(today, 1), 7);
   return [
+    { id: 'open', at: null, title: 'Until I’m back', sub: 'no return time · tap Home when you are' },
     ...(tonight > now + 15 * 60_000 ? [{ id: 'tonight', at: tonight, title: 'Tonight', sub: `${clock(tonight)} today` }] : []),
     { id: 'morning', at: morning, title: 'Tomorrow morning', sub: `${clock(morning)} ${weekday(morning, 'long')}` },
   ];
@@ -50,8 +52,14 @@ export function awayButton(at, now = Date.now()) {
  * setpoint until the return time and then goes back to the comfort band through the safety clamps (at most `maxStepF` per step).
  */
 export function awayLines(at, now, ac, pool) {
-  const d = dayOf(at), today = dayOf(now), b = ac.band ?? {}, band = `${b.homeLo}–${b.homeHi}°`, step = ac.maxStepF ?? 2;
+  const b = ac.band ?? {}, band = `${b.homeLo}–${b.homeHi}°`, step = ac.maxStepF ?? 2;
   const writes = ac.mode === 'auto' || ac.approved, suggest = !writes && ac.mode === 'suggest';
+  if (at == null) return {   // "Until I'm back": the old indefinite Away, held until the owner marks Home
+    ac: ac.mode === 'off' ? 'Off: Solstice makes no Nest writes, so the thermostat stays as it is.'
+      : writes ? `Will hold ${ac.awayF}° until you mark Home, then go back to your ${band} comfort band, at most ${step}° per step.`
+      : suggest ? `Suggests holding ${ac.awayF}° until you mark Home. Nothing changes until you approve the plan.` : '—',
+    pool: pool.mode === 'off' || !pool.mode ? 'No change. Pool Autopilot is Off.' : 'No change. The pump plan doesn’t depend on who is home.' };
+  const d = dayOf(at), today = dayOf(now);
   const hold = d === today ? `until ${clock(at)}` : d === addDay(today, 1) ? `tonight instead of the ${b.nightLo}–${b.nightHi}° night band, until ${clock(at)}` : `each day until ${weekday(at, 'long')} ${clock(at)}`;
   const acLine = ac.mode === 'off' ? 'Off: Solstice makes no Nest writes, so the thermostat stays as it is.'
     : writes ? `Will hold ${ac.awayF}° ${hold}, then go back to your ${band} comfort band, at most ${step}° per step.`

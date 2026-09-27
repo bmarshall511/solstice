@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 // The weekly digest (server/src/digest.ts; enhancements D1c, in-app + push only).
 //   DIG-1 ISO weeks, including the 53-week year and bad input
 //   DIG-2 the arithmetic on seeded PGlite data: totals, sunshine share, last week and the difference, best day, Powerwall days,
@@ -127,6 +128,10 @@ describe('the digest', () => {
     expect(await D.maybeWeeklyDigest('s', Date.parse('2026-09-27T20:00:00Z'))).toEqual({ skipped: 'outside the Monday–Tuesday window' });
     expect(await D.maybeWeeklyDigest('s', mon('11:59:00'))).toEqual({ skipped: 'before Monday 07:00' });
     expect(await D.maybeWeeklyDigest('s', mon('12:00:00'))).toEqual({ week: '2026-W39', stored: true, notified: true, pushed: 0 });
+    // a tapped digest push opens Now, where the "Your week" card lives (mockup t-enhancements frame 1); the service worker passes it through
+    expect(D.DIGEST_URL).toBe('/?go=v-now');
+    expect(readFileSync(new URL('../../server/src/digest.ts', import.meta.url), 'utf8')).toMatch(/url: DIGEST_URL/);
+    expect(readFileSync(new URL('../../web/public/sw.js', import.meta.url), 'utf8')).not.toMatch(/kind === 'digest'/);
     expect(await D.maybeWeeklyDigest('s', mon('12:05:00'))).toEqual({ skipped: 'already sent', week: '2026-W39' });
     expect(await D.maybeWeeklyDigest('s', Date.parse('2026-09-30T12:00:00Z'))).toEqual({ skipped: 'outside the Monday–Tuesday window' });
     const stored = await db.q<{ week: string; data: any }>(`SELECT week, data FROM digests WHERE site_id = 's'`);

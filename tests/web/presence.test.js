@@ -12,8 +12,15 @@ describe('away until', () => {
     expect(pickedEpoch('')).toBeNull();
   });
   it('offers Tonight 6 PM and Tomorrow morning 7 AM, and drops Tonight after 5:45 PM', () => {
-    expect(presets(now).map(p => [p.id, p.sub])).toEqual([['tonight', '6:00 PM today'], ['morning', '7:00 AM Tuesday']]);
-    expect(presets(Date.parse('2026-09-28T23:00:00Z')).map(p => p.id)).toEqual(['morning']);
+    expect(presets(now).map(p => [p.id, p.sub])).toEqual([['open', 'no return time · tap Home when you are'], ['tonight', '6:00 PM today'], ['morning', '7:00 AM Tuesday']]);
+    expect(presets(Date.parse('2026-09-28T23:00:00Z')).map(p => p.id)).toEqual(['open', 'morning']);
+  });
+  it('keeps the old indefinite Away as "Until I’m back" (no until)', () => {
+    const open = presets(now)[0];
+    expect(open).toMatchObject({ id: 'open', at: null, title: 'Until I’m back' });
+    const ac = { mode: 'auto', awayF: 82, band: { homeLo: 74, homeHi: 78, nightLo: 72, nightHi: 75 }, maxStepF: 2 };
+    expect(awayLines(null, now, ac, { mode: 'auto' })).toEqual({ ac: 'Will hold 82° until you mark Home, then go back to your 74–78° comfort band, at most 2° per step.', pool: 'No change. The pump plan doesn’t depend on who is home.' });
+    expect(awayLines(null, now, { ...ac, mode: 'suggest' }, { mode: 'auto' }).ac).toMatch(/^Suggests holding 82° until you mark Home/);
   });
   it('labels the button and the control as the mockup does', () => {
     expect(untilLabel(chicagoEpoch('2026-09-28', 18), now)).toBe('6:00 PM');

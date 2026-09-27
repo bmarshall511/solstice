@@ -14,10 +14,9 @@ self.addEventListener('fetch', e => {
 // Web push (mockup t-enhancements frame 2). The server (server/src/push.ts) sends {title, body, kind, id, url}. Each push is shown
 // with Solstice's icon, and the time it arrived is kept so Settings › Alerts can say "last push Mon 7:02 AM" on this device.
 const LAST_PUSH = '/__solstice/last-push';
-/** Where a tap opens: the digest opens its card on Now, storm preparation the Powerwall rules on Insights › Home, anything else
- *  the url the server gave (same origin only). */
+/** Where a tap opens: storm preparation the Powerwall rules on Insights › Home, anything else the url the server gave (same origin
+ *  only; the digest's is /?go=v-now, server/src/digest.ts DIGEST_URL). */
 function target(d) {
-  if (d.kind === 'digest') return '/?go=v-now';
   if (d.kind === 'storm') return '/?go=v-ins&p=home';
   try { const u = new URL(d.url || '/', location.origin); return u.origin === location.origin ? u.pathname + u.search : '/'; } catch { return '/'; }
 }

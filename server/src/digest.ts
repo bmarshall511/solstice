@@ -108,6 +108,9 @@ export function digestAlert(d: Digest) {
   return { title: t.sunsharePct != null ? `Your week: ${t.sunsharePct}% from sunshine` : 'Your week in energy', body: `${parts.join(', ')}.${todo.length ? ` ${todo.join(' · ')}.` : ''}` };
 }
 
+/** Where a tapped digest push opens: Now, where the "Your week" card lives (approved mockup t-enhancements frame 1). */
+export const DIGEST_URL = '/?go=v-now';
+
 /** Store a week's digest (a rebuild replaces it). */
 export const saveDigest = (siteId: string, d: Digest) =>
   q(`INSERT INTO digests (site_id, week, data) VALUES ($1, $2, $3) ON CONFLICT (site_id, week) DO UPDATE SET data = excluded.data, created_at = now()`, [siteId, d.week, JSON.stringify(d)]);
@@ -126,7 +129,7 @@ export async function maybeWeeklyDigest(siteId: string, now = Date.now()) {
   const d = await buildDigest(siteId, lastMonday, now);
   await saveDigest(siteId, d);
   const a = digestAlert(d);
-  const r = await notify(siteId, 'digest', a.title, a.body, { week }, { key: `digest:${week}`, windowH: 24 * 8, now, url: '/?go=v-ins' });
+  const r = await notify(siteId, 'digest', a.title, a.body, { week }, { key: `digest:${week}`, windowH: 24 * 8, now, url: DIGEST_URL });
   return { week, stored: true, notified: r.stored, pushed: r.pushed };
 }
 

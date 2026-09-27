@@ -120,7 +120,9 @@ const MODE_WORD = { off: 'Off', suggest: 'Suggest', auto: 'Auto' };
 function openAway(S) {
   const d = S.ac, pr = d.presence ?? {}, now = Date.now(), pre = presets(now);
   const pickDefault = localInput(now + 2 * 864e5).slice(0, 11) + '15:30';
-  let sel = pre[0].id, at = pre[0].at;
+  // no return time before (or none in force): "Until I'm back" is selected, so the old one-tap Away is one more tap
+  const first = pr.state === 'away' && pr.source === 'manual' && pr.until ? pre[1] : pre[0];
+  let sel = first.id, at = first.at;
   $('sheetBody').innerHTML = `<div class="shead"><h4>Away until…</h4><button class="x" id="awX" aria-label="Close">✕</button></div>
     <p class="sub">When should Solstice expect you back? It switches to Home at that time on its own, so a forgotten button never leaves the house warm.</p>
     ${pr.state === 'away' && pr.source === 'nest' ? `<div class="psrc" style="margin-top:10px"><i></i><span>${NEST_SAYS(pr)}</span></div>` : ''}
@@ -140,16 +142,16 @@ function openAway(S) {
     if (sel === 'pick') at = pickedEpoch(pick.value);
     pickT.value = pickedEpoch(pick.value) ? untilLabel(pickedEpoch(pick.value), now) : '';
     document.querySelectorAll('#awPre [data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === sel));
-    const ok = at != null && at > Date.now() && at <= maxAt;
+    const open = sel === 'open', ok = open || (at != null && at > Date.now() && at <= maxAt);
     const lines = ok ? awayLines(at, Date.now(), { mode: d.settings.autopilot, approved: !!d.applied?.approved, awayF: d.settings.awayF, band: d.settings.band, maxStepF: d.settings.maxStepF }, { mode: S.pool?.autopilot?.mode }) : { ac: 'Pick a time in the next 14 days.', pool: '' };
     $('awAc').textContent = lines.ac; $('awPool').textContent = lines.pool;
-    $('awGo').textContent = ok ? `Away until ${untilLabel(at, Date.now())}` : 'Away until…'; $('awGo').disabled = !ok; $('awGo').style.opacity = ok ? '' : .5;
+    $('awGo').textContent = open ? 'Away' : ok ? `Away until ${untilLabel(at, Date.now())}` : 'Away until…'; $('awGo').disabled = !ok; $('awGo').style.opacity = ok ? '' : .5;
   };
   $('awPre').onclick = e => { const b = e.target.closest('[data-t]'); if (!b) return; sel = b.dataset.t; if (sel !== 'pick') at = pre.find(p => p.id === sel).at; draw();
     if (sel === 'pick' && e.target !== pick) try { pick.showPicker?.(); } catch { /* not allowed here */ } };
   pick.oninput = pick.onchange = () => { sel = 'pick'; draw(); };
   $('awX').onclick = () => $('phone').classList.remove('open');
   $('awGo').onclick = async () => { const go = $('awGo'); if (go.disabled) return; go.textContent = 'Saving…';
-    try { await api.setPresence('away', at); $('phone').classList.remove('open'); await loadAc(S); } catch (e) { alert(e.message); draw(); } };
+    try { await api.setPresence('away', sel === 'open' ? null : at); $('phone').classList.remove('open'); await loadAc(S); } catch (e) { alert(e.message); draw(); } };
   draw(); $('phone').classList.add('open');
 }
