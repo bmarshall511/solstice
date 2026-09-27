@@ -1,6 +1,6 @@
 // The weekly digest (docs/audit-designs/enhancements.md D1c; owner's choice: in-app and push only, no email). Last week, Monday to
 // Sunday in Chicago: solar, used, bought and sent (kWh), the sunshine share, the Powerwalls' full days and lowest charge, what the
-// pool and AC Autopilots did, the anomalies, and how far each learned figure can be trusted. kWh and counts only: no rate and no dollar
+// pool and AC Autopilots and the Powerwall rules did, the anomalies, and how far each learned figure can be trusted. kWh and counts only: no rate and no dollar
 // figure, so the digest can be stored and pushed as it is.
 //   Monday 07:00 Chicago   maybeWeeklyDigest (from the 5-minute and nightly crons; a kv marker makes it once per week) stores the
 //                          week in `digests` and sends one `digest` alert
@@ -43,6 +43,7 @@ export type Digest = {
   autopilot: {
     pool: { applied: number; suggested: number; refused: number; lines: string[] };
     ac: { set: number; refused: number; lines: string[] };
+    powerwall: { sent: number; refused: number; suggested: number; scopeMissing: number };
   };
   anomalies: { open: number; openedThisWeek: number; items: Array<{ kind: string; title: string; severity: string; day: string }> };
   confidence: Record<ModelId, Tier>;
@@ -57,7 +58,7 @@ type LogLine = { at: number; day: string; text: string; delta?: string };
 
 export async function buildDigest(siteId: string, monday: string, now = Date.now()): Promise<Digest> {
   const from = monday, to = addDays(monday, 6), prevFrom = addDays(monday, -7);
-  const [energy, best, soe, anomalies, logs, confidence] = await Promise.all([
+  const [energy, best, soe, anomalies, logs, confidence, pw] = await Promise.all([
     q<{ w: string; days: number; solar: number; home: number; imp: number; exp: number }>(`SELECT CASE WHEN day >= $3 THEN 'this' ELSE 'prev' END w, COUNT(DISTINCT day)::int days,
        COALESCE(SUM(solar_wh), 0)::float8 / 1000 solar, COALESCE(SUM(home_wh), 0)::float8 / 1000 home, COALESCE(SUM(import_wh), 0)::float8 / 1000 imp, COALESCE(SUM(export_wh), 0)::float8 / 1000 exp
        FROM energy WHERE site_id = $1 AND day >= $2 AND day <= $4 GROUP BY 1`, [siteId, prevFrom, from, to]),
@@ -68,7 +69,10 @@ export async function buildDigest(siteId: string, monday: string, now = Date.now
       `SELECT kind, severity, day, detail, opened_at::float8 opened_at, resolved_at::float8 resolved_at FROM anomalies WHERE site_id = $1 AND (resolved_at IS NULL OR day BETWEEN $2 AND $3) ORDER BY opened_at DESC, id DESC`, [siteId, from, to]),
     q<{ key: string; value: LogLine[] }>(`SELECT key, value FROM kv WHERE key = ANY($1::text[])`, [[`${siteId}:pool:autolog`, `${siteId}:ac:log`]]),
     confidenceMap(siteId, MODEL_IDS, { today: addDays(to, 1) }),
+    q<{ result: string; n: number }>(`SELECT result, COUNT(*)::int n FROM powerwall_log WHERE site_id = $1 AND at >= $2 AND at < $3 GROUP BY result`,
+      [siteId, localMidnight(from).getTime(), localMidnight(addDays(to, 1)).getTime()]),
   ]);
+  const pwN = (r: string) => pw.find(x => x.result === r)?.n ?? 0;
   const totals = (w: string): Totals | null => {
     const r = energy.find(x => x.w === w); if (!r) return null;
     return { days: r.days, solarKwh: r1(r.solar), homeKwh: r1(r.home), importKwh: r1(r.imp), exportKwh: r1(r.exp), sunsharePct: sunshare(r.home, r.imp) };
@@ -88,6 +92,7 @@ export async function buildDigest(siteId: string, monday: string, now = Date.now
       pool: { applied: pool.filter(l => !l.delta || /kWh/.test(l.delta)).length, suggested: pool.filter(l => l.delta === 'waiting for you').length,
         refused: pool.filter(l => l.delta === 'refused').length, lines: pool.slice(0, 5).map(l => clean(l.text)) },
       ac: { set: ac.filter(l => l.delta !== 'refused').length, refused: ac.filter(l => l.delta === 'refused').length, lines: ac.slice(0, 5).map(l => clean(l.text)) },
+      powerwall: { sent: pwN('sent'), refused: pwN('refused'), suggested: pwN('suggested'), scopeMissing: pwN('scope_missing') },
     },
     anomalies: { open: open.length, openedThisWeek: anomalies.filter(a => a.day >= from && a.day <= to).length,
       items: open.slice(0, 8).map(a => ({ kind: a.kind, title: String(a.detail?.title ?? a.kind), severity: a.severity, day: a.day })) },

@@ -30,6 +30,7 @@ import { alertRoutes } from './notify.js';
 import { ercotNow, fiveMinuteWatch, nightlyWatch, cronSites, fiveMinuteSteps, nightlySteps } from './watch.js';
 import { digestRoutes, maybeWeeklyDigest } from './digest.js';
 import { presenceRoutes, setPresence } from './appliances/presence.js';
+import { powerwallRoutes, powerwallTick, powerwallNightly } from './powerwall.js';
 import { runLearn } from './learn/nightly.js';
 import { learnRouter } from './learn/api.js';
 import { confidenceMap } from './learn/confidence.js';
@@ -490,6 +491,10 @@ digestRoutes(app);
 /* ---------- presence (appliances/presence.ts): GET/POST /api/presence; a mark re-runs the AC tick like the AC card's switch ---------- */
 presenceRoutes(app, async id => { const rec = await kv.get<any>(`${id}:ac:plan`); if (rec) { rec.lastStepHour = null; await kv.set(`${id}:ac:plan`, rec); }
   const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; return acTick(id, settings, await rateFor(id), await acSlope(id)); });
+/* ---------- Powerwall rules (powerwall.ts, tesla/commands.ts; scope energy_cmds): /api/tesla/scopes, /api/powerwall/rules[/:id[/apply]];
+ *  storm every 5 minutes, reserve once after 17:00, export nightly; only Auto rules send, Suggest waits for Apply ---------- */
+powerwallRoutes(app);
+fiveMinuteSteps.powerwall = powerwallTick; nightlySteps.powerwall = powerwallNightly;
 fiveMinuteSteps.digest = maybeWeeklyDigest; nightlySteps.digest = maybeWeeklyDigest;
 /**
  * Fires every 5 minutes; sampling.ts decides what is due. Nest (with acTick: AC learning and due plan steps) every 5 minutes 10:00–22:00

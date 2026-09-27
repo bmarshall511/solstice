@@ -50,6 +50,13 @@ node -e "const c=require('crypto').createECDH('prime256v1');c.generateKeys();con
 
 Push is sent without a dependency (`server/src/push.ts`: RFC 8291 aes128gcm encryption and an RFC 8292 VAPID JWT on `node:crypto`). Only Apple, Google, Mozilla and Microsoft push endpoints are accepted. Rotating the keys invalidates every subscription, so each device has to subscribe again.
 
+## Weekly digest, presence and Powerwall rules
+
+- **Digest**: every Monday 07:00 Chicago the first cron tick stores last week (kWh, sunshine share, Autopilot and Powerwall actions, anomalies, confidence tiers; no dollar figures) and sends one `digest` alert. `GET /api/digest?week=2026-W39` (or any date in the week; default the last complete week).
+- **Presence**: `GET /api/presence` → `{state, source, since, until}`; `POST /api/presence {state:'away', until}` or `{state:'home'}`. Order: the manual mark (Away until its time), then Nest Home/Away Assist as the thermostat's Eco state (read from the stored Nest reading, never written; `settings.ac.nestPresence: false` turns it off), then home. The AC card's Home/Away switch is the same manual mark.
+- **Powerwall rules** (`energy_cmds` scope): `reserve` (tonight's reserve from the 48-hour battery model, never below `settings.powerwall.reserveFloorPct`, default 20), `storm` (100 % for an NWS storm Warning or active Storm Watch, 50 % for a Watch, then back), `export` (`pv_only` unless the bill's export credit beats a stored kWh). Each is Off, Suggest (default) or Auto: `GET /api/powerwall/rules`, `POST /api/powerwall/rules/:id {mode}`, `POST /api/powerwall/rules/:id/apply` (Suggest only). Every command is clamped in `server/src/appliances/guards.ts` (reserve 10–100 %, never below 20 % in a storm, one change per setting per hour, export rule only `battery_ok`/`pv_only`) and logged in `powerwall_log`.
+- The scope list now asks for `energy_cmds`. Add "Energy Product Settings" to the Fleet API app in the Tesla developer portal, then open `/auth/login` once and approve (Tesla shows only the missing scope). `GET /api/tesla/scopes` says whether the stored token has it; until it does every command answers `scope_missing` and nothing is sent.
+
 ## What's in it
 
 | Tab | What it shows |

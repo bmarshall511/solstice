@@ -119,6 +119,10 @@ const SCHEMA = [
      ua text, created_at timestamptz NOT NULL DEFAULT now(), last_ok timestamptz, fails int NOT NULL DEFAULT 0)`,
   // Weekly digests (digest.ts): kWh, counts and confidence tiers only, no rate or dollar figure. One row per ISO week.
   `CREATE TABLE IF NOT EXISTS digests (site_id text NOT NULL, week text NOT NULL, data jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (site_id, week))`,
+  // Powerwall commands and rule suggestions (tesla/commands.ts, powerwall.ts): every send, refusal, missing scope and suggestion.
+  `CREATE TABLE IF NOT EXISTS powerwall_log (id bigserial PRIMARY KEY, site_id text NOT NULL, at bigint NOT NULL, rule text, command text NOT NULL,
+     value jsonb, result text NOT NULL, reason text, source text NOT NULL)`,
+  `DO $$ BEGIN CREATE INDEX IF NOT EXISTS powerwall_log_site_at ON powerwall_log(site_id, at); EXCEPTION WHEN duplicate_table OR unique_violation THEN NULL; END $$`,
 ];
 
 let migrated: Promise<void> | null = null;

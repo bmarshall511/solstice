@@ -1,4 +1,5 @@
-// Hard safety clamps for every device write: the Nest cooling setpoint and the ScreenLogic pump speeds and schedules.
+// Hard safety clamps for every device write: the Nest cooling setpoint, the ScreenLogic pump speeds and schedules, and the Powerwall
+// settings (backup reserve, operation mode, grid export rule).
 // The owner confirmed these limits (audit question 4). No setting can widen them, and this file is the only place they live.
 // Pure: each guard takes the intended write plus the current state and returns { ok, value, reason }. Callers log refusals.
 
@@ -11,10 +12,10 @@ const refuse = (reason: string): Refused => ({ ok: false, value: null, reason, s
 
 /** Thrown by a device client when a guard refuses a write, before anything is sent to the device. */
 export class GuardRefusal extends Error {
-  readonly device: 'ac' | 'pool';
+  readonly device: 'ac' | 'pool' | 'powerwall';
   readonly reason: string;
-  constructor(device: 'ac' | 'pool', reason: string) {
-    super(`Safety guard refused the ${device === 'ac' ? 'thermostat' : 'pool'} write: ${explainRefusal(reason)}`);
+  constructor(device: 'ac' | 'pool' | 'powerwall', reason: string) {
+    super(`Safety guard refused the ${device === 'ac' ? 'thermostat' : device} write: ${explainRefusal(reason)}`);
     this.name = 'GuardRefusal'; this.device = device; this.reason = reason;
   }
 }
@@ -120,4 +121,38 @@ export function guardPoolWrite<W extends PoolWrite>(w: W, ctx: PoolGuardContext)
   for (const s of w.schedules) note(guardPoolSchedule(s, ctx));
   for (const id of w.replaceCircuits) note(guardPoolCircuit(id, ctx));
   return why.length ? refuse(why.join('; ')) : allow(w);
+}
+
+/* ---------- Powerwall (Fleet API energy_cmds: backup reserve, operation mode, grid export rule) ---------- */
+export const RESERVE_MIN = 10, RESERVE_MAX = 100, RESERVE_STORM_MIN = 20, PW_CHANGE_INTERVAL_MS = 3600_000;
+export const EXPORT_RULES = ['battery_ok', 'pv_only'] as const;             // never 'never': the array must always be able to export
+export const OPERATION_MODES = ['self_consumption', 'autonomous'] as const;
+export type ExportRule = typeof EXPORT_RULES[number];
+export type OperationMode = typeof OPERATION_MODES[number];
+const since = (o: { lastChangeAt: number | null | undefined; now: number }, what: string) =>
+  o.lastChangeAt != null && Number.isFinite(o.lastChangeAt) && o.now - o.lastChangeAt < PW_CHANGE_INTERVAL_MS
+    ? `one ${what} change per hour; the last was at ${clock(o.lastChangeAt)}` : null;
+
+/**
+ * A backup reserve write. Refused (never clamped): not a whole percent, outside 10–100%, below 20% while an NWS storm alert or Storm
+ * Watch is active (`storm`), or a reserve change less than an hour after the last one (`lastChangeAt`, from kv).
+ */
+export function guardReserve(o: { pct: number; storm: boolean; lastChangeAt: number | null | undefined; now: number }): Verdict<number> {
+  if (!Number.isInteger(o.pct)) return refuse(`${o.pct}% is not a whole-number reserve`);
+  if (o.pct < RESERVE_MIN || o.pct > RESERVE_MAX) return refuse(`${o.pct}% is outside the ${RESERVE_MIN}–${RESERVE_MAX}% reserve range`);
+  if (o.storm && o.pct < RESERVE_STORM_MIN) return refuse(`never below ${RESERVE_STORM_MIN}% while a storm alert or Storm Watch is active`);
+  const t = since(o, 'reserve'); if (t) return refuse(t);
+  return allow(o.pct);
+}
+/** The grid export rule: only 'battery_ok' or 'pv_only', at most one change an hour. */
+export function guardExportRule(o: { rule: string; lastChangeAt: number | null | undefined; now: number }): Verdict<ExportRule> {
+  if (!(EXPORT_RULES as readonly string[]).includes(o.rule)) return refuse(`the export rule "${String(o.rule).replace(/[^\w -]/g, '')}" is not battery_ok or pv_only`);
+  const t = since(o, 'export rule'); if (t) return refuse(t);
+  return allow(o.rule as ExportRule);
+}
+/** The operation mode: only self-powered or time-based control, at most one change an hour. */
+export function guardOperationMode(o: { mode: string; lastChangeAt: number | null | undefined; now: number }): Verdict<OperationMode> {
+  if (!(OPERATION_MODES as readonly string[]).includes(o.mode)) return refuse(`the operation mode "${String(o.mode).replace(/[^\w -]/g, '')}" is not self_consumption or autonomous`);
+  const t = since(o, 'operation mode'); if (t) return refuse(t);
+  return allow(o.mode as OperationMode);
 }
