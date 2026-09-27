@@ -1,28 +1,39 @@
 // Synthetic SunPower PVS6 varserver answers for tests/server/pvs.test.ts, plus a throwaway self-signed certificate made
-// at run time (so no private key is ever committed). Serial numbers are obviously fake (TEST-INV-nn); the field names
-// follow SunStrong's pypvs LocalAPI doc (sn, pMppt1Kw, vMppt1V, tHtsnkDegc), values are strings as the PVS sends them.
+// at run time (so no private key is ever committed). Serial numbers are obviously fake (TEST-INV-nn). The shape is what
+// a real PVS6 answered to GET /vars?match=inverter&fmt=obj&cache=1: ONE flat object keyed
+// /sys/devices/inverter/<n>/<field>, every value a string (including numbers and an empty string for a missing value).
 import { generateKeyPairSync, sign, X509Certificate } from 'node:crypto';
 
-/** Per-inverter object form: { "/sys/devices/inverter/<i>": { sn, pMppt1Kw, … } }. */
-export const PVS_INVERTERS_OBJ = {
-  '/sys/devices/inverter/0': { sn: 'TEST-INV-01', prodMdlNm: 'AC_Module_Type_H', pMppt1Kw: '0.2104', vMppt1V: '33.12', iMppt1A: '6.35', tHtsnkDegc: '41', p3phsumKw: '0.2031' },
-  '/sys/devices/inverter/1': { sn: 'TEST-INV-02', prodMdlNm: 'AC_Module_Type_H', pMppt1Kw: '0.1987', vMppt1V: '32.80', iMppt1A: '6.06', tHtsnkDegc: '43.5', p3phsumKw: '0.1920' },
-  '/sys/devices/inverter/2': { sn: 'TEST-INV-03', prodMdlNm: 'AC_Module_Type_H', pMppt1Kw: '0.0000', vMppt1V: '0', iMppt1A: '0', tHtsnkDegc: '', p3phsumKw: '0' },
-};
-
-/** The same readings in the flat form: { "/sys/devices/inverter/<i>/<field>": value }. */
-export const PVS_INVERTERS_FLAT = Object.fromEntries(Object.entries(PVS_INVERTERS_OBJ).flatMap(([path, o]) =>
-  Object.entries(o).map(([k, v]) => [`${path}/${k}`, v])));
-
-/** And in the { count, values: [{ name, value }] } form. */
-export const PVS_INVERTERS_VALUES = { count: Object.keys(PVS_INVERTERS_FLAT).length, values: Object.entries(PVS_INVERTERS_FLAT).map(([name, value]) => ({ name, value })) };
-
-/** What the relay should post for the fixture above. */
-export const PVS_EXPECTED = [
-  { sn: 'TEST-INV-01', kw: 0.2104, v: 33.12, tempC: 41 },
-  { sn: 'TEST-INV-02', kw: 0.1987, v: 32.8, tempC: 43.5 },
-  { sn: 'TEST-INV-03', kw: 0, v: 0, tempC: null },
+/** Per-inverter fields, exactly the set a PVS6 sends for an AC_Module_Type_E microinverter. */
+const INVERTERS: Array<Record<string, string>> = [
+  { freqHz: '60.01', i3phsumA: '0.84', iMppt1A: '6.35', ltea3phsumKwh: '2693.563965', p3phsumKw: '0.2031', pMppt1Kw: '0.2104',
+    prodMdlNm: 'AC_Module_Type_E', sn: 'TEST-INV-01', tHtsnkDegc: '41', vMppt1V: '33.12', vln3phavgV: '242.1' },
+  { freqHz: '60.01', i3phsumA: '0.79', iMppt1A: '6.06', ltea3phsumKwh: '2511.204102', p3phsumKw: '0.1920', pMppt1Kw: '0.1987',
+    prodMdlNm: 'AC_Module_Type_E', sn: 'TEST-INV-02', tHtsnkDegc: '43.5', vMppt1V: '32.80', vln3phavgV: '242.3' },
+  // a panel in shade at the edge of the reading: a tiny negative AC figure (reads as 0) and no heat-sink value
+  { freqHz: '60.00', i3phsumA: '0', iMppt1A: '0', ltea3phsumKwh: '2702.000000', p3phsumKw: '-0.0002', pMppt1Kw: '0.0000',
+    prodMdlNm: 'AC_Module_Type_E', sn: 'TEST-INV-03', tHtsnkDegc: '', vMppt1V: '0', vln3phavgV: '241.9' },
 ];
+
+/** The flat varserver answer for the inverters above, with `msmtEps` (ISO UTC, as the PVS sends it) on each one;
+ *  `null` leaves msmtEps out. `extra` adds or overrides keys. */
+export function pvsVars(msmtEps: string | null, extra: Record<string, string> = {}): Record<string, string> {
+  const out: Record<string, string> = {};
+  INVERTERS.forEach((inv, n) => {
+    for (const [k, v] of Object.entries({ ...inv, ...(msmtEps === null ? {} : { msmtEps }) })) out[`/sys/devices/inverter/${n}/${k}`] = v;
+  });
+  return { ...out, ...extra };
+}
+
+/** What the relay should post for the fixture above (numbers parsed from the strings). */
+export const PVS_EXPECTED = [
+  { sn: 'TEST-INV-01', kw: 0.2031, kwDc: 0.2104, v: 33.12, tempC: 41, kwhLifetime: 2693.563965 },
+  { sn: 'TEST-INV-02', kw: 0.192, kwDc: 0.1987, v: 32.8, tempC: 43.5, kwhLifetime: 2511.204102 },
+  { sn: 'TEST-INV-03', kw: 0, kwDc: 0, v: 0, tempC: null, kwhLifetime: 2702 },
+];
+
+/** The PVS6's answer to the old `match=inverter/data` query (and to a query without `cache=1`). */
+export const PVS_BAD_REQUEST = { status: 400, description: 'Bad request', errorcode: '0x0040' };
 
 /* ---- a minimal DER encoder, enough for one self-signed X.509 v3 certificate (ECDSA P-256, SHA-256) ---- */
 const len = (n: number) => n < 0x80 ? Buffer.from([n]) : n < 0x100 ? Buffer.from([0x81, n]) : Buffer.from([0x82, n >> 8, n & 0xff]);

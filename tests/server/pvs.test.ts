@@ -15,11 +15,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { PVS_INVERTERS_OBJ, PVS_INVERTERS_FLAT, PVS_INVERTERS_VALUES, PVS_EXPECTED, selfSignedCert } from '../fixtures/pvs.js';
+import { pvsVars, PVS_EXPECTED, PVS_BAD_REQUEST, selfSignedCert } from '../fixtures/pvs.js';
 
 vi.unmock('../../server/src/db.js');   // these tests need the real database module on PGlite
 
-type Reading = { sn: string; kw: number; v: number | null; tempC: number | null };
+type Reading = { sn: string; kw: number | null; kwDc: number | null; v: number | null; tempC: number | null; kwhLifetime: number | null };
 type Cfg = Record<string, any>;
 type State = { pvsCookie: string | null; apiCookie: string | null; fingerprintShown: boolean; log: (m: string) => void };
 type Relay = {
@@ -28,8 +28,8 @@ type Relay = {
   loadConfig(env: Record<string, string | undefined>, o?: { dryRun?: boolean }): Cfg;
   readEnvFile(path: string): Record<string, string>;
   pvsGet(cfg: Cfg, path: string, headers?: Record<string, string>, state?: State): Promise<{ status: number; body: string }>;
-  parseInverters(json: unknown): { inverters: Reading[]; skipped: number };
-  readInverters(cfg: Cfg, state: State): Promise<Reading[]>;
+  parseInverters(json: unknown): { inverters: Reading[]; skipped: number; ts: string | null };
+  readInverters(cfg: Cfg, state: State): Promise<{ ts: string | null; inverters: Reading[] }>;
   apiLogin(cfg: Cfg, state: State): Promise<string>;
   postReadings(cfg: Cfg, state: State, payload: unknown): Promise<{ ok: true; inserted: number; duplicates: number }>;
   pollOnce(cfg: Cfg, state: State, o?: { dryRun?: boolean; now?: () => number }): Promise<{ payload: { ts: string; inverters: Reading[] }; posted: any }>;
@@ -47,18 +47,29 @@ const routeSession = () => ownerCookie.slice(ownerCookie.indexOf('=') + 1, owner
 const revokeRelaySessions = () => db.q('DELETE FROM owner_sessions WHERE id <> $1', [routeSession()]);
 const ports: Set<number> = (globalThis as any).__testServerPorts;
 
-/* ---------------- the mocked PVS: GET /auth?login (Basic ssm_owner:<PW>) and GET /vars?match=inverter/data&fmt=obj ---------------- */
+/* ---------------- the mocked PVS6, answering as the real one did ----------------
+ *  GET /auth?login (Basic ssm_owner:<PW>) → 200 {"session": "<64 chars>"} with NO Set-Cookie; the client sends Cookie: session=<value>.
+ *  GET /vars?match=inverter&fmt=obj&cache=1 → the flat object; the old match=inverter/data query, or one without cache=1, → 400. */
 type Hit = { method: string; url: string; auth?: string; cookie?: string };
-const pvs = { server: null as unknown as Server, port: 0, session: 'test-session-1', vars: PVS_INVERTERS_OBJ as unknown, log: [] as Hit[] };
+const SESSION_1 = 'a1'.repeat(32), SESSION_2 = 'b2'.repeat(32);   // 64 characters like the real session, synthetic
+/** A recent 5-minute boundary, so a posted msmtEps is inside Solstice's 7-day window. */
+const recentMsmt = (minutesAgo = 10) => new Date(Math.floor((Date.now() - minutesAgo * 60_000) / 300_000) * 300_000).toISOString().replace('.000Z', 'Z');
+const MSMT = recentMsmt();                                         // as the PVS writes it: 2026-09-27T23:15:00Z
+const isoOf = (s: string) => new Date(s).toISOString();            // as the relay posts it
+const pvs = { server: null as unknown as Server, port: 0, session: SESSION_1, vars: pvsVars(MSMT) as unknown, varsStatus: 200, log: [] as Hit[] };
 function pvsHandler(req: IncomingMessage, res: ServerResponse) {
   pvs.log.push({ method: req.method!, url: req.url!, auth: req.headers.authorization, cookie: req.headers.cookie });
   const send = (status: number, body: unknown, headers: Record<string, string> = {}) => { res.writeHead(status, { 'Content-Type': 'application/json', ...headers }); res.end(JSON.stringify(body)); };
   if (req.method !== 'GET') return send(405, { error: 'GET only' });
   if (req.url === '/auth?login') {
     if (req.headers.authorization !== `Basic ${Buffer.from(`ssm_owner:${PW}`).toString('base64')}`) return send(401, { error: 'unauthorized' });
-    return send(200, { session: pvs.session }, { 'Set-Cookie': `session=${pvs.session}; Path=/; HttpOnly; Secure` });
+    return send(200, { session: pvs.session });
   }
-  if (req.url === '/vars?match=inverter/data&fmt=obj') return req.headers.cookie === `session=${pvs.session}` ? send(200, pvs.vars) : send(401, { error: 'session expired' });
+  if (req.url?.startsWith('/vars?')) {
+    if (req.headers.cookie !== `session=${pvs.session}`) return send(401, { error: 'session expired' });
+    if (req.url !== '/vars?match=inverter&fmt=obj&cache=1') return send(400, PVS_BAD_REQUEST);   // match=inverter/data, or no cache=1
+    return pvs.varsStatus === 200 ? send(200, pvs.vars) : send(pvs.varsStatus, PVS_BAD_REQUEST);
+  }
   send(404, { error: 'not found' });
 }
 
@@ -114,8 +125,8 @@ afterAll(async () => {
   if (tmp) rmSync(tmp, { recursive: true, force: true });
 });
 
-const rows = (sn: string) => db.q<{ ts: Date; sn: string; kw: number; v: number | null; t: number | null }>(
-  'SELECT ts, sn, kw::float8 AS kw, v::float8 AS v, temp_c::float8 AS t FROM pvs_readings WHERE sn = $1 ORDER BY ts', [sn]);
+const rows = (sn: string) => db.q<{ ts: Date; sn: string; kw: number | null; kw_dc: number | null; v: number | null; t: number | null; kwh: number | null }>(
+  'SELECT ts, sn, kw::float8 AS kw, kw_dc::float8 AS kw_dc, v::float8 AS v, temp_c::float8 AS t, kwh_lifetime::float8 AS kwh FROM pvs_readings WHERE sn = $1 ORDER BY ts', [sn]);
 const api = (path: string, init: RequestInit = {}, cookie = ownerCookie) =>
   fetch(base + path, { ...init, headers: { ...(cookie ? { cookie } : {}), ...(init.headers as Record<string, string> ?? {}) } });
 const postJson = (body: unknown, cookie = ownerCookie) => api('/api/pvs/readings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) }, cookie);
@@ -159,35 +170,75 @@ describe('relay configuration', () => {
 });
 
 /* ======================================================================================================== */
-describe('relay ↔ PVS (mocked, TLS with a self-signed certificate)', () => {
-  it('PVS-1 logs in with Basic ssm_owner:<serial suffix>, reads inverter/data with the session cookie, GET only', async () => {
+describe('relay ↔ PVS (mocked as the real PVS6 answers, TLS with a self-signed certificate)', () => {
+  it('PVS-1 logs in with Basic ssm_owner:<serial suffix>, sends the body session as its own cookie, reads match=inverter&cache=1, GET only', async () => {
     pvs.log.length = 0;
     const log: string[] = [];
     const { payload, posted } = await relay.pollOnce(relay.loadConfig({ PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW }, { dryRun: true }), newState(log), { dryRun: true });
     expect(posted).toBeNull();
-    expect(payload.inverters).toEqual(PVS_EXPECTED);
-    expect(Math.abs(Date.parse(payload.ts) - Date.now())).toBeLessThan(5000);
-    expect(pvs.log.map(h => `${h.method} ${h.url}`)).toEqual(['GET /auth?login', 'GET /vars?match=inverter/data&fmt=obj']);
+    expect(payload).toEqual({ ts: isoOf(MSMT), inverters: PVS_EXPECTED });        // the PVS's msmtEps is the reading time
+    expect(relay.VARS_PATH).toBe('/vars?match=inverter&fmt=obj&cache=1');
+    expect(pvs.log.map(h => `${h.method} ${h.url}`)).toEqual(['GET /auth?login', 'GET /vars?match=inverter&fmt=obj&cache=1']);
     expect(pvs.log[0].auth).toBe(`Basic ${Buffer.from(`ssm_owner:${PW}`).toString('base64')}`);
-    expect(pvs.log[1]).toMatchObject({ auth: undefined, cookie: 'session=test-session-1' });
+    expect(pvs.log[1]).toMatchObject({ auth: undefined, cookie: `session=${SESSION_1}` });
     expect(pvs.log.every(h => h.method === 'GET' && !/set=/.test(h.url))).toBe(true);
     expect(log.join('\n')).toContain(`PVS certificate SHA-256 ${TLS.sha256}`);   // shown once so the owner can pin it
   });
 
-  it('PVS-2 reads the object, flat and values answer shapes; skips records without a serial or pMppt1Kw', () => {
-    for (const shape of [PVS_INVERTERS_OBJ, PVS_INVERTERS_FLAT, PVS_INVERTERS_VALUES])
-      expect(relay.parseInverters(shape)).toEqual({ inverters: PVS_EXPECTED, skipped: 0 });
-    const odd = { a: { sn: 'TEST-INV-09', pMppt1Kw: 'n/a' }, b: { pMppt1Kw: '0.1' }, c: { sn: 'TEST-INV-01', pMppt1Kw: '0.2' }, d: { sn: 'TEST-INV-01', pMppt1Kw: '0.3' } };
-    expect(relay.parseInverters(odd)).toEqual({ inverters: [{ sn: 'TEST-INV-01', kw: 0.2, v: null, tempC: null }], skipped: 2 });
+  it('PVS-1b the mock answers like the real PVS6: 400 0x0040 to the old inverter/data query and to a query without cache=1', async () => {
+    const cfg = relay.loadConfig({ PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW }, { dryRun: true });
+    const login = await relay.pvsGet(cfg, '/auth?login', { Authorization: `Basic ${Buffer.from(`ssm_owner:${PW}`).toString('base64')}` }) as { status: number; body: string; headers: Record<string, unknown> };
+    expect([login.status, JSON.parse(login.body), login.headers['set-cookie']]).toEqual([200, { session: SESSION_1 }, undefined]);
+    for (const path of ['/vars?match=inverter/data&fmt=obj', '/vars?match=inverter&fmt=obj']) {
+      const r = await relay.pvsGet(cfg, path, { Cookie: `session=${SESSION_1}` });
+      expect([path, r.status, JSON.parse(r.body)]).toEqual([path, 400, PVS_BAD_REQUEST]);
+    }
+    // and a 400 on the relay's own query surfaces the PVS's description and error code
+    pvs.varsStatus = 400;
+    try {
+      const err = await relay.readInverters(cfg, newState()).catch(e => e);
+      expect(err.message).toBe('PVS /vars?match=inverter&fmt=obj&cache=1 answered HTTP 400 (Bad request 0x0040)');
+    } finally { pvs.varsStatus = 200; }
+  });
+
+  it('PVS-2 parses the flat /sys/devices/inverter/<n>/<field> object of strings; skips records without a serial or any reading', () => {
+    expect(relay.parseInverters(pvsVars(MSMT))).toEqual({ inverters: PVS_EXPECTED, skipped: 0, ts: isoOf(MSMT) });
+    expect(relay.parseInverters(pvsVars(null))).toEqual({ inverters: PVS_EXPECTED, skipped: 0, ts: null });
+    const later = new Date(Date.parse(MSMT) + 300_000).toISOString();
+    expect(relay.parseInverters(pvsVars(MSMT, { '/sys/devices/inverter/1/msmtEps': later })).ts).toBe(later);   // the newest msmtEps
+    const odd = {
+      '/sys/info/sw_rev': '2026.01', '/sys/livedata/pv_p': '6.1', '/sys/devices/inverter/x/sn': 'TEST-INV-99',   // not inverter records
+      '/sys/devices/inverter/0/sn': 'TEST-INV-09', '/sys/devices/inverter/0/p3phsumKw': 'n/a',                     // no usable reading
+      '/sys/devices/inverter/1/p3phsumKw': '0.1',                                                                  // no serial
+      '/sys/devices/inverter/2/sn': 'TEST-INV-01', '/sys/devices/inverter/2/p3phsumKw': '0.2',
+      '/sys/devices/inverter/10/sn': 'TEST-INV-01', '/sys/devices/inverter/10/p3phsumKw': '0.3',                  // repeated serial
+      '/sys/devices/inverter/3/sn': 'TEST-INV-04', '/sys/devices/inverter/3/ltea3phsumKwh': '12.5',              // energy only is enough
+    };
+    expect(relay.parseInverters(odd)).toEqual({ inverters: [
+      { sn: 'TEST-INV-01', kw: 0.2, kwDc: null, v: null, tempC: null, kwhLifetime: null },
+      { sn: 'TEST-INV-04', kw: null, kwDc: null, v: null, tempC: null, kwhLifetime: 12.5 },
+    ], skipped: 3, ts: null });
+    for (const x of [null, [], 'x', [{ '/sys/devices/inverter/0/sn': 'TEST-INV-01' }]]) expect(relay.parseInverters(x)).toEqual({ inverters: [], skipped: 0, ts: null });
+  });
+
+  it('PVS-2b the reading time falls back to now when msmtEps is missing or ahead of the clock', async () => {
+    const cfg = relay.loadConfig({ PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW }, { dryRun: true });
+    const now = Date.now();
+    try {
+      pvs.vars = pvsVars(null);
+      expect((await relay.pollOnce(cfg, newState(), { dryRun: true, now: () => now })).payload.ts).toBe(new Date(now).toISOString());
+      pvs.vars = pvsVars(new Date(now + 3600_000).toISOString());
+      expect((await relay.pollOnce(cfg, newState(), { dryRun: true, now: () => now })).payload.ts).toBe(new Date(now).toISOString());
+    } finally { pvs.vars = pvsVars(MSMT); }
   });
 
   it('PVS-3 an expired PVS session logs in again once and carries on', async () => {
     const state = newState(), cfg = relay.loadConfig({ PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW }, { dryRun: true });
     await relay.readInverters(cfg, state);
-    pvs.log.length = 0; pvs.session = 'test-session-2';
-    expect(await relay.readInverters(cfg, state)).toEqual(PVS_EXPECTED);
+    pvs.log.length = 0; pvs.session = SESSION_2;
+    expect((await relay.readInverters(cfg, state)).inverters).toEqual(PVS_EXPECTED);
     expect(pvs.log.map(h => h.url)).toEqual([relay.VARS_PATH, '/auth?login', relay.VARS_PATH]);
-    expect(state.pvsCookie).toBe('session=test-session-2');
+    expect(state.pvsCookie).toBe(`session=${SESSION_2}`);
   });
 
   it('PVS-4 a refused login is fatal and says which setting to fix, without echoing it', async () => {
@@ -203,7 +254,7 @@ describe('relay ↔ PVS (mocked, TLS with a self-signed certificate)', () => {
     try {
       const err = await relay.readInverters(relay.loadConfig({ PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW }, { dryRun: true }), newState()).catch(e => e);
       expect(err.message).toMatch(/without any inverter readings.*Top-level keys: \/sys\/info\/sw_rev/);
-    } finally { pvs.vars = PVS_INVERTERS_OBJ; }
+    } finally { pvs.vars = pvsVars(MSMT); }
   });
 });
 
@@ -228,7 +279,7 @@ describe('TLS: the self-signed certificate is trusted only on the relay\'s own c
   it('TLS-3 with PVS_CERT_SHA256 set, the matching certificate works (any case, colons optional) and another is refused before any credential is sent', async () => {
     const env = { PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW };
     const pinned = relay.loadConfig({ ...env, PVS_CERT_SHA256: TLS.sha256.replace(/:/g, '').toLowerCase() }, { dryRun: true });
-    expect(await relay.readInverters(pinned, newState())).toEqual(PVS_EXPECTED);
+    expect((await relay.readInverters(pinned, newState())).inverters).toEqual(PVS_EXPECTED);
     pvs.log.length = 0;
     const other = selfSignedCert('pvs.local').sha256;
     const err = await relay.readInverters(relay.loadConfig({ ...env, PVS_CERT_SHA256: other }, { dryRun: true }), newState()).catch(e => e);
@@ -256,19 +307,26 @@ describe('relay → Solstice (the real app on PGlite)', () => {
   it('API-1 unlocks once with the owner key, keeps the cookie in memory and posts each poll', async () => {
     await revokeRelaySessions();
     const cfg = cfgFor(), state = newState();
-    const first = await relay.pollOnce(cfg, state);
-    expect(first.posted).toEqual({ ok: true, inserted: 3, duplicates: 0 });
-    expect(state.apiCookie).toMatch(/^solstice_owner=/);
-    const cookie = state.apiCookie;
-    const t0 = Date.parse(first.payload.ts);
-    const second = await relay.pollOnce(cfg, state, { now: () => t0 + 300_000 });
-    expect(second.posted).toEqual({ ok: true, inserted: 3, duplicates: 0 });
-    expect(state.apiCookie).toBe(cookie);                                   // no second unlock
+    const m0 = recentMsmt(20), m1 = recentMsmt(15), t0 = Date.parse(m0);
+    pvs.vars = pvsVars(m0);
+    try {
+      const first = await relay.pollOnce(cfg, state);
+      expect(first.posted).toEqual({ ok: true, inserted: 3, duplicates: 0 });
+      expect(first.payload.ts).toBe(isoOf(m0));
+      expect(state.apiCookie).toMatch(/^solstice_owner=/);
+      const cookie = state.apiCookie;
+      const same = await relay.pollOnce(cfg, state);                        // the PVS has not measured again yet
+      expect(same.posted).toEqual({ ok: true, inserted: 0, duplicates: 3 });
+      pvs.vars = pvsVars(m1);
+      const second = await relay.pollOnce(cfg, state);
+      expect(second.posted).toEqual({ ok: true, inserted: 3, duplicates: 0 });
+      expect(state.apiCookie).toBe(cookie);                                 // no second unlock
+    } finally { pvs.vars = pvsVars(MSMT); }
     expect((await db.q('SELECT id FROM owner_sessions WHERE id <> $1', [routeSession()])).length).toBe(1);   // one device row for the relay
     const stored = await rows('TEST-INV-02');
-    expect(stored.map(r => r.ts.getTime())).toEqual([t0, t0 + 300_000]);
-    expect(stored[0]).toMatchObject({ sn: 'TEST-INV-02', kw: 0.1987, v: 32.8, t: 43.5 });
-    expect((await rows('TEST-INV-03'))[0]).toMatchObject({ kw: 0, v: 0, t: null });
+    expect(stored.map(r => r.ts.getTime())).toEqual([t0, Date.parse(m1)]);
+    expect(stored[0]).toMatchObject({ sn: 'TEST-INV-02', kw: 0.192, kw_dc: 0.1987, v: 32.8, t: 43.5, kwh: 2511.204102 });
+    expect((await rows('TEST-INV-03'))[0]).toMatchObject({ kw: 0, kw_dc: 0, v: 0, t: null, kwh: 2702 });
   });
 
   it('API-2 a 401 (cookie revoked) unlocks again once and the poll still lands; a retried poll stores nothing twice', async () => {
@@ -338,7 +396,7 @@ describe('relay CLI', () => {
 /* ======================================================================================================== */
 describe('POST /api/pvs/readings', () => {
   const now = () => new Date().toISOString();
-  const one = (sn: string, extra: Record<string, unknown> = {}) => ({ ts: now(), inverters: [{ sn, kw: 0.2, v: 31, tempC: 40, ...extra }] });
+  const one = (sn: string, extra: Record<string, unknown> = {}) => ({ ts: now(), inverters: [{ sn, kw: 0.2, kwDc: 0.21, v: 31, tempC: 40, kwhLifetime: 100, ...extra }] });
 
   it('ING-1 is owner-only: no cookie is 401 and nothing is stored; a cross-site write is 403', async () => {
     const r = await postJson(one('TEST-ING-1'), '');
@@ -368,9 +426,13 @@ describe('POST /api/pvs/readings', () => {
       [inv({ sn: 'has space' }), /inverters\[0\]\.sn must be/],
       [inv({ sn: 42 }), /inverters\[0\]\.sn must be/],
       [{ ts: iso(t), inverters: [{ sn: 'TEST-ING-2', kw: 0.1 }, { sn: 'TEST-ING-2', kw: 0.2 }] }, /inverters\[1\]\.sn is repeated/],
-      [inv({ kw: '0.2' }), /kw must be a number/],
-      [inv({ kw: undefined }), /kw must be a number/],
-      [inv({ kw: 5 }), /kw must be a number from -1 to 1/],
+      [inv({ kw: '0.2' }), /inverters\[0\]\.kw must be null or a number from 0 to 2/],
+      [inv({ kw: 2.5 }), /inverters\[0\]\.kw must be null or a number from 0 to 2/],
+      [inv({ kw: -0.1 }), /inverters\[0\]\.kw must be null or a number from 0 to 2/],
+      [inv({ kwDc: 3 }), /inverters\[0\]\.kwDc must be null or a number from 0 to 2/],
+      [inv({ kwDc: '0.2' }), /inverters\[0\]\.kwDc must be null/],
+      [inv({ kwhLifetime: -1 }), /inverters\[0\]\.kwhLifetime must be null or a number of at least 0/],
+      [inv({ kwhLifetime: '2693.5' }), /inverters\[0\]\.kwhLifetime must be null/],
       [inv({ v: 'x' }), /v must be null or a number/],
       [inv({ tempC: 999 }), /tempC must be null or a number/],
     ];
@@ -386,13 +448,17 @@ describe('POST /api/pvs/readings', () => {
     expect((await db.q(`SELECT count(*)::int n FROM pvs_readings WHERE sn LIKE 'TEST-ING-2%'`))[0].n).toBe(0);
   });
 
-  it('ING-3 stores only ts, sn, kW, volts and °C: extra fields are dropped; nulls are allowed for v and tempC', async () => {
+  it('ING-3 stores only ts, sn, AC kW, DC kW, volts, °C and lifetime kWh: extra fields are dropped; every number may be null', async () => {
     const ts = new Date(Date.now() - 1000).toISOString();
-    const r = await postJson({ ts, pvs: { swRev: 'x' }, inverters: [{ sn: 'TEST-ING-3', kw: 0.12345678, v: null, tempC: 38.456, state: 'working', kwhLife: 1 }], extra: true });
-    expect(await r.json()).toEqual({ ok: true, inserted: 1, duplicates: 0 });
+    const r = await postJson({ ts, pvs: { swRev: 'x' }, inverters: [
+      { sn: 'TEST-ING-3', kw: 0.12345678, kwDc: 0.13, v: null, tempC: 38.456, kwhLifetime: 2693.5639651, state: 'working', freqHz: 60 },
+      { sn: 'TEST-ING-3b' },                                               // only sn is required
+    ], extra: true });
+    expect(await r.json()).toEqual({ ok: true, inserted: 2, duplicates: 0 });
     const cols = await db.q<{ c: string }>(`SELECT column_name c FROM information_schema.columns WHERE table_name = 'pvs_readings' ORDER BY ordinal_position`);
-    expect(cols.map(c => c.c)).toEqual(['ts', 'sn', 'kw', 'v', 'temp_c']);
-    expect(await rows('TEST-ING-3')).toEqual([{ ts: new Date(ts), sn: 'TEST-ING-3', kw: 0.12346, v: null, t: 38.46 }]);
+    expect(cols.map(c => c.c)).toEqual(['ts', 'sn', 'kw', 'v', 'temp_c', 'kw_dc', 'kwh_lifetime']);
+    expect(await rows('TEST-ING-3')).toEqual([{ ts: new Date(ts), sn: 'TEST-ING-3', kw: 0.12346, kw_dc: 0.13, v: null, t: 38.46, kwh: 2693.563965 }]);
+    expect(await rows('TEST-ING-3b')).toEqual([{ ts: new Date(ts), sn: 'TEST-ING-3b', kw: null, kw_dc: null, v: null, t: null, kwh: null }]);
   });
 
   it('ING-4 is idempotent: the same poll posted twice stores it once, and the first write wins', async () => {
@@ -410,7 +476,8 @@ describe('POST /api/pvs/readings', () => {
 /* ======================================================================================================== */
 describe('GET /api/pvs/day and /api/pvs/latest', () => {
   const put = (ts: string, inverters: Reading[]) => pvsMod.ingestPvs({ ts: new Date(ts), inverters });
-  const R = (sn: string, kw: number, v: number | null = null, tempC: number | null = null): Reading => ({ sn, kw, v, tempC });
+  const R = (sn: string, kw: number | null, v: number | null = null, tempC: number | null = null, kwhLifetime: number | null = null): Reading =>
+    ({ sn, kw, kwDc: kw, v, tempC, kwhLifetime });
 
   it('DAY-1 per-inverter 5-minute series (bucket averages, null where missing) and per-panel kWh for one Chicago day', async () => {
     await put('2026-09-19T23:59:59-05:00', [R('TEST-DAY-A', 0.3)]);             // the day before: excluded
@@ -428,12 +495,36 @@ describe('GET /api/pvs/day and /api/pvs/latest', () => {
     expect(d).toMatchObject({ date: '2026-09-20', timeZone: 'America/Chicago', start: '2026-09-20T05:00:00.000Z', end: '2026-09-21T05:00:00.000Z', bucketMinutes: 5 });
     expect(d.times).toEqual([at('00:00'), at('12:00'), at('12:05'), at('12:20')]);
     expect(d.inverters).toEqual([
-      { sn: 'TEST-DAY-A', kwh: 0.051, peakKw: 0.25, maxTempC: 44, buckets: 3, kw: [null, 0.25, 0.24, 0.12], v: [null, 31, 31, 29], tempC: [null, 41, 44, 39] },
-      { sn: 'TEST-DAY-B', kwh: 0.02, peakKw: 0.18, maxTempC: 20, buckets: 3, kw: [0, null, 0.18, 0.06], v: [0, null, 30.5, null], tempC: [20, null, null, null] },
+      { sn: 'TEST-DAY-A', kwh: 0.051, kwhSource: 'integrated', peakKw: 0.25, maxTempC: 44, buckets: 3, kw: [null, 0.25, 0.24, 0.12], v: [null, 31, 31, 29], tempC: [null, 41, 44, 39] },
+      { sn: 'TEST-DAY-B', kwh: 0.02, kwhSource: 'integrated', peakKw: 0.18, maxTempC: 20, buckets: 3, kw: [0, null, 0.18, 0.06], v: [0, null, 30.5, null], tempC: [20, null, null, null] },
     ]);
     expect(d.total.kwh).toBe(0.071);
     expect(d.total.inverters).toBe(2);
     expect(d.total.medianKwh).toBeCloseTo(0.0355, 6);
+  });
+
+  it('DAY-4 per-panel kWh is the lifetime counter\'s last minus first reading of the day when both exist', async () => {
+    const at = (hm: string) => `2026-09-22T${hm}:00-05:00`;
+    await put('2026-09-21T23:55:00-05:00', [R('TEST-LIFE-A', 0, null, null, 90)]);          // the day before: not the first reading
+    await put(at('07:00'), [R('TEST-LIFE-A', 0.01, null, null, 100), R('TEST-LIFE-B', 0.1, null, null, 500), R('TEST-LIFE-C', 0.2, null, null, 700)]);
+    await put(at('12:00'), [R('TEST-LIFE-A', 0.3, null, null, null), R('TEST-LIFE-B', 0.3), R('TEST-LIFE-C', 0.2, null, null, 10)]);
+    await put(at('19:00'), [R('TEST-LIFE-A', 0.02, null, null, 102.25), R('TEST-LIFE-B', 0.1)]);
+    await put('2026-09-23T00:00:00-05:00', [R('TEST-LIFE-A', 0, null, null, 110)]);          // the next day: not the last reading
+    const d = await (await api('/api/pvs/day?date=2026-09-22')).json();
+    const got = Object.fromEntries(d.inverters.filter((i: any) => i.sn.startsWith('TEST-LIFE')).map((i: any) => [i.sn, [i.kwh, i.kwhSource, i.buckets]]));
+    expect(got).toEqual({
+      'TEST-LIFE-A': [2.25, 'lifetime', 3],        // 102.25 − 100, across the gaps, ignoring the null in between
+      'TEST-LIFE-B': [0.042, 'integrated', 3],     // one lifetime reading only: (0.1 + 0.3 + 0.1) kW × 5 min
+      'TEST-LIFE-C': [0.033, 'integrated', 2],     // the counter went backwards (a replaced inverter): (0.2 + 0.2) × 5 min
+    });
+  });
+
+  it('DAY-5 without any lifetime readings the day falls back to integrating AC kW; a bucket with no kW counts as nothing', async () => {
+    await put('2026-09-24T10:00:00-05:00', [R('TEST-INTEG', 0.24)]);
+    await put('2026-09-24T10:05:00-05:00', [R('TEST-INTEG', null, 30, 40)]);
+    await put('2026-09-24T10:10:00-05:00', [R('TEST-INTEG', 0.12)]);
+    const d = await (await api('/api/pvs/day?date=2026-09-24')).json();
+    expect(d.inverters.find((i: any) => i.sn === 'TEST-INTEG')).toMatchObject({ kwh: 0.03, kwhSource: 'integrated', buckets: 2, kw: [0.24, null, 0.12], v: [null, 30, null] });
   });
 
   it('DAY-2 the fall-back day is 25 hours long and keeps both 1 a.m. hours', async () => {
@@ -464,14 +555,14 @@ describe('GET /api/pvs/day and /api/pvs/latest', () => {
     await put(iso(t - 8 * 864e5), [R('TEST-LAT-C', 0.2)]);
     await put(iso(t - 3600_000), [R('TEST-LAT-B', 0.1, 30, 35)]);
     await put(iso(t - 600_000), [R('TEST-LAT-A', 0.15, 31, 38)]);
-    await put(iso(t - 60_000), [R('TEST-LAT-A', 0.21, 32.5, 41)]);
+    await put(iso(t - 60_000), [{ sn: 'TEST-LAT-A', kw: 0.21, kwDc: 0.22, v: 32.5, tempC: 41, kwhLifetime: 2693.563965 }]);
     const d = await (await api('/api/pvs/latest')).json();
     expect(d.count).toBe(2);
     expect(d.at).toBe(iso(t - 60_000));
     expect(d.ageS).toBeGreaterThanOrEqual(60); expect(d.ageS).toBeLessThan(70);
     expect(d.inverters.map((i: any) => ({ ...i, ageS: Math.round(i.ageS / 10) * 10 }))).toEqual([
-      { sn: 'TEST-LAT-A', ts: iso(t - 60_000), ageS: 60, kw: 0.21, v: 32.5, tempC: 41 },
-      { sn: 'TEST-LAT-B', ts: iso(t - 3600_000), ageS: 3600, kw: 0.1, v: 30, tempC: 35 },
+      { sn: 'TEST-LAT-A', ts: iso(t - 60_000), ageS: 60, kw: 0.21, kwDc: 0.22, v: 32.5, tempC: 41, kwhLifetime: 2693.563965 },
+      { sn: 'TEST-LAT-B', ts: iso(t - 3600_000), ageS: 3600, kw: 0.1, kwDc: 0.1, v: 30, tempC: 35, kwhLifetime: null },
     ]);
     await db.q('DELETE FROM pvs_readings');
     expect(await (await api('/api/pvs/latest')).json()).toEqual({ at: null, ageS: null, count: 0, inverters: [] });

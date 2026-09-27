@@ -10,8 +10,11 @@
 //   --dry-run  one poll that prints the payload it would post and never contacts Solstice.
 //   (neither)  keeps running and polls once per 5-minute clock bucket. launchd starts it (scripts/README.md).
 //
-// The PVS side is GET-only: it logs in (GET /auth?login, Basic ssm_owner:<PVS_PASSWORD>) and reads
-// GET /vars?match=inverter/data&fmt=obj. It never calls vars?set= or anything else that writes.
+// The PVS side is GET-only: it logs in (GET /auth?login, Basic ssm_owner:<PVS_PASSWORD>; the PVS answers with
+// {"session": "..."} in the body and no Set-Cookie, so the relay sends Cookie: session=<value> itself) and reads
+// GET /vars?match=inverter&fmt=obj&cache=1 (the older match=inverter/data query answers 400, and cache is required).
+// The answer is one flat object keyed /sys/devices/inverter/<n>/<field>, every value a string. It never calls
+// vars?set= or anything else that writes.
 // TLS: the PVS's self-signed certificate is accepted only on connections to PVS_HOST, made by pvsGet() below, and only
 // after the certificate matches PVS_CERT_SHA256 when that is set. Nothing touches the global TLS settings, so the
 // Solstice API call keeps full certificate verification.
@@ -28,7 +31,7 @@ import https from 'node:https';
 export const INTERVAL_MS = 5 * 60_000;       // one poll per 5-minute clock bucket
 const CHECK_MS = 15_000;                     // how often the loop looks at the clock (catches up quickly after sleep)
 const PVS_TIMEOUT_MS = 15_000, API_TIMEOUT_MS = 20_000, MAX_BODY = 2 * 1024 * 1024;
-export const VARS_PATH = '/vars?match=inverter/data&fmt=obj';
+export const VARS_PATH = '/vars?match=inverter&fmt=obj&cache=1';
 export const DEFAULT_ENV = resolve(homedir(), '.solstice', 'pvs.env');
 const REPO = dirname(dirname(fileURLToPath(import.meta.url)));
 const UA = 'solstice-pvs-relay/1';
@@ -150,7 +153,9 @@ export async function pvsGet(cfg, path, headers = {}, state) {
   });
 }
 
-/** Logs in as ssm_owner and returns the `session=…` cookie. A refused login is fatal (wrong PVS_PASSWORD). */
+/** Logs in as ssm_owner and returns the `session=…` cookie to send. The PVS6 puts the session in the JSON body
+ *  ({"session": "<64 chars>"}) and sets no cookie; a Set-Cookie is still taken if a firmware sends one. A refused login
+ *  is fatal (wrong PVS_PASSWORD). */
 export async function pvsLogin(cfg, state) {
   const basic = Buffer.from(`ssm_owner:${cfg.pvsPassword}`).toString('base64');
   let r;
@@ -159,52 +164,46 @@ export async function pvsLogin(cfg, state) {
   if (r.status === 401 || r.status === 403)
     throw new FatalError(`PVS login refused (HTTP ${r.status}). Check PVS_PASSWORD: the last 5 characters of the PVS serial number, exactly as printed on the PVS6 label.`);
   if (r.status !== 200) throw new Error(`PVS login failed: HTTP ${r.status}`);
-  const set = [].concat(r.headers['set-cookie'] ?? []).map(c => c.split(';')[0].trim()).find(c => c.startsWith('session='));
-  if (set) return set;
   let body = null; try { body = JSON.parse(r.body); } catch { /* fall through */ }
-  if (typeof body?.session === 'string' && body.session) return `session=${body.session}`;
+  if (typeof body?.session === 'string' && SESSION.test(body.session)) return `session=${body.session}`;
+  const set = [].concat(r.headers['set-cookie'] ?? []).map(c => c.split(';')[0].trim()).find(c => c.startsWith('session='));
+  if (set && SESSION.test(set.slice(8))) return set;
   throw new Error('the PVS accepted the login but returned no session');
 }
 
+const SESSION = /^[A-Za-z0-9._~+/=-]{1,512}$/;   // a header-safe token, so nothing odd is echoed into the Cookie header
+const INVERTER_KEY = /^\/sys\/devices\/inverter\/(\d+)\/([A-Za-z0-9_]+)$/;
 const num = x => { if (x === null || x === undefined || x === '') return null; const n = Number(x); return Number.isFinite(n) ? n : null; };
 
-/** Turns the varserver answer into [{ sn, kw, v, tempC }]. Accepts the per-inverter object form
- *  ({ "/sys/devices/inverter/0": { sn, pMppt1Kw, … } }), the flat form ({ "/sys/devices/inverter/0/sn": … }) and the
- *  { values: [{ name, value }] } form, so a firmware difference in the shape does not lose data. */
+/** Turns the varserver answer, one flat object { "/sys/devices/inverter/<n>/<field>": "<string>" }, into
+ *  { inverters: [{ sn, kw, kwDc, v, tempC, kwhLifetime }], skipped, ts }. kw is AC output (p3phsumKw), kwDc DC input
+ *  (pMppt1Kw), v the MPPT volts (vMppt1V), tempC the heat sink (tHtsnkDegc), kwhLifetime the lifetime counter
+ *  (ltea3phsumKwh). A tiny negative night-time power reads as 0. A record without a serial, or without any power or
+ *  energy value, is skipped. `ts` is the newest msmtEps (the PVS's measurement time) as ISO UTC, or null. */
 export function parseInverters(json) {
-  const objects = [], flat = new Map();
-  const addFlat = (name, value) => {
-    const i = name.lastIndexOf('/'); if (i <= 0) return;
-    const key = name.slice(0, i); if (!flat.has(key)) flat.set(key, {});
-    flat.get(key)[name.slice(i + 1)] = value;
-  };
-  const visit = node => {
-    if (Array.isArray(node)) {
-      for (const x of node) {
-        if (x && typeof x === 'object' && typeof x.name === 'string' && 'value' in x) addFlat(x.name, x.value); else visit(x);
-      }
-      return;
-    }
-    if (!node || typeof node !== 'object') return;
-    if (typeof node.sn === 'string' || typeof node.sn === 'number') { objects.push(node); return; }
-    for (const [k, v] of Object.entries(node)) {
-      if (v !== null && typeof v === 'object') visit(v);
-      else if (k.includes('/')) addFlat(k, v);
-    }
-  };
-  visit(json);
-  for (const o of flat.values()) if (o.sn !== undefined && o.sn !== null) objects.push(o);
-  const inverters = [], seen = new Set(); let skipped = 0;
-  for (const o of objects) {
-    const sn = String(o.sn).trim(), kw = num(o.pMppt1Kw);
-    if (!sn || kw === null || seen.has(sn)) { skipped++; continue; }
-    seen.add(sn);
-    inverters.push({ sn, kw, v: num(o.vMppt1V), tempC: num(o.tHtsnkDegc) });
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return { inverters: [], skipped: 0, ts: null };
+  const byIndex = new Map();
+  for (const [key, value] of Object.entries(json)) {
+    const m = INVERTER_KEY.exec(key); if (!m) continue;
+    const n = Number(m[1]); if (!byIndex.has(n)) byIndex.set(n, {});
+    byIndex.get(n)[m[2]] = value;
   }
-  return { inverters, skipped };
+  const power = x => { const n = num(x); return n === null ? null : Math.max(0, n); };
+  const inverters = [], seen = new Set(); let skipped = 0, newest = null;
+  for (const [, o] of [...byIndex.entries()].sort(([a], [b]) => a - b)) {
+    const sn = typeof o.sn === 'string' || typeof o.sn === 'number' ? String(o.sn).trim() : '';
+    const rec = { sn, kw: power(o.p3phsumKw), kwDc: power(o.pMppt1Kw), v: num(o.vMppt1V), tempC: num(o.tHtsnkDegc), kwhLifetime: num(o.ltea3phsumKwh) };
+    if (!sn || seen.has(sn) || (rec.kw === null && rec.kwDc === null && rec.kwhLifetime === null)) { skipped++; continue; }
+    seen.add(sn);
+    inverters.push(rec);
+    const ms = typeof o.msmtEps === 'string' ? Date.parse(o.msmtEps) : NaN;
+    if (Number.isFinite(ms) && (newest === null || ms > newest)) newest = ms;
+  }
+  return { inverters, skipped, ts: newest === null ? null : new Date(newest).toISOString() };
 }
 
-/** Logs in when needed (again once if the session has expired) and returns the parsed inverter readings. */
+/** Logs in when needed (again once if the session has expired) and returns { ts, inverters }: the parsed readings and
+ *  the newest measurement time (null when the PVS sent none). */
 export async function readInverters(cfg, state) {
   state.pvsCookie ??= await pvsLogin(cfg, state);
   let r = await pvsGet(cfg, VARS_PATH, { Cookie: state.pvsCookie }, state);
@@ -212,16 +211,19 @@ export async function readInverters(cfg, state) {
     state.pvsCookie = await pvsLogin(cfg, state);
     r = await pvsGet(cfg, VARS_PATH, { Cookie: state.pvsCookie }, state);
   }
-  if (r.status !== 200) throw new Error(`PVS ${VARS_PATH} answered HTTP ${r.status}`);
+  if (r.status !== 200) {
+    let why = ''; try { const e = JSON.parse(r.body); why = [e?.description, e?.errorcode].filter(x => typeof x === 'string').join(' ').slice(0, 80); } catch { /* not JSON */ }
+    throw new Error(`PVS ${VARS_PATH} answered HTTP ${r.status}${why ? ` (${why})` : ''}`);
+  }
   let json;
   try { json = JSON.parse(r.body); } catch { throw new Error(`PVS ${VARS_PATH} did not answer with JSON`); }
-  const { inverters, skipped } = parseInverters(json);
+  const { inverters, skipped, ts } = parseInverters(json);
   if (!inverters.length) {
     const keys = json && typeof json === 'object' ? Object.keys(json).slice(0, 5).join(', ') : typeof json;
-    throw new Error(`the PVS answered without any inverter readings (sn + pMppt1Kw). Top-level keys: ${keys || 'none'}`);
+    throw new Error(`the PVS answered without any inverter readings (/sys/devices/inverter/<n>/sn with p3phsumKw, pMppt1Kw or ltea3phsumKwh). Top-level keys: ${keys || 'none'}`);
   }
-  if (skipped) state.log?.(`skipped ${skipped} inverter record(s) without a serial or pMppt1Kw`);
-  return inverters;
+  if (skipped) state.log?.(`skipped ${skipped} inverter record(s) without a serial or any power or energy value`);
+  return { ts, inverters };
 }
 
 /* ------------------------------------------------ Solstice API ------------------------------------------------ */
@@ -265,18 +267,20 @@ export async function postReadings(cfg, state, payload) {
 
 /* ------------------------------------------------ one poll, the loop, the CLI ------------------------------------------------ */
 
-/** One poll: read the PVS, then (unless dryRun) post. Returns { payload, posted }. */
+/** One poll: read the PVS, then (unless dryRun) post. Returns { payload, posted }. The reading time is the PVS's own
+ *  msmtEps; the current time stands in when it is missing or more than 5 minutes ahead of this clock (Solstice refuses a
+ *  future ts). One ts per poll, reused if the POST is retried. */
 export async function pollOnce(cfg, state, { dryRun = false, now = Date.now } = {}) {
-  const ts = new Date(now()).toISOString();       // one ts per poll, reused if the POST is retried
-  const inverters = await readInverters(cfg, state);
-  const payload = { ts, inverters };
+  const read = await readInverters(cfg, state), t = now();
+  const ts = read.ts && Date.parse(read.ts) <= t + 5 * 60_000 ? read.ts : new Date(t).toISOString();
+  const payload = { ts, inverters: read.inverters };
   if (dryRun) return { payload, posted: null };
   return { payload, posted: await postReadings(cfg, state, payload) };
 }
 
 const summary = ({ payload, posted }) => {
-  const kw = payload.inverters.reduce((a, i) => a + i.kw, 0);
-  return `${payload.ts} ${payload.inverters.length} inverters, ${kw.toFixed(3)} kW total` + (posted ? `: ${posted.inserted} stored, ${posted.duplicates} already stored` : '');
+  const kw = payload.inverters.reduce((a, i) => a + (i.kw ?? 0), 0);
+  return `${payload.ts} ${payload.inverters.length} inverters, ${kw.toFixed(3)} kW AC total` + (posted ? `: ${posted.inserted} stored, ${posted.duplicates} already stored` : '');
 };
 
 const USAGE = `usage: node scripts/pvs-relay.mjs [env-file] [--once] [--dry-run]
