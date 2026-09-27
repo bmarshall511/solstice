@@ -8,10 +8,11 @@ Tesla only sees the whole array. The SunPower PVS6 sees each of the 30 panels th
 PVS6 (LAN, self-signed TLS) --GET--> scripts/pvs-relay.mjs (Mac, launchd) --POST + owner cookie--> Solstice /api/pvs/readings
 ```
 
-- **PVS side, read-only.** The relay logs in (`GET /auth?login`, HTTP Basic `ssm_owner` : last 5 characters of the PVS serial) and reads `GET /vars?match=inverter/data&fmt=obj`. It never calls `vars?set=` or anything else that writes. This is SunStrong's LocalAPI, which needs PVS6 firmware build 61840 or later.
+- **PVS side, read-only.** The relay logs in with `GET /auth?login` (HTTP Basic `ssm_owner` : last 5 characters of the PVS serial). The PVS6 answers `200 {"session": "<64 characters>"}` in the body and sets no cookie, so the relay sends `Cookie: session=<value>` itself on the next request. It then reads `GET /vars?match=inverter&fmt=obj&cache=1`; `cache=1` is required, and the older `match=inverter/data` query answers `400 {"description": "Bad request", "errorcode": "0x0040"}`. It never calls `vars?set=` or anything else that writes. This is SunStrong's LocalAPI, which needs PVS6 firmware build 61840 or later.
+- **The PVS answer.** One flat JSON object keyed by path, every value a string: `/sys/devices/inverter/<n>/<field>` for n = 0–29, with the fields `freqHz`, `i3phsumA`, `iMppt1A`, `ltea3phsumKwh` (lifetime kWh), `msmtEps` (measurement time, ISO UTC), `p3phsumKw` (AC kW), `pMppt1Kw` (DC kW), `prodMdlNm`, `sn`, `tHtsnkDegc`, `vMppt1V` and `vln3phavgV`. The relay parses the numbers, reads a tiny negative power as 0, skips a record with no serial or no power or energy value, and uses the newest `msmtEps` as the reading time (the current time if there is none, or if it is more than 5 minutes ahead of the Mac's clock). When the PVS has not measured again since the last poll, the repeated `msmtEps` is stored once. (`match=livedata&fmt=obj&cache=1` also works and returns the site totals under `/sys/livedata/`; the relay does not read it.)
 - **TLS.** The PVS's self-signed certificate is accepted only on the relay's own connection to `PVS_HOST`. Nothing changes the global TLS settings, so the call to Solstice keeps full certificate checks. The relay refuses to start if `NODE_TLS_REJECT_UNAUTHORIZED=0` is set. Set `PVS_CERT_SHA256` to pin the PVS certificate, so a different certificate at that address is refused before the password is sent.
 - **Solstice side.** The relay posts the owner key to `POST /api/auth/owner` once, keeps the `solstice_owner` cookie in memory, and sends each poll to `POST /api/pvs/readings` with that cookie. On a 401 it unlocks once more and retries. The relay shows up as one "Device" row in the owner devices list. Rotating `OWNER_KEY` stops the relay until the env file is updated.
-- **What is stored.** For each inverter at each poll: time, serial, kW (`pMppt1Kw`), volts (`vMppt1V`) and heat-sink °C (`tHtsnkDegc`). Nothing else. Serials live only in the database.
+- **What is stored.** For each inverter at each reading: time (`msmtEps`), serial, AC kW (`p3phsumKw`), DC kW (`pMppt1Kw`), volts (`vMppt1V`), heat-sink °C (`tHtsnkDegc`) and lifetime kWh (`ltea3phsumKwh`). Nothing else. Serials live only in the database.
 - **Dependencies.** Node 22 built-ins only.
 
 ### 1. Deploy the server part first
@@ -44,8 +45,8 @@ node scripts/pvs-relay.mjs ~/.solstice/pvs.env --dry-run   # reads the PVS and p
 node scripts/pvs-relay.mjs ~/.solstice/pvs.env --once      # reads the PVS, posts one batch, exits 0 on success
 ```
 
-- `--dry-run` should list 30 inverters with plausible `kw` values (about 0 to 0.33). Stderr shows the certificate fingerprint; copy it into `PVS_CERT_SHA256` to pin it.
-- `--once` prints one line, for example `2026-09-25T18:00:03.120Z 30 inverters, 6.912 kW total: 30 stored, 0 already stored`.
+- `--dry-run` should list 30 inverters with plausible `kw` and `kwDc` values (about 0 to 0.33) and a `kwhLifetime` for each. Stderr shows the certificate fingerprint; copy it into `PVS_CERT_SHA256` to pin it.
+- `--once` prints one line, for example `2026-09-25T18:00:00.000Z 30 inverters, 6.912 kW AC total: 30 stored, 0 already stored`.
 - Then `GET /api/pvs/latest` from a signed-in browser should report `count: 30`.
 
 **Exit codes**
@@ -83,8 +84,8 @@ All three routes are owner-only, like every `/api` route (the `solstice_owner` c
 
 | Method and path | Request | Answer |
 |---|---|---|
-| `POST /api/pvs/readings` | `{ ts, inverters: [{ sn, kw, v, tempC }] }`. `ts` is ISO 8601 with a zone, or epoch ms, from 7 days old to 5 minutes ahead. 1–60 inverters with unique `sn`. `kw` is a number from -1 to 1. `v` and `tempC` are numbers or null. Other fields are dropped. | `{ ok, inserted, duplicates }`. The same `(ts, sn)` posted again is ignored (the first write wins). `400 { error }` names the bad field. `413` if the body is over 64 kB. |
-| `GET /api/pvs/day?date=YYYY-MM-DD` | A Chicago calendar day (default today). The fall-back day is 25 hours. | `{ date, timeZone, start, end, bucketMinutes: 5, times: [bucket start, epoch ms], inverters: [{ sn, kwh, peakKw, maxTempC, buckets, kw: [], v: [], tempC: [] }], total: { kwh, inverters, medianKwh } }`. Series line up with `times`, with `null` where an inverter has no reading. `kwh` is the sum of 5-minute bucket-average kW × 5 min. |
-| `GET /api/pvs/latest` | – | `{ at, ageS, count, inverters: [{ sn, ts, ageS, kw, v, tempC }] }`: each inverter's newest reading within 7 days of the newest reading overall. |
+| `POST /api/pvs/readings` | `{ ts, inverters: [{ sn, kw, kwDc, v, tempC, kwhLifetime }] }`. `ts` is ISO 8601 with a zone, or epoch ms, from 7 days old to 5 minutes ahead. 1–60 inverters with unique `sn`. Only `sn` is required; each other field is a number, null or left out: `kw` (AC) and `kwDc` from 0 to 2, `kwhLifetime` 0 or more. Other fields are dropped. | `{ ok, inserted, duplicates }`. The same `(ts, sn)` posted again is ignored (the first write wins). `400 { error }` names the bad field. `413` if the body is over 64 kB. |
+| `GET /api/pvs/day?date=YYYY-MM-DD` | A Chicago calendar day (default today). The fall-back day is 25 hours. | `{ date, timeZone, start, end, bucketMinutes: 5, times: [bucket start, epoch ms], inverters: [{ sn, kwh, kwhSource, peakKw, maxTempC, buckets, kw: [], v: [], tempC: [] }], total: { kwh, inverters, medianKwh } }`. Series line up with `times`, with `null` where an inverter has no reading. `kwh` is the lifetime counter's last reading of the day minus its first (`kwhSource: "lifetime"`), exact across gaps; with fewer than two lifetime readings, or a counter that went backwards, it is the sum of 5-minute bucket-average AC kW × 5 min (`kwhSource: "integrated"`). |
+| `GET /api/pvs/latest` | – | `{ at, ageS, count, inverters: [{ sn, ts, ageS, kw, kwDc, v, tempC, kwhLifetime }] }`: each inverter's newest reading within 7 days of the newest reading overall. |
 
-Storage: one row per inverter per poll, about 8,600 rows a day for 30 inverters.
+Storage: one row per inverter per PVS measurement, at most about 8,600 rows a day for 30 inverters.

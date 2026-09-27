@@ -83,8 +83,10 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS pool_readings_site_day ON pool_readings(site_id, day)`,
   `CREATE TABLE IF NOT EXISTS nest_readings (site_id text NOT NULL, ts bigint NOT NULL, day text NOT NULL, hour smallint NOT NULL, indoor_f real, humidity real, mode text, hvac text, cool_f real, heat_f real, eco boolean, PRIMARY KEY (site_id, ts))`,
   `CREATE INDEX IF NOT EXISTS nest_readings_site_day ON nest_readings(site_id, day)`,
-  // Per-inverter readings from the SunPower PVS6, pushed by scripts/pvs-relay.mjs (one row per inverter per 5-minute poll; server/src/pvs.ts).
+  // Per-inverter readings from the SunPower PVS6, pushed by scripts/pvs-relay.mjs (one row per inverter per 5-minute poll; server/src/pvs.ts). kw is AC power (p3phsumKw).
   `CREATE TABLE IF NOT EXISTS pvs_readings (ts timestamptz, sn text, kw numeric, v numeric, temp_c numeric, PRIMARY KEY (ts, sn))`,
+  // DC power (pMppt1Kw) and the inverter's lifetime energy counter (ltea3phsumKwh); NULL on rows stored before these columns existed.
+  `ALTER TABLE pvs_readings ADD COLUMN IF NOT EXISTS kw_dc numeric, ADD COLUMN IF NOT EXISTS kwh_lifetime numeric`,
   // Single-owner mode: one row per device that opened the owner link (no account, no user row). Deleting a row signs that device out.
   `CREATE TABLE IF NOT EXISTS owner_sessions (id text PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now(), last_seen timestamptz NOT NULL DEFAULT now(), label text)`,
   // Guest share links (share.ts): only the SHA-256 of each token is stored; the token itself is shown to the owner once. The label is
