@@ -174,12 +174,16 @@ describe('crons keep their bearer check and need no cookie', () => {
     const sync = await call('/api/cron/sync', { headers: auth });
     expect(sync.status).toBe(200);
     // the nightly sync, then the learning layer's nightly job for the site (server/src/learn/nightly.ts)
-    expect(await sync.json()).toEqual({ s: { mocked: true }, 'learn:s': expect.objectContaining({ errors: [] }) });
+    // then the alert watch's nightly steps (server/src/watch.ts: bill due, new anomalies)
+    expect(await sync.json()).toEqual({ s: { mocked: true }, 'learn:s': expect.objectContaining({ errors: [] }), 'watch:s': expect.objectContaining({ billDue: { due: false, reason: 'no bill yet' } }) });
     // the 5-minute cron decides by the clock what is due (sampling.ts): pin it to a due tick, 10:00 CDT in cooling season
     vi.useFakeTimers({ toFake: ['Date'], now: Date.parse('2026-07-15T15:00:00Z') });
+    await db.kv.set('ercot', { at: Date.now(), data: { condition: 'normal', title: 'Normal', note: null, eea: 0, demandMw: 1, capacityMw: 2, at: 'x' } }); // the watch reads the cache, never ercot.com
     const nest = await call('/api/cron/nest', { headers: auth }).finally(() => vi.useRealTimers());
     expect(nest.status).toBe(200);
-    expect(await nest.json()).toEqual({ s: { nest: { skipped: 'nest not linked' }, pool: { skipped: 'pool not configured' } } });
+    // the sampling tick, then the alert watch (server/src/watch.ts), read-only
+    expect(await nest.json()).toEqual({ s: { nest: { skipped: 'nest not linked' }, pool: { skipped: 'pool not configured' } },
+      watch: { s: expect.objectContaining({ storm: { alerts: 0, stormWatchActive: false, notified: 0 }, ercot: { level: 'normal' } }) } });
     for (const headers of [{ authorization: 'Bearer wrong' }, {}] as Array<Record<string, string>>) {
       const r = await call('/api/cron/sync', { headers });
       expect(r.status).toBe(401);

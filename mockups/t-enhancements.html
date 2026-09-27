@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Solstice · Digest, push, presence and Powerwall rules</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* page scaffolding for the mockup only (same as s-expand) */
+html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+body{background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.col{width:100%;max-width:393px;margin:0 auto;padding:28px 0 60px}
+.intro{padding:0 20px}
+.intro .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.intro h2{font-size:30px;line-height:1.1;font-weight:300;letter-spacing:-.02em;margin-bottom:12px}
+.intro p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.frame{margin-top:34px}
+.frame>.sect{margin:0 20px 10px}
+.pagepad{padding:0 20px}
+.cap{margin:12px 20px 0;padding:12px 14px;border-radius:16px;background:rgba(0,0,0,.25);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.55}
+.cap b{color:var(--text);font-weight:600}
+.cap p+p{margin-top:6px}
+.cap .new{color:var(--batt)}
+.cap .same{color:var(--mute)}
+.cap .wr{color:var(--solar)}
+.cap code,.wrules code{font:11.5px "JetBrains Mono";color:var(--text)}
+.wrules{margin:34px 20px 0}
+.wrules h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:10px}
+.wrules ul{list-style:none;display:grid;gap:8px}
+.wrules li{font-size:12.5px;color:var(--dim);line-height:1.55;padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b)}
+.wrules li b{color:var(--text);font-weight:600}
+.ghostcard{opacity:.45}
+.ghostcard .h b{max-width:none}
+.ctx{font-size:10.5px;color:var(--mute);text-align:center;margin-top:8px;letter-spacing:.06em}
+
+/* ---------- NEW (frame 1): weekly digest card on Now ---------- */
+.dg .h .x{all:unset;cursor:pointer;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);color:var(--dim);font-size:13px;flex:none}
+.dg .wk{font:500 11px "JetBrains Mono";color:var(--mute);margin-top:2px}
+.dg .lead{font-size:14px;color:var(--text);line-height:1.5;margin-top:10px}
+.dg .lead b{color:var(--batt);font-weight:600}
+.dg .share{height:8px;border-radius:4px;background:rgba(196,162,255,.35);margin-top:10px;overflow:hidden;display:flex}
+.dg .share i{display:block;height:100%;background:linear-gradient(90deg,var(--solar),var(--batt))}
+.dg .sharel{display:flex;justify-content:space-between;font-size:10.5px;color:var(--mute);margin-top:4px}
+.dg .g4{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.dg .g4 div{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b);min-width:0}
+.dg .g4 small{display:block;font-size:11px;color:var(--dim)}
+.dg .g4 b{display:block;font:300 20px Manrope;letter-spacing:-.02em;margin-top:1px}
+.dg .g4 b small{display:inline;font-size:11px;color:var(--dim);letter-spacing:0}
+.dg .g4 em{display:block;font-style:normal;font:500 10.5px "JetBrains Mono";color:var(--mute);margin-top:2px}
+.dg .g4 em.up{color:var(--batt)}.dg .g4 em.dn{color:var(--warn)}
+.dg .ap{margin-top:12px}
+.dg .ap div{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12.5px;color:var(--dim);line-height:1.45}
+.dg .ap div:first-child{border-top:none}
+.dg .ap i{flex:none;width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-style:normal;font-size:12px;background:color-mix(in srgb,var(--c) 20%,transparent);color:var(--c)}
+.dg .ap b{color:var(--text);font-weight:600}
+.dg .anom{margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(255,122,102,.08);border:1px solid rgba(255,122,102,.26);font-size:12.5px;color:var(--dim);line-height:1.45}
+.dg .anom b{color:var(--warn)}
+.dg .badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.dg .foot{display:flex;gap:8px;align-items:center;margin-top:12px}
+.dg .foot .link{margin-top:0}
+.permrow{display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--glass-b)}
+.permrow .ri{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:14px;background:rgba(108,196,255,.18);color:var(--home);flex:none}
+.permrow .rt{flex:1;font-size:13px;min-width:0}
+.permrow .rt small{display:block;font-size:11px;color:var(--mute);margin-top:1px;line-height:1.4}
+.permrow .link{margin:0;padding:7px 12px;font-size:12px;flex:none}
+
+/* ---------- frame 2: lock-screen rendering ---------- */
+.lock{position:relative;margin:0 auto;width:100%;height:560px;overflow:hidden;background:radial-gradient(90% 60% at 50% 0%,#1d2c4a 0%,#070910 70%)}
+@media (min-width:394px){.lock{border-radius:44px;border:1px solid rgba(255,255,255,.14)}}
+.lock .clock{text-align:center;padding-top:54px}
+.lock .clock small{display:block;font-size:15px;font-weight:600;color:rgba(255,255,255,.8)}
+.lock .clock b{display:block;font-size:72px;font-weight:600;letter-spacing:-.03em;line-height:1.05;color:rgba(255,255,255,.92)}
+.nlist{position:absolute;left:10px;right:10px;bottom:22px;display:grid;gap:8px}
+.ntf{display:flex;gap:10px;padding:11px 12px;border-radius:22px;background:rgba(60,64,78,.55);border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
+.ntf .ic{flex:none;width:38px;height:38px;border-radius:9px;background:radial-gradient(circle at 40% 35%,#ffe2a8,#ffc15e 45%,#c47a1c);box-shadow:inset 0 0 0 1px rgba(255,255,255,.2)}
+.ntf .bd{flex:1;min-width:0}
+.ntf .tp{display:flex;justify-content:space-between;gap:8px}
+.ntf .tp b{font-size:14px;font-weight:700;line-height:1.3;min-width:0}
+.ntf .tp span{flex:none;font-size:12px;color:rgba(255,255,255,.55)}
+.ntf p{font-size:13.5px;line-height:1.35;color:rgba(255,255,255,.88);margin-top:1px}
+.ntf.dimn{opacity:.6}
+.nlab{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.5);font-weight:600;margin:6px 6px -2px}
+
+/* ---------- NEW (frame 3): push master row state text ---------- */
+.row .rt small.st-on{color:var(--batt)}
+.row .rt small.st-off{color:var(--mute)}
+.row .rt small.st-warn{color:var(--warn)}
+.row.newk .rt{position:relative}
+.nbadge{font:600 9.5px Manrope;letter-spacing:.08em;text-transform:uppercase;color:var(--batt);border:1px solid rgba(78,240,166,.35);border-radius:999px;padding:1px 6px;margin-left:6px;vertical-align:1px}
+.pstates{display:flex;gap:6px;flex-wrap:wrap;margin:10px 20px 0}
+.pstates button{all:unset;cursor:pointer;font-size:11px;padding:5px 10px;border-radius:999px;background:var(--glass);border:1px solid var(--glass-b);color:var(--dim)}
+.pstates button.on{color:var(--text);border-color:rgba(108,196,255,.45);background:rgba(108,196,255,.1)}
+
+/* ---------- frame 4: AC card + Away until sheet ---------- */
+.dev{position:relative;width:100%;height:790px;overflow:hidden;background:#05060a}
+@media (min-width:394px){.dev{border-radius:44px;border:1px solid rgba(255,255,255,.14)}}
+.dev .inner{position:absolute;inset:0;padding:54px 20px 0;overflow:hidden}
+.twinstub{position:relative;height:150px;margin:10px -16px 0;border-radius:20px;overflow:hidden;background:radial-gradient(80% 90% at 60% 100%,rgba(255,158,102,.18),rgba(0,0,0,0) 70%),radial-gradient(60% 60% at 30% 40%,rgba(108,196,255,.12),rgba(0,0,0,0) 70%),rgba(0,0,0,.2)}
+.twinstub .hud{bottom:10px}
+.psrc{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--dim);line-height:1.4}
+.psrc i{flex:none;width:7px;height:7px;border-radius:50%;background:var(--home);box-shadow:0 0 8px var(--home)}
+.psrc b{color:var(--text);font-weight:600}
+.dev .sheet{left:8px;right:8px}
+.dev.open .scrim{opacity:1}
+.aw-pre{display:grid;gap:8px;margin-top:14px}
+.aw-pre button{all:unset;cursor:pointer;display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:16px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b)}
+.aw-pre button .rt{flex:1;font-size:14px;font-weight:600}
+.aw-pre button .rt small{display:block;font-size:11.5px;color:var(--mute);font-weight:400;margin-top:1px}
+.aw-pre button .rd{flex:none;width:18px;height:18px;border-radius:50%;border:1.5px solid rgba(255,255,255,.35);box-sizing:border-box}
+.aw-pre button.on{border-color:rgba(78,240,166,.5);background:rgba(78,240,166,.08)}
+.aw-pre button.on .rd{border:5px solid var(--batt)}
+.aw-pre input{all:unset;font:500 14px "JetBrains Mono";padding:6px 10px;border-radius:10px;background:rgba(0,0,0,.35);border:1px solid var(--glass-b);color:var(--text);width:104px;text-align:center;font-size:13px;flex:none}
+.aw-do{margin-top:14px;display:grid;gap:8px}
+.aw-do div{display:flex;gap:10px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.035);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.45}
+.aw-do i{flex:none;width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-style:normal;font-size:12px;background:color-mix(in srgb,var(--c) 20%,transparent);color:var(--c)}
+.aw-do b{color:var(--text);font-weight:600}
+.aw-do .mode{font:600 9.5px Manrope;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);border:1px solid var(--glass-b);border-radius:999px;padding:1px 6px;margin-left:4px}
+.dev .primary{margin-top:14px;width:100%;box-sizing:border-box}
+
+/* ---------- NEW (frame 5): Powerwall rules card ---------- */
+.pwr .scope{margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(108,196,255,.07);border:1px solid rgba(108,196,255,.24);font-size:12px;color:var(--dim);line-height:1.5}
+.pwr .scope b{color:var(--text)}
+.pwr .scope.miss{background:rgba(255,193,94,.08);border-color:rgba(255,193,94,.3)}
+.pwr .scope .link{margin-top:8px;padding:7px 12px;font-size:12px}
+.rule{padding:14px 0 4px;border-top:1px solid var(--glass-b);margin-top:14px}
+.rule .rh{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.rule .rh b{font-size:14px;font-weight:600;min-width:0}
+.rule .rh b small{display:block;font-size:11px;color:var(--mute);font-weight:400;margin-top:1px}
+.rule .rh .seg2{flex:none}
+.rule .rec{margin-top:10px}
+.rule .rec .row2{display:flex;gap:8px;margin-top:10px}
+.rule .rec .apply{all:unset;cursor:pointer;flex:1;text-align:center;padding:10px 12px;border-radius:14px;background:var(--solar);color:#1a1204;font-weight:700;font-size:13px}
+.rule .rec .skip{all:unset;cursor:pointer;text-align:center;padding:10px 14px;border-radius:14px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);font-weight:600;font-size:13px}
+.rule .rec.auto{background:rgba(78,240,166,.07);border-color:rgba(78,240,166,.25)}
+.rule .rec.none{background:rgba(255,255,255,.04);border-color:var(--glass-b)}
+.rule .last{display:flex;gap:8px;margin-top:8px;font-size:11.5px;color:var(--mute);line-height:1.45}
+.rule .last span{flex:none;font:500 10.5px "JetBrains Mono";padding-top:1px}
+.rule .last p{margin:0;font-size:11.5px;color:var(--mute);line-height:1.45}
+.rule .rules{margin-top:8px}
+.rule .rules span{font-size:10.5px;padding:4px 8px}
+.pwr .cur{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.pwr .cur span{font:500 10.5px "JetBrains Mono";padding:4px 8px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);color:var(--dim)}
+.pwr .cur span b{color:var(--text);font-weight:500}
+.pwr.nocmd .apply{background:rgba(255,255,255,.08);color:var(--mute);border:1px solid var(--glass-b);cursor:default}
+</style></head><body>
+<div class="col">
+
+  <div class="intro">
+    <div class="k">Mockup t · Enhancements</div>
+    <h2>Your week, pushes, Away until…, and Powerwall rules.</h2>
+    <p>Five frames at phone width for the decisions already made: the weekly digest (in-app card plus push, no email), web push with a master switch in Settings › Alerts, presence from Nest Home/Away Assist plus "Away until…" on the existing Home/Away button, and a Powerwall rules card that uses the new <code style="font:12px 'JetBrains Mono'">energy_cmds</code> scope. Every number is illustrative. Nothing here names a place, and nothing shows a dollar figure. Buttons are inert apart from the toggles that show each state.</p>
+  </div>
+
+  <!-- ================= Frame 1 · Now: weekly digest ================= -->
+  <div class="frame" id="f1">
+    <div class="sect">Frame 1 · Now · Monday 7:02 AM</div>
+    <div class="pagepad">
+      <div class="hello">
+        <div><h3>Good morning</h3><p><span class="sync"></span><span>Home</span> · <span>synced 1 min ago</span></p></div>
+        <div class="wx"><b>74°</b>Clear</div>
+      </div>
+      <div class="chips" style="margin-left:-20px;margin-right:-20px">
+        <div class="chipx"><i></i>Powerwalls</div>
+        <div class="chipx"><i style="--c:var(--mute)"></i>No weather alerts</div>
+        <div class="chipx"><i style="--c:var(--batt)"></i>ERCOT normal</div>
+        <div class="chipx"><i style="--c:var(--batt)"></i>Storm Watch</div>
+      </div>
+
+      <div class="card dg" id="digest">
+        <div class="h"><b>Your week</b><span style="display:flex;align-items:center;gap:8px"><span class="badge g">new</span><button class="x" aria-label="Dismiss until next Monday">✕</button></span></div>
+        <div class="wk" id="dgWk">Week 39 · Mon Sep 21 – Sun Sep 27</div>
+        <p class="lead" id="dgLead"><b>54%</b> of what the house used came from sunshine, up 6 points on the week before.</p>
+        <div class="share"><i id="dgBar" style="width:54%"></i></div>
+        <div class="sharel"><span>sunshine (solar + Powerwall)</span><span>PEC</span></div>
+        <div class="g4" id="dgGrid">
+          <div><small>Solar</small><b>312 <small>kWh</small></b><em class="up">+18 vs last wk</em></div>
+          <div><small>Used</small><b>512 <small>kWh</small></b><em>−9 vs last wk</em></div>
+          <div><small>Bought from PEC</small><b>236 <small>kWh</small></b><em class="up">−31 vs last wk</em></div>
+          <div><small>Sent to PEC</small><b>36 <small>kWh</small></b><em>+4 vs last wk</em></div>
+        </div>
+        <div class="sect" style="margin:16px 2px 4px;font-size:11px">What the Autopilots did</div>
+        <div class="ap" id="dgAp">
+          <div style="--c:var(--home)"><i>≈</i><span><b>Pool · Auto.</b> Wrote 7 nightly plans: 9 h a day at 1,500 RPM, 41 kWh on the pump, 88% of it on solar.</span></div>
+          <div style="--c:#ff9e66"><i>❄</i><span><b>AC · Auto.</b> 3 pre-cool days, 11 setpoint writes, all inside 74–78°. None refused by the safety clamps.</span></div>
+          <div style="--c:var(--batt)"><i>▮</i><span><b>Powerwall rules · Suggest.</b> 1 suggestion (reserve 15% on Thu night), not applied. Powerwalls full 6 of 7 days.</span></div>
+        </div>
+        <div class="anom" id="dgAnom"><b>Worth a look:</b> Tue used 14 kWh more than a 91° day usually does, mostly 3–6 PM.</div>
+        <div class="badges" id="dgBadges">
+          <span class="conf" data-t="l">solar model ±4%</span>
+          <span class="conf" data-t="l">AC 2.0 kW learned</span>
+          <span class="conf" data-t="n">pump curve · learning 18 of 30</span>
+          <span class="conf" data-t="e">48 h forecast ±11%</span>
+        </div>
+        <div class="foot"><button class="link" id="dgPrev">‹ See last week</button><button class="link" id="dgFull">Full week ›</button></div>
+        <div class="permrow" id="permRow">
+          <div class="ri">✉</div>
+          <div class="rt">Get this on your lock screen<small id="permTxt">Every Monday at 7 AM, plus storm prep and approvals. You choose which in Settings › Alerts.</small></div>
+          <button class="link" id="permBtn">Turn on</button>
+        </div>
+      </div>
+
+      <div class="ghostcard"><div class="orbwrap" style="height:120px;margin:0"><div class="orbtxt" style="bottom:10px"><div class="pct" style="font-size:52px">88<small>%</small></div><p>Powerwalls · charging from solar</p></div></div></div>
+      <div class="ctx">the orb and every card below it are unchanged</div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> a "Your week" card between the status chips and the orb, shown from Monday 7 AM (after the nightly sync has closed Sunday) until you dismiss it with ✕ or Tuesday ends. It carries the week's solar, used, bought and sent kWh with the change against the week before, the sunshine share as a line and a bar, one line per Autopilot (what it wrote in Auto, or what it suggested and you applied in Suggest), one anomaly line, and the confidence badges from the learning layer (r-learning chips, same colours). "See last week" swaps the card to the week before (<b>tap it</b>). "Full week" opens the digest sheet. The notification row at the bottom appears only while push is off on this device. "Turn on" asks iOS for permission, then flips Settings › Alerts › Push to this device (frame 3).</p>
+      <p><b class="same">Unchanged:</b> the greeting, the chips, the orb, the story line and every Now card below. The digest holds no dollar figure, so the card is safe to show in the share view later if you want that. It is owner-only for now.</p>
+      <p><b class="wr">Writes:</b> none. The card only reads. Tapping "Turn on" writes a push subscription to Solstice's own database, nothing else.</p>
+      <p><b>Deviation:</b> the design doc put this card at the top of Insights › Today. The brief asked for it on Now, which is what this frame shows. Say which you prefer.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 2 · Push on the lock screen ================= -->
+  <div class="frame" id="f2">
+    <div class="sect">Frame 2 · the pushes, as the phone shows them</div>
+    <div class="lock">
+      <div class="clock"><small>Monday, September 28</small><b>7:02</b></div>
+      <div class="nlist">
+        <div class="nlab">weekly digest · Monday 7:02 AM</div>
+        <div class="ntf"><div class="ic"></div><div class="bd"><div class="tp"><b>Your week: 54% from sunshine</b><span>now</span></div>
+          <p>Solar 312 kWh, used 512, bought 236, sent 36. 1 thing worth a look.</p></div></div>
+        <div class="nlab">storm preparation · rule in Suggest</div>
+        <div class="ntf"><div class="ic"></div><div class="bd"><div class="tp"><b>Storm prep: raise reserve to 100%?</b><span>9:40 AM</span></div>
+          <p>Severe Thunderstorm Watch, Thu 4–11 PM. Powerwalls 62%. Tap to review. Nothing changes until you tap Apply.</p></div></div>
+        <div class="nlab">the same alert if that rule is in Auto</div>
+        <div class="ntf dimn"><div class="ic"></div><div class="bd"><div class="tp"><b>Storm prep: reserve set to 100%</b><span>12:05 PM</span></div>
+          <p>Raised on solar ahead of Thu 4–11 PM. Back to 20% 2 h after the all-clear. Tap to undo.</p></div></div>
+      </div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> web push to the Home-Screen app (iOS 16.4+). Each push is a title and one or two lines of body, with Solstice's icon. Tapping opens the matching card: the digest opens frame 1's card, storm prep opens the Powerwall rules card (frame 5). One push per event: repeats are held back for 24 h, and a Storm Watch that is cancelled gets a quiet in-app "all clear" with no push.</p>
+      <p><b class="same">Unchanged:</b> Tesla's own outage and Storm Watch pushes. Solstice pushes what Tesla doesn't: approvals, bill due, anomalies, storm preparation, grid stress, panel faults and the digest.</p>
+      <p><b class="wr">Writes:</b> a push never writes. The Suggest version says so in its body. The Auto version (dimmed) is sent only after a write that stayed inside the clamps, and says how it will be undone.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 3 · Settings › Alerts ================= -->
+  <div class="frame" id="f3">
+    <div class="sect">Frame 3 · Settings › Alerts</div>
+    <div class="pagepad">
+      <div class="sect" style="margin-top:0">Alerts · push <span class="nbadge">new</span></div>
+      <div class="group">
+        <div class="row" style="--c:var(--home)" id="pushRow"><div class="ri">✉</div><div class="rt">Push to this device<small id="pushSt" class="st-on">On · this iPhone · last push Mon 7:02 AM</small></div><div class="sw on" id="pushSw"></div></div>
+      </div>
+      <div class="sect">Alerts · in app</div>
+      <div class="group">
+        <div class="row" style="--c:var(--out)"><div class="ri">⚡</div><div class="rt">Grid outage started or ended</div><div class="sw on"></div></div>
+        <div class="row" style="--c:var(--solar)"><div class="ri">↓</div><div class="rt">Battery low during an outage<small>Below 30%</small></div><div class="sw on"></div></div>
+        <div class="row" style="--c:var(--warn)"><div class="ri">☀</div><div class="rt">Solar underperforming<small>≥ 8% below baseline</small></div><div class="sw on"></div></div>
+        <div class="row" style="--c:var(--home)"><div class="ri">⛈</div><div class="rt">Severe weather (NWS)</div><div class="sw on"></div></div>
+        <div class="row" style="--c:var(--grid)"><div class="ri">≈</div><div class="rt">Bill doesn’t match Tesla<small>Gap over 5%</small></div><div class="sw on"></div></div>
+        <div class="row" style="--c:var(--grid)"><div class="ri">◐</div><div class="rt">Overnight usage drift</div><div class="sw on"></div></div>
+        <div class="row" style="--c:var(--mute)"><div class="ri">⏻</div><div class="rt">Tesla stopped reporting<small>After 3 minutes</small></div><div class="sw on"></div></div>
+      </div>
+      <div class="group" style="margin-top:10px">
+        <div class="row newk" style="--c:var(--batt)"><div class="ri">✓</div><div class="rt">Waiting for your approval<span class="nbadge">new</span><small>Pool plan, AC pre-cool, Powerwall rule</small></div><div class="sw on"></div></div>
+        <div class="row newk" style="--c:var(--solar)"><div class="ri">$</div><div class="rt">PEC bill due<span class="nbadge">new</span><small>3 days before</small></div><div class="sw on"></div></div>
+        <div class="row newk" style="--c:var(--warn)"><div class="ri">!</div><div class="rt">Unusual usage<span class="nbadge">new</span><small>A day well above what its weather explains</small></div><div class="sw on"></div></div>
+        <div class="row newk" style="--c:var(--home)"><div class="ri">⛨</div><div class="rt">Storm preparation<span class="nbadge">new</span><small>Watch or Warning ahead, with the Powerwall step</small></div><div class="sw on"></div></div>
+        <div class="row newk" style="--c:var(--grid)"><div class="ri">⌁</div><div class="rt">Grid stress (ERCOT)<span class="nbadge">new</span><small>Conservation call or EEA</small></div><div class="sw on"></div></div>
+        <div class="row newk" style="--c:var(--out)"><div class="ri">▦</div><div class="rt">Panel fault<span class="nbadge">new</span><small>From the PVS relay · a panel well below its neighbours</small></div><div class="sw on"></div></div>
+        <div class="row newk" style="--c:var(--batt)"><div class="ri">◷</div><div class="rt">Weekly digest<span class="nbadge">new</span><small>Monday 7 AM</small></div><div class="sw on"></div></div>
+      </div>
+    </div>
+    <div class="pstates" id="pStates">
+      <button class="on" data-s="on">On</button><button data-s="off">Off</button><button data-s="denied">Blocked by iOS</button><button data-s="nohome">Not on Home Screen</button>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> an "Alerts · push" section above the existing one, with a single <b>Push to this device</b> switch. Its line under the title says what the switch is doing. Tap the chips above to see each state:</p>
+      <p>On: "On · this iPhone · last push Mon 7:02 AM". Off: "Off · alerts stay in the app". Blocked: "Blocked in iOS Settings › Notifications › Solstice", with the switch greyed out. Not on the Home Screen: "Add Solstice to your Home Screen first (Share › Add to Home Screen)", also greyed out. The switch applies only to the device you are holding; each phone subscribes on its own.</p>
+      <p>A second group adds the seven new alert kinds, each marked <span class="nbadge" style="margin:0">new</span>. Each per-kind switch controls both the in-app card and the push for that kind, as the existing switches will.</p>
+      <p><b class="same">Unchanged:</b> the "Alerts · in app" header and all seven existing rows: same order, icons, colours, titles, subtitles and switches.</p>
+      <p><b class="wr">Writes:</b> the switches write Solstice's own settings and push subscription only. No device.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 4 · AC panel: Away until… ================= -->
+  <div class="frame" id="f4">
+    <div class="sect">Frame 4 · Insights › Appliances › AC · Away until…</div>
+    <div class="pagepad">
+      <div class="card">
+        <div class="h"><b>AC · thermal twin</b><span class="badge g">Linked · Nest</span></div>
+        <div class="twinstub"><div class="hud">Indoor 76° · outdoor 88° · cooling</div></div>
+        <div class="two">
+          <div class="stat"><small>Today</small><b>14 kWh · 29%</b></div>
+          <div class="stat"><small>Run time</small><b>3 h 05 m · 38% duty</b></div>
+        </div>
+        <div class="seg2 presence" id="pres1"><button data-p="home">Home</button><button class="on" data-p="away">Away · 82°</button></div>
+        <div class="psrc" id="psrc1"><i></i><span><b>Nest says Away</b> since 9:12 AM (Home/Away Assist). Tap Away to add a return time, or Home if you are here.</span></div>
+        <p class="fine" style="margin-top:8px">Air handler · heat strips · condenser. AC power is measured from the step in Tesla’s home load when Nest starts and stops cooling.</p>
+      </div>
+    </div>
+    <div class="ctx">tapping Away opens the sheet below</div>
+    <div class="dev open" style="margin-top:14px" id="dev4">
+      <div class="inner">
+        <div class="card" style="margin-top:0">
+          <div class="h"><b>AC · thermal twin</b><span class="badge g">Linked · Nest</span></div>
+          <div class="twinstub"><div class="hud">Indoor 76° · outdoor 88° · cooling</div></div>
+          <div class="seg2 presence"><button>Home</button><button class="on">Away · 82°</button></div>
+        </div>
+      </div>
+      <div class="scrim"></div>
+      <div class="sheet" style="transform:none">
+        <div class="grab"></div>
+        <div class="shead"><h4>Away until…</h4><button class="x" aria-label="Close">✕</button></div>
+        <p class="sub">When should Solstice expect you back? It switches to Home at that time on its own, so a forgotten button never leaves the house warm.</p>
+        <div class="psrc" style="margin-top:10px"><i></i><span><b>Nest says Away</b> since 9:12 AM (Home/Away Assist)</span></div>
+        <div class="aw-pre" id="awPre">
+          <button class="on" data-t="tonight"><span class="rd"></span><span class="rt">Tonight<small>6:00 PM today</small></span></button>
+          <button data-t="morning"><span class="rd"></span><span class="rt">Tomorrow morning<small>7:00 AM Tuesday</small></span></button>
+          <button data-t="pick"><span class="rd"></span><span class="rt">Pick a time<small>up to 14 days ahead</small></span><input type="text" value="Wed 3:30 PM" aria-label="Return time"></button>
+        </div>
+        <div class="aw-do" id="awDo">
+          <div style="--c:#ff9e66"><i>❄</i><span><b>AC Autopilot</b><span class="mode">Auto</span><br><span id="awAc">Will hold 82° until 5:15 PM, then cool back to 76° so the house is there by 6:00 PM.</span></span></div>
+          <div style="--c:var(--home)"><i>≈</i><span><b>Pool Autopilot</b><span class="mode">Auto</span><br><span id="awPool">No change. The pump plan doesn't depend on who is home; the heavy-use +1 h won't count today.</span></span></div>
+        </div>
+        <button class="primary" id="awGo">Away until 6:00 PM</button>
+        <p class="fine" style="text-align:center;margin-top:10px">If Nest reports Home before then, Solstice switches to Home and tells you.</p>
+      </div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> tapping <b>Away</b> on the existing Home/Away control opens this sheet, including when Away is already lit because Nest reported it. It has three presets: Tonight (6 PM), Tomorrow morning (7 AM) and Pick a time. Below them, one line per Autopilot says what it will do with that return time, and the lines update as you pick (<b>tap the presets</b>). The source line "Nest says Away since 9:12 AM" appears in the sheet and under the control whenever Nest Home/Away Assist reports Away. Once set, the control reads "Away until 6 PM" and the line under it reads "Away until 6:00 PM · you set it at 9:20 AM".</p>
+      <p>Which source wins: the newer of your last tap and Nest Home/Away Assist's last report, and an Away you set with a return time holds until that time. If Nest reports Home early, Solstice ends the away period and says so in the AC log. The control lights whichever state is in force; the line under it says why.</p>
+      <p><b class="same">Unchanged:</b> the thermal twin, the stats, the Home button (one tap, no sheet), the away target (82° here), the comfort band, the Autopilot card and its mode, and the plan card.</p>
+      <p><b class="wr">Writes:</b> choosing a time writes only Solstice's own AC settings. The only Nest write that can follow is the away setpoint and the return ramp the AC plan already makes, and only when today's plan is approved or AC Autopilot is Auto (it is Auto now, so the sheet says "Will"; in Suggest it would say "Suggests" and wait for approval). The existing clamps in the safety guard still apply: 65–85°, at most 2° per step, one write per 30 minutes, and Off means no Nest writes. Nothing here writes to ScreenLogic.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 5 · Insights › Home: Powerwall rules ================= -->
+  <div class="frame" id="f5">
+    <div class="sect">Frame 5 · Insights › Home · Powerwall rules</div>
+    <div class="pagepad">
+      <div class="seg" style="margin-top:0"><button>Today</button><button>Appliances</button><button>Planner</button><button class="on">Home</button></div>
+      <div class="card ghostcard"><div class="h"><b>Outage readiness</b><span class="hbtns"><button class="chip">Preview</button></span></div><p style="margin-top:6px">…unchanged card, cut short here…</p></div>
+
+      <div class="card pwr" id="pwr">
+        <div class="h"><b>Powerwall rules</b><span class="badge g" id="pwrBadge">3 rules · Suggest</span></div>
+        <div class="cur"><span>reserve <b>20%</b></span><span>export <b>Everything</b></span><span>Storm Watch <b>on</b></span><span>mode <b>Self-Powered</b></span></div>
+        <div class="scope" id="scopeOk"><b>Solstice can change these settings.</b> Tesla granted the energy commands permission (<code style="font:10.5px 'JetBrains Mono'">energy_cmds</code>). Suggest shows a change and waits for you. Auto makes it, inside the limits shown under each rule.</div>
+        <div class="scope miss" id="scopeMiss" hidden><b>Solstice can read these settings but can't change them yet.</b> It needs Tesla's energy commands permission (<code style="font:10.5px 'JetBrains Mono'">energy_cmds</code>). Reconnect once in your own browser and approve the new permission. Until then each rule shows its steps in the Tesla app.<br><a class="link" href="#">Re-connect Tesla ›</a></div>
+
+        <!-- rule 1 -->
+        <div class="rule" data-rule="reserve">
+          <div class="rh"><b>Reserve for tonight<small>how much to keep for an outage overnight</small></b><span class="seg2"><button data-m="off">Off</button><button class="on" data-m="suggest">Suggest</button><button data-m="auto">Auto</button></span></div>
+          <div class="rec" data-sug><b>Suggest: 15% tonight, back to 20% at 7 AM.</b> No storm, NWS or ERCOT alert for 48 h. In the last 60 nights the Powerwalls reached 20% on 9 of them; at 15% about 1.3 kWh a night stays usable instead of coming from PEC. 15% still covers about 4 h at your evening load.
+            <div class="row2"><button class="apply">Apply 15% until 7 AM</button><button class="skip">Not tonight</button></div></div>
+          <div class="last"><span>Sep 24</span><p>Suggested 15%, not applied. Reserve stayed at 20%.</p></div>
+          <div class="rules"><span>10–100%</span><span>one change an hour</span><span>never below 20% before a storm</span><span>back at 7 AM</span></div>
+        </div>
+
+        <!-- rule 2 -->
+        <div class="rule" data-rule="storm">
+          <div class="rh"><b>Storm Watch prep<small>fill the Powerwalls before bad weather</small></b><span class="seg2"><button data-m="off">Off</button><button class="on" data-m="suggest">Suggest</button><button data-m="auto">Auto</button></span></div>
+          <div class="rec" data-sug><b>Suggest: reserve to 100% from 12 PM Thursday.</b> NWS Severe Thunderstorm Watch, Thu 4–11 PM. Thursday's forecast is 38 kWh of solar, enough to fill from 62% by 3 PM without buying from PEC. Back to 20% 2 h after the watch ends and the grid is stable.
+            <div class="row2"><button class="apply">Apply: 100% from 12 PM Thu</button><button class="skip">Skip</button></div></div>
+          <div class="last"><span>Aug 30</span><p>You applied 100% at 11:48 AM. Restored 20% on Aug 31 at 2:10 AM.</p></div>
+          <div class="rules"><span>raise on solar, before the window</span><span>not inside an ERCOT window unless EEA ≥ 2</span><span>restore 2 h after all-clear</span><span>one change an hour</span></div>
+        </div>
+
+        <!-- rule 3 -->
+        <div class="rule" data-rule="export">
+          <div class="rh"><b>Export rule<small>what the Powerwalls may send to PEC</small></b><span class="seg2"><button data-m="off">Off</button><button class="on" data-m="suggest">Suggest</button><button data-m="auto">Auto</button></span></div>
+          <div class="rec" data-sug><b>Suggest: Solar only (<code style="font:11px 'JetBrains Mono'">pv_only</code>).</b> The Tesla app currently allows battery export (Everything, <code style="font:11px 'JetBrains Mono'">battery_ok</code>). PEC credits exports for less than it charges for imports, so battery energy sent out in the evening is bought back later at the higher rate. Solar surplus still goes out as it does now.
+            <div class="row2"><button class="apply">Apply Solar only</button><button class="skip">Keep Everything</button></div></div>
+          <div class="last"><span>—</span><p>Never changed by Solstice.</p></div>
+          <div class="rules"><span>battery_ok ↔ pv_only only</span><span>never "never"</span><span>mode never changed</span><span>one change an hour</span></div>
+        </div>
+
+        <div class="sect" style="margin:16px 2px 4px;font-size:11px">Powerwall log</div>
+        <div class="tline">
+          <div><i class="w"></i><span>Sep 24</span><p>Reserve for tonight · suggested 15% · not applied</p></div>
+          <div><i></i><span>Aug 31</span><p>Storm Watch prep · restored 20% at 2:10 AM <em>auto-restore</em></p></div>
+          <div><i></i><span>Aug 30</span><p>Storm Watch prep · 20% → 100% at 11:48 AM <em>you applied</em></p></div>
+        </div>
+      </div>
+
+      <div class="card ghostcard"><div class="h"><b>Heat &amp; your AC</b><span>every 80°F+ day · real highs</span></div><p style="margin-top:6px">…unchanged, then Overnight baseline, How well Solstice knows your home, Data health…</p></div>
+    </div>
+    <div class="pstates" id="scopeStates"><button class="on" data-s="ok">Scope granted</button><button data-s="miss">energy_cmds missing</button><button data-s="auto">Reserve rule in Auto</button></div>
+    <div class="cap">
+      <p><b class="new">New:</b> a "Powerwall rules" card on Insights › Home, placed directly below Outage readiness. A row of chips at the top shows the current Tesla settings. Then come three rules. Each has the same Off / Suggest / Auto control the pool Autopilot uses, its current suggestion and the reason for it, <b>Apply</b> and a skip button while in Suggest, the last thing that happened, and its limits as chips. A shared Powerwall log ends the card. When the <code>energy_cmds</code> scope is missing, the blue note becomes the amber one with a single <b>Re-connect Tesla</b> link, the Apply buttons are greyed out, and each suggestion shows its Tesla-app steps instead. Tap the chips above to see that state, and a rule in Auto ("Will set 15% at 9 PM. Undo").</p>
+      <p>Apply asks first ("Set the backup reserve to 15% until 7 AM?"), as the AC plan's Apply does. Switching a rule to Auto also asks first, with that rule's limits in the dialog. Every rule starts in Suggest.</p>
+      <p><b class="same">Unchanged:</b> Outage readiness, Heat &amp; your AC, Overnight baseline, the model report, Data health, and the Home tab itself. Settings › Your system › Backup reserve still shows the current value.</p>
+      <p><b class="wr">Writes:</b> Suggest never writes. Only your Apply tap writes, and at most one tap every 5 minutes is honoured. Auto writes only inside the clamps: reserve 10–100%, one change per hour, never below 20% before a storm, and the export rule only between <code>battery_ok</code> and <code>pv_only</code>. The operating mode and grid charging are never changed. Every write is logged, and the value it replaced is kept for the automatic restore.</p>
+      <p><b>Deviation:</b> the brief said "between Outage readiness and the model report". Two cards (Heat &amp; your AC, Overnight baseline) already sit between those two, so the card goes straight below Outage readiness. Say if you want it lower, just above the model report.</p>
+    </div>
+  </div>
+
+  <div class="wrules">
+    <h3>The rule for every write</h3>
+    <ul>
+      <li><b>Suggest never writes.</b> Each Powerwall rule starts in Suggest. In Suggest, a suggestion, a push or a card never changes a device; only your Apply tap does, after a confirm dialog. Pool and AC Autopilot stay in Auto, as you set them on Sep 25; this mockup does not change them.</li>
+      <li><b>Auto writes only inside the clamps.</b> Powerwall reserve 10–100%, at most one automatic change per hour, never below 20% while a storm Watch or Warning is ahead. Export rule only between <code>battery_ok</code> and <code>pv_only</code>, never <code>never</code>. Operating mode and grid charging are never changed automatically.</li>
+      <li><b>Storm timing.</b> Reserve raises happen before the window and on solar. They never happen inside an ERCOT conservation window unless EEA ≥ 2. The previous value is restored 2 h after the later of the all-clear and a stable grid.</li>
+      <li><b>Presence never writes a device by itself.</b> "Away until…" and Nest Home/Away Assist change Solstice's own settings. The Nest away setpoint follows only through an approved AC plan or AC Autopilot in Auto, inside 65–85°, at most 2° per step, at most once per 30 minutes. ScreenLogic is never touched by presence.</li>
+      <li><b>Every write is logged</b> with the old value, the new value and who made it (you or Auto). The Auto push tells you how to undo it.</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+/* ---- frame 1: last week toggle + permission row ---- */
+const WEEKS = {
+  cur: { wk: 'Week 39 · Mon Sep 21 – Sun Sep 27', pct: 54, lead: '<b>54%</b> of what the house used came from sunshine, up 6 points on the week before.',
+    grid: [['Solar', 312, '+18 vs last wk', 'up'], ['Used', 512, '−9 vs last wk', ''], ['Bought from PEC', 236, '−31 vs last wk', 'up'], ['Sent to PEC', 36, '+4 vs last wk', '']],
+    anom: '<b>Worth a look:</b> Tue used 14 kWh more than a 91° day usually does, mostly 3–6 PM.', prev: '‹ See last week' },
+  prev: { wk: 'Week 38 · Mon Sep 14 – Sun Sep 20', pct: 48, lead: '<b>48%</b> of what the house used came from sunshine. Two cloudy days mid-week.',
+    grid: [['Solar', 294, '−22 vs wk 37', 'dn'], ['Used', 521, '+12 vs wk 37', 'dn'], ['Bought from PEC', 267, '+30 vs wk 37', 'dn'], ['Sent to PEC', 32, '−6 vs wk 37', '']],
+    anom: '<b>Worth a look:</b> overnight baseline up 9% for three nights (Wed–Fri).', prev: 'This week ›' } };
+let wk = 'cur';
+const drawWeek = () => { const w = WEEKS[wk];
+  dgWk.textContent = w.wk; dgLead.innerHTML = w.lead; dgBar.style.width = w.pct + '%'; dgAnom.innerHTML = w.anom; dgPrev.textContent = w.prev;
+  dgGrid.innerHTML = w.grid.map(([l, v, d, c]) => `<div><small>${l}</small><b>${v} <small>kWh</small></b><em class="${c}">${d}</em></div>`).join(''); };
+dgPrev.onclick = () => { wk = wk === 'cur' ? 'prev' : 'cur'; drawWeek(); };
+permBtn.onclick = () => { permTxt.textContent = 'On for this iPhone. Change which alerts push in Settings › Alerts.'; permBtn.textContent = 'Done'; };
+
+/* ---- frame 3: push master switch states ---- */
+const PST = { on: ['On · this iPhone · last push Mon 7:02 AM', 'st-on', true, false], off: ['Off · alerts stay in the app', 'st-off', false, false],
+  denied: ['Blocked in iOS Settings › Notifications › Solstice', 'st-warn', false, true], nohome: ['Add Solstice to your Home Screen first (Share › Add to Home Screen)', 'st-warn', false, true] };
+const setPush = s => { const [t, c, on, dis] = PST[s]; pushSt.textContent = t; pushSt.className = c; pushSw.classList.toggle('on', on); pushSw.style.opacity = dis ? .35 : 1;
+  document.querySelectorAll('#pStates button').forEach(b => b.classList.toggle('on', b.dataset.s === s)); };
+pStates.onclick = e => { const b = e.target.closest('button'); if (b) setPush(b.dataset.s); };
+pushSw.onclick = () => setPush(pushSw.classList.contains('on') ? 'off' : 'on');
+document.querySelectorAll('#f3 .group .sw:not(#pushSw)').forEach(s => s.onclick = () => s.classList.toggle('on'));
+
+/* ---- frame 4: presets ---- */
+const AW = { tonight: ['6:00 PM', 'Will hold 82° until 5:15 PM, then cool back to 76° so the house is there by 6:00 PM.',
+    'No change. The pump plan doesn\'t depend on who is home; the heavy-use +1 h won\'t count today.'],
+  morning: ['7:00 AM Tue', 'Will hold 82° tonight instead of the 72–75° night band, then cool to 76° from 6:15 AM.',
+    'No change tonight. Tomorrow\'s plan is still suggested at 8:15 PM as usual.'],
+  pick: ['Wed 3:30 PM', 'Will hold 82° each day until Wednesday, then cool to 76° from 2:45 PM Wed.',
+    'Keeps writing the season plan each evening; the heavy-use +1 h won\'t count until you are back.'] };
+awPre.onclick = e => { const b = e.target.closest('button'); if (!b) return; awPre.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  const [t, ac, pool] = AW[b.dataset.t]; awAc.textContent = ac; awPool.textContent = pool; awGo.textContent = `Away until ${t}`; };
+pres1.onclick = e => { const b = e.target.closest('button'); if (b?.dataset.p === 'away') document.getElementById('dev4').scrollIntoView({ behavior: 'smooth' }); };
+
+/* ---- frame 5: rule modes + scope states ---- */
+const AUTO_TXT = { reserve: '<b>Auto: will set 15% at 9 PM, back to 20% at 7 AM.</b> No storm, NWS or ERCOT alert for 48 h. You get a push when it does. <div class="row2"><button class="skip">Undo tonight</button></div>' };
+const sugHTML = {}; document.querySelectorAll('.rule').forEach(r => { sugHTML[r.dataset.rule] = r.querySelector('[data-sug]').innerHTML; });
+const setMode = (r, m) => { r.querySelectorAll('.seg2 button').forEach(b => b.classList.toggle('on', b.dataset.m === m)); const s = r.querySelector('[data-sug]');
+  s.classList.toggle('auto', m === 'auto'); s.classList.toggle('none', m === 'off');
+  s.innerHTML = m === 'suggest' ? sugHTML[r.dataset.rule] : m === 'off' ? '<b>Off.</b> No suggestions and no pushes for this rule.' : (AUTO_TXT[r.dataset.rule] ?? '<b>Auto:</b> makes this change itself inside the limits below, and pushes you when it does.');
+  const modes = [...document.querySelectorAll('.rule .seg2 .on')].map(b => b.dataset.m); pwrBadge.textContent = modes.every(x => x === 'suggest') ? '3 rules · Suggest' : `${modes.filter(x => x === 'auto').length} in Auto`; pwrBadge.className = 'badge g'; };
+document.querySelectorAll('.rule').forEach(r => r.querySelector('.seg2').onclick = e => { const b = e.target.closest('button'); if (b) setMode(r, b.dataset.m); });
+const TESLA_STEPS = { reserve: 'In the Tesla app: Powerwall › Settings › Backup Reserve › 15%.', storm: 'In the Tesla app: Powerwall › Settings › Backup Reserve › 100% on Thursday by noon.', export: 'In the Tesla app: Powerwall › Settings › Energy Exports › Solar.' };
+scopeStates.onclick = e => { const b = e.target.closest('button'); if (!b) return; const s = b.dataset.s;
+  scopeStates.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.rule').forEach(r => setMode(r, 'suggest'));
+  scopeOk.hidden = s === 'miss'; scopeMiss.hidden = s !== 'miss'; pwr.classList.toggle('nocmd', s === 'miss');
+  if (s === 'miss') document.querySelectorAll('.rule').forEach(r => { const sg = r.querySelector('[data-sug]'); sg.querySelector('.row2').insertAdjacentHTML('beforebegin', `<p class="fine" style="margin-top:8px">${TESLA_STEPS[r.dataset.rule]}</p>`); r.querySelector('.seg2 [data-m=auto]').style.opacity = .35; });
+  else document.querySelectorAll('.rule .seg2 [data-m=auto]').forEach(x => x.style.opacity = 1);
+  if (s === 'auto') setMode(document.querySelector('[data-rule=reserve]'), 'auto'); };
+</script>
+</body></html>

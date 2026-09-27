@@ -107,7 +107,7 @@ export function stormState(o: { stormWatchEnabled: boolean | null; stormActive: 
 /* ======================= the endpoint ======================= */
 
 /** NWS alerts for the site, cached 5 minutes in kv (the browser fetches the same feed for the Worth knowing cards). */
-async function nwsAlerts(): Promise<NwsAlert[]> {
+export async function nwsAlerts(): Promise<NwsAlert[]> {
   const hit = await kv.get<{ at: number; alerts: NwsAlert[] }>('nws');
   if (hit && Date.now() - hit.at < 5 * 60_000) return hit.alerts;
   const loc = siteLocation(); if (!loc) return [];

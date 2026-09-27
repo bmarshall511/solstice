@@ -10,6 +10,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { ownerSession, readCookie, setCookie } from './auth.js';
 import { guestShare } from './share.js';
 import { GUEST_GET, serveThrough } from './redact.js';
+import { PRESENCE_FIXED } from './appliances/presence.js';
 
 export type Role = 'owner' | 'guest' | 'anonymous';
 declare global { namespace Express { interface Request { role?: Role; guestView?: boolean; preview?: boolean } } }
@@ -60,4 +61,4 @@ export async function gate(req: Request, res: Response, next: NextFunction) {
 /** Settings as a guest's request should see them: the AC plan is computed as if the owner were home, so no plan, step,
  *  reason or log line can reveal that the house is empty. */
 export const presenceHidden = (req: Request, settings: Record<string, any>) =>
-  req.guestView ? { ...settings, ac: { ...(settings.ac ?? {}), presence: 'home' } } : settings;
+  req.guestView ? { ...settings, ac: { ...(settings.ac ?? {}), presence: 'home' }, [PRESENCE_FIXED]: true } : settings;   // presence.ts: never the manual mark or Nest

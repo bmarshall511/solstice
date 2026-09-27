@@ -67,6 +67,7 @@
           <div class="chipx" id="chipErcot"><i style="--c:var(--mute)"></i>ERCOT…</div>
           <div class="chipx" id="chipStorm"><i style="--c:rgba(242,244,248,.4);box-shadow:none"></i>Storm Watch</div>
         </div>
+        <div id="digestNow" data-owner></div>
 
         <div class="banner">
           <div class="bi"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ff8a80" stroke-width="2"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/><path d="M3 3l18 18" stroke="#ff5a4e"/></svg></div>
@@ -308,6 +309,7 @@
               <div class="scrub"><span id="acScrubT">—</span><input type="range" id="acScrub" min="0" max="24" step=".25" value="12"><small>drag through today's plan</small></div>
               <div class="two" id="acStats"></div>
               <div class="seg2 presence" id="acPresence"></div>
+              <div class="psrc" id="acPsrc" data-owner hidden></div>
               <p class="fine" id="acNote" style="margin-top:8px"></p>
             </div>
             <div class="card" id="acLink" hidden><div class="h"><b>Link Nest</b><span>one-time</span></div><p id="acLinkTxt"></p><a class="primary" id="acLinkBtn" href="/auth/google">Sign in with Google</a></div>
@@ -390,8 +392,13 @@
           <a class="row tap" style="--c:var(--home);color:inherit;text-decoration:none" href="/api/export.csv"><div class="ri">⇩</div><div class="rt">Export CSV<small>Every 5-minute reading</small></div><div class="chev">›</div></a>
           <div class="row" style="--c:var(--grid)"><div class="ri">✦</div><div class="rt">Calm mode<small>Less motion; follows your system setting</small></div><div class="sw" id="calmSw"></div></div>
         </div>
+        <div class="sect" data-owner>Alerts · push <span class="nbadge">new</span></div>
+        <div class="group" data-owner>
+          <div class="row" style="--c:var(--home)" id="pushRow"><div class="ri">✉</div><div class="rt">Push to this device<small id="pushSt" class="st-off">Checking this device…</small></div><div class="sw" id="pushSw" role="switch" aria-checked="false" aria-label="Push to this device" tabindex="0"></div></div>
+        </div>
         <div class="sect" data-owner>Alerts · in app</div>
         <div class="group" id="alertPrefs"></div>
+        <div class="group" id="alertPrefsNew" data-owner style="margin-top:10px"></div>
         <div class="sect acct">Account</div>
         <div class="group acct">
           <div class="row" style="--c:var(--home)"><div class="ri">@</div><div class="rt"><span id="acctEmail">—</span><small>Signed in</small></div><button class="link" id="signOut" style="margin:0">Sign out</button></div>

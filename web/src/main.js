@@ -19,6 +19,8 @@ import { createDayRing } from './scenes/dayring.js';
 import { explainOnTap } from './lib/frost.js';
 import { fillGuestBill } from './views/guest.js';
 import { initShare, applyRole, refreshSharing, showGate, markWelcome, pendingWelcome, ensurePreviewChrome } from './views/share.js';
+import { loadDigest } from './views/digest.js';
+import { mountPowerwallRules, loadPowerwallRules, drawPowerwallRules } from './views/powerwall.js';
 
 /* Owner link (https://<app>/#owner=<OWNER_KEY>) or share link (https://<app>/#s=<token>): take the secret and strip it from
    the address bar before anything else in this module runs, so it never lingers in history or bookmarks. boot() trades it
@@ -40,7 +42,7 @@ async function loadNow() {
   api.day(localDate()).then(d => { S.today = d; safe(drawDayRing)(); }).catch(() => {});
   if (!S.live || (S.now.reading && S.now.reading.ts >= S.live.ts)) S.live = S.now.reading;
   updateOutage();
-  safe(renderStatic)(S);
+  safe(renderStatic)(S); safe(drawPowerwallRules)(S);
 }
 
 async function loadHistory() {
@@ -183,6 +185,7 @@ const aurora = createAurora($('aurora')), orb = createOrb($('orb')), land = crea
 $('roofBars').onclick = e => { const on = !S.roofBars; S.roofBars = on; e.currentTarget.classList.toggle('on', on); e.currentTarget.setAttribute('aria-pressed', on); $('roofBarsKey').classList.toggle('on', on); roof.setBars(on); };   // mockup p-roof-veil
 initHistory(S); initPanels(S); initPlanner(S); initAppliances(S); initAc(S);
 const outage = initOutage(S);
+mountPowerwallRules();   // t-enhancements: the Powerwall rules card, directly below Outage readiness
 let applSel = 'pool';
 $('applStrip').onclick = e => { const a = e.target.closest('.app'); if (!a || !a.dataset.id || a.classList.contains('dim')) return; applSel = a.dataset.id; document.querySelectorAll('#applStrip .app').forEach(x => x.classList.toggle('on', x === a)); $('applPool').hidden = applSel !== 'pool'; $('applAc').hidden = applSel !== 'ac'; poolTwin()?.resize(); thermalTwin()?.resize(); if (applSel === 'ac') safe(drawAc)(S); };
 
@@ -377,6 +380,10 @@ async function boot() {
   every(15 * 60_000, loadWeather);
   every(5 * 60_000, loadExternal);
   every(60_000, () => isOn('v-now') ? loadApplDay() : Promise.resolve());   // the Now twin's day (self-limited to every 5 min)
+  if (!S.guest) { every(5 * 60_000, () => loadDigest(S)); every(5 * 60_000, () => loadPowerwallRules(S)); }   // t-enhancements (owner-only routes)
+  // a tapped push opens /?go=<view>[&p=<Insights panel>] (web/public/sw.js)
+  const goV = params.get('go'), goP = params.get('p');
+  if (goV && /^v-(now|hist|roof|ins|set)$/.test(goV)) { go(goV); if (goV === 'v-ins' && /^(today|appl|plan|home)$/.test(goP ?? '')) $('insSeg').querySelector(`[data-p="${goP}"]`)?.click(); history.replaceState(null, '', location.pathname); }
   loadArchive().catch(e => console.warn('archive', e.message));
   // keep history current: sync now, then every 5 min while open; keep going while there are missing days to backfill
   const sync = async () => { const r = await api.sync().catch(() => null); if (r?.filled || r?.done?.includes('lastHistory')) loadHistory().catch(() => {}); if (r?.remaining > 0) setTimeout(sync, 1500);

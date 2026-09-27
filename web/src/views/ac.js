@@ -3,6 +3,7 @@ import { api } from '../lib/api.js';
 import { createThermalTwin } from '../scenes/thermaltwin.js';
 import { veil, nameStart } from '../lib/frost.js';
 import { confChip, esc } from '../lib/conf.js';
+import { presets, pickedEpoch, localInput, untilLabel, awayButton, awayLines, when } from '../lib/presence.js';
 
 /* AC (Insights → Appliances): thermal twin with a day scrubber, today's plan vs Nest, Autopilot, Home/Away, and the Nest link. */
 let twin = null, scrubT = null;
@@ -37,8 +38,14 @@ export function drawAc(S) {
   const rt = d.runtime, source = d.learned.source ?? (d.learned.coolKw != null ? 'measured' : 'estimated'); // a guest's copy leaves out `source`; the server's own rule
   $('acStats').innerHTML = `<div class="stat"><small>Today</small><b>${d.todayKwh} kWh${d.shareOfHomePct != null ? ` · ${d.shareOfHomePct}%` : ''}</b></div><div class="stat"><small>Run time</small><b>${Math.floor(rt.minutes / 60)} h ${rt.minutes % 60} m${rt.duty != null ? ` · ${rt.duty}% duty` : ''}</b></div>
     <div class="stat"><small>AC draw · ${source}</small><b>${d.learned.acKw.toFixed(1)} kW${d.learned.samples ? ` · ${d.learned.samples} steps` : ''}</b></div><div class="stat"><small>Indoor · humidity</small><b>${st?.indoorF ?? '—'}° · ${st?.humidity ?? '—'}%</b></div>`;
-  $('acPresence').innerHTML = `<button class="${d.settings.presence === 'home' ? 'on' : ''}" data-p="home">Home</button><button class="${d.settings.presence === 'away' ? 'on' : ''}" data-p="away">Away · ${d.settings.awayF}°</button>`;
-  $('acPresence').onclick = async e => { const b = e.target.closest('button'); if (!b || b.dataset.p === d.settings.presence) return; await api.acSettings({ presence: b.dataset.p }).catch(err => alert(err.message)); await loadAc(S); };
+  // t-enhancements frame 4: the control lights the presence in force (manual, then Nest Home/Away Assist); Away opens "Away until…"
+  const pr = d.presence ?? { state: d.settings.presence, source: 'manual', since: null, until: null }, lit = pr.state ?? d.settings.presence;
+  $('acPresence').innerHTML = `<button class="${lit === 'home' ? 'on' : ''}" data-p="home">Home</button><button class="${lit === 'away' ? 'on' : ''}" data-p="away">${lit === 'away' && pr.source === 'manual' && pr.until ? awayButton(pr.until) : `Away · ${d.settings.awayF}°`}</button>`;
+  $('acPresence').onclick = async e => { const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.p === 'away' && !S.guest) return openAway(S);
+    if (b.dataset.p === lit) return;
+    await api.acSettings({ presence: b.dataset.p }).catch(err => alert(err.message)); await loadAc(S); };
+  const src = presenceLine(pr); $('acPsrc').hidden = !src; $('acPsrc').innerHTML = src ? `<i></i><span>${src}</span>` : '';
   $('acNote').innerHTML = `${d.equipment.airHandler} · ${d.equipment.heat} · ${d.equipment.outdoor}. AC power is ${source === 'measured' ? 'measured from the step in Tesla’s home load when Nest starts and stops cooling' : 'estimated from your heat model until Nest has been sampled for a few days'}.${d.error ? ` <span style="color:var(--warn)">Last read failed: ${d.error}</span>` : ''}`;
   if (!linked) { $('acLinkBtn').href = '/auth/google'; $('acLinkTxt').textContent = d.configured ? 'Sign in with Google and share the thermostat with Solstice.' : 'Google Device Access is not configured yet (NEST_PROJECT_ID, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET).'; return; }
   drawPlan(S, sim, outdoor, sunH); drawAuto(S);
@@ -99,3 +106,52 @@ function drawTrim(S) {
 let timer;
 export function initAc(S) { loadAc(S); clearInterval(timer); timer = setInterval(() => loadAc(S), 3 * 60_000); }
 async function loadAc(S) { S.ac = await api.ac().catch(e => ({ error: e.message, configured: false, linked: false })); if (S.ac.plan) drawAc(S); else { $('acBadge').textContent = 'Not set up'; $('acLink').hidden = false; $('acLinkTxt').textContent = S.ac.error ?? 'Nest is not configured.'; } S.onAc?.(); }
+
+/* ---------- presence (t-enhancements frame 4): the line under Home/Away and the "Away until…" sheet ---------- */
+const NEST_SAYS = pr => `<b>Nest says Away</b>${pr.since ? ` since ${when(pr.since)}` : ''} (Home/Away Assist)`;
+/** The line under the control: Nest's Away, or the return time the owner set. Null when there is nothing to say. */
+function presenceLine(pr) {
+  if (pr.state !== 'away') return null;
+  if (pr.source === 'nest') return `${NEST_SAYS(pr)}. Tap Away to add a return time, or Home if you are here.`;
+  if (pr.source === 'manual' && pr.until) return `<b>Away until ${when(pr.until)}</b>${pr.since ? ` · you set it at ${when(pr.since)}` : ''}`;
+  return null;
+}
+const MODE_WORD = { off: 'Off', suggest: 'Suggest', auto: 'Auto' };
+function openAway(S) {
+  const d = S.ac, pr = d.presence ?? {}, now = Date.now(), pre = presets(now);
+  const pickDefault = localInput(now + 2 * 864e5).slice(0, 11) + '15:30';
+  // no return time before (or none in force): "Until I'm back" is selected, so the old one-tap Away is one more tap
+  const first = pr.state === 'away' && pr.source === 'manual' && pr.until ? pre[1] : pre[0];
+  let sel = first.id, at = first.at;
+  $('sheetBody').innerHTML = `<div class="shead"><h4>Away until…</h4><button class="x" id="awX" aria-label="Close">✕</button></div>
+    <p class="sub">When should Solstice expect you back? It switches to Home at that time on its own, so a forgotten button never leaves the house warm.</p>
+    ${pr.state === 'away' && pr.source === 'nest' ? `<div class="psrc" style="margin-top:10px"><i></i><span>${NEST_SAYS(pr)}</span></div>` : ''}
+    <div class="aw-pre" id="awPre">
+      ${pre.map(p => `<button data-t="${p.id}"><span class="rd"></span><span class="rt">${p.title}<small>${p.sub}</small></span></button>`).join('')}
+      <div class="awb" role="button" tabindex="0" data-t="pick"><span class="rd"></span><span class="rt">Pick a time<small>up to 14 days ahead</small></span><span class="aw-pick"><input type="text" id="awPickT" readonly tabindex="-1" aria-hidden="true"><input type="datetime-local" id="awPick" aria-label="Return time" value="${pickDefault}"></span></div>
+    </div>
+    <div class="aw-do">
+      <div style="--c:#ff9e66"><i>❄</i><span><b>AC Autopilot</b><span class="mode">${MODE_WORD[d.settings.autopilot] ?? '—'}</span><br><span id="awAc"></span></span></div>
+      <div style="--c:var(--home)"><i>≈</i><span><b>Pool Autopilot</b><span class="mode">${MODE_WORD[S.pool?.autopilot?.mode] ?? '—'}</span><br><span id="awPool"></span></span></div>
+    </div>
+    <button class="primary" id="awGo">Away until</button>
+    <p class="fine" style="text-align:center;margin-top:10px">If Nest reports Home before then, Solstice switches to Home and tells you.</p>`;
+  const pick = $('awPick'), pickT = $('awPickT'), maxAt = now + 14 * 864e5;
+  pick.min = localInput(now + 15 * 60_000); pick.max = localInput(maxAt);
+  const draw = () => {
+    if (sel === 'pick') at = pickedEpoch(pick.value);
+    pickT.value = pickedEpoch(pick.value) ? untilLabel(pickedEpoch(pick.value), now) : '';
+    document.querySelectorAll('#awPre [data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === sel));
+    const open = sel === 'open', ok = open || (at != null && at > Date.now() && at <= maxAt);
+    const lines = ok ? awayLines(at, Date.now(), { mode: d.settings.autopilot, approved: !!d.applied?.approved, awayF: d.settings.awayF, band: d.settings.band, maxStepF: d.settings.maxStepF }, { mode: S.pool?.autopilot?.mode }) : { ac: 'Pick a time in the next 14 days.', pool: '' };
+    $('awAc').textContent = lines.ac; $('awPool').textContent = lines.pool;
+    $('awGo').textContent = open ? 'Away' : ok ? `Away until ${untilLabel(at, Date.now())}` : 'Away until…'; $('awGo').disabled = !ok; $('awGo').style.opacity = ok ? '' : .5;
+  };
+  $('awPre').onclick = e => { const b = e.target.closest('[data-t]'); if (!b) return; sel = b.dataset.t; if (sel !== 'pick') at = pre.find(p => p.id === sel).at; draw();
+    if (sel === 'pick' && e.target !== pick) try { pick.showPicker?.(); } catch { /* not allowed here */ } };
+  pick.oninput = pick.onchange = () => { sel = 'pick'; draw(); };
+  $('awX').onclick = () => $('phone').classList.remove('open');
+  $('awGo').onclick = async () => { const go = $('awGo'); if (go.disabled) return; go.textContent = 'Saving…';
+    try { await api.setPresence('away', sel === 'open' ? null : at); $('phone').classList.remove('open'); await loadAc(S); } catch (e) { alert(e.message); draw(); } };
+  draw(); $('phone').classList.add('open');
+}

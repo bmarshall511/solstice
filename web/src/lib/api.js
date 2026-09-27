@@ -75,5 +75,18 @@ export const api = {
   acUntrim: () => send('POST', 'appliances/ac/untrim'),
   models: () => get('models'),
   saveSettings: patch => send('PUT', 'settings', patch),
+  // t-enhancements: alerts feed, web push, weekly digest, presence, Powerwall rules (all owner-only)
+  alerts: (limit = 50) => get(`alerts?limit=${limit}`),
+  readAlert: id => send('POST', `alerts/${encodeURIComponent(id)}/read`),
+  pushKey: () => get('push/key'),
+  pushSubscribe: sub => send('POST', 'push/subscribe', sub),
+  pushUnsubscribe: endpoint => send('DELETE', 'push/subscribe', { endpoint }),
+  digest: week => get(`digest${week ? `?week=${encodeURIComponent(week)}` : ''}`),
+  presence: () => get('presence'),
+  setPresence: (state, until) => send('POST', 'presence', until == null ? { state } : { state, until }),
+  teslaScopes: () => get('tesla/scopes'),
+  pwRules: () => get('powerwall/rules'),
+  pwRuleMode: (id, mode) => send('POST', `powerwall/rules/${encodeURIComponent(id)}`, { mode }),
+  pwApply: id => send('POST', `powerwall/rules/${encodeURIComponent(id)}/apply`),
 };
 

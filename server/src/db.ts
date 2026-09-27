@@ -109,6 +109,20 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS anomalies (id bigserial PRIMARY KEY, site_id text NOT NULL, day text NOT NULL, kind text NOT NULL, severity text NOT NULL,
      detail jsonb NOT NULL DEFAULT '{}', opened_at bigint NOT NULL, resolved_at bigint)`,
   `DO $$ BEGIN CREATE UNIQUE INDEX IF NOT EXISTS anomalies_open ON anomalies(site_id, kind) WHERE resolved_at IS NULL; EXCEPTION WHEN duplicate_table OR unique_violation THEN NULL; END $$`,
+
+  // Alerts feed and Web Push (notify.ts). `data.key` dedupes a repeat; `pushed` counts the devices an alert reached (push rate limits).
+  `CREATE TABLE IF NOT EXISTS alerts (id bigserial PRIMARY KEY, site_id text NOT NULL, kind text NOT NULL, title text NOT NULL, body text NOT NULL,
+     data jsonb NOT NULL DEFAULT '{}', created_at timestamptz NOT NULL DEFAULT now(), read_at timestamptz, pushed int NOT NULL DEFAULT 0)`,
+  `DO $$ BEGIN CREATE INDEX IF NOT EXISTS alerts_site_at ON alerts(site_id, created_at); EXCEPTION WHEN duplicate_table OR unique_violation THEN NULL; END $$`,
+  // One row per browser that turned notifications on: the push endpoint (a bearer capability) and its encryption keys. DB only.
+  `CREATE TABLE IF NOT EXISTS push_subscriptions (endpoint text PRIMARY KEY, site_id text NOT NULL, p256dh text NOT NULL, auth text NOT NULL,
+     ua text, created_at timestamptz NOT NULL DEFAULT now(), last_ok timestamptz, fails int NOT NULL DEFAULT 0)`,
+  // Weekly digests (digest.ts): kWh, counts and confidence tiers only, no rate or dollar figure. One row per ISO week.
+  `CREATE TABLE IF NOT EXISTS digests (site_id text NOT NULL, week text NOT NULL, data jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (site_id, week))`,
+  // Powerwall commands and rule suggestions (tesla/commands.ts, powerwall.ts): every send, refusal, missing scope and suggestion.
+  `CREATE TABLE IF NOT EXISTS powerwall_log (id bigserial PRIMARY KEY, site_id text NOT NULL, at bigint NOT NULL, rule text, command text NOT NULL,
+     value jsonb, result text NOT NULL, reason text, source text NOT NULL)`,
+  `DO $$ BEGIN CREATE INDEX IF NOT EXISTS powerwall_log_site_at ON powerwall_log(site_id, at); EXCEPTION WHEN duplicate_table OR unique_violation THEN NULL; END $$`,
 ];
 
 let migrated: Promise<void> | null = null;
