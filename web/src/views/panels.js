@@ -213,7 +213,7 @@ function drawHealth() {
       ${a.diag ? `<p class="why"><b>${esc(a.diag.lead)}</b>${esc(a.diag.text)}</p>` : ''}
       <button class="link" style="margin-top:10px" data-show="${a.id}">Show on the Live roof</button></div>`; };
   const nrHtml = D.relay.silent
-    ? `<div class="nr"><i></i><div><b>Relay last heard ${clock(Date.parse(D.relay.lastPoll))}</b><small>No per-panel readings for ${Math.round(D.relay.ageS / 60)} min. The Mac running the PVS relay may be asleep or off the network; no single panel is to blame.</small></div></div>`
+    ? `<div class="nr"><i></i><div><b>Relay last heard ${clock(Date.parse(D.relay.heardAt ?? D.relay.lastPoll))}</b><small>No per-panel readings for ${D.relay.silentMin ?? Math.round(D.relay.ageS / 60)} min of daylight. ${esc(D.relay.note ?? 'The Mac running the PVS relay may be asleep or off the network')}; no single panel is to blame.</small></div></div>`
     : miss.map(m => { const due = m.pushAt && Date.parse(m.pushAt) > Date.parse(D.at);
       return `<div class="nr"><i></i><div><b>${esc(m.name)} · no reading for ${m.silentMin} min</b><small>${m.at ? `Last seen ${clock(Date.parse(m.at))} at ${f(m.lastKw, 2)} kW, with ${f(m.kwh, 2)} kWh so far. ` : 'No reading today. '}Its neighbours are still producing, so this is the panel's microinverter or its link to the PVS, not the relay.${m.pushAt ? (due ? ` If it is still silent at ${clock(Date.parse(m.pushAt))}, a Panel fault push goes out.` : ` A Panel fault push went out at ${clock(Date.parse(m.pushAt))}.`) : ''}</small></div></div>`; }).join('');
   el.innerHTML = `<div class="h"><b>Panel health</b>${flagged.length ? `<span class="badge">${flagged.length} to check</span>` : `<span>${sub}</span>`}</div>

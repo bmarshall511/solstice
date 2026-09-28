@@ -15,11 +15,17 @@
 // GET /vars?match=inverter&fmt=obj&cache=1 (the older match=inverter/data query answers 400, and cache is required).
 // The answer is one flat object keyed /sys/devices/inverter/<n>/<field>, every value a string. It never calls
 // vars?set= or anything else that writes.
+// The login answer carries no expiry, so the relay logs in again when its session is an hour old, and once more (then
+// retries the read) whenever the read answers anything but 200: the PVS answers 400 0x0040, not 401, once a session is
+// gone, for example after it restarts. When the read still fails, it reads /sys/info/uptime to tell the owner whether
+// the PVS is up but lists no inverters (after a night-time restart it can take until the panels wake up).
 // TLS: the PVS's self-signed certificate is accepted only on connections to PVS_HOST, made by pvsGet() below, and only
 // after the certificate matches PVS_CERT_SHA256 when that is set. Nothing touches the global TLS settings, so the
 // Solstice API call keeps full certificate verification.
 // Solstice side: POST /api/auth/owner once with the owner key, keep the solstice_owner cookie in memory, and POST each
-// poll to /api/pvs/readings with it; on a 401 it unlocks again once and retries.
+// poll to /api/pvs/readings with it; on a 401 it unlocks again once and retries. A poll that fails on the PVS side posts
+// a heartbeat to /api/pvs/heartbeat instead ({ pvs, http, error, uptimeS }), so the app can tell "the Mac is off" from
+// "the relay is running but the PVS refused".
 import { readFileSync, statSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve, dirname, sep } from 'node:path';
@@ -32,12 +38,17 @@ export const INTERVAL_MS = 5 * 60_000;       // one poll per 5-minute clock buck
 const CHECK_MS = 15_000;                     // how often the loop looks at the clock (catches up quickly after sleep)
 const PVS_TIMEOUT_MS = 15_000, API_TIMEOUT_MS = 20_000, MAX_BODY = 2 * 1024 * 1024;
 export const VARS_PATH = '/vars?match=inverter&fmt=obj&cache=1';
+export const UPTIME_PATH = '/vars?match=/sys/info/uptime&fmt=obj';   // { "/sys/info/uptime": "<seconds>" }
+export const SESSION_MAX_MS = 60 * 60_000;   // the PVS login answer has no expiry field and its cookie no Max-Age: log in again hourly
 export const DEFAULT_ENV = resolve(homedir(), '.solstice', 'pvs.env');
 const REPO = dirname(dirname(fileURLToPath(import.meta.url)));
 const UA = 'solstice-pvs-relay/1';
 
 /** A configuration or credential problem: retrying cannot fix it, so the relay exits non-zero. */
 export class FatalError extends Error {}
+/** What a failed poll tells Solstice about the PVS (the heartbeat's `pvs`): unreachable, login-refused, certificate,
+ *  refused (a non-200 answer to the read), no-inverters (the PVS answers but lists none) or error. */
+const pvsFailed = (e, pvs, extra = {}) => Object.assign(e, { pvs, ...extra });
 const describe = e => `${e?.message ?? e}${e?.cause ? ` (${e.cause.code ?? e.cause.message ?? e.cause})` : ''}`;
 
 /* ------------------------------------------------ configuration ------------------------------------------------ */
@@ -123,7 +134,7 @@ function pvsConnect(cfg, state) {
       const fp = sock.getPeerCertificate()?.fingerprint256 ?? '';
       if (cfg.pvsCertSha256 && fingerprint(fp) !== cfg.pvsCertSha256) {
         sock.destroy();
-        return fail(new FatalError(`the PVS at ${cfg.pvsHost} presented a certificate (SHA-256 ${fp}) that does not match PVS_CERT_SHA256. If the PVS firmware was updated, check the new fingerprint and update the env file; otherwise something else is answering at that address.`));
+        return fail(pvsFailed(new FatalError(`the PVS at ${cfg.pvsHost} presented a certificate (SHA-256 ${fp}) that does not match PVS_CERT_SHA256. If the PVS firmware was updated, check the new fingerprint and update the env file; otherwise something else is answering at that address.`), 'certificate'));
       }
       if (!cfg.pvsCertSha256 && state && !state.fingerprintShown) { state.fingerprintShown = true; state.log?.(`PVS certificate SHA-256 ${fp} (add PVS_CERT_SHA256=${fp} to the env file to pin it)`); }
       sock.setTimeout(0);
@@ -160,15 +171,15 @@ export async function pvsLogin(cfg, state) {
   const basic = Buffer.from(`ssm_owner:${cfg.pvsPassword}`).toString('base64');
   let r;
   try { r = await pvsGet(cfg, '/auth?login', { Authorization: `Basic ${basic}` }, state); }
-  catch (e) { if (e instanceof FatalError) throw e; throw new Error(`cannot reach the PVS at ${cfg.pvsHost}: ${describe(e)}`); }
+  catch (e) { if (e instanceof FatalError) throw e; throw pvsFailed(new Error(`cannot reach the PVS at ${cfg.pvsHost}: ${describe(e)}`), 'unreachable'); }
   if (r.status === 401 || r.status === 403)
-    throw new FatalError(`PVS login refused (HTTP ${r.status}). Check PVS_PASSWORD: the last 5 characters of the PVS serial number, exactly as printed on the PVS6 label.`);
-  if (r.status !== 200) throw new Error(`PVS login failed: HTTP ${r.status}`);
+    throw pvsFailed(new FatalError(`PVS login refused (HTTP ${r.status}). Check PVS_PASSWORD: the last 5 characters of the PVS serial number, exactly as printed on the PVS6 label.`), 'login-refused', { http: r.status });
+  if (r.status !== 200) throw pvsFailed(new Error(`PVS login failed: HTTP ${r.status}`), 'refused', { http: r.status });
   let body = null; try { body = JSON.parse(r.body); } catch { /* fall through */ }
   if (typeof body?.session === 'string' && SESSION.test(body.session)) return `session=${body.session}`;
   const set = [].concat(r.headers['set-cookie'] ?? []).map(c => c.split(';')[0].trim()).find(c => c.startsWith('session='));
   if (set && SESSION.test(set.slice(8))) return set;
-  throw new Error('the PVS accepted the login but returned no session');
+  throw pvsFailed(new Error('the PVS accepted the login but returned no session'), 'error', { http: r.status });
 }
 
 const SESSION = /^[A-Za-z0-9._~+/=-]{1,512}$/;   // a header-safe token, so nothing odd is echoed into the Cookie header
@@ -202,25 +213,52 @@ export function parseInverters(json) {
   return { inverters, skipped, ts: newest === null ? null : new Date(newest).toISOString() };
 }
 
-/** Logs in when needed (again once if the session has expired) and returns { ts, inverters }: the parsed readings and
- *  the newest measurement time (null when the PVS sent none). */
-export async function readInverters(cfg, state) {
-  state.pvsCookie ??= await pvsLogin(cfg, state);
-  let r = await pvsGet(cfg, VARS_PATH, { Cookie: state.pvsCookie }, state);
-  if (r.status === 401 || r.status === 403) {
-    state.pvsCookie = await pvsLogin(cfg, state);
-    r = await pvsGet(cfg, VARS_PATH, { Cookie: state.pvsCookie }, state);
+/** The PVS's short reason for a non-200 answer ("Bad request 0x0040"), or ''. */
+const whyOf = body => { try { const e = JSON.parse(body); return [e?.description, e?.errorcode].filter(x => typeof x === 'string').join(' ').slice(0, 80); } catch { return ''; } };
+
+/** GET on the PVS with the session cookie; a connection failure is tagged `unreachable`. */
+async function pvsRead(cfg, state, path) {
+  try { return await pvsGet(cfg, path, { Cookie: state.pvsCookie }, state); }
+  catch (e) { if (e instanceof FatalError) throw e; throw pvsFailed(new Error(`cannot reach the PVS at ${cfg.pvsHost}: ${describe(e)}`), 'unreachable'); }
+}
+
+async function login(cfg, state, now) { state.pvsCookie = null; state.pvsCookie = await pvsLogin(cfg, state); state.pvsLoginAt = now(); }
+
+/** The PVS's uptime in seconds, or null. Read only after a failed read, to say whether the PVS restarted. */
+async function pvsUptime(cfg, state) {
+  try {
+    const r = await pvsRead(cfg, state, UPTIME_PATH);
+    const s = r.status === 200 ? Number(JSON.parse(r.body)?.['/sys/info/uptime']) : NaN;
+    return Number.isFinite(s) && s >= 0 ? Math.round(s) : null;
+  } catch { return null; }
+}
+
+/** Logs in when there is no session or it is an hour old, reads the inverters, and on any non-200 answer logs in once
+ *  more and reads again (the PVS answers 400 0x0040, not 401, when a session is gone). Returns { ts, inverters }: the
+ *  parsed readings and the newest measurement time (null when the PVS sent none). A failure carries `pvs` (what the
+ *  heartbeat reports), `http` and, when the PVS still answers, `uptimeS`. */
+export async function readInverters(cfg, state, { now = Date.now } = {}) {
+  let fresh = false;
+  if (!state.pvsCookie || !(now() - (state.pvsLoginAt ?? -Infinity) < SESSION_MAX_MS)) { await login(cfg, state, now); fresh = true; }
+  let r = await pvsRead(cfg, state, VARS_PATH);
+  if (r.status !== 200 && !fresh) {
+    const why = whyOf(r.body);
+    state.log?.(`PVS ${VARS_PATH} answered HTTP ${r.status}${why ? ` (${why})` : ''}; logging in again`);
+    await login(cfg, state, now);
+    r = await pvsRead(cfg, state, VARS_PATH);
   }
   if (r.status !== 200) {
-    let why = ''; try { const e = JSON.parse(r.body); why = [e?.description, e?.errorcode].filter(x => typeof x === 'string').join(' ').slice(0, 80); } catch { /* not JSON */ }
-    throw new Error(`PVS ${VARS_PATH} answered HTTP ${r.status}${why ? ` (${why})` : ''}`);
+    const why = whyOf(r.body), uptimeS = await pvsUptime(cfg, state);
+    // a fresh session, the PVS answering its uptime, and 0x0040 to the inverter query: the PVS lists no inverters
+    const pvs = r.status === 400 && /0x0040/.test(why) && uptimeS !== null ? 'no-inverters' : 'refused';
+    throw pvsFailed(new Error(`PVS ${VARS_PATH} answered HTTP ${r.status}${why ? ` (${why})` : ''}${pvs === 'no-inverters' ? ` with a fresh session; the PVS is up (uptime ${Math.round(uptimeS / 60)} min) but lists no inverters` : ''}`), pvs, { http: r.status, uptimeS });
   }
   let json;
-  try { json = JSON.parse(r.body); } catch { throw new Error(`PVS ${VARS_PATH} did not answer with JSON`); }
+  try { json = JSON.parse(r.body); } catch { throw pvsFailed(new Error(`PVS ${VARS_PATH} did not answer with JSON`), 'error', { http: 200 }); }
   const { inverters, skipped, ts } = parseInverters(json);
   if (!inverters.length) {
     const keys = json && typeof json === 'object' ? Object.keys(json).slice(0, 5).join(', ') : typeof json;
-    throw new Error(`the PVS answered without any inverter readings (/sys/devices/inverter/<n>/sn with p3phsumKw, pMppt1Kw or ltea3phsumKwh). Top-level keys: ${keys || 'none'}`);
+    throw pvsFailed(new Error(`the PVS answered without any inverter readings (/sys/devices/inverter/<n>/sn with p3phsumKw, pMppt1Kw or ltea3phsumKwh). Top-level keys: ${keys || 'none'}`), 'no-inverters', { http: 200, uptimeS: await pvsUptime(cfg, state) });
   }
   if (skipped) state.log?.(`skipped ${skipped} inverter record(s) without a serial or any power or energy value`);
   return { ts, inverters };
@@ -265,13 +303,31 @@ export async function postReadings(cfg, state, payload) {
   return json;
 }
 
+/** Tells Solstice the relay is running although the PVS side failed: POST /api/pvs/heartbeat { pvs, http, error, uptimeS }.
+ *  Best effort: its own failure is logged, never thrown, so the poll's real error is what gets reported. */
+export async function postHeartbeat(cfg, state, e) {
+  const body = JSON.stringify({ pvs: e.pvs ?? 'error', http: Number.isInteger(e.http) ? e.http : null, error: describe(e).slice(0, 300),
+    uptimeS: Number.isFinite(e.uptimeS) ? e.uptimeS : null });
+  const send = () => apiFetch(cfg, '/api/pvs/heartbeat', { method: 'POST', body, headers: { 'Content-Type': 'application/json', 'User-Agent': UA, Cookie: state.apiCookie } });
+  try {
+    if (!state.apiCookie) await apiLogin(cfg, state);
+    let r = await send();
+    if (r.status === 401) { await apiLogin(cfg, state); r = await send(); }
+    if (!r.ok) state.log?.(`heartbeat: POST /api/pvs/heartbeat answered HTTP ${r.status}`);
+    return r.ok;
+  } catch (err) { state.log?.(`heartbeat: ${describe(err)}`); return false; }
+}
+
 /* ------------------------------------------------ one poll, the loop, the CLI ------------------------------------------------ */
 
-/** One poll: read the PVS, then (unless dryRun) post. Returns { payload, posted }. The reading time is the PVS's own
+/** One poll: read the PVS, then (unless dryRun) post; a PVS-side failure posts a heartbeat, then throws. Returns { payload, posted }. The reading time is the PVS's own
  *  msmtEps; the current time stands in when it is missing or more than 5 minutes ahead of this clock (Solstice refuses a
  *  future ts). One ts per poll, reused if the POST is retried. */
 export async function pollOnce(cfg, state, { dryRun = false, now = Date.now } = {}) {
-  const read = await readInverters(cfg, state), t = now();
+  let read;
+  try { read = await readInverters(cfg, state, { now }); }
+  catch (e) { if (!dryRun && e.pvs && cfg.apiOrigin) await postHeartbeat(cfg, state, e); throw e; }
+  const t = now();
   const ts = read.ts && Date.parse(read.ts) <= t + 5 * 60_000 ? read.ts : new Date(t).toISOString();
   const payload = { ts, inverters: read.inverters };
   if (dryRun) return { payload, posted: null };
@@ -299,7 +355,7 @@ export async function main(argv = process.argv.slice(2), io = { out: console.log
   let cfg;
   try { cfg = loadConfig(readEnvFile(resolve(files[0] ?? DEFAULT_ENV), { warn: m => io.err(m) }), { dryRun }); }
   catch (e) { io.err(`pvs-relay: ${describe(e)}`); return 2; }
-  const state = { pvsCookie: null, apiCookie: null, fingerprintShown: false, log: m => io.err(stamp(m)) };
+  const state = { pvsCookie: null, pvsLoginAt: null, apiCookie: null, fingerprintShown: false, log: m => io.err(stamp(m)) };
 
   if (once) {
     try {

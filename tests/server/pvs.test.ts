@@ -21,7 +21,7 @@ vi.unmock('../../server/src/db.js');   // these tests need the real database mod
 
 type Reading = { sn: string; kw: number | null; kwDc: number | null; v: number | null; tempC: number | null; kwhLifetime: number | null };
 type Cfg = Record<string, any>;
-type State = { pvsCookie: string | null; apiCookie: string | null; fingerprintShown: boolean; log: (m: string) => void };
+type State = { pvsCookie: string | null; pvsLoginAt?: number | null; apiCookie: string | null; fingerprintShown: boolean; log: (m: string) => void };
 type Relay = {
   FatalError: new (m: string) => Error; VARS_PATH: string;
   parseEnv(text: string): Record<string, string>; insideRepo(path: string): boolean;
@@ -29,7 +29,8 @@ type Relay = {
   readEnvFile(path: string): Record<string, string>;
   pvsGet(cfg: Cfg, path: string, headers?: Record<string, string>, state?: State): Promise<{ status: number; body: string }>;
   parseInverters(json: unknown): { inverters: Reading[]; skipped: number; ts: string | null };
-  readInverters(cfg: Cfg, state: State): Promise<{ ts: string | null; inverters: Reading[] }>;
+  readInverters(cfg: Cfg, state: State, o?: { now?: () => number }): Promise<{ ts: string | null; inverters: Reading[] }>;
+  SESSION_MAX_MS: number; UPTIME_PATH: string;
   apiLogin(cfg: Cfg, state: State): Promise<string>;
   postReadings(cfg: Cfg, state: State, payload: unknown): Promise<{ ok: true; inserted: number; duplicates: number }>;
   pollOnce(cfg: Cfg, state: State, o?: { dryRun?: boolean; now?: () => number }): Promise<{ payload: { ts: string; inverters: Reading[] }; posted: any }>;
@@ -49,14 +50,17 @@ const ports: Set<number> = (globalThis as any).__testServerPorts;
 
 /* ---------------- the mocked PVS6, answering as the real one did ----------------
  *  GET /auth?login (Basic ssm_owner:<PW>) → 200 {"session": "<64 chars>"} with NO Set-Cookie; the client sends Cookie: session=<value>.
- *  GET /vars?match=inverter&fmt=obj&cache=1 → the flat object; the old match=inverter/data query, or one without cache=1, → 400. */
+ *  GET /vars?match=inverter&fmt=obj&cache=1 → the flat object; the old match=inverter/data query, or one without cache=1, → 400.
+ *  A request without the current session → 400 0x0040 (what the real PVS6 answers to a request without a session; set
+ *  pvs.expired = 401 for a firmware that says so). varsStatus = 400 is the PVS after a night-time restart: a good session, but
+ *  0x0040 to the inverter query because it lists no inverters yet. GET /vars?match=/sys/info/uptime&fmt=obj → its uptime. */
 type Hit = { method: string; url: string; auth?: string; cookie?: string };
 const SESSION_1 = 'a1'.repeat(32), SESSION_2 = 'b2'.repeat(32);   // 64 characters like the real session, synthetic
 /** A recent 5-minute boundary, so a posted msmtEps is inside Solstice's 7-day window. */
 const recentMsmt = (minutesAgo = 10) => new Date(Math.floor((Date.now() - minutesAgo * 60_000) / 300_000) * 300_000).toISOString().replace('.000Z', 'Z');
 const MSMT = recentMsmt();                                         // as the PVS writes it: 2026-09-27T23:15:00Z
 const isoOf = (s: string) => new Date(s).toISOString();            // as the relay posts it
-const pvs = { server: null as unknown as Server, port: 0, session: SESSION_1, vars: pvsVars(MSMT) as unknown, varsStatus: 200, log: [] as Hit[] };
+const pvs = { server: null as unknown as Server, port: 0, session: SESSION_1, vars: pvsVars(MSMT) as unknown, varsStatus: 200, expired: 400 as 400 | 401, uptimeS: '14511.80', log: [] as Hit[] };
 function pvsHandler(req: IncomingMessage, res: ServerResponse) {
   pvs.log.push({ method: req.method!, url: req.url!, auth: req.headers.authorization, cookie: req.headers.cookie });
   const send = (status: number, body: unknown, headers: Record<string, string> = {}) => { res.writeHead(status, { 'Content-Type': 'application/json', ...headers }); res.end(JSON.stringify(body)); };
@@ -65,8 +69,9 @@ function pvsHandler(req: IncomingMessage, res: ServerResponse) {
     if (req.headers.authorization !== `Basic ${Buffer.from(`ssm_owner:${PW}`).toString('base64')}`) return send(401, { error: 'unauthorized' });
     return send(200, { session: pvs.session });
   }
+  if (req.url === '/vars?match=/sys/info/uptime&fmt=obj') return send(200, { '/sys/info/uptime': pvs.uptimeS });
   if (req.url?.startsWith('/vars?')) {
-    if (req.headers.cookie !== `session=${pvs.session}`) return send(401, { error: 'session expired' });
+    if (req.headers.cookie !== `session=${pvs.session}`) return pvs.expired === 401 ? send(401, { error: 'session expired' }) : send(400, PVS_BAD_REQUEST);
     if (req.url !== '/vars?match=inverter&fmt=obj&cache=1') return send(400, PVS_BAD_REQUEST);   // match=inverter/data, or no cache=1
     return pvs.varsStatus === 200 ? send(200, pvs.vars) : send(pvs.varsStatus, PVS_BAD_REQUEST);
   }
@@ -197,7 +202,7 @@ describe('relay ↔ PVS (mocked as the real PVS6 answers, TLS with a self-signed
     pvs.varsStatus = 400;
     try {
       const err = await relay.readInverters(cfg, newState()).catch(e => e);
-      expect(err.message).toBe('PVS /vars?match=inverter&fmt=obj&cache=1 answered HTTP 400 (Bad request 0x0040)');
+      expect(err.message).toMatch(/^PVS \/vars\?match=inverter&fmt=obj&cache=1 answered HTTP 400 \(Bad request 0x0040\)/);
     } finally { pvs.varsStatus = 200; }
   });
 
@@ -232,19 +237,71 @@ describe('relay ↔ PVS (mocked as the real PVS6 answers, TLS with a self-signed
     } finally { pvs.vars = pvsVars(MSMT); }
   });
 
-  it('PVS-3 an expired PVS session logs in again once and carries on', async () => {
+  it('PVS-3 an expired PVS session answered with 401 logs in again once and carries on', async () => {
     const state = newState(), cfg = relay.loadConfig({ PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW }, { dryRun: true });
+    pvs.expired = 401;
+    try {
+      await relay.readInverters(cfg, state);
+      pvs.log.length = 0; pvs.session = SESSION_2;
+      expect((await relay.readInverters(cfg, state)).inverters).toEqual(PVS_EXPECTED);
+      expect(pvs.log.map(h => h.url)).toEqual([relay.VARS_PATH, '/auth?login', relay.VARS_PATH]);
+      expect(state.pvsCookie).toBe(`session=${SESSION_2}`);
+    } finally { pvs.expired = 400; pvs.session = SESSION_1; }
+  });
+
+  it('PVS-3b regression 2026-09-28: an expired session answered with 400 0x0040 logs in again once, and the poll lands', async () => {
+    const log: string[] = [], state = newState(log), cfg = relay.loadConfig({ PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW }, { dryRun: true });
+    try {
+      await relay.readInverters(cfg, state);
+      pvs.log.length = 0; pvs.session = SESSION_2;                          // the PVS forgot SESSION_1 (it restarted)
+      expect((await relay.readInverters(cfg, state)).inverters).toEqual(PVS_EXPECTED);
+      expect(pvs.log.map(h => h.url)).toEqual([relay.VARS_PATH, '/auth?login', relay.VARS_PATH]);
+      expect(pvs.log[0].cookie).toBe(`session=${SESSION_1}`);
+      expect(pvs.log[2].cookie).toBe(`session=${SESSION_2}`);
+      expect(log.join('\n')).toContain('answered HTTP 400 (Bad request 0x0040); logging in again');
+    } finally { pvs.session = SESSION_1; }
+  });
+
+  it('PVS-3c the login answer carries no expiry, so a session an hour old is replaced before the read', async () => {
+    const state = newState(), cfg = relay.loadConfig({ PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW }, { dryRun: true });
+    const t0 = Date.now();
+    await relay.readInverters(cfg, state, { now: () => t0 });
+    expect(state.pvsLoginAt).toBe(t0);
+    pvs.log.length = 0;
+    await relay.readInverters(cfg, state, { now: () => t0 + relay.SESSION_MAX_MS - 60_000 });
+    expect(pvs.log.map(h => h.url)).toEqual([relay.VARS_PATH]);            // 59 minutes: the same session
+    pvs.log.length = 0;
+    await relay.readInverters(cfg, state, { now: () => t0 + relay.SESSION_MAX_MS });
+    expect(pvs.log.map(h => h.url)).toEqual(['/auth?login', relay.VARS_PATH]);
+    expect(relay.SESSION_MAX_MS).toBe(3600_000);
+  });
+
+  it('PVS-3d when the read fails again with a fresh session: one login only, then the PVS\'s uptime says it is up but lists no inverters', async () => {
+    const log: string[] = [], state = newState(log), cfg = relay.loadConfig({ PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW }, { dryRun: true });
     await relay.readInverters(cfg, state);
-    pvs.log.length = 0; pvs.session = SESSION_2;
-    expect((await relay.readInverters(cfg, state)).inverters).toEqual(PVS_EXPECTED);
-    expect(pvs.log.map(h => h.url)).toEqual([relay.VARS_PATH, '/auth?login', relay.VARS_PATH]);
-    expect(state.pvsCookie).toBe(`session=${SESSION_2}`);
+    pvs.log.length = 0; pvs.varsStatus = 400;
+    try {
+      const err = await relay.readInverters(cfg, state).catch(e => e);
+      expect(pvs.log.map(h => h.url)).toEqual([relay.VARS_PATH, '/auth?login', relay.VARS_PATH, relay.UPTIME_PATH]);
+      expect(err).toMatchObject({ pvs: 'no-inverters', http: 400, uptimeS: 14512 });
+      expect(err).not.toBeInstanceOf(relay.FatalError);                    // the loop tries again at the next 5-minute bucket
+      expect(err.message).toMatch(/answered HTTP 400 \(Bad request 0x0040\) with a fresh session; the PVS is up \(uptime 242 min\) but lists no inverters/);
+      // the next bucket: again one login and one retry, never a loop
+      pvs.log.length = 0;
+      await relay.readInverters(cfg, state).catch(() => {});
+      expect(pvs.log.filter(h => h.url === '/auth?login')).toHaveLength(1);
+      // without an uptime answer it is reported as a refusal, not as "no inverters"
+      pvs.uptimeS = 'n/a';
+      expect(await relay.readInverters(cfg, newState()).catch(e => e)).toMatchObject({ pvs: 'refused', http: 400, uptimeS: null });
+    } finally { pvs.varsStatus = 200; pvs.uptimeS = '14511.80'; }
+    expect(pvs.log.every(h => h.method === 'GET' && !/set=/.test(h.url))).toBe(true);
   });
 
   it('PVS-4 a refused login is fatal and says which setting to fix, without echoing it', async () => {
     const cfg = relay.loadConfig({ PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: 'WRONG' }, { dryRun: true });
     const err = await relay.readInverters(cfg, newState()).catch(e => e);
     expect(err).toBeInstanceOf(relay.FatalError);
+    expect(err).toMatchObject({ pvs: 'login-refused', http: 401 });
     expect(err.message).toMatch(/PVS login refused \(HTTP 401\)\. Check PVS_PASSWORD/);
     expect(err.message).not.toContain('WRONG');
   });
@@ -340,6 +397,31 @@ describe('relay → Solstice (the real app on PGlite)', () => {
       expect(await relay.postReadings(cfg, state, payload)).toEqual({ ok: true, inserted: 0, duplicates: 3 });
     } finally { vi.stubGlobal('fetch', guard); }
     expect(seen).toEqual(['POST /api/pvs/readings', 'POST /api/auth/owner', 'POST /api/pvs/readings']);
+  });
+
+  it('API-5 a poll that fails on the PVS side posts a heartbeat; a stored poll marks the PVS ok again', async () => {
+    const hb = async () => (await db.q<{ value: any }>(`SELECT value FROM kv WHERE key = 'pvs:heartbeat'`))[0]?.value;
+    const cfg = cfgFor(), state = newState(), seen: string[] = [], guard = globalThis.fetch;
+    pvs.varsStatus = 400;
+    vi.stubGlobal('fetch', (input: any, init?: any) => { seen.push(`${init?.method ?? 'GET'} ${new URL(String(input)).pathname}`); return guard(input, init); });
+    try {
+      const before = Date.now();
+      const err = await relay.pollOnce(cfg, state).catch(e => e);
+      expect(err).toMatchObject({ pvs: 'no-inverters' });
+      expect(seen.filter(x => x.includes('/api/pvs/'))).toEqual(['POST /api/pvs/heartbeat']);   // no readings posted
+      const v = await hb();
+      expect(v).toMatchObject({ pvs: 'no-inverters', http: 400, uptimeS: 14512 });
+      expect(v.at).toBeGreaterThanOrEqual(before);
+      expect(v.error).toMatch(/lists no inverters/);
+      expect(v.error).not.toContain(PW);
+      // unreachable: the heartbeat still says the Mac is up
+      const down = relay.loadConfig({ PVS_HOST: '127.0.0.1:1', PVS_PASSWORD: PW, SOLSTICE_URL: base, SOLSTICE_OWNER_KEY: process.env.OWNER_KEY });
+      expect(await relay.pollOnce(down, state).catch(e => e)).toMatchObject({ pvs: 'unreachable' });
+      expect(await hb()).toMatchObject({ pvs: 'unreachable', http: null });
+      pvs.varsStatus = 200; pvs.vars = pvsVars(recentMsmt(5));
+      expect((await relay.pollOnce(cfg, state)).posted).toMatchObject({ ok: true });
+      expect(await hb()).toMatchObject({ pvs: 'ok', http: 200, error: null });
+    } finally { vi.stubGlobal('fetch', guard); pvs.varsStatus = 200; pvs.vars = pvsVars(MSMT); }
   });
 
   it('API-3 a wrong owner key is fatal with a message that says what to fix', async () => {
@@ -474,6 +556,24 @@ describe('POST /api/pvs/readings', () => {
 });
 
 /* ======================================================================================================== */
+describe('POST /api/pvs/heartbeat', () => {
+  const hb = (body: unknown, cookie = ownerCookie) => api('/api/pvs/heartbeat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, cookie);
+  it('HB-1 is owner-only, validates the status, and stores the server\'s time with it', async () => {
+    expect((await hb({ pvs: 'refused' }, '')).status).toBe(401);
+    for (const bad of [{ pvs: 'asleep' }, { pvs: 'refused', http: 42 }, { pvs: 'refused', uptimeS: -1 }, { pvs: 'refused', error: 7 }, []]) {
+      const r = await hb(bad);
+      expect(r.status).toBe(400);
+      expect((await r.json()).error).toMatch(/pvs|http|uptimeS|error|object/);
+    }
+    const before = Date.now();
+    const r = await hb({ pvs: 'refused', http: 400, error: 'PVS answered\nHTTP 400', uptimeS: 61.4, at: 0, extra: 'dropped' });
+    expect(await r.json()).toEqual({ ok: true });
+    const v = (await db.q<{ value: any }>(`SELECT value FROM kv WHERE key = 'pvs:heartbeat'`))[0].value;
+    expect(v).toEqual({ at: expect.any(Number), pvs: 'refused', http: 400, error: 'PVS answered HTTP 400', uptimeS: 61 });
+    expect(v.at).toBeGreaterThanOrEqual(before);                           // the server's clock, not the body's
+  });
+});
+
 describe('GET /api/pvs/day and /api/pvs/latest', () => {
   const put = (ts: string, inverters: Reading[]) => pvsMod.ingestPvs({ ts: new Date(ts), inverters });
   const R = (sn: string, kw: number | null, v: number | null = null, tempC: number | null = null, kwhLifetime: number | null = null): Reading =>

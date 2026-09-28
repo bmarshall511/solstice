@@ -211,7 +211,7 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
 }));
 
 /* ---------- per-panel data from the SunPower PVS6 (server/src/pvs.ts; owner-only like every /api route, no Tesla site needed) ----------
- *  POST /api/pvs/readings (the LAN relay, scripts/pvs-relay.mjs) · GET /api/pvs/day?date=YYYY-MM-DD · GET /api/pvs/latest */
+ *  POST /api/pvs/readings and POST /api/pvs/heartbeat (the LAN relay, scripts/pvs-relay.mjs) · GET /api/pvs/day?date=YYYY-MM-DD · GET /api/pvs/latest */
 // Per-panel health (panels.ts, mockup u-panels): GET /api/pvs/panels?date= by roof position only (guests get it through redact.ts);
 // GET/POST /api/pvs/layout (owner-only) on the router. A panel silent through an hour of daylight, or the relay itself, is a `panel` push.
 app.get('/api/pvs/panels', wrap(async (req, res) => {

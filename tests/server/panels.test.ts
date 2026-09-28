@@ -3,7 +3,8 @@
 // relay), the learning card's action and the digest's "Worth a look".
 //   PNL-1 the layout: learned on first sight in the PVS's order, moved by position, never shows a serial
 //   PNL-2 the roll-up on seeded readings: now and today vs the median panel, share, lowest three, not reporting, sparklines, totals
-//   PNL-3 a silent relay is the relay, not 29 panels
+//   PNL-3 a silent relay is the relay, not 29 panels; silence counts only while the sun is high enough to produce, and the relay's
+//         heartbeat says whether to blame the Mac (offline) or the PVS
 //   PNL-4 panelRules on synthetic metrics: producing days, 5 of 7, the clear, the wait, the DC/AC diagnosis
 //   PNL-5 the nightly job on PGlite opens panel.low@r2c7 and panel.low@r3c1, the `panel` push, the digest, then clears one
 //   PNL-6 the 5-minute watch: a panel silent through an hour of daylight polls, then the relay
@@ -65,6 +66,7 @@ beforeAll(async () => {
   await db.q(`INSERT INTO tesla_accounts (id, user_id, access_token, refresh_token, expires_at) VALUES (1, NULL, 'test-a', 'test-r', 0)`);
   await db.q(`INSERT INTO sites (id, user_id, tesla_account_id, name) VALUES ($1, NULL, 1, 'Test home')`, [S]);
   server = createServer(app).listen(0, '127.0.0.1'); await once(server, 'listening');
+  server.keepAliveTimeout = 60_000;   // a direct panelsDay() test can outlast the 5 s default under a loaded full run; then the next fetch reused a closing socket (ECONNRESET)
   const { port } = server.address() as AddressInfo;
   (globalThis as any).__testServerPorts.add(port);
   base = `http://127.0.0.1:${port}`;
@@ -242,8 +244,53 @@ describe('PNL-2 GET /api/pvs/panels', () => {
   });
   it('PNL-3 a relay that went quiet is reported as the relay: no panel is listed as not reporting', async () => {
     const b = await P.panelsDay('2026-10-08', NOW + 40 * 60_000);
-    expect(b.relay).toMatchObject({ silent: true, ageS: 2400 });
+    expect(b.relay).toMatchObject({ silent: true, ageS: 2400, silentMin: 40, cause: 'offline',
+      note: 'The Mac running the PVS relay may be asleep or off the network' });
     expect(b.notReporting).toEqual([]);
+  });
+  it('PNL-3b the relay is running but the PVS refused: the heartbeat moves the blame from the Mac to the PVS; the guest never sees the raw error', async () => {
+    const at = NOW + 38 * 60_000;
+    await db.kv.set('pvs:heartbeat', { at, pvs: 'no-inverters', http: 400, error: 'PVS answered HTTP 400 at 192.0.2.45', uptimeS: 4 * 3600 });
+    try {
+      const b = await P.panelsDay('2026-10-08', NOW + 40 * 60_000);
+      expect(b.relay).toMatchObject({ silent: true, silentMin: 40, cause: 'pvs', heardAt: new Date(at).toISOString(),
+        note: 'The relay is running, but the PVS answers without any inverters since it restarted at 11:13 AM',
+        pvs: { status: 'no-inverters', http: 400, uptimeS: 14400, error: 'PVS answered HTTP 400 at 192.0.2.45' } });
+      const { GUEST_GET } = await import('../../server/src/redact.js');
+      const guest = GUEST_GET.get('/api/pvs/panels')!(JSON.parse(JSON.stringify(b))) as any;
+      expect(guest.relay).toEqual({ lastPoll: b.relay.lastPoll, ageS: 2400, silent: true, daylight: b.relay.daylight, silentMin: 40,
+        heardAt: b.relay.heardAt, cause: 'pvs', note: b.relay.note });   // no relay.pvs
+      expect(JSON.stringify(guest)).not.toContain('192.0.2.45');
+      // the relay runs and the PVS answers, but with an old measurement
+      await db.kv.set('pvs:heartbeat', { at, pvs: 'ok', http: 200, error: null, uptimeS: null });
+      expect((await P.panelsDay('2026-10-08', NOW + 40 * 60_000)).relay).toMatchObject({ cause: 'stale',
+        note: 'The relay is running, but the PVS keeps sending its measurement from 2:35 PM' });
+      // a heartbeat older than 15 minutes is the Mac again
+      expect((await P.panelsDay('2026-10-08', at + 16 * 60_000)).relay).toMatchObject({ cause: 'offline' });
+    } finally { await db.q(`DELETE FROM kv WHERE key = 'pvs:heartbeat'`); }
+  });
+  it('PNL-3c the same night-time measurement repeated until morning is not silence; the first minutes of producing sun are', async () => {
+    // SITE_LAT/LON are unset in tests, so "producing" falls back to 08:00–18:00 Chicago. The last reading at 14:35: an afternoon
+    // outage counts until 18:00 only, not the 9 h 15 min since
+    expect((await P.panelsDay('2026-10-08', ctime('2026-10-08', 23, 50))).relay).toMatchObject({ silent: true, silentMin: 205 });
+    // 2026-09-28: the PVS re-served its 18:45 measurement all night; at 06:38 that is not silence, at 08:20 it is 20 minutes
+    const dusk = new Date(ctime('2026-10-20', 18, 45)).toISOString();
+    await db.q(`INSERT INTO pvs_readings (ts, sn, kw) SELECT $1::timestamptz, sn, 0.0013 FROM unnest($2::text[]) sn`, [dusk, Array.from({ length: 30 }, (_, i) => SN(i))]);
+    try {
+      expect((await P.panelsDay('2026-10-21', ctime('2026-10-21', 6, 38))).relay).toMatchObject({ silent: false, silentMin: 0, cause: null, note: null });
+      expect((await P.panelsDay('2026-10-21', ctime('2026-10-21', 8, 20))).relay).toMatchObject({ silent: true, silentMin: 20, cause: 'offline' });
+      expect(await P.panelWatch(S, ctime('2026-10-21', 6, 38))).toMatchObject({ relay: 'silent', pushed: false, why: 'not daylight' });
+      expect(await P.panelWatch(S, ctime('2026-10-21', 8, 30))).toMatchObject({ relay: 'late' });   // 30 min of sun: no push yet
+    } finally { await db.q(`DELETE FROM pvs_readings WHERE ts = $1::timestamptz`, [dusk]); }
+    expect(P.producingMs(ctime('2026-10-08', 18, 45), ctime('2026-10-09', 6, 38))).toBe(0);
+    expect(P.producingMs(ctime('2026-10-08', 18, 45), ctime('2026-10-09', 8, 20))).toBe(20 * 60_000);
+    // with a location: only the sun above 15° counts (a generic mid-latitude site, late September, CDT)
+    const loc = { lat: 35, lon: -90, zip: '00000' };
+    const ms = (h: number, m = 0, d = '2026-09-28') => ctime(d, h, m);
+    expect(P.producingMs(ms(18, 45, '2026-09-27'), ms(6, 38), loc)).toBe(0);
+    const morning = P.producingMs(ms(6, 0), ms(9, 0), loc) / 60_000;
+    expect(morning).toBeGreaterThan(30); expect(morning).toBeLessThan(120);   // the sun passes 15° a while after sunrise
+    expect(P.producingMs(ms(12, 0), ms(13, 0), loc)).toBe(3600_000);
   });
 });
 
