@@ -9,11 +9,14 @@
 //   metrics    per-panel daily figures for the learning layer's nightly rules (learn/rules.ts panelRules)
 //   watch      every 5 minutes: a `panel` push for a panel silent for 60 minutes of daylight, or once for the relay itself when the
 //              whole relay is silent (never 30 panel pushes for one sleeping Mac).
+//   silence    the relay counts as silent only for time the sun is high enough for the array to produce (producingElevDeg): the PVS
+//              re-serves its last measurement all night, and that is not silence. The relay's heartbeat (pvs.ts, kv pvs:heartbeat) says
+//              whether the Mac still gets through, so the card and the push can blame the Mac or the PVS, not always the Mac.
 // Read only towards every device: nothing here writes to the PVS.
 import { q, one, kv } from './db.js';
 import { config } from './config.js';
 import { localDay, localMidnight } from './tesla/client.js';
-import { pvsDay, pvsLatest } from './pvs.js';
+import { pvsDay, pvsLatest, getHeartbeat, type Heartbeat } from './pvs.js';
 import { siteLocation } from './site.js';
 import { notify } from './notify.js';
 import { panelDiagnosis } from './learn/rules.js';
@@ -24,6 +27,8 @@ export const PANELS = {
   silentPolls: 12,              // 60 minutes of daylight polls (5-minute cadence) before a `panel` push
   relaySilentMs: 60 * 60_000,   // the relay itself: one push after an hour of daylight silence
   sunDownKw: .02,               // array median under 20 W: sun down (no tint, no daylight poll)
+  producingElevDeg: 15,         // relay silence counts only above this sun elevation: on 2026-09-24…27 the array first reached ~10 W a
+                                // panel at 10.6–14.8° in the morning (it faces WSW), and the PVS stopped measuring at ~8° one evening
 };
 export const LAYOUT_KEY = 'pvs:layout';
 
@@ -40,6 +45,7 @@ export function parsePos(s: unknown): Pos | null {
 export const SLOT_ORDER: Pos[] = Array.from({ length: PANELS.rows * PANELS.cols }, (_, i) => ({ row: Math.floor(i / PANELS.cols) + 1, col: i % PANELS.cols + 1 }));
 
 const round = (v: number, d: number) => Math.round(v * 10 ** d) / 10 ** d;
+const clock = (ms: number) => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: config.timeZone });
 const median = (xs: number[]) => { if (!xs.length) return null; const s = [...xs].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
 /* ---------------------------------------------------------------- layout ---------------------------------------------------------------- */
@@ -97,11 +103,42 @@ export function sunElevation(ms: number, lat: number, lon: number) {
   const ha = ((hr * 60 + eqt + 4 * lon) / 4 - 180) * RAD, la = lat * RAD;
   return 90 - Math.acos(Math.max(-1, Math.min(1, Math.sin(la) * Math.sin(dec) + Math.cos(la) * Math.cos(dec) * Math.cos(ha)))) / RAD;
 }
-/** Is the sun up? From SITE_LAT/SITE_LON when set, else 08:00–18:00 Chicago. */
-export function sunUp(ms: number, loc = siteLocation()) {
-  if (loc) return sunElevation(ms, loc.lat, loc.lon) > 3;
+/** Is the sun up (above `minDeg`)? From SITE_LAT/SITE_LON when set, else 08:00–18:00 Chicago. */
+export function sunUp(ms: number, loc = siteLocation(), minDeg = 3) {
+  if (loc) return sunElevation(ms, loc.lat, loc.lon) > minDeg;
   const h = +new Intl.DateTimeFormat('en-US', { timeZone: config.timeZone, hour: '2-digit', hourCycle: 'h23' }).format(new Date(ms));
   return h >= 8 && h < 18;
+}
+
+/** Milliseconds between `from` and `to` with the sun above producingElevDeg (5-minute steps, looking back at most two days): how long
+ *  the relay has really been silent. Night and the low-sun edges of the day, when the PVS keeps re-serving its last measurement, count as 0. */
+export function producingMs(from: number, to: number, loc = siteLocation()) {
+  let ms = 0;
+  for (let t = Math.max(from, to - 2 * 864e5); t < to; t += 5 * 60_000) {
+    const step = Math.min(5 * 60_000, to - t);
+    if (sunUp(t + step / 2, loc, PANELS.producingElevDeg)) ms += step;
+  }
+  return ms;
+}
+
+/** Why the relay is silent, from its heartbeat: `offline` (it has not reached Solstice for 15 minutes: the Mac is asleep or off the
+ *  network), `pvs` (it runs, but the PVS failed) or `stale` (it runs and the PVS answers, but with an old measurement). `note` is the
+ *  sentence the card and the push use; it never carries the relay's raw error text. */
+export function relayCause(hb: Heartbeat | null, newest: number | null, now: number) {
+  const heardAt = hb?.at ?? newest;
+  if (!hb || now - hb.at > PANELS.staleMs)
+    return { cause: 'offline' as const, heardAt, note: 'The Mac running the PVS relay may be asleep or off the network' };
+  if (hb.pvs === 'ok')
+    return { cause: 'stale' as const, heardAt, note: `The relay is running, but the PVS keeps sending its measurement from ${newest == null ? 'earlier' : clock(newest)}` };
+  const restarted = hb.uptimeS != null ? ` since it restarted at ${clock(hb.at - hb.uptimeS * 1000)}` : '';
+  const why: Record<string, string> = {
+    unreachable: 'it cannot reach the PVS on the home network',
+    'login-refused': 'the PVS refuses its login (check PVS_PASSWORD in the relay\'s env file)',
+    certificate: 'the PVS certificate no longer matches the one the relay pinned',
+    'no-inverters': `the PVS answers without any inverters${restarted}`,
+    refused: `the PVS refuses the inverter query${hb.http ? ` (HTTP ${hb.http})` : ''}${restarted}`,
+  };
+  return { cause: 'pvs' as const, heardAt, note: `The relay is running, but ${why[hb.pvs] ?? 'the PVS answer could not be read'}` };
 }
 
 /* ---------------------------------------------------------------- the roll-up ---------------------------------------------------------------- */
@@ -113,10 +150,11 @@ type Anom = { kind: string; day: string; opened_at: number; detail: Record<strin
  */
 export async function panelsDay(date: string, now = Date.now()) {
   const today = localDay(new Date(now)), isToday = date === today;
-  const [layout, day, latest, first, anoms] = await Promise.all([
+  const [layout, day, latest, first, anoms, hb] = await Promise.all([
     getLayout(), pvsDay(date), pvsLatest(now),
     one<{ ms: number | null }>(`SELECT (extract(epoch FROM min(ts)) * 1000)::float8 AS ms FROM pvs_readings`),
     q<Anom>(`SELECT kind, day, opened_at::float8 opened_at, detail FROM anomalies WHERE kind LIKE 'panel.low@%' AND resolved_at IS NULL ORDER BY opened_at`),
+    getHeartbeat(),
   ]);
   const slots = layout?.slots ?? {};
   const newest = latest.at ? Date.parse(latest.at) : null, relayAgeMs = newest == null ? null : now - newest;
@@ -161,13 +199,19 @@ export async function panelsDay(date: string, now = Date.now()) {
   const medianSeries = day.times.map((_, i) => { const m = median(rows.filter(r => r.reporting).map(r => r.d?.kw[i]).filter((v): v is number => v != null)); return m == null ? null : round(Math.max(0, m), 3); });
   const got = panels.filter(p => p.pctToday != null), hot = panels.filter(p => p.maxTempC != null).sort((a, b) => b.maxTempC! - a.maxTempC!)[0];
   const weakest = panels.filter(p => p.pctNow != null).sort((a, b) => a.pctNow! - b.pctNow!)[0];
-  const relaySilent = relayAgeMs != null && relayAgeMs > PANELS.staleMs && isToday;
+  const silentMs = isToday && newest != null ? producingMs(newest, now) : 0;   // silence counts only while the array should produce
+  const relaySilent = silentMs > PANELS.staleMs;
+  const why = relaySilent ? relayCause(hb, newest, now) : null;
   const firstDay = first?.ms != null ? localDay(new Date(Number(first.ms))) : null;
 
   return {
     date, today: isToday, timeZone: day.timeZone, at: new Date(now).toISOString(), bucketMinutes: day.bucketMinutes, times: day.times,
     layout: { learned: !!layout, mapped: rows.length, expected: SLOT_ORDER.length, unmapped },
-    relay: { lastPoll: latest.at, ageS: relayAgeMs == null ? null : Math.round(relayAgeMs / 1000), silent: relaySilent, daylight: isToday && daylight },
+    relay: { lastPoll: latest.at, ageS: relayAgeMs == null ? null : Math.round(relayAgeMs / 1000), silent: relaySilent, daylight: isToday && daylight,
+      silentMin: Math.round(silentMs / 60_000), heardAt: hb ? new Date(hb.at).toISOString() : null,
+      cause: why?.cause ?? null, note: why?.note ?? null,
+      // owner-only (redact.ts leaves it out): the relay's last word about the PVS, raw
+      pvs: hb ? { status: hb.pvs, http: hb.http, error: hb.error, uptimeS: hb.uptimeS, at: new Date(hb.at).toISOString() } : null },
     since: firstDay, days: firstDay ? Math.round((Date.parse(today) - Date.parse(firstDay)) / 864e5) + 1 : 0,
     sunDown, reporting: panels.filter(p => p.reporting).length,
     now: { medianKw: medKwNow == null ? null : round(medKwNow, 4), medianKwDc: medKwDcNow == null ? null : round(medKwDcNow, 4),
@@ -247,7 +291,6 @@ export async function panelMetrics(from: string, to: string, layout: Layout | nu
 }
 
 /* ---------------------------------------------------------------- 5-minute watch ---------------------------------------------------------------- */
-const clock = (ms: number) => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: config.timeZone });
 /**
  * Every 5 minutes: a `panel` push for each panel with no reading through 60 minutes of daylight polls (once per panel per day), or,
  * when the relay itself has been silent for an hour of daylight, one push about the relay and none about panels.
@@ -257,10 +300,13 @@ export async function panelWatch(siteId: string, now = Date.now()) {
   if (!latest.at) return { skipped: 'no per-panel readings' };
   const newest = Date.parse(latest.at), day = localDay(new Date(now));
   if (now - newest > PANELS.relaySilentMs) {
-    if (!sunUp(now) || !sunUp(newest + PANELS.relaySilentMs)) return { relay: 'silent', pushed: false, why: 'not daylight' };
-    const r = await notify(siteId, 'panel', 'The PVS relay has gone quiet', `No per-panel readings since ${clock(newest)}. The Mac running the relay may be asleep or off the network; the panels themselves may be fine.`,
-      { relay: true }, { key: `pvs:relay:${day}`, windowH: 24, now, url: '/?go=v-roof' });
-    return { relay: 'silent', pushed: r.stored };
+    if (!sunUp(now)) return { relay: 'silent', pushed: false, why: 'not daylight' };
+    if (producingMs(newest, now) <= PANELS.relaySilentMs) return { relay: 'late', why: 'not an hour of daylight yet' };
+    const { cause, note } = relayCause(await getHeartbeat(), newest, now);
+    const r = await notify(siteId, 'panel', cause === 'offline' ? 'The PVS relay has gone quiet' : 'The PVS has stopped sending panel readings',
+      `No per-panel readings since ${clock(newest)}. ${note}; the panels themselves may be fine.`,
+      { relay: true, cause }, { key: `pvs:relay:${day}`, windowH: 24, now, url: '/?go=v-roof' });
+    return { relay: 'silent', cause, pushed: r.stored };
   }
   if (now - newest > PANELS.staleMs) return { relay: 'late' };
   const layout = await getLayout(); if (!layout) return { skipped: 'no layout yet' };

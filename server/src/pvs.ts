@@ -15,6 +15,27 @@ export const PVS_LIMITS = {
 };
 const BUCKET_MS = 5 * 60_000;
 
+/* ---------------- the relay's heartbeat (kv pvs:heartbeat) ----------------
+ * Every contact from the relay: a stored poll (POST /readings) writes { pvs: 'ok' }; a poll that failed on the PVS side posts
+ * POST /heartbeat { pvs, http, error, uptimeS }. panels.ts reads it to tell "the Mac is off" from "the relay runs, the PVS refused". */
+export const HEARTBEAT_KEY = 'pvs:heartbeat';
+export const PVS_STATUSES = ['ok', 'unreachable', 'login-refused', 'certificate', 'refused', 'no-inverters', 'error'] as const;
+export type PvsStatus = typeof PVS_STATUSES[number];
+/** `at` is the server's clock when the relay last got through; `error` is the relay's own text (owner-only, it may name the PVS's LAN address). */
+export type Heartbeat = { at: number; pvs: PvsStatus; http: number | null; error: string | null; uptimeS: number | null };
+
+export function parseHeartbeat(body: unknown, now = Date.now()): { ok: true; hb: Heartbeat } | { ok: false; error: string } {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { ok: false, error: 'body must be a JSON object { pvs, http, error, uptimeS }' };
+  const { pvs, http, error, uptimeS } = body as Record<string, unknown>;
+  if (typeof pvs !== 'string' || !(PVS_STATUSES as readonly string[]).includes(pvs)) return { ok: false, error: `pvs must be one of ${PVS_STATUSES.join(', ')}` };
+  if (http != null && !(Number.isInteger(http) && (http as number) >= 100 && (http as number) <= 599)) return { ok: false, error: 'http must be null or an HTTP status' };
+  if (error != null && typeof error !== 'string') return { ok: false, error: 'error must be null or a string' };
+  if (uptimeS != null && !(typeof uptimeS === 'number' && Number.isFinite(uptimeS) && uptimeS >= 0)) return { ok: false, error: 'uptimeS must be null or a number of seconds' };
+  return { ok: true, hb: { at: now, pvs: pvs as PvsStatus, http: (http as number | null) ?? null,
+    error: error == null ? null : String(error).replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 300), uptimeS: uptimeS == null ? null : Math.round(uptimeS as number) } };
+}
+export const getHeartbeat = async () => (await kv.get<Heartbeat>(HEARTBEAT_KEY)) ?? null;
+
 /** kw = AC output (p3phsumKw), kwDc = DC input (pMppt1Kw), kwhLifetime = the inverter's lifetime energy counter (ltea3phsumKwh). */
 export type PvsReading = { sn: string; kw: number | null; kwDc: number | null; v: number | null; tempC: number | null; kwhLifetime: number | null };
 export type PvsBatch = { ts: Date; inverters: PvsReading[] };
@@ -137,7 +158,15 @@ export const pvsRouter = express.Router();
 pvsRouter.post('/readings', express.json({ limit: '64kb', type: () => true }), async (req: Request, res: Response) => {
   const p = parsePvsBatch(req.body);
   if (!p.ok) return res.status(400).json({ error: p.error });
-  res.json({ ok: true, ...await ingestPvs(p.batch) });
+  const r = await ingestPvs(p.batch);
+  await kv.set(HEARTBEAT_KEY, { at: Date.now(), pvs: 'ok', http: 200, error: null, uptimeS: null } satisfies Heartbeat);
+  res.json({ ok: true, ...r });
+});
+pvsRouter.post('/heartbeat', express.json({ limit: '4kb', type: () => true }), async (req: Request, res: Response) => {
+  const p = parseHeartbeat(req.body);
+  if (!p.ok) return res.status(400).json({ error: p.error });
+  await kv.set(HEARTBEAT_KEY, p.hb);
+  res.json({ ok: true });
 });
 pvsRouter.get('/day', async (req: Request, res: Response) => {
   const date = req.query.date === undefined ? localDay() : String(req.query.date);
