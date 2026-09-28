@@ -668,3 +668,27 @@ describe('GET /api/pvs/day and /api/pvs/latest', () => {
     expect(await (await api('/api/pvs/latest')).json()).toEqual({ at: null, ageS: null, count: 0, inverters: [] });
   });
 });
+
+describe('retention', () => {
+  it('RET-1 the nightly prune keeps 90 days of raw readings, records the relay\'s first day before deleting it, and is idempotent', async () => {
+    const now = Date.now(), day = 864e5, at = (d: number) => new Date(Math.floor((now - d * day) / 300_000) * 300_000);
+    const oldest = at(100), kept = at(89);
+    await db.q(`DELETE FROM kv WHERE key = 'pvs:since'`);
+    await db.q(`INSERT INTO pvs_readings (ts, sn, kw) VALUES ($1, 'TEST-RET-01', 0.1), ($2, 'TEST-RET-01', 0.2), ($1, 'TEST-RET-02', 0.1)`, [oldest.toISOString(), kept.toISOString()]);
+    try {
+      expect(pvsMod.PVS_KEEP_DAYS).toBe(90);
+      expect(pvsMod.PVS_KEEP_DAYS).toBeGreaterThan(21 * 2);                 // learn/nightly.ts recomputes the last 21 days from raw readings
+      expect(await pvsMod.pvsSince()).toBe(oldest.getTime());               // before the first prune: the oldest stored reading
+      const r = await pvsMod.prunePvs(now);
+      expect(r).toEqual({ deleted: 2, since: oldest.toISOString() });
+      expect((await rows('TEST-RET-01')).map(x => x.ts.getTime())).toEqual([kept.getTime()]);
+      expect(await rows('TEST-RET-02')).toEqual([]);
+      expect(await db.kv.get('pvs:since')).toBe(oldest.getTime());         // the first day survives the prune
+      expect(await pvsMod.pvsSince()).toBe(oldest.getTime());
+      expect(await pvsMod.prunePvs(now)).toEqual({ deleted: 0, since: oldest.toISOString() });
+    } finally {
+      await db.q(`DELETE FROM pvs_readings WHERE sn LIKE 'TEST-RET-%'`);
+      await db.q(`DELETE FROM kv WHERE key = 'pvs:since'`);
+    }
+  });
+});

@@ -3,7 +3,7 @@
 // One row per inverter per poll in `pvs_readings`, holding only ts, serial, AC kW, DC kW, volts, heat-sink °C and the
 // inverter's lifetime kWh counter. The day roll-up (5-minute series and per-panel kWh) is computed on read. Every route here is owner-only through requireOwner in app.ts.
 import express, { type Request, type Response, type NextFunction } from 'express';
-import { q, kv } from './db.js';
+import { q, one, kv } from './db.js';
 import { localDay, localMidnight, addDays } from './tesla/client.js';
 import { learnLayout, getLayout, applyMoves, layoutView, LAYOUT_KEY } from './panels.js';
 
@@ -14,6 +14,28 @@ export const PVS_LIMITS = {
   latestLookbackMs: 7 * 864e5,   // /latest looks back this far from the newest reading
 };
 const BUCKET_MS = 5 * 60_000;
+
+/* ---------------- retention ----------------
+ * Raw readings are kept PVS_KEEP_DAYS (~4,300 rows a day; Neon's free plan has 0.5 GB). The nightly per-panel figures
+ * (daily_metrics pvs.*, learn/nightly.ts) are kept for good, and nightly.ts recomputes them from the last 21 days, so the
+ * window must stay well above 21. kv pvs:since keeps the relay's first reading, so "per-panel data since …" survives the prune. */
+export const PVS_KEEP_DAYS = 90;
+export const SINCE_KEY = 'pvs:since';
+/** Epoch ms of the relay's first reading ever: kv pvs:since, else the oldest stored reading, else null. */
+export async function pvsSince(): Promise<number | null> {
+  const k = await kv.get<number>(SINCE_KEY);
+  if (typeof k === 'number') return k;
+  const r = await one<{ ms: number | null }>(`SELECT (extract(epoch FROM min(ts)) * 1000)::float8 AS ms FROM pvs_readings`);
+  return r?.ms == null ? null : Number(r.ms);
+}
+/** Nightly (the sync cron, after the learning layer has written the day's figures): records pvs:since if it is not yet
+ *  recorded, then deletes readings older than PVS_KEEP_DAYS. Returns how many rows went. */
+export async function prunePvs(now = Date.now()): Promise<{ deleted: number; since: string | null }> {
+  const since = await pvsSince();
+  if (since != null && (await kv.get(SINCE_KEY)) == null) await kv.set(SINCE_KEY, since);
+  const rows = await q(`DELETE FROM pvs_readings WHERE ts < $1::timestamptz RETURNING 1 AS x`, [new Date(now - PVS_KEEP_DAYS * 864e5).toISOString()]);
+  return { deleted: rows.length, since: since == null ? null : new Date(since).toISOString() };
+}
 
 /* ---------------- the relay's heartbeat (kv pvs:heartbeat) ----------------
  * Every contact from the relay: a stored poll (POST /readings) writes { pvs: 'ok' }; a poll that failed on the PVS side posts

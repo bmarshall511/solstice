@@ -22,7 +22,7 @@ import { acDetail, acTick } from './appliances/ac.js';
 import { applianceDay } from './appliances/day.js';
 import { cronTick } from './appliances/sampling.js';
 import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest } from './appliances/nest.js';
-import { pvsRouter } from './pvs.js';
+import { pvsRouter, prunePvs } from './pvs.js';
 import { panelsDay, panelAlerts, panelWatch } from './panels.js';
 import { flowsFor, FlowsInputError } from './flows.js';
 import { outageDetail } from './outage.js';
@@ -207,6 +207,8 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
   // learning layer (server/src/learn/nightly.ts): score yesterday's predictions, trims, anomalies, today's predictions; skips what won't fit by 55 s
   for (const s of sites) out[`learn:${s.id}`] = await runLearn(s.id, { deadline: t0 + 55_000 }).catch(e => ({ error: e.message }));
   for (const s of sites) out[`watch:${s.id}`] = await nightlyWatch(s.id);   // watch.ts: bill due and the other nightly alert checks
+  // raw per-panel readings older than 90 days go, after the learning layer has written the day's per-panel figures (pvs.ts)
+  out.pvsPrune = await prunePvs().catch(e => ({ error: e.message }));
   res.json(out);
 }));
 

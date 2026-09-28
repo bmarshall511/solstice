@@ -13,10 +13,10 @@
 //              re-serves its last measurement all night, and that is not silence. The relay's heartbeat (pvs.ts, kv pvs:heartbeat) says
 //              whether the Mac still gets through, so the card and the push can blame the Mac or the PVS, not always the Mac.
 // Read only towards every device: nothing here writes to the PVS.
-import { q, one, kv } from './db.js';
+import { q, kv } from './db.js';
 import { config } from './config.js';
 import { localDay, localMidnight } from './tesla/client.js';
-import { pvsDay, pvsLatest, getHeartbeat, type Heartbeat } from './pvs.js';
+import { pvsDay, pvsLatest, pvsSince, getHeartbeat, type Heartbeat } from './pvs.js';
 import { siteLocation } from './site.js';
 import { notify } from './notify.js';
 import { panelDiagnosis } from './learn/rules.js';
@@ -152,7 +152,7 @@ export async function panelsDay(date: string, now = Date.now()) {
   const today = localDay(new Date(now)), isToday = date === today;
   const [layout, day, latest, first, anoms, hb] = await Promise.all([
     getLayout(), pvsDay(date), pvsLatest(now),
-    one<{ ms: number | null }>(`SELECT (extract(epoch FROM min(ts)) * 1000)::float8 AS ms FROM pvs_readings`),
+    pvsSince(),   // the relay's first reading, kept in kv so the 90-day prune does not move it
     q<Anom>(`SELECT kind, day, opened_at::float8 opened_at, detail FROM anomalies WHERE kind LIKE 'panel.low@%' AND resolved_at IS NULL ORDER BY opened_at`),
     getHeartbeat(),
   ]);
@@ -202,7 +202,7 @@ export async function panelsDay(date: string, now = Date.now()) {
   const silentMs = isToday && newest != null ? producingMs(newest, now) : 0;   // silence counts only while the array should produce
   const relaySilent = silentMs > PANELS.staleMs;
   const why = relaySilent ? relayCause(hb, newest, now) : null;
-  const firstDay = first?.ms != null ? localDay(new Date(Number(first.ms))) : null;
+  const firstDay = first != null ? localDay(new Date(first)) : null;
 
   return {
     date, today: isToday, timeZone: day.timeZone, at: new Date(now).toISOString(), bucketMinutes: day.bucketMinutes, times: day.times,
