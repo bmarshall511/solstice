@@ -23,6 +23,7 @@ import { applianceDay } from './appliances/day.js';
 import { cronTick } from './appliances/sampling.js';
 import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest } from './appliances/nest.js';
 import { pvsRouter } from './pvs.js';
+import { panelsDay, panelAlerts, panelWatch } from './panels.js';
 import { flowsFor, FlowsInputError } from './flows.js';
 import { outageDetail } from './outage.js';
 
@@ -211,6 +212,14 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
 
 /* ---------- per-panel data from the SunPower PVS6 (server/src/pvs.ts; owner-only like every /api route, no Tesla site needed) ----------
  *  POST /api/pvs/readings (the LAN relay, scripts/pvs-relay.mjs) · GET /api/pvs/day?date=YYYY-MM-DD · GET /api/pvs/latest */
+// Per-panel health (panels.ts, mockup u-panels): GET /api/pvs/panels?date= by roof position only (guests get it through redact.ts);
+// GET/POST /api/pvs/layout (owner-only) on the router. A panel silent through an hour of daylight, or the relay itself, is a `panel` push.
+app.get('/api/pvs/panels', wrap(async (req, res) => {
+  const date = req.query.date === undefined ? localDay() : String(req.query.date);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T12:00:00Z`)) || new Date(`${date}T12:00:00Z`).toISOString().slice(0, 10) !== date) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+  const body = await panelsDay(date);
+  res.json(req.guestView ? body : { ...body, alerts: await panelAlerts(body.anomalies.map(a => a.kind)) });
+}));
 app.use('/api/pvs', pvsRouter);
 
 /* ======================= everything below needs a signed-in user ======================= */
@@ -496,6 +505,7 @@ presenceRoutes(app, async id => { const rec = await kv.get<any>(`${id}:ac:plan`)
 powerwallRoutes(app);
 fiveMinuteSteps.powerwall = powerwallTick; nightlySteps.powerwall = powerwallNightly;
 fiveMinuteSteps.digest = maybeWeeklyDigest; nightlySteps.digest = maybeWeeklyDigest;
+fiveMinuteSteps.panels = panelWatch;   // panels.ts: a panel silent through an hour of daylight, or the relay itself (read-only)
 /**
  * Fires every 5 minutes; sampling.ts decides what is due. Nest (with acTick: AC learning and due plan steps) every 5 minutes 10:00–22:00
  * in cooling season, every 15 minutes otherwise; a read-only pool read every 15 minutes of scheduled pump hours plus 02:00 and 05:00.
