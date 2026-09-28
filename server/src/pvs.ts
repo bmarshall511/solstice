@@ -3,8 +3,9 @@
 // One row per inverter per poll in `pvs_readings`, holding only ts, serial, AC kW, DC kW, volts, heat-sink °C and the
 // inverter's lifetime kWh counter. The day roll-up (5-minute series and per-panel kWh) is computed on read. Every route here is owner-only through requireOwner in app.ts.
 import express, { type Request, type Response, type NextFunction } from 'express';
-import { q } from './db.js';
+import { q, kv } from './db.js';
 import { localDay, localMidnight, addDays } from './tesla/client.js';
+import { learnLayout, getLayout, applyMoves, layoutView, LAYOUT_KEY } from './panels.js';
 
 export const PVS_LIMITS = {
   maxInverters: 60,              // 30 on this roof; room for an expansion, not for junk
@@ -61,6 +62,7 @@ export async function ingestPvs(batch: PvsBatch): Promise<{ inserted: number; du
     return `($1::timestamptz, $${n - 5}, $${n - 4}::numeric, $${n - 3}::numeric, $${n - 2}::numeric, $${n - 1}::numeric, $${n}::numeric)`;
   });
   const ins = await q(`INSERT INTO pvs_readings (ts, sn, kw, v, temp_c, kw_dc, kwh_lifetime) VALUES ${rows.join(', ')} ON CONFLICT (ts, sn) DO NOTHING RETURNING sn`, params);
+  await learnLayout(batch.inverters.map(r => r.sn));   // panels.ts: a serial seen for the first time gets the next roof position
   return { inserted: ins.length, duplicates: batch.inverters.length - ins.length };
 }
 
@@ -143,6 +145,17 @@ pvsRouter.get('/day', async (req: Request, res: Response) => {
   res.json(await pvsDay(date));
 });
 pvsRouter.get('/latest', async (_req: Request, res: Response) => res.json(await pvsLatest()));
+// The roof positions (panels.ts; mockup u-panels): positions only, never a serial. POST { moves: { "r1c3": "r2c5", "r2c5": "r1c3" } }
+// corrects the learned map (owner-only: a guest has no view for either route, so access.ts answers 401).
+pvsRouter.get('/layout', async (_req: Request, res: Response) => res.json(layoutView(await getLayout())));
+pvsRouter.post('/layout', express.json({ limit: '8kb' }), async (req: Request, res: Response) => {
+  const cur = await getLayout();
+  if (!cur) return res.status(409).json({ error: 'no layout yet: it is learned from the first relay poll' });
+  const r = applyMoves(cur, req.body?.moves);
+  if (!r.ok) return res.status(400).json({ error: r.error });
+  await kv.set(LAYOUT_KEY, r.layout);
+  res.json({ ok: true, ...layoutView(r.layout) });
+});
 // A malformed or oversized body is the caller's mistake (400/413), not a server error.
 pvsRouter.use((err: Error & { status?: number; type?: string }, _req: Request, res: Response, next: NextFunction) => {
   if (err.type === 'entity.too.large') return res.status(413).json({ error: 'body too large' });

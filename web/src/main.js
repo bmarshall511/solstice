@@ -183,7 +183,7 @@ async function loadApplDay() {
 }
 const aurora = createAurora($('aurora')), orb = createOrb($('orb')), land = createLandscape($('land'), $('landTip')), roof = createHomeView($('roof'), 'sun');
 $('roofBars').onclick = e => { const on = !S.roofBars; S.roofBars = on; e.currentTarget.classList.toggle('on', on); e.currentTarget.setAttribute('aria-pressed', on); $('roofBarsKey').classList.toggle('on', on); roof.setBars(on); };   // mockup p-roof-veil
-initHistory(S); initPanels(S); initPlanner(S); initAppliances(S); initAc(S);
+initHistory(S); initPanels(S, roof); initPlanner(S); initAppliances(S); initAc(S);
 const outage = initOutage(S);
 mountPowerwallRules();   // t-enhancements: the Powerwall rules card, directly below Outage readiness
 let applSel = 'pool';

@@ -138,6 +138,24 @@ const AC: Rule = {
   equipment: { airHandler: true, heat: true, outdoor: true },
 };
 
+/* ---------- per-panel health ---------- */
+const panelPos = { id: true, name: true } as const;
+const PANELS_VIEW: Rule = {
+  date: true, today: true, timeZone: true, at: true, bucketMinutes: true, times: true,
+  layout: { learned: true, mapped: true, expected: true, unmapped: true },
+  relay: { lastPoll: true, ageS: true, silent: true, daylight: true },
+  since: true, days: true, sunDown: true, reporting: true,
+  now: { medianKw: true, medianKwDc: true, medianConvPct: true, arrayKw: true, weakest: { ...panelPos, pct: true } },
+  totals: { kwh: true, medianKwh: true, spread: { loPct: true, hiPct: true }, hottest: { ...panelPos, tempC: true } },
+  lowest: [{ ...panelPos, kwh: true, pct: true }],
+  notReporting: [{ ...panelPos, at: true, lastKw: true, kwh: true, silentMin: true, pushAt: true }],
+  panels: [{ ...panelPos, row: true, col: true, reporting: true, at: true, ageS: true, kw: true, kwDc: true, tempC: true, kwh: true, kwhSource: true,
+    maxTempC: true, sharePct: true, pctNow: true, pctToday: true, flagged: true, spark: true }],
+  medianSeries: true,
+  anomalies: [{ kind: true, ...panelPos, day: true, openedAt: true, title: true, body: true, nLow: true, window: true, days: [{ day: true, pct: true }],
+    diag: { kind: true, lead: true, text: true } }],
+};
+
 /* ---------- the routes a guest may read (GET only), each with its view. Paths are lower-case, as access.ts compares them. ---------- */
 const REPLAY = { importKwh: true, exportKwh: true, solarKwh: true, homeKwh: true, selfPowered: true, batteryFullDays: true } as const;
 const view = (rule: Rule): View => b => pick(b, rule);
@@ -175,6 +193,8 @@ export const GUEST_GET: ReadonlyMap<string, View> = new Map<string, View>([
   ['/api/appliances', view([{ id: true, name: true, status: true, watts: true, kwhPerDay: true, savesPerMonth: 'veil', error: fixed(UNAVAILABLE) }])],
   ['/api/appliances/pool', view(POOL)],
   ['/api/appliances/ac', view(AC)],
+  // per-panel health (panels.ts, mockup u-panels): positions only (the route never names a serial), and not the owner's alert state
+  ['/api/pvs/panels', view(PANELS_VIEW)],
 ]);
 
 /** Serve this response through a guest view: res.json runs the view first. Error responses keep their status but carry a

@@ -19,6 +19,7 @@ import { forecast48, learnYield } from './forecast48.js';
 import { measuredSavings, trimFor, ranPrecool, learnAcKey, type AcDay, type PrecoolDay, type LearnAc, type TrimRecord } from './ac.js';
 import { evaluateRules, type MetricsByDay, type OpenAnomaly, type Verdict } from './rules.js';
 import { wxGti, gtiByDay, type Wx } from './wx.js';
+import { panelMetrics, LAYOUT_KEY, type Layout } from '../panels.js';
 
 export const LOOKBACK_DAYS = 60, SCORE_DAYS = 3, RETAIN_DAYS = 400;
 export type LogEntry = { at: number; day: string; text: string; delta?: string };
@@ -90,7 +91,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
   };
 
   /* ---------- load ---------- */
-  const keys = { ac: learnAcKey(siteId), last: `${siteId}:learn:last`, log: `${siteId}:learn:log`, pump: `${siteId}:learn:pump` };
+  const keys = { ac: learnAcKey(siteId), last: `${siteId}:learn:last`, log: `${siteId}:learn:log`, pump: `${siteId}:learn:pump`, pvsLayout: LAYOUT_KEY };
   const d = await step('load', async () => {
     // one round trip each, sent together (Neon's HTTP driver runs them in parallel; PGlite queues them)
     const [kvRows, energyDaily, energyHourly, soeHourly, nestHourly, pool, preds] = await Promise.all([
@@ -187,6 +188,9 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
       const acMin = metricRows.get(`${r.day}|ac.overnight_min`)?.[2] ?? 0;
       put(r.day, 'home.alwaysOn_kw', Math.max(0, r.overnight_kw - acMin / 240 * kw));
     }
+    // per-panel days (mockup u-panels): the last 21 days of PVS readings by roof position, one query (none before the relay's first poll)
+    const layout = d.kvs[keys.pvsLayout] as Layout | undefined;
+    if (layout) { learnStats.queries++; for (const [day, metric, v] of await panelMetrics(addDays(today, -21), today, layout)) if (past(day)) put(day, metric, v); }
     const poolDays = new Map<string, typeof d.pool>(); for (const r of d.pool) (poolDays.get(r.day) ?? poolDays.set(r.day, []).get(r.day)!).push(r);
     for (const [day, rows] of poolDays) if (past(day)) {
       put(day, 'pool.n', rows.length);

@@ -143,5 +143,60 @@ export function dataGapRules(c: RuleCtx): Verdict[] {
   return out;
 }
 
+/* ---------- one panel below the median panel (mockup u-panels; metrics from panels.ts panelMetrics) ---------- */
+// A producing day: the array made ≥ 15 kWh and the panel reported in ≥ 90% of the day's daylight polls; other days are skipped, not
+// counted as good. Fires when the panel is under 85% of the median panel on 5 of its last 7 producing days; clears after 3 producing
+// days in a row at ≥ 90%. One kind per position: panel.low@r2c7.
+export type PanelDiag = { kind: 'light' | 'inverter' | 'unclear'; lead: string; text: string };
+/** The mockup's diagnosis from DC in vs AC out: low DC in = less light reaches the panel; normal DC but AC under 90% of DC = the microinverter. */
+export function panelDiagnosis(dcRatio: number | null, conv: number | null): PanelDiag | null {
+  if (dcRatio == null || !Number.isFinite(dcRatio)) return null;
+  if (dcRatio < .9) return { kind: 'light', lead: 'DC in is low too',
+    text: ', and the microinverter converts what it gets as well as its neighbours do, so less light is reaching this panel. Look for a new shadow or a patch of dirt or droppings. A failing microinverter would show normal DC in with low AC out.' };
+  if (conv != null && conv < .9) return { kind: 'inverter', lead: 'DC in is normal but AC out is not',
+    text: `: the microinverter passes on only ${Math.round(conv * 100)}% of what the panel gives it, so the microinverter is losing it. Shade or dirt would lower DC in as well.` };
+  return { kind: 'unclear', lead: 'DC in and conversion both look normal right now',
+    text: ', so the loss comes and goes. Watch it through a sunny afternoon: a shadow that moves across it, or a connection that drops out, would do this.' };
+}
+
+export const PANEL = { low: .85, ok: .9, window: 7, fireDays: 5, clearDays: 3, arrayKwh: 15, cov: .9 };
+const PANEL_ID = /^pvs\.(r[1-3]c(?:10|[1-9]))\.ratio$/;
+const dow = (d: string) => new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short' }).slice(0, 2);
+export function panelRules(c: RuleCtx): Verdict[] {
+  const ids = new Set<string>();
+  for (const d of c.days) for (const k of Object.keys(c.m.get(d) ?? {})) { const m = PANEL_ID.exec(k); if (m) ids.add(m[1]); }
+  for (const k of c.open.keys()) if (k.startsWith('panel.low@')) ids.add(k.slice('panel.low@'.length));
+  if (!ids.size) return [];
+  const arrayDays = c.days.filter(d => (val(c.m, d, 'pvs.array_kwh') ?? 0) >= PANEL.arrayKwh);
+  const out: Verdict[] = [];
+  let most = 0;
+  for (const id of [...ids].sort()) {
+    const kind = `panel.low@${id}`, open = c.open.get(kind), [, row, col] = /^r(\d)c(\d+)$/.exec(id)!, name = `Row ${row} · ${col}`;
+    const prod = arrayDays.filter(d => (val(c.m, d, `pvs.${id}.cov`) ?? 0) >= PANEL.cov && has(val(c.m, d, `pvs.${id}.ratio`)));
+    most = Math.max(most, prod.length);
+    const last = prod.slice(-PANEL.window), ratios = last.map(d => val(c.m, d, `pvs.${id}.ratio`)!);
+    const nLow = ratios.filter(r => r < PANEL.low).length, back = ratios.slice(-PANEL.clearDays);
+    const cleared = back.length === PANEL.clearDays && back.every(r => r >= PANEL.ok);
+    const fire = nLow >= PANEL.fireDays;
+    if (!fire) { out.push({ kind, state: open && cleared ? 'clear' : 'hold', severity: 'warn', detail: open?.detail ?? { title: `${name} is running low`, body: '' } }); continue; }
+    const ld = last.at(-1)!, lastPct = Math.round(ratios.at(-1)! * 100);
+    const dc = val(c.m, ld, `pvs.${id}.dc`), ac = val(c.m, ld, `pvs.${id}.ac`), mdc = val(c.m, ld, 'pvs.median_dc'), mconv = val(c.m, ld, 'pvs.median_conv');
+    const conv = has(dc) && dc > .01 && has(ac) ? ac / dc : null;
+    const detail: AnomalyDetail = { title: `${name} is running low`, action: 'open_panels', unit: '% of median', expected: 100, measured: lastPct,
+      threshold: `under ${Math.round(PANEL.low * 100)}% of the median panel on ${PANEL.fireDays} of the last ${PANEL.window} producing days`,
+      persisted: `${nLow} of the last ${last.length} producing days`, confound: `producing days only: array ≥ ${PANEL.arrayKwh} kWh and the panel reporting ≥ ${PANEL.cov * 100}% of daylight polls`,
+      body: `${lastPct}% of the median panel on ${niceDay(ld)}, and under ${Math.round(PANEL.low * 100)}% on ${nLow} of the last ${last.length} producing days. Shade, soiling or a failing microinverter.`,
+      row: +row, col: +col, nLow, window: last.length, lastDay: ld,
+      days: last.map((d, i) => ({ day: d, pct: Math.round(ratios[i] * 100), label: `${dow(d)} ${+d.slice(8)}` })),
+      dcKw: has(dc) ? round(dc, 3) : null, acKw: has(ac) ? round(ac, 3) : null, medianDcKw: has(mdc) ? round(mdc, 3) : null,
+      convPct: conv == null ? null : Math.round(conv * 100), medianConvPct: has(mconv) ? Math.round(mconv * 100) : null,
+      diag: panelDiagnosis(has(dc) && has(mdc) && mdc > 0 ? dc / mdc : null, conv) };
+    out.push({ kind, state: 'fire', severity: 'warn', detail });
+  }
+  if (most < PANEL.fireDays) out.push({ kind: 'panel.low', state: 'wait', severity: 'warn',
+    detail: { title: 'Waiting for producing days', body: `Per-panel checks need ${PANEL.fireDays} producing days (array ≥ ${PANEL.arrayKwh} kWh, panel reporting ≥ 90% of daylight polls); the best panel has ${most}.` } });
+  return out;
+}
+
 /** Every rule, in one list of verdicts. */
-export const evaluateRules = (c: RuleCtx): Verdict[] => [...pumpRules(c), acOverrunRule(c), solarStepRule(c), alwaysOnRule(c), ...dataGapRules(c)];
+export const evaluateRules = (c: RuleCtx): Verdict[] => [...pumpRules(c), acOverrunRule(c), solarStepRule(c), alwaysOnRule(c), ...dataGapRules(c), ...panelRules(c)];

@@ -221,7 +221,8 @@
         <div class="card">
           <div class="h"><b>Live roof</b><span>drag to rotate</span></div>
           <div class="roof3d" id="roof"><div class="roofhud" id="roofHud">—</div></div>
-          <div class="legend" style="justify-content:flex-start">Output<span class="ramp"></span><span>0 → peak</span><button class="chip tog" id="roofBars" aria-pressed="false"><i></i>Hour bars</button></div>
+          <div class="legend" style="justify-content:flex-start">Output<span class="ramp"></span><span>0 → peak</span><span class="togs"><button class="chip tog pp" id="roofPP" aria-pressed="false" hidden><i></i><span>Per panel</span></button><button class="chip tog" id="roofBars" aria-pressed="false"><i></i>Hour bars</button></span></div>
+          <div class="legend ppk" id="roofPPKey" style="justify-content:flex-start"><span>vs median now</span><span>−15%</span><span class="dramp"></span><span>+10%</span><span>· ±5% no tint · tap a panel</span></div>
           <div class="legend bl" id="roofBarsKey" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Produced</span><span><i style="background:rgba(255,255,255,.25)"></i>Expected from sunlight</span><span>hourly means</span></div>
         </div>
         <div class="card">
@@ -235,6 +236,7 @@
             <span>AC floor for the full 25 years</span><b id="wrAc">—</b>
           </div>
         </div>
+        <div class="card ph" id="panelHealth" hidden></div>
         <div class="card">
           <div class="h"><b>Cleaning check</b><span class="badge g" id="cleanBadge">—</span></div>
           <div class="cleanrow"><svg width="84" height="84" viewBox="0 0 84 84" id="cleanRing"></svg><p id="cleanTxt">—</p></div>
