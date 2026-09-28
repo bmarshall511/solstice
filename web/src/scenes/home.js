@@ -4,6 +4,7 @@ import { touchOrbit } from '../lib/touchorbit.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { sunAt, siteLocation, RAD, hourLabel, localDate, localHour } from '../lib/util.js';
 import { HOURS, FIRST, FLAT_KW, CAP_KW, veilAlpha } from '../lib/roofhours.js';
+import { createPanelLayer } from './roofpanels.js';
 
 /*
  * One model of the real house, used in two views:
@@ -180,7 +181,8 @@ function buildHouse(mode, PAL) {
   // SunPower SPR-E19-320-AC modules: 1558 × 1046 mm, portrait (long side up the slope), 33 mm apart
   const pGeo = new THREE.BoxGeometry(1.558, .05, 1.046);
   const panelEdge = new THREE.LineBasicMaterial({ color: 0x8fb8ff, transparent: true, opacity: .15 }); edgeMats.push(panelEdge);
-  for (let r = 0; r < 3; r++) for (let c = 0; c < 10; c++) { const p = new THREE.Mesh(pGeo, panelMat); p.position.set(.9 + (r + .5) * 1.591, .09, 1.2 + (c - 4.5) * 1.079); p.castShadow = p.receiveShadow = true; arr.add(p); const e = new THREE.LineSegments(new THREE.EdgesGeometry(pGeo), panelEdge); e.position.copy(p.position); arr.add(e); }
+  const panels = [];   // scene order: r = 0 eave … 2 ridge, c = 0 north end (the Per panel layer, mockup u-panels)
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 10; c++) { const p = new THREE.Mesh(pGeo, panelMat); panels.push(p); p.position.set(.9 + (r + .5) * 1.591, .09, 1.2 + (c - 4.5) * 1.079); p.castShadow = p.receiveShadow = true; arr.add(p); const e = new THREE.LineSegments(new THREE.EdgesGeometry(pGeo), panelEdge); e.position.copy(p.position); arr.add(e); }
 
   // windows on the west wall (north of the equipment), garage door on the south (driveway) end
   [-8.5, -5.5, 1.5, 4.5].forEach(z => { const w = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.2), winMat); w.rotation.y = -Math.PI / 2; w.position.set(-W / 2 - .02, 1.7, z); g.add(w);
@@ -220,7 +222,7 @@ function buildHouse(mode, PAL) {
   const local = (x, y, z) => g.localToWorld(new THREE.Vector3(x, y, z));
   const anchors = { solar: local(-4.4, 5.3, 1.2), home: local(-W / 2, 2.4, 4.5), pw: local(-W / 2 - .1, .3, 10.2), grid: local(X - 3, .05, 13) };
   if (ex) { anchors.ac = local(...ex.anchors.ac); anchors.pool = local(...ex.anchors.pool); }
-  return { group: g, panelMat, winMat, pwLeds, flows, panelNormal, anchors, local, edgeMats, ex };
+  return { group: g, panelMat, winMat, pwLeds, flows, panelNormal, anchors, local, edgeMats, ex, arr, panels };
 }
 
 const sunVec = ({ el, az }, v = new THREE.Vector3()) => v.set(Math.sin(az * RAD) * Math.cos(el * RAD), Math.sin(el * RAD), -Math.cos(az * RAD) * Math.cos(el * RAD));
@@ -374,6 +376,8 @@ export function createHomeView(host, mode = 'flow', opts = {}) {
     hrLbls = [0, 7, 14].map(i => { const d = document.createElement('div'); d.className = 'lax hr'; d.textContent = hourLabel(FIRST + i); host.appendChild(d); return { d, p: H.local(RAIL_X, 0, zAt(i)) }; });
     setHours({ exp: Array(HOURS).fill(0), act: Array(HOURS).fill(null) }); setBars(false);
   }
+  // mockup u-panels: the Per panel tint layer, tap-to-select and the pinned readout (views/panels.js drives it)
+  const pp = twin ? null : createPanelLayer({ H, camera, controls, canvas, host, hud: host.querySelector('.roofhud') });
   const lv = new THREE.Vector3();
   function placeLabels() { if (!barsOn || !sz.w) return;
     for (const l of hrLbls) { lv.copy(l.p).project(camera); if (lv.z > 1) { l.d.style.display = 'none'; continue; } l.d.style.display = 'block';
@@ -385,18 +389,18 @@ export function createHomeView(host, mode = 'flow', opts = {}) {
     if (dayStart && pathDay !== dayStart && siteLocation()) { pathDay = dayStart; drawSunPath(dayStart); } // the path waits for the site's location
     const solar = r?.solarKw ?? 0;
     H.panelMat.emissive.copy(rampAt(solar / peakKw).lerp(new THREE.Color(0x2d5bff), (1 - up) * .5));
-    H.panelMat.emissiveIntensity = .12 + (1 - up) * .2 + solar / peakKw * .9;
+    H.panelMat.emissiveIntensity = (.12 + (1 - up) * .2 + solar / peakKw * .9) * (pp?.on ? .4 : 1);   // Per panel on: the output glow drops to 40%
     H.winMat.emissiveIntensity = Math.min(1.6, (1 - up) * (.4 + (r?.homeKw ?? 1) / 4));
     if (r) H.pwLeds.forEach(l => l.material.color.set(r.batteryKw < -.05 ? 0x4ef0a6 : r.batteryKw > .05 ? 0xffc15e : 0x9aa3b0));
     Object.values(H.flows).forEach(f => { f.uOn.value = 0; });
     controls.autoRotate = !calm && controls.autoRotate;
-    controls.update(); renderer.render(scene, camera); css.render(scene, camera); placeLabels();
+    controls.update(); renderer.render(scene, camera); css.render(scene, camera); placeLabels(); pp?.frame();
     return { el: sp.el, az: sp.az, inc: Math.acos(Math.max(-1, Math.min(1, H.panelNormal.dot(sd)))) / RAD };
   }
 
-  const view = { render: twin ? null : renderSun, dispose, ...(twin ? {} : { setBars, setHours, setDust }) };
+  const view = { render: twin ? null : renderSun, dispose, ...(twin ? {} : { setBars, setHours, setDust, perPanel: pp }) };
   const cleanup = [];
-  if (!twin) cleanup.push(() => hrLbls.forEach(l => l.d.remove()));
+  if (!twin) cleanup.push(() => hrLbls.forEach(l => l.d.remove()), () => pp.dispose());
   function dispose() {
     cleanup.forEach(f => f()); ro.disconnect(); controls.dispose();
     scene.traverse(o => { o.geometry?.dispose(); for (const m of [o.material].flat().filter(Boolean)) { for (const x of Object.values(m)) if (x?.isTexture) x.dispose(); m.dispose(); } });

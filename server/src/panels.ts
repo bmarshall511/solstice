@@ -276,7 +276,7 @@ export async function panelWatch(siteId: string, now = Date.now()) {
     if (polls.filter(t => t > b.ts).length < PANELS.silentPolls) continue;
     const r = await notify(siteId, 'panel', `Panel ${posName(b.p)} has stopped reporting`,
       `No reading since ${clock(b.ts)} while the rest of the array kept producing. Its microinverter or its link to the PVS has dropped out. Tap to see it on the roof.`,
-      { panel: posId(b.p) }, { key: `panel:silent:${posId(b.p)}:${day}`, windowH: 24, now, url: '/?go=v-roof' });
+      { panel: posId(b.p) }, { key: `panel:silent:${posId(b.p)}:${day}`, windowH: 24, now, url: `/?go=v-roof&panel=${posId(b.p)}` });
     if (r.stored) out.push(posId(b.p));
   }
   return { silent: behind.length, notified: out };

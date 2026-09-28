@@ -46,7 +46,7 @@ export function drawLearn(S) {
   }).join('');
   const now = Date.now();
   $('lrAnom').innerHTML = (R.anomalies ?? []).map(a => { const d = Math.max(1, Math.round((now - a.openedAt) / 864e5));
-    return `<div class="ins lanom" style="--c:var(--warn)"><div class="ic">⚠</div><div><b>${esc(a.title ?? a.kind)}</b> <time>· ${d} day${d === 1 ? '' : 's'}</time>${a.body ? `<p>${esc(a.body)}</p>` : ''}</div></div>`; }).join('');
+    return `<div class="ins lanom" style="--c:var(--warn)"${a.detail?.action === 'open_panels' ? ' data-go="v-roof"' : ''}><div class="ic">⚠</div><div><b>${esc(a.title ?? a.kind)}</b> <time>· ${d} day${d === 1 ? '' : 's'}</time>${a.body ? `<p>${esc(a.body)}</p>` : ''}</div></div>`; }).join('');
   const log = (R.log ?? []).slice(0, 6);
   $('lrLogH').hidden = $('lrLog').hidden = !log.length;
   $('lrLog').innerHTML = log.map(l => `<div><i></i><span>${niceDate(l.day, { month: 'short', day: 'numeric' })}</span><p>${esc(l.text)}${l.delta ? ` <em>${esc(l.delta)}</em>` : ''}</p></div>`).join('');

@@ -770,3 +770,70 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.side){visibili
 .pwr .cur span b{color:var(--text);font-weight:500}
 .pwr.nocmd .apply{background:rgba(255,255,255,.08);color:var(--mute);border:1px solid var(--glass-b);cursor:default}
 /* end t-enhancements */
+/* u-panels ---------------------------------------------------------------------------------------------------------------------
+ * Panels → Live roof "Per panel" chip, its diverging legend, the HUD line and the pinned readout (frames 1–2), and the Panel health
+ * card (frames 3–4) of the approved mockup u-panels. */
+.togs{margin-left:auto;display:flex;gap:6px;flex:none}
+.chip.tog.pp[hidden],.card.ph[hidden]{display:none}
+.chip.tog.pp.on i{background:linear-gradient(90deg,#2f5fd0,#ffc15e);box-shadow:none;width:10px;border-radius:3px}
+.chip.tog.pp:disabled{opacity:.45;cursor:default}
+.legend.ppk{display:none;align-items:center;gap:5px 6px}.legend.ppk.on{display:flex}
+.dramp{display:inline-block;width:64px;height:6px;border-radius:3px;background:linear-gradient(90deg,#2f5fd0 0%,#9fb4d8 38%,rgba(242,244,248,.28) 40%,rgba(242,244,248,.28) 80%,#e8d3a6 82%,#ffc15e 100%);vertical-align:1px}
+.roofhud .pp{color:var(--text)}.roofhud .c{color:#9fc0ff}
+.pin{position:absolute;inset:0;pointer-events:none;z-index:3;display:none}
+.pin.on{display:block}
+.pin>svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.pin .ro{position:absolute;left:0;top:0;width:calc(100% - 16px);padding:8px 11px 8px;border-radius:14px;background:rgba(8,10,16,.76);border:1px solid rgba(255,255,255,.18);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);pointer-events:auto;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.ro .rh{display:flex;align-items:center;gap:8px}
+.ro .rh b{font-size:13px;font-weight:700}
+.ro .rh .ag{font:10px "JetBrains Mono";color:var(--mute);margin-left:auto}
+.ro .rh button{all:unset;cursor:pointer;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.1);color:var(--dim);font-size:10px}
+.ro .rb{display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:12px;margin-top:5px;align-items:start}
+.ro .rg{display:grid;grid-template-columns:auto 1fr;gap:1px 8px;font-size:10.5px;color:var(--dim)}
+.ro .rg b{font:500 10.5px "JetBrains Mono";color:var(--text);text-align:right;white-space:nowrap}
+.ro .rg b em{font-style:normal;color:var(--mute)}
+.ro svg.sp{display:block;width:100%;height:50px;margin-top:2px;border-bottom:1px solid rgba(255,255,255,.12)}
+.ro .sk{font-size:9px;color:var(--mute);margin-top:2px;display:flex;align-items:center;gap:4px}
+.ro .sk i{display:inline-block;width:10px;height:0;border-top:1.5px solid #ffc15e}.ro .sk i.d{border-top:1.5px dashed rgba(255,255,255,.6);margin-left:4px}
+.ro .sx{display:flex;justify-content:space-between;font:9px "JetBrains Mono";color:var(--mute);margin-top:1px}
+.ph .gridw{display:grid;grid-template-columns:12px 1fr;gap:3px 3px;margin-top:12px;align-items:center}
+.ph .edge{grid-column:2;font-size:9px;color:var(--mute);letter-spacing:.1em;text-transform:uppercase;display:flex;justify-content:space-between}
+.ph .rn{font:9px "JetBrains Mono";color:var(--mute);text-align:center}
+.ph .tr{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:3px}
+.ph .tile{all:unset;box-sizing:border-box;cursor:pointer;height:38px;border-radius:6px;display:grid;place-items:center;font:500 9px "JetBrains Mono";color:var(--text);border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);min-width:0}
+.ph .tile.sel{outline:2px solid #fff;outline-offset:1px}
+.ph .tile.miss{background:repeating-linear-gradient(135deg,rgba(255,255,255,.08) 0 3px,transparent 3px 7px);color:var(--mute);border-style:dashed;border-color:rgba(255,255,255,.3)}
+.ph .tile.flag{background:rgba(255,90,78,.4);border-color:var(--out);box-shadow:0 0 10px rgba(255,90,78,.45)}
+.ph .cn{grid-column:2;display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:3px;font:9px "JetBrains Mono";color:var(--mute);text-align:center}
+.ph .legend{justify-content:flex-start;margin-top:10px;align-items:center;gap:5px 6px}
+.ph .legend .hx{display:inline-block;width:12px;height:9px;border-radius:2px;border:1px dashed rgba(255,255,255,.4);background:repeating-linear-gradient(135deg,rgba(255,255,255,.2) 0 2px,transparent 2px 4px);vertical-align:-1px;margin:0 4px 0 6px}
+.ph .legend .rx{display:inline-block;width:12px;height:9px;border-radius:2px;background:rgba(255,90,78,.5);border:1px solid var(--out);vertical-align:-1px;margin:0 4px 0 6px}
+.ph .sub{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);font-weight:600;margin:14px 0 2px}
+.ph .lo{display:grid;grid-template-columns:70px minmax(0,1fr) 58px 34px;align-items:center;gap:8px;padding:7px 0;border-top:1px solid rgba(255,255,255,.06);font-size:12.5px}
+.ph .lo.first{border-top:none}
+.ph .lo .nm{font-weight:600;white-space:nowrap}
+.ph .lo .bar{height:5px;border-radius:3px;background:rgba(255,255,255,.08);position:relative}
+.ph .lo .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+.ph .lo .bar s{position:absolute;top:-3px;bottom:-3px;width:1px;background:rgba(255,255,255,.6)}
+.ph .lo .kw{font:500 11px "JetBrains Mono";text-align:right;color:var(--text);white-space:nowrap}
+.ph .lo .df{font:500 11px "JetBrains Mono";text-align:right;color:#9fc0ff}
+.ph .lo .df.r{color:var(--out)}
+.ph .nr{display:flex;gap:10px;align-items:flex-start;margin-top:12px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px dashed rgba(255,255,255,.2);font-size:12.5px;color:var(--dim)}
+.ph .nr i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--mute);margin-top:5px}
+.ph .nr b{color:var(--text);font-weight:600}
+.ph .nr small{display:block;font-size:11.5px;color:var(--mute);margin-top:2px;line-height:1.45}
+.ph .flagbox{margin-top:12px;padding:12px;border-radius:16px;background:linear-gradient(135deg,rgba(255,90,78,.18),rgba(255,90,78,.06));border:1px solid rgba(255,90,78,.45)}
+.ph .flagbox .ft{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.ph .flagbox .ft b{font-size:14px}
+.ph .flagbox .ft span{font:500 18px "JetBrains Mono";color:var(--out);flex:none}
+.ph .flagbox p{margin-top:4px;color:#ffd6d1;font-size:12.5px}
+.ph .d7{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-top:10px}
+.ph .d7 div{text-align:center;font:500 10px "JetBrains Mono";padding:5px 0 4px;border-radius:8px;background:rgba(255,255,255,.06);color:var(--text)}
+.ph .d7 div.l{background:rgba(255,90,78,.3);color:#ffe1dd}
+.ph .d7 div small{display:block;font:500 8.5px Manrope;color:var(--mute);margin-top:1px}
+.ph .d7 div.l small{color:#ffb3aa}
+.ph .flagbox .kv{margin-top:10px}
+.ph .flagbox .why{font-size:12px;color:var(--dim);margin-top:8px;line-height:1.5}
+.ph .flagbox .why b{color:var(--text)}
+.ins.lanom[data-go]{cursor:pointer}
+/* end u-panels */

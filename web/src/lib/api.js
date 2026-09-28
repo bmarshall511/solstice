@@ -70,6 +70,7 @@ export const api = {
   poolAutopilot: mode => send('POST', 'appliances/pool/autopilot', { mode }),
   ac: () => get('appliances/ac'),
   applDay: date => get(`appliances/day?date=${date}`),
+  pvsPanels: () => get('pvs/panels'),   // mockup u-panels: per-panel health by roof position (guests too)
   acApply: () => send('POST', 'appliances/ac/apply'),
   acSettings: patch => send('POST', 'appliances/ac/settings', patch),
   acUntrim: () => send('POST', 'appliances/ac/untrim'),
