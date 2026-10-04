@@ -6,7 +6,7 @@
 // previous reading, and does not match what Solstice last sent, is somebody else's change. Nest's own schedule is off (Q1), so
 // such a change is a person at home. Pure helpers first, then the kv-backed ones.
 import { kv } from '../db.js';
-import { localDay, addDays, localMidnight } from '../tesla/client.js';
+import { localDay, addDays, localAt } from '../tesla/client.js';
 import type { NestState } from './nest.js';
 
 export const HOLD_MIN_MS = 2 * 3600_000, HOLD_MAX_MS = 8 * 3600_000;
@@ -37,7 +37,7 @@ export function ours(next: Reading, sent: Sent | null | undefined, now: number) 
 }
 
 /** Epoch ms of a Chicago clock hour (may be fractional) on a day. */
-export const atHour = (day: string, hour: number) => localMidnight(day).getTime() + hour * 3600_000;
+export const atHour = (day: string, hour: number) => localAt(day, hour);
 /**
  * When a hold that starts at `at` ends: the first plan step strictly after it (today's steps, then tomorrow's morning step),
  * at least 2 h and at most 8 h after `at`. Returns the end and a sentence for the banner.
