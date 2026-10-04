@@ -1,5 +1,6 @@
 import { $, money, money2, niceDate } from '../lib/util.js';
 import { api } from '../lib/api.js';
+import { every, stop } from '../lib/poll.js';
 import { createPoolTwin } from '../scenes/pooltwin.js';
 import { veil, nameStart, esc } from '../lib/frost.js';
 import { confChip, modelOf } from '../lib/conf.js';
@@ -13,13 +14,15 @@ const colorFor = n => /high|boost/i.test(n) ? '#ff7a66' : /water|fall|feature/i.
 const CIRCUITS = [['Pool', 'pool'], ['Spa', 'spa'], ['Waterfall', 'waterfall'], ['Jets', 'jets'], ['Air Blower', 'blower'], ['Pool Light', 'lights'], ['Spa Light', 'lights']];
 
 let twin = null, timer, schMode = 'rec';
-export function initAppliances(S) { load(S); clearInterval(timer); timer = setInterval(() => load(S), 3 * 60_000); }
+/** Started by main.js once the role is known (and again when it changes); every 3 minutes while the tab is visible. */
+export function initAppliances(S) { stop(timer); timer = every(3 * 60_000, () => load(S)); }
 export const poolTwin = () => twin;
 
 async function load(S) {
   const list = await api.appliances().catch(() => null);
   if (list) { const cur = document.querySelector('#applStrip .app.on')?.dataset.id ?? 'pool'; $('applStrip').innerHTML = list.map(a => `<div class="app ${a.status === 'coming' ? 'dim' : a.id === cur ? 'on' : ''}" data-id="${esc(a.id)}"><i></i>${esc(a.name)}${a.status === 'coming' ? ` · ${esc(a.source ?? '—')}, next` : a.watts != null ? ` · ${Math.round(a.watts)} W` : ''}</div>`).join(''); }
-  const d = await api.pool().catch(e => ({ error: e.message })); S.pool = d;
+  // a failed refresh keeps the last good reading on screen, with the failure in the card's note, instead of flipping to "Not linked"
+  const d = await api.pool().catch(e => S.pool?.linked ? { ...S.pool, error: `Couldn\u2019t refresh: ${e.message}` } : { error: e.message }); S.pool = d;
   drawPool(S); S.onPool?.();
 }
 
