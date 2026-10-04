@@ -22,7 +22,7 @@ vi.mock(import('../../server/src/appliances/nest.js'), async importOriginal => {
   const real = await importOriginal();
   const blocked = (what: string) => vi.fn(async () => { throw new Error(`${what} in api test`); });
   return { ...real, nestConfigured: () => false, nestLinked: vi.fn(async () => false), readNest: blocked('readNest'),
-    nestExchangeCode: blocked('nestExchangeCode'), setCool: blocked('setCool'), setHeat: blocked('setHeat'), setMode: blocked('setMode'), setEco: blocked('setEco') };
+    nestExchangeCode: blocked('nestExchangeCode'), setCool: blocked('setCool'), ownerCommand: blocked('ownerCommand') };
 });
 
 let server: Server, base = '', cookie = '';

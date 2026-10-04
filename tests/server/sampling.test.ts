@@ -39,14 +39,14 @@ vi.mock('../../server/src/appliances/nest.js', async importOriginal => {
   const real = await importOriginal<typeof import('../../server/src/appliances/nest.js')>();
   const blocked = (what: string) => vi.fn(async () => { throw new Error(`${what} must never run in the sampling test`); });
   return { ...real, nestConfigured: () => H.S.nestOn, nestLinked: vi.fn(async () => H.S.nestLinked),
-    readNest: blocked('readNest'), setCool: blocked('setCool'), setHeat: blocked('setHeat'), setMode: blocked('setMode'), setEco: blocked('setEco') };
+    readNest: blocked('readNest'), setCool: blocked('setCool'), ownerCommand: blocked('ownerCommand') };
 });
 
 import {
   nestDue, nestInterval, poolDue, poolReadMinutes, tickMayBeDue, nestTick, poolTick, cronTick, nestSampleKey, poolReadKey, COOLING_MONTHS,
 } from '../../server/src/appliances/sampling.js';
 import { readPool, writePoolPlan, withUnit } from '../../server/src/appliances/screenlogic.js';
-import { readNest, setCool, setHeat, setMode, setEco } from '../../server/src/appliances/nest.js';
+import { readNest, setCool, ownerCommand } from '../../server/src/appliances/nest.js';
 
 const MIN = 60_000;
 /** A Chicago wall-clock time: '2026-07-15 10:05' in CDT (−05:00) from March 8 to November 1, CST (−06:00) otherwise. */
@@ -76,7 +76,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   // no path in this file may reach a device, whatever the test did
-  for (const f of [writePoolPlan, withUnit, readNest, setCool, setHeat, setMode, setEco]) expect(f).not.toHaveBeenCalled();
+  for (const f of [writePoolPlan, withUnit, readNest, setCool, ownerCommand]) expect(f).not.toHaveBeenCalled();
 });
 
 /* ---------------------------------------------------------------- Q17: the Nest cadence */

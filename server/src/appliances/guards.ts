@@ -1,5 +1,5 @@
-// Hard safety clamps for every device write: the Nest cooling setpoint, the ScreenLogic pump speeds and schedules, and the Powerwall
-// settings (backup reserve, operation mode, grid export rule).
+// Hard safety clamps for every device write: the Nest cooling setpoint (Autopilot) and the owner's own thermostat commands, the
+// ScreenLogic pump speeds and schedules, and the Powerwall settings (backup reserve, operation mode, grid export rule).
 // The owner confirmed these limits (audit question 4). No setting can widen them, and this file is the only place they live.
 // Pure: each guard takes the intended write plus the current state and returns { ok, value, reason }. Callers log refusals.
 
@@ -52,6 +52,44 @@ export function guardCoolSetpoint(o: { mode: string; targetF: number; valueF?: n
   const step = Math.round((cur + Math.sign(value - cur) * AC_MAX_STEP_F) * 10) / 10;
   if (!inAcRange(step)) return refuse(`the ${AC_MAX_STEP_F}° step from ${deg(cur)} toward ${deg(value)} would be ${deg(step)}, outside the ${AC_MIN_F}–${AC_MAX_F}° safety range`);
   return allow(step, `stepped: ${deg(cur)} → ${deg(value)} is more than ${AC_MAX_STEP_F}°, so ${deg(step)} now`, true);
+}
+
+/* ---------- AC: the owner's own thermostat commands (mockup v; owner, 2026-10-04) ---------- */
+// The owner's taps are checked only against these ranges: no 2 °F step and no 30-minute slot, and they never use up Autopilot's slot.
+export const MANUAL_COOL = { min: 65, max: 85 }, MANUAL_HEAT = { min: 55, max: 80 }, RANGE_GAP_F = 3, FAN_MAX_S = 12 * 3600;
+export const NEST_MODES = ['COOL', 'HEAT', 'HEATCOOL', 'OFF'] as const;
+export type ManualCommand =
+  | { kind: 'cool'; f: number } | { kind: 'heat'; f: number } | { kind: 'range'; heatF: number; coolF: number }
+  | { kind: 'mode'; mode: typeof NEST_MODES[number] } | { kind: 'eco'; on: boolean } | { kind: 'fan'; seconds: number };
+const inRange = (f: unknown, r: { min: number; max: number }) => typeof f === 'number' && Number.isFinite(f) && f >= r.min && f <= r.max;
+/**
+ * An owner command, checked against the thermostat as last read (`mode`, `availableModes`). A setpoint must match the mode it is for
+ * (Nest refuses SetCool outside Cool), whole or half degrees; a range keeps heat at least 3 °F below cool; the fan runs 1 s–12 h or stops (0).
+ */
+export function guardManual(c: ManualCommand, st: { mode: string; availableModes?: string[]; eco?: boolean }): Verdict<ManualCommand> {
+  const half = (f: number) => Math.round(f * 2) / 2 === f;
+  switch (c?.kind) {
+    case 'cool': case 'heat': {
+      const r = c.kind === 'cool' ? MANUAL_COOL : MANUAL_HEAT, want = c.kind === 'cool' ? 'COOL' : 'HEAT';
+      if (!inRange(c.f, r) || !half(c.f)) return refuse(`${c.kind === 'cool' ? 'cooling' : 'heating'} setpoints must be ${r.min}–${r.max}°`);
+      if (st.eco) return refuse('the thermostat is in Eco; turn Eco off first');
+      if (st.mode !== want) return refuse(`the thermostat is in ${st.mode}, not ${want}`);
+      return allow(c);
+    }
+    case 'range':
+      if (!inRange(c.heatF, MANUAL_HEAT) || !inRange(c.coolF, MANUAL_COOL) || !half(c.heatF) || !half(c.coolF)) return refuse(`heat must be ${MANUAL_HEAT.min}–${MANUAL_HEAT.max}° and cool ${MANUAL_COOL.min}–${MANUAL_COOL.max}°`);
+      if (c.coolF - c.heatF < RANGE_GAP_F) return refuse(`keep heat at least ${RANGE_GAP_F}° below cool`);
+      if (st.eco) return refuse('the thermostat is in Eco; turn Eco off first');
+      if (st.mode !== 'HEATCOOL') return refuse(`the thermostat is in ${st.mode}, not Heat · Cool`);
+      return allow(c);
+    case 'mode':
+      if (!(NEST_MODES as readonly string[]).includes(c.mode)) return refuse(`"${String(c.mode).replace(/[^\w -]/g, '')}" is not Cool, Heat, Heat · Cool or Off`);
+      if (st.availableModes?.length && !st.availableModes.includes(c.mode)) return refuse(`this thermostat does not offer ${c.mode}`);
+      return allow(c);
+    case 'eco': return typeof c.on === 'boolean' ? allow(c) : refuse('eco must be on or off');
+    case 'fan': return Number.isInteger(c.seconds) && c.seconds >= 0 && c.seconds <= FAN_MAX_S ? allow(c) : refuse(`the fan timer runs up to ${FAN_MAX_S / 3600} h`);
+    default: return refuse('unknown thermostat command');
+  }
 }
 
 /* ---------- Pool (ScreenLogic pump speeds and schedules) ---------- */

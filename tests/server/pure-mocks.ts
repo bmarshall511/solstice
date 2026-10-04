@@ -27,6 +27,6 @@ vi.mock(import('../../server/src/appliances/nest.js'), async importOriginal => {
     ...real,
     nestConfigured: () => false, nestLinked: vi.fn(async () => false),
     readNest: blocked('readNest'), nestExchangeCode: blocked('nestExchangeCode'),
-    setCool: blocked('setCool'), setHeat: blocked('setHeat'), setMode: blocked('setMode'), setEco: blocked('setEco'),
+    setCool: blocked('setCool'), ownerCommand: blocked('ownerCommand'),
   };
 });

@@ -18,10 +18,11 @@ import { currentTariff, netEnergyCost, NO_TARIFF } from './tariff.js';
 import { appliances, comingSoon } from './appliances/index.js';
 import { poolDetail, applyPlan, restorePrevious } from './appliances/pool.js';
 import { readPool } from './appliances/screenlogic.js';
-import { acDetail, acTick } from './appliances/ac.js';
+import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS } from './appliances/ac.js';
 import { applianceDay } from './appliances/day.js';
 import { cronTick } from './appliances/sampling.js';
-import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest } from './appliances/nest.js';
+import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest, ownerCommand } from './appliances/nest.js';
+import { GuardRefusal, explainRefusal, type ManualCommand } from './appliances/guards.js';
 import { pvsRouter, prunePvs } from './pvs.js';
 import { panelsDay, panelAlerts, panelWatch } from './panels.js';
 import { flowsFor, FlowsInputError } from './flows.js';
@@ -492,6 +493,29 @@ app.post('/api/appliances/ac/settings', express.json(), wrap(async (req, res) =>
   // marking away/home takes effect right away when the plan is approved or Autopilot is Auto
   const id = site(req); if (patch.presence) { const rec = await kv.get<any>(`${id}:ac:plan`); if (rec) { rec.lastStepHour = null; await kv.set(`${id}:ac:plan`, rec); } await acTick(id, await settingsFor(req), await rateFor(id), await acSlope(id)).catch(() => {}); }
   res.json({ ok: true, ac: next });
+}));
+/* ---------- the owner's own thermostat controls (mockup v): owner-only like every write (access.ts) ---------- */
+/** One command: {kind:'cool'|'heat', f} | {kind:'range', heatF, coolF} | {kind:'mode', mode} | {kind:'eco', on} | {kind:'fan', seconds}.
+ *  A setpoint or mode change starts a hold (hold.ts), so Autopilot leaves it alone until the plan's next step (2–8 h). */
+app.post('/api/appliances/ac/command', express.json({ limit: '2kb' }), wrap(async (req, res) => {
+  const b = req.body ?? {}, kind = String(b.kind ?? '');
+  const cmd = kind === 'cool' || kind === 'heat' ? { kind, f: Number(b.f) } : kind === 'range' ? { kind, heatF: Number(b.heatF), coolF: Number(b.coolF) }
+    : kind === 'mode' ? { kind, mode: String(b.mode ?? '').toUpperCase() } : kind === 'eco' ? { kind, on: b.on === true } : kind === 'fan' ? { kind, seconds: Number(b.seconds) } : null;
+  if (!cmd) return res.status(400).json({ error: 'unknown thermostat command' });
+  const id = site(req), settings = await settingsFor(req), rate = await rateFor(id), slope = await acSlope(id);
+  try { await ownerCommand(cmd as ManualCommand); }
+  catch (e) { if (e instanceof GuardRefusal) return res.status(400).json({ error: explainRefusal(e.reason) }); throw e; }
+  const d = await acDetail(id, settings, rate, slope);
+  if (kind !== 'eco' && kind !== 'fan' && d.state) await startHold(id, 'app', d.state, d.plan, d.settings);
+  res.json(await acDetail(id, settings, rate, slope));
+}));
+/** The hold banner: {action:'resume'} ends it (the step due now applies), {action:'morning'} runs it to the morning step. */
+app.post('/api/appliances/ac/hold', express.json({ limit: '1kb' }), wrap(async (req, res) => {
+  const id = site(req), action = String(req.body?.action ?? ''), settings = await settingsFor(req), rate = await rateFor(id), slope = await acSlope(id);
+  if (action === 'resume') { await resumeHold(id); await acTick(id, settings, rate, slope).catch(e => console.warn(`[solstice] tick after resume: ${e?.message ?? e}`)); }
+  else if (action === 'morning') await holdToMorning(id, { nightTo: { ...AC_DEFAULTS, ...(settings.ac ?? {}) }.nightTo });
+  else return res.status(400).json({ error: 'action must be resume or morning' });
+  res.json(await acDetail(id, settings, rate, slope));
 }));
 /* ---------- learning layer: GET /api/models (the model report), POST /api/appliances/ac/untrim (server/src/learn/api.ts) ---------- */
 app.use('/api', learnRouter);
