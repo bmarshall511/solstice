@@ -26,6 +26,7 @@ describe('AC planFor', () => {
     expect(p.why).toEqual([
       'Pre-cool to 74° from 11:00 to 16:00 while the panels peak (6 kWh/m² of sun, high 96°)',
       'Coast to 78° until 20:00 so the batteries carry a lighter evening',
+      'Pre-cool runs only while the panels measurably cover the house and the AC; otherwise it holds the band and skips the coast',
     ]);
     expect(p.steps.map(s => s.why)).toEqual(['morning, comfort band', 'pre-cool on solar surplus', 'coast on the Powerwalls', 'evening, comfort band', 'night band']);
   });

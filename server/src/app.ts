@@ -18,7 +18,7 @@ import { currentTariff, netEnergyCost, NO_TARIFF } from './tariff.js';
 import { appliances, comingSoon } from './appliances/index.js';
 import { poolDetail, applyPlan, restorePrevious } from './appliances/pool.js';
 import { readPool } from './appliances/screenlogic.js';
-import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS } from './appliances/ac.js';
+import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, bandFor, dismissSuggestion } from './appliances/ac.js';
 import { applianceDay } from './appliances/day.js';
 import { cronTick } from './appliances/sampling.js';
 import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest, ownerCommand } from './appliances/nest.js';
@@ -484,9 +484,10 @@ app.get('/api/appliances/day', wrap(async (req, res) => {
 /** Approve today's plan: the 5-minute cron then applies each setpoint step at its hour. */
 app.post('/api/appliances/ac/apply', wrap(async (req, res) => { const id = site(req); await kv.set(`${id}:ac:plan`, { date: localDay(), approved: true, lastStepHour: null }); res.json(await acTick(id, await settingsFor(req), await rateFor(id), await acSlope(id))); }));
 app.post('/api/appliances/ac/settings', express.json(), wrap(async (req, res) => {
-  const cur = (await settingsFor(req)).ac ?? {}, patch = req.body ?? {}, next = { ...cur, ...patch, band: { ...(cur.band ?? {}), ...(patch.band ?? {}) } };
-  if (patch.autopilot && !['off', 'suggest', 'auto'].includes(patch.autopilot)) return res.status(400).json({ error: 'bad mode' });
-  if (patch.presence && !['home', 'away'].includes(patch.presence)) return res.status(400).json({ error: 'bad presence' });
+  const cur = (await settingsFor(req)).ac ?? {}, patch = req.body ?? {};
+  if (typeof patch !== 'object' || Array.isArray(patch)) return res.status(400).json({ error: 'settings must be an object' });
+  const bad = acPatchError(patch, cur); if (bad) return res.status(400).json({ error: bad });   // ac.ts: known keys, 65–85°, lows ≤ highs
+  const next = { ...cur, ...patch, band: { ...(cur.band ?? {}), ...(patch.band ?? {}) } };
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ ac: next })]);
   else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ac: next });
   if (patch.presence) await setPresence(site(req), { state: patch.presence, until: null });   // presence.ts: the switch is the manual mark
@@ -516,6 +517,19 @@ app.post('/api/appliances/ac/hold', express.json({ limit: '1kb' }), wrap(async (
   else if (action === 'morning') await holdToMorning(id, { nightTo: { ...AC_DEFAULTS, ...(settings.ac ?? {}) }.nightTo });
   else return res.status(400).json({ error: 'action must be resume or morning' });
   res.json(await acDetail(id, settings, rate, slope));
+}));
+/** Frame 7: {action:'accept', key} sets the band the suggestion describes (Autopilot plans it from the next step); {action:'dismiss', key} hides it 14 days. */
+app.post('/api/appliances/ac/suggestion', express.json({ limit: '1kb' }), wrap(async (req, res) => {
+  const id = site(req), action = String(req.body?.action ?? ''), key = String(req.body?.key ?? ''), settings = await settingsFor(req), rate = await rateFor(id), slope = await acSlope(id);
+  const d = await acDetail(id, settings, rate, slope), sg = d.suggestion;
+  if (!sg || sg.key !== key) return res.status(409).json({ error: 'That suggestion is no longer current' });
+  if (action === 'dismiss') await dismissSuggestion(id, key);
+  else if (action === 'accept') {
+    const cur = settings.ac ?? {}, band = bandFor(sg, d.settings.band), bad = acPatchError({ band }, cur); if (bad) return res.status(400).json({ error: bad });
+    await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ac: { ...cur, band } });
+    await dismissSuggestion(id, key);   // accepted: don't offer it again
+  } else return res.status(400).json({ error: 'action must be accept or dismiss' });
+  res.json(await acDetail(id, await settingsFor(req), rate, slope));
 }));
 /* ---------- learning layer: GET /api/models (the model report), POST /api/appliances/ac/untrim (server/src/learn/api.ts) ---------- */
 app.use('/api', learnRouter);

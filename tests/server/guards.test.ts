@@ -24,8 +24,10 @@ const H = vi.hoisted(() => {
       }
       store.set(key, value); return [];
     }
+    if (/FROM readings/.test(text)) return readings.spare;                                     // ac.ts spareSolarW: set per test
     return [];
   };
+  const readings: { spare: any[] } = { spare: [] };
   const kv = { get: async (k: string) => clone(store.get(k)) as any, set: async (k: string, v: unknown) => { store.set(k, clone(v)); } };
   const db = { q, one: async (t: string, p: unknown[] = []) => (await q(t, p))[0], kv, migrate: async () => {} };
 
@@ -52,8 +54,8 @@ const H = vi.hoisted(() => {
   const sdm: Array<{ url: string; body: any }> = [];
   const nestState = { at: 0, deviceId: 'dev-test', name: 'Hallway', online: true, indoorF: 77, humidity: 45, mode: 'COOL', hvac: 'OFF',
     coolF: 76 as number | null, heatF: null, eco: false, ecoCoolF: null, ecoHeatF: null, fanTimer: false, availableModes: ['COOL', 'HEAT', 'OFF'] };
-  const reset = () => { store.clear(); calls.length = 0; sdm.length = 0; pump = slots(); nextId = 20; run.mockClear(); nestState.coolF = 76; nestState.mode = 'COOL'; };
-  return { store, db, calls, run, sdm, nestState, reset };
+  const reset = () => { readings.spare = []; store.clear(); calls.length = 0; sdm.length = 0; pump = slots(); nextId = 20; run.mockClear(); nestState.coolF = 76; nestState.mode = 'COOL'; };
+  return { store, db, calls, run, sdm, nestState, reset, readings };
 });
 
 vi.mock('../../server/src/db.js', () => H.db);
@@ -542,6 +544,45 @@ describe('write paths call the guard (fake ScreenLogic session, fake SDM, in-mem
       expect(await dayInputs(SITE, '2026-07-15', a, 6)).toEqual(a);
       expect(await dayInputs(SITE, '2026-07-15', b, 13)).toEqual(a);
       expect(await dayInputs(SITE, '2026-07-16', b, 7)).toEqual(b);
+    });
+  });
+
+  describe('AC: pre-cool only on spare solar (Q7)', () => {
+    // a hot, sunny day at home: the plan pre-cools 74° from 11:00 and coasts to 78° from 16:00; NOW is 13:00 Central
+    const home = { ac: { autopilot: 'auto', presence: 'home' } };
+    const tick = () => acTick(SITE, home, .1064, 2.5);
+    const at = (hhmm: string) => new Date(`${localDay()}T${hhmm}:00-05:00`).getTime();
+    const sun = Array.from({ length: 24 }, (_, h) => Math.max(0, 1 - Math.abs(h - 13) / 6));
+    beforeEach(async () => {
+      const today = localDay();
+      await H.db.kv.set('nest:tokens', { access_token: 'test-token', refresh_token: 'test-refresh', expires_at: NOW + 864e5 });
+      await H.db.kv.set('pool:forecast', { at: NOW + 864e5, days: [-1, 0, 1].map(k => ({ date: addDays(today, k), high: 96, rainMm: 0, rainPct: 0, sunKwhM2: 7, hourlySun: sun })) });
+      await H.db.kv.set(`${SITE}:ac:control`, { count: 1, days: {} });   // not a control day
+    });
+    it('P1 no spare solar: holds the band (76°) instead of pre-cooling, and says so', async () => {
+      H.readings.spare = [{ n: 3, w: -800 }];
+      await tick();
+      expect(H.sdm).toEqual([]);                                                                 // 76 already: nothing to send
+      const log = (await H.db.kv.get(`${SITE}:ac:log`)) as any[] ?? [];
+      expect(log.some(l => /pre-cooling/.test(l.text))).toBe(false);
+    });
+    it('P2 a full AC of spare solar starts the pre-cool; half an AC keeps it; less ends it', async () => {
+      H.readings.spare = [{ n: 3, w: 3500 }];                                                    // the AC is 3.25 kW (estimated) here
+      await tick();
+      expect(H.sdm.map(s => s.body.params.coolCelsius)).toEqual([23.33]);                      // 76 → 74
+      expect(((await H.db.kv.get(`${SITE}:ac:plan`)) as any)).toMatchObject({ precoolOn: true, precoolRan: true });
+      H.nestState.coolF = 74; H.nestState.hvac = 'COOLING'; H.readings.spare = [{ n: 3, w: -900 }];   // AC on: + its 3.25 kW back, 2.35 kW ≥ half
+      vi.setSystemTime(at('13:40')); await tick();
+      expect(H.sdm).toHaveLength(1);
+      H.readings.spare = [{ n: 3, w: -2000 }];
+      vi.setSystemTime(at('14:20')); await tick();
+      expect(H.sdm.map(s => s.body.params.coolCelsius)).toEqual([23.33, 24.44]);               // back to 76
+      expect(((await H.db.kv.get(`${SITE}:ac:plan`)) as any).precoolOn).toBe(false);
+    });
+    it('P3 no pre-cool today: no coast either', async () => {
+      H.readings.spare = [];
+      vi.setSystemTime(at('16:05')); await tick();
+      expect(H.sdm).toEqual([]);                                                                 // stays 76, no 78 coast
     });
   });
 });
