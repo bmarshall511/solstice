@@ -79,11 +79,11 @@ describe('GET /api/appliances/day', () => {
     expect(await bad.json()).toEqual({ error: 'date must be YYYY-MM-DD' });
   });
 
-  it('DAY-2 returns 24 hours with the hourly energy means and SOC, one query per table, cached for a past day', async () => {
+  it('DAY-2 returns 24 hours with the hourly energy means and SOC, one query per table, never cached', async () => {
     const q = vi.mocked(db.q); q.mockClear();
     const r = await get(`/api/appliances/day?date=${DAY}`);
     expect(r.status).toBe(200);
-    expect(r.headers.get('cache-control')).toBe('private, max-age=86400');
+    expect(r.headers.get('cache-control')).toBe('no-store');   // owner data never stays in the browser cache
     const sql = q.mock.calls.map(c => String(c[0]));
     for (const table of ['energy', 'soe', 'pool_readings', 'nest_readings', 'kv']) expect(sql.filter(s => new RegExp(`FROM ${table}\\b`).test(s)), table).toHaveLength(1);
     const d = await r.json();

@@ -179,11 +179,12 @@ app.get('/auth/login', wrap(async (req, res) => {
 
 app.get('/auth/callback', wrap(async (req, res) => {
   const { code, state, error, error_description } = req.query as Record<string, string>;
-  if (error) return res.redirect(`/?tesla_error=${encodeURIComponent(error_description || error)}`);
+  // fixed codes only: Tesla's own error text is never reflected into the page (main.js maps each code to a sentence)
+  if (error) { console.warn(`[solstice] Tesla sign-in: ${error} ${error_description ?? ''}`); return res.redirect(`/?tesla_error=${error === 'access_denied' ? 'denied' : 'failed'}`); }
   const uid = verifyState(state ?? '');
   let ownerId: number | null = null;
-  if (multiUser()) { const user = await currentUser(req); if (!uid || !user || user.id !== uid) return res.redirect('/?tesla_error=Sign-in+expired.+Try+again.'); ownerId = user.id; }
-  else if (!(await consumeOwnerState(state ?? '', 'tesla'))) return res.redirect('/?tesla_error=Sign-in+expired.+Try+again.');
+  if (multiUser()) { const user = await currentUser(req); if (!uid || !user || user.id !== uid) return res.redirect('/?tesla_error=expired'); ownerId = user.id; }
+  else if (!(await consumeOwnerState(state ?? '', 'tesla'))) return res.redirect('/?tesla_error=expired');
   const accountId = await exchangeCode(code, ownerId);
   const products = await teslaFor(accountId).products();
   for (const p of products.filter(p => p.energy_site_id)) {
@@ -235,9 +236,28 @@ app.use('/api', requireUser);
 
 const settingsFor = async (req: Request) => (req.user ? req.user.settings ?? {} : await kv.get<Record<string, any>>('settings:owner') ?? {}) as Record<string, any>;
 app.get('/api/settings', wrap(async (req, res) => res.json({ ...await settingsFor(req), location: exactLocation() })));
-app.put('/api/settings', express.json(), wrap(async (req, res) => {
-  if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify(req.body ?? {})]);
-  else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ...(req.body ?? {}) });
+/**
+ * Why a PUT /api/settings body is unusable, or null. Only the app's own preferences pass (calm, ownerName, alerts) plus the
+ * system figures for the payback card. Pool, AC and Powerwall settings have their own validated routes, so this one can never
+ * flip an Autopilot or point a write at another circuit (security review M4).
+ */
+export function settingsPatchError(b: unknown): string | null {
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return 'settings must be an object';
+  const o = b as Record<string, unknown>, bad = Object.keys(o).filter(k => !['calm', 'ownerName', 'alerts', 'system'].includes(k));
+  if (bad.length) return `not settable here: ${bad.join(', ').replace(/[^\w ,]/g, '')}`;
+  if ('calm' in o && typeof o.calm !== 'boolean' && !(o.calm && typeof o.calm === 'object' && typeof (o.calm as any).enabled === 'boolean')) return 'calm must be true or false';
+  if ('ownerName' in o && (typeof o.ownerName !== 'string' || o.ownerName.length > 200)) return 'ownerName must be text';   // cleaned to 40 printable characters on read (inviteName)
+  if ('alerts' in o) { const a = o.alerts; if (!a || typeof a !== 'object' || Array.isArray(a) || Object.keys(a).length > 30 || Object.values(a).some(v => typeof v !== 'boolean')) return 'alerts must be an object of on/off switches'; }
+  if ('system' in o) {
+    const sy = o.system, keys = ['priceUsd', 'taxCreditPct', 'loanYears', 'loanRatePct'];
+    if (!sy || typeof sy !== 'object' || Array.isArray(sy) || Object.entries(sy).some(([k, v]) => !keys.includes(k) || typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1e7)) return `system takes only ${keys.join(', ')}, as non-negative numbers`;
+  }
+  return null;
+}
+app.put('/api/settings', express.json({ limit: '8kb' }), wrap(async (req, res) => {
+  const bad = settingsPatchError(req.body); if (bad) return res.status(400).json({ error: bad });
+  if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify(req.body)]);
+  else { const cur = await kv.get<object>('settings:owner') ?? {}; await kv.set('settings:owner:prev', cur); await kv.set('settings:owner', { ...cur, ...req.body }); }   // one level of undo
   res.json({ ok: true });
 }));
 
@@ -485,7 +505,7 @@ app.get('/api/appliances/ac', wrap(async (req, res) => { const id = site(req); r
 app.get('/api/appliances/day', wrap(async (req, res) => {
   const date = String(req.query.date ?? localDay());
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
-  res.set('Cache-Control', date < localDay() ? 'private, max-age=86400' : 'no-store');
+  res.set('Cache-Control', 'no-store');   // owner data never stays in the browser cache after sign-out
   res.json(await applianceDay(site(req), date, req.user ? req.user.settings ?? {} : undefined));
 }));
 /** Approve today's plan: the 5-minute cron then applies each setpoint step at its hour. */
@@ -581,8 +601,8 @@ app.get('/api/cron/nest', wrap(async (req, res) => {
 /* ---------- Google (Nest) OAuth ---------- */
 app.get('/auth/google', (req, res) => { if (!nestConfigured()) return res.status(503).send('Nest is not configured'); res.redirect(nestAuthorizeUrl(signOwnerState('nest', 60 * 60_000))); }); // owner-only; Google's permissions page can take a while
 app.get('/auth/google/callback', wrap(async (req, res) => {
-  if (!(await consumeOwnerState(String(req.query.state ?? ''), 'nest'))) return res.redirect('/?nest_error=bad+state');
-  try { await nestExchangeCode(String(req.query.code)); await readNest(); res.redirect('/?nest=linked'); } catch (e: any) { console.error('nest link', e); res.redirect('/?nest_error=' + encodeURIComponent(e.message)); }
+  if (!(await consumeOwnerState(String(req.query.state ?? ''), 'nest'))) return res.redirect('/?nest_error=expired');
+  try { await nestExchangeCode(String(req.query.code)); await readNest(); res.redirect('/?nest=linked'); } catch (e: any) { console.error('nest link', e); res.redirect('/?nest_error=failed'); }
 }));
 
 /* ---------- CSV export ---------- */
@@ -594,7 +614,10 @@ app.get('/api/export.csv', wrap(async (req, res) => {
   res.end();
 }));
 
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error(err);
-  res.status(500).json({ error: err.message });
+/** The owner sees what went wrong (a device error, say); anyone else gets a fixed message and an id to match the log line. */
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+  const id = Math.random().toString(36).slice(2, 10);
+  console.error(`[solstice] error ${id} ${req.method} ${req.path}:`, err);
+  if (res.headersSent) return res.end();
+  res.status(500).json(req.role === 'owner' ? { error: err.message, id } : { error: 'internal error', id });
 });
