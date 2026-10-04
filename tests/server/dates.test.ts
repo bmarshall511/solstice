@@ -63,3 +63,21 @@ describe.each(['UTC', 'America/Chicago'])('under TZ=%s', tz => {
     expect(systemYear(at('2026-09-25T12:00:00Z'))).toBe(6);
   });
 });
+
+import { localAt } from '../../server/src/tesla/client.js';
+describe('localAt: local clock times across the DST changes (America/Chicago)', () => {
+  const iso = (t: number) => new Date(t).toISOString();
+  it('an ordinary day', () => {
+    expect(iso(localAt('2026-07-15', 0))).toBe('2026-07-15T05:00:00.000Z');
+    expect(iso(localAt('2026-07-15', 18.5))).toBe('2026-07-15T23:30:00.000Z');
+  });
+  it('fall-back (2026-11-01, 25 h): 02:00 is 3 h after midnight; the repeated 01:30 is its first occurrence', () => {
+    expect(localAt('2026-11-01', 2) - localAt('2026-11-01', 0)).toBe(3 * 3600e3);
+    expect(iso(localAt('2026-11-01', 1.5))).toBe('2026-11-01T06:30:00.000Z');   // 01:30 CDT
+    expect(iso(localAt('2026-11-01', 22))).toBe('2026-11-02T04:00:00.000Z');    // 22:00 CST
+  });
+  it('spring-forward (2026-03-08, 23 h): 03:00 is 2 h after midnight; the skipped 02:30 lands an hour later', () => {
+    expect(localAt('2026-03-08', 3) - localAt('2026-03-08', 0)).toBe(2 * 3600e3);
+    expect(iso(localAt('2026-03-08', 2.5))).toBe('2026-03-08T08:30:00.000Z');   // 03:30 CDT
+  });
+});

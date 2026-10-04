@@ -21,7 +21,7 @@ export async function wxGti(now = Date.now()): Promise<Wx | null> {
   try {
     const u = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&${TILT}&past_days=31&forecast_days=3&temperature_unit=fahrenheit&timezone=America%2FChicago` +
       '&hourly=global_tilted_irradiance,temperature_2m&daily=temperature_2m_max,precipitation_sum';
-    const j = await fetch(u).then(r => r.json()) as Partial<Wx>;
+    const j = await fetch(u, { signal: AbortSignal.timeout(10_000) }).then(r => { if (!r.ok) throw new Error(`Open-Meteo: HTTP ${r.status}`); return r.json(); }) as Partial<Wx>;
     if (!j.hourly?.time?.length || !j.daily?.time?.length) throw new Error('Open-Meteo returned no hours');
     const w: Wx = { hourly: j.hourly, daily: j.daily };
     learnStats.queries++;

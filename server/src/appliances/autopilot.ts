@@ -19,7 +19,7 @@ export async function forecast(): Promise<Daily[]> {
   const loc = siteLocation(); if (!loc) throw new Error('SITE_LAT and SITE_LON are not set, so there is no forecast');
   const u = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&timezone=America%2FChicago&past_days=3&forecast_days=7&temperature_unit=fahrenheit` +
     `&daily=temperature_2m_max,precipitation_sum,precipitation_probability_max,shortwave_radiation_sum&hourly=shortwave_radiation`;
-  const w = await fetch(u).then(r => r.json()) as any;
+  const w = await fetch(u, { signal: AbortSignal.timeout(10_000) }).then(r => { if (!r.ok) throw new Error(`Open-Meteo: HTTP ${r.status}`); return r.json(); }) as any;
   const byDay: Record<string, number[]> = {};
   w.hourly.time.forEach((t: string, i: number) => { (byDay[t.slice(0, 10)] ??= Array(24).fill(0))[+t.slice(11, 13)] = (w.hourly.shortwave_radiation[i] ?? 0) / 1000; });
   const days: Daily[] = w.daily.time.map((d: string, i: number) => ({ date: d, high: w.daily.temperature_2m_max[i], rainMm: w.daily.precipitation_sum[i] ?? 0, rainPct: w.daily.precipitation_probability_max[i] ?? 0,

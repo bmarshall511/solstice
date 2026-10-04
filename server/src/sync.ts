@@ -193,8 +193,14 @@ export async function refreshSiteInfo(siteId: string, accountId: number) {
   await q('UPDATE sites SET info = $2, info_at = now(), name = COALESCE(name, $3) WHERE id = $1', [siteId, JSON.stringify(info), String(info.site_name ?? '')]);
 }
 
+/** Outage history: the last 30 days on most runs (from a month before the newest stored outage, so nothing new is missed), and the
+ *  whole 5 years once a week. The 5-year request is the one Tesla answers with 504s; asking for it every hour was most of the risk. */
 async function refreshBackups(siteId: string, accountId: number) {
-  const res = await teslaFor(accountId).backups(siteId, rfc3339(new Date(Date.now() - 5 * 365 * 864e5)), rfc3339(new Date()));
+  const now = Date.now(), fullKey = `${siteId}:lastBackupsFull`, full = now - Number(await kv.get<number>(fullKey) ?? 0) > 7 * 864e5;
+  const newest = await one<{ e: string | null }>('SELECT MAX(epoch)::text e FROM backup_events WHERE site_id = $1', [siteId]);
+  const from = full ? now - 5 * 365 * 864e5 : Math.min(now - 30 * 864e5, newest?.e ? Number(newest.e) - 30 * 864e5 : now - 30 * 864e5);
+  const res = await teslaFor(accountId).backups(siteId, rfc3339(new Date(from)), rfc3339(new Date(now)));
+  if (full) await kv.set(fullKey, now);
   // `duration` is documented as seconds but real values are milliseconds (307419 ≈ a 5-minute outage)
   for (const e of res.events ?? []) await q('INSERT INTO backup_events VALUES ($1,$2,$3,$4) ON CONFLICT (site_id, ts) DO UPDATE SET duration_s = excluded.duration_s',
     [siteId, e.timestamp, Date.parse(e.timestamp), Math.round(e.duration / 1000)]);

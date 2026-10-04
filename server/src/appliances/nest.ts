@@ -15,7 +15,7 @@ export const nestAuthorizeUrl = (state: string) => `https://nestservices.google.
   redirect_uri: env('GOOGLE_REDIRECT_URI'), access_type: 'offline', prompt: 'consent', client_id: env('GOOGLE_CLIENT_ID'), response_type: 'code', scope: 'https://www.googleapis.com/auth/sdm.service', state });
 
 async function tokenRequest(body: Record<string, string>) {
-  const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: env('GOOGLE_CLIENT_ID'), client_secret: env('GOOGLE_CLIENT_SECRET'), ...body }) });
+  const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: env('GOOGLE_CLIENT_ID'), client_secret: env('GOOGLE_CLIENT_SECRET'), ...body }), signal: AbortSignal.timeout(8_000) });
   const j = await r.json() as any;
   if (!r.ok) throw new Error(`Google token: ${j.error_description ?? j.error ?? r.status}`);
   return j;
@@ -32,7 +32,7 @@ async function accessToken() {
   return j.access_token as string;
 }
 async function sdm(path: string, init: RequestInit = {}) {
-  const r = await fetch(`${SDM}${path}`, { ...init, headers: { Authorization: `Bearer ${await accessToken()}`, 'Content-Type': 'application/json', ...(init.headers ?? {}) } });
+  const r = await fetch(`${SDM}${path}`, { signal: AbortSignal.timeout(10_000), ...init, headers: { Authorization: `Bearer ${await accessToken()}`, 'Content-Type': 'application/json', ...(init.headers ?? {}) } });
   const j = await r.json().catch(() => ({})) as any;
   if (!r.ok) throw new Error(`Nest: ${j.error?.message ?? r.status}`);
   return j;

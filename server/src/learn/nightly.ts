@@ -8,7 +8,7 @@
 //   predict  today's 48-hour forecast, the always-on load for tonight and the billing-cycle projection → predictions (one insert)
 // About 20 round trips whatever the data size (no per-model or per-row queries). Every step is timed and caught on its own.
 import { kv } from '../db.js';
-import { localDay, addDays, localMidnight, rfc3339 } from '../tesla/client.js';
+import { localDay, addDays, localMidnight, localAt, rfc3339 } from '../tesla/client.js';
 import { learnAcKw } from '../appliances/ac.js';
 import { meanByQuarter, scheduledQuarters } from '../appliances/pool.js';
 import { listBills } from '../bills.js';
@@ -35,7 +35,7 @@ type Hour = { coolMin: number; coolF: number | null; indoorF: number | null; n: 
 export type Pair = { predicted: number; actual: number; band?: string };
 export type DayScore = { pred: number; actual: number; err: number; abs: number; ape: number | null; den: number; n: number; bands: Record<string, number> };
 
-const hourStart = (day: string, hour: number) => localMidnight(day).getTime() + hour * 3600e3;
+const hourStart = (day: string, hour: number) => localAt(day, hour);   // DST-aware (tesla/client.ts)
 const expectedBuckets = (day: string) => Math.round((localMidnight(addDays(day, 1)).getTime() - localMidnight(day).getTime()) / 300_000);
 const band = (k: number) => k <= 6 ? 'h1-6' : k <= 24 ? 'h7-24' : 'h25-48';
 
@@ -98,7 +98,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
       lq<{ key: string; value: any }>(`SELECT key, value FROM kv WHERE key = ANY($1::text[])`, [Object.values(keys)]),
       lq<{ day: string; solar: number; home: number; imp: number; exp: number; buckets: number; overnight_kw: number | null; overnight_n: number }>(
         `SELECT day, (SUM(solar_wh) / 1000.0)::float8 solar, (SUM(home_wh) / 1000.0)::float8 home, (SUM(import_wh) / 1000.0)::float8 imp, (SUM(export_wh) / 1000.0)::float8 exp,
-           COUNT(*)::int buckets, (SUM(home_wh) FILTER (WHERE hour BETWEEN 1 AND 4) / 1000.0 / 4)::float8 overnight_kw, COUNT(*) FILTER (WHERE hour BETWEEN 1 AND 4)::int overnight_n
+           COUNT(*)::int buckets, (SUM(home_wh) FILTER (WHERE hour BETWEEN 1 AND 4) / 1000.0 / NULLIF(COUNT(*) FILTER (WHERE hour BETWEEN 1 AND 4) * 5 / 60.0, 0))::float8 overnight_kw, COUNT(*) FILTER (WHERE hour BETWEEN 1 AND 4)::int overnight_n
          FROM energy WHERE site_id = $1 AND day >= $2 AND day <= $3 GROUP BY day`, [siteId, from, today]),
       lq<{ day: string; hour: number; solar: number; home: number; n: number }>(
         `SELECT day, hour::int, (SUM(solar_wh) / 1000.0)::float8 solar, (SUM(home_wh) / 1000.0)::float8 home, COUNT(*)::int n FROM energy WHERE site_id = $1 AND day >= $2 GROUP BY day, hour`,
@@ -186,7 +186,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     // always-on: the 1–5 AM load with the AC's share (cooling minutes × its learned kW) taken out
     for (const r of d.energyDaily) if (past(r.day) && r.overnight_n >= 46 && r.overnight_kw != null) {
       const acMin = metricRows.get(`${r.day}|ac.overnight_min`)?.[2] ?? 0;
-      put(r.day, 'home.alwaysOn_kw', Math.max(0, r.overnight_kw - acMin / 240 * kw));
+      put(r.day, 'home.alwaysOn_kw', Math.max(0, r.overnight_kw - acMin / (r.overnight_n * 5) * kw));   // the window's own minutes (300 on fall-back night)
     }
     // per-panel days (mockup u-panels): the last 21 days of PVS readings by roof position, one query (none before the relay's first poll)
     const layout = d.kvs[keys.pvsLayout] as Layout | undefined;
