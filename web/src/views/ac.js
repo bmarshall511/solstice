@@ -247,7 +247,7 @@ let timer;
 /** Started by main.js once the role is known (and again when it changes); every 3 minutes while the tab is visible. */
 export function initAc(S) { stop(timer); timer = every(3 * 60_000, () => loadAc(S)); }
 // a failed refresh keeps the last good plan and reading, with the failure in the card's note, instead of showing "Not set up"
-async function loadAc(S) { S.ac = await api.ac().catch(e => S.ac?.plan ? { ...S.ac, error: `Couldn\u2019t refresh: ${e.message}` } : { error: e.message, configured: false, linked: false }); if (S.ac.plan) drawAc(S); else { $('acBadge').textContent = 'Not set up'; $('acLink').hidden = false; $('acLinkTxt').textContent = S.ac.error ?? 'Nest is not configured.'; } S.onAc?.(); }
+async function loadAc(S) { S.ac = await api.ac().catch(e => S.ac?.plan ? { ...S.ac, error: e.message } : { error: e.message, configured: false, linked: false }); if (S.ac.plan) drawAc(S); else { $('acBadge').textContent = 'Not set up'; $('acLink').hidden = false; $('acLinkTxt').textContent = S.ac.error ?? 'Nest is not configured.'; } S.onAc?.(); }
 
 /* ---------- presence (t-enhancements frame 4): the line under Home/Away and the "Away until…" sheet ---------- */
 const NEST_SAYS = pr => `<b>Nest says Away</b>${pr.since ? ` since ${when(pr.since)}` : ''} (Home/Away Assist)`;
