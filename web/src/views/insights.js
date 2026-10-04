@@ -1,7 +1,7 @@
 import { $, niceDate, localDate, addDays, svgText, path, ago, money } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { mountOutageCard } from './outage.js';
-import { veil } from '../lib/frost.js';
+import { veil, esc } from '../lib/frost.js';
 import { guestPlan } from './guest.js';
 
 /* ---------- alert cards ---------- */
@@ -9,9 +9,9 @@ export function drawAlerts(S) {
   const cards = [], site = S.now?.site ?? {};
   const card = (c, icon, title, when, body, link) => cards.push(`<div class="card" style="--c:${c}"><div class="ins"><div class="ic">${icon}</div><div><b>${title}</b> <time>· ${when}</time><p>${body}</p></div></div>${link ?? ''}</div>`);
   if (S.now?.health?.stale) card('var(--warn)', '⏻', 'Tesla stopped reporting', S.now.health.lastLive ? ago(S.now.health.lastLive) : 'now', 'No live data for over 3 minutes. Check the gateway Wi-Fi, or open the Tesla app to see if it can reach your Powerwalls.');
-  (S.nws ?? []).slice(0, 2).forEach(a => card('var(--out)', '⛈', a.event, 'NWS', `${a.headline ?? ''}${/hail/i.test(a.description ?? '') ? ' If hail hits, check the Panels tab afterwards for any drop in output.' : ''}${site.stormWatch ? ' Storm Watch will charge the Powerwalls ahead of it.' : ''}`));
+  (S.nws ?? []).slice(0, 2).forEach(a => card('var(--out)', '⛈', esc(a.event), 'NWS', `${esc(a.headline)}${/hail/i.test(a.description ?? '') ? ' If hail hits, check the Panels tab afterwards for any drop in output.' : ''}${site.stormWatch ? ' Storm Watch will charge the Powerwalls ahead of it.' : ''}`));
   const bad = (S.reconcile ?? []).filter(r => r.checks.some(c => !c.ok)).at(-1);
-  if (bad) card('var(--grid)', '≈', 'PEC bill doesn’t match Tesla', niceDate(bad.billDate, { month: 'short' }) + ' bill', bad.checks.filter(c => !c.ok).map(c => c.detail).join(' '), '<button class="link" data-go="v-hist" data-bills="1">Open bill check →</button>');
+  if (bad) card('var(--grid)', '≈', 'PEC bill doesn’t match Tesla', niceDate(bad.billDate, { month: 'short' }) + ' bill', bad.checks.filter(c => !c.ok).map(c => esc(c.detail)).join(' '), '<button class="link" data-go="v-hist" data-bills="1">Open bill check →</button>');
   if (S.perf?.loss > .08) card('var(--warn)', '☀', `Solar output ${Math.round(S.perf.loss * 100)}% low`, 'last 7 clear days', 'Compared with the same sunlight this time last year. An even loss like this usually means dust or pollen.', '<button class="link" data-go="v-roof">See your panels →</button>');
   const N = S.overnight ?? [];
   if (N.length > 20) { const recent = N.slice(-7).reduce((a, n) => a + n.kw, 0) / 7, base = N.slice(-37, -7).map(n => n.kw).sort((a, b) => a - b), med = base[Math.floor(base.length / 2)];
@@ -80,7 +80,7 @@ export function drawAC(S) {
   o += `<line x1="${X(tMin)}" y1="${Y(icpt + slope * tMin)}" x2="${X(tMax)}" y2="${Y(icpt + slope * tMax)}" stroke="#6cc4ff" stroke-width="1.5" stroke-dasharray="4 3"/>`;
   const res = pts.map(p => ({ ...p, res: p.u - (icpt + slope * p.t) })), worst = res.reduce((a, b) => b.res > a.res ? b : a);
   const recent = addDays(localDate(), -60);
-  res.forEach(p => { const flag = p === worst && worst.res > 12; o += `<circle cx="${X(p.t)}" cy="${Y(p.u)}" r="${flag ? 5 : 3}" fill="${flag ? '#ff7a66' : p.date >= recent ? 'rgba(108,196,255,.9)' : 'rgba(108,196,255,.3)'}"><title>${p.date}: ${p.u.toFixed(0)} kWh at ${Math.round(p.t)}°</title></circle>`; });
+  res.forEach(p => { const flag = p === worst && worst.res > 12; o += `<circle cx="${X(p.t)}" cy="${Y(p.u)}" r="${flag ? 5 : 3}" fill="${flag ? '#ff7a66' : p.date >= recent ? 'rgba(108,196,255,.9)' : 'rgba(108,196,255,.3)'}"><title>${esc(p.date)}: ${p.u.toFixed(0)} kWh at ${Math.round(p.t)}°</title></circle>`; });
   o += svgText(30, 168, `daily high →  ·  home kWh/day ↑  ·  ${pts.length} hot days (bright = last 60)`, { size: 8.5, font: 'Manrope' });
   $('acChart').innerHTML = o;
   $('acTxt').innerHTML = `Each extra degree of daily high adds about <b style="color:var(--text)">${slope.toFixed(1)} kWh</b> a day, mostly air conditioning. That's about ${S.guest ? veil('$••') : S.tariff ? `$${(slope * 30 * S.tariff.importRateAllIn).toFixed(0)}` : '—'} a month per degree. ` +
@@ -119,10 +119,10 @@ export function drawHealth(S, status) {
   const poolOk = !!p?.linked && !p.error, nestOk = !!a?.linked && !a.error;
   $('dhList').innerHTML = row(!h.stale, 'Tesla live status', h.lastLive ? ago(h.lastLive) : '—') + row(true, 'Energy history (5-min)', h.lastHistory ? ago(h.lastHistory) : '—') +
     row(!bk, 'Backup history (Tesla)', bk ? `${code ? code + ' · ' : ''}retrying` : 'ok') +
-    row(!!status, 'History stored', status ? `${status.backfill.daysDone} days` : '—') + row(!!S.wx, 'Open-Meteo weather', S.wx ? 'live' : '—') + row(!!S.ercot, 'ERCOT grid status', S.ercot ? S.ercot.condition : '—') +
+    row(!!status, 'History stored', status ? `${status.backfill.daysDone} days` : '—') + row(!!S.wx, 'Open-Meteo weather', S.wx ? 'live' : '—') + row(!!S.ercot, 'ERCOT grid status', S.ercot ? esc(S.ercot.condition) : '—') +
     row(poolOk, 'ScreenLogic', p?.snapshot?.at ? ago(p.snapshot.at) : p?.error ? 'read failed' : p ? 'not linked' : '—') +
     row(nestOk, 'Nest', a?.state?.at ? ago(a.state.at) : a?.error ? 'read failed' : a ? (a.configured ? 'not linked' : 'not set up') : '—') +
-    errs.map(([k, e]) => row(false, `${k} error`, e.message.slice(0, 40))).join('');
+    errs.map(([k, e]) => row(false, `${esc(k)} error`, esc(String(e.message ?? '').slice(0, 40)))).join('');
   // issues: what used to turn the badge to "check" (Tesla stale, recent errors), plus the backup history, ScreenLogic and Nest once loaded
   const n = (h.stale ? 1 : 0) + errs.length + (bk ? 1 : 0) + (p && !poolOk ? 1 : 0) + (a && !nestOk && (a.configured || a.error) ? 1 : 0);
   $('dhBadge').textContent = n ? `${n} issue${n === 1 ? '' : 's'}` : 'all good'; $('dhBadge').className = 'badge' + (n ? '' : ' g');

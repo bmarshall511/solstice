@@ -57,7 +57,7 @@ export function drawLearn(S) {
 /** The tap-through: last 30 predicted-vs-actual days, bias, error by window. */
 function openModel(S, id) {
   const m = S.models?.models.find(x => x.id === id); if (!m) return;
-  const u = m.abs ? ` ${m.unit}` : '%', f = v => v == null ? '—' : `${v > 0 ? '+' : ''}${v}${u}`;
+  const u = m.abs ? ` ${esc(m.unit)}` : '%', f = v => v == null ? '—' : `${v > 0 ? '+' : ''}${v}${u}`;
   const pairs = (m.days ?? []).filter(d => d.p != null && d.a != null);
   let body;
   if (m.tier === 'measured') body = `<p class="sub">A direct reading — no model to score.</p>${m.note ? `<p class="sub">${esc(m.note)}</p>` : ''}`;
@@ -68,7 +68,7 @@ function openModel(S, id) {
     let o = `<line x1="${X(lo)}" y1="${Y(lo)}" x2="${X(hi)}" y2="${Y(hi)}" stroke="rgba(255,255,255,.18)" stroke-dasharray="3 4"/>`;
     pairs.forEach(p => o += `<circle cx="${X(p.p).toFixed(1)}" cy="${Y(p.a).toFixed(1)}" r="2.6" fill="rgba(78,240,166,.85)"/>`);
     o += `<text x="${pad}" y="${h - 2}" font-size="8.5" fill="rgba(242,244,248,.4)" font-family="JetBrains Mono">predicted →</text><text x="4" y="${(Y(lo) + Y(hi)) / 2}" font-size="8.5" fill="rgba(242,244,248,.4)" font-family="JetBrains Mono" transform="rotate(-90 4 ${(Y(lo) + Y(hi)) / 2})" text-anchor="middle">actual ${esc(m.unit)}</text>`;
-    const win = Object.entries(m.scores ?? {}).filter(([, s]) => s).map(([w, s]) => `<span>${w} · n=${s.n}</span><b>${m.abs ? (s.mae == null ? '—' : `±${Math.round(s.mae * 10) / 10}${u}`) : (s.mape == null ? '—' : `±${Math.round(s.mape * 1000) / 10}%`)}</b>`).join('');
+    const win = Object.entries(m.scores ?? {}).filter(([, s]) => s).map(([w, s]) => `<span>${esc(w)} · n=${esc(s.n)}</span><b>${m.abs ? (s.mae == null ? '—' : `±${Math.round(s.mae * 10) / 10}${u}`) : (s.mape == null ? '—' : `±${Math.round(s.mape * 1000) / 10}%`)}</b>`).join('');
     body = `<p class="sub">Last ${pairs.length} predicted-vs-actual days, in ${esc(m.unit)}.</p><div class="scatter"><svg viewBox="0 0 ${w} ${h}">${o}</svg></div>
       <div class="kv" style="margin-top:8px"><span>Error</span><b>${m.abs ? (m.mae == null ? '—' : `±${m.mae}${u}`) : (m.mape == null ? '—' : `±${m.mape}%`)}</b><span>Bias</span><b>${f(m.bias)}</b>
       <span>Days scored</span><b>${m.n}${m.n < m.need ? ` of ${m.need}` : ""}</b>${win}</div>${m.help ? `<p class="fine" style="margin-top:10px">What would help: ${esc(m.help)}</p>` : ''}`;

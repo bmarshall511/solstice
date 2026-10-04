@@ -4,7 +4,7 @@
 // a guest (no /api/models) sees the tier word.
 export const TIERS = { measured: 'm', learned: 'l', estimated: 'e', learning: 'n', unscored: 'u' };
 
-export const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 /** The owner's model row for `id` from /api/models, or null. */
 export const modelOf = (models, id) => models?.models?.find(m => m.id === id) ?? null;

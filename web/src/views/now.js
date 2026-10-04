@@ -3,7 +3,7 @@ import { WMO, WICON } from '../lib/weather.js';
 import { forecast48 } from '../lib/model.js';
 import { roadModel } from '../lib/road48data.js';
 import { createRoad48, webgl2 } from '../scenes/road48.js';
-import { veil } from '../lib/frost.js';
+import { veil, esc } from '../lib/frost.js';
 import { fc48Header } from '../lib/conf.js';
 
 /** How the current flows split between sources and sinks (Tesla reports only the four totals). */
@@ -70,7 +70,7 @@ export function renderStatic(S) {
   $('siteLine').textContent = S.guest ? `${S.ownerName}'s home` : `Home · ${site.batteryCount ?? 2} Powerwalls`;
   $('pwModel').textContent = site.batteries?.length ? `${site.batteries.length} × ${site.batteries[0].name} · ${site.capacityKwh} kWh` : '—';
   if (!$('pwUnits').children.length && site.batteries?.length)
-    $('pwUnits').innerHTML = site.batteries.map((b, i) => `<div class="pwu"><i></i><b class="pwres" style="bottom:${site.reservePct ?? 20}%"></b><span>PW ${i + 1}</span><em>${b.kwh} kWh · ${b.kw} kW</em></div>`).join('');
+    $('pwUnits').innerHTML = site.batteries.map((b, i) => `<div class="pwu"><i></i><b class="pwres" style="bottom:${site.reservePct ?? 20}%"></b><span>PW ${i + 1}</span><em>${esc(b.kwh)} kWh · ${esc(b.kw)} kW</em></div>`).join('');
   $('pwRes').textContent = `${site.reservePct ?? '—'}%`;
   $('pwStorm').textContent = S.live?.stormActive ? 'Active · charging for a storm' : site.stormWatch ? 'On · standing by' : 'Off';
   $('pwIn').textContent = today.charge != null ? `${today.charge.toFixed(1)} kWh` : '—';
@@ -92,9 +92,9 @@ export function renderStatic(S) {
   $('chipGw').innerHTML = stale ? '<i style="--c:var(--warn)"></i>Tesla not reporting' : '<i></i>Powerwalls online';
   $('chipStorm').innerHTML = S.live?.stormActive ? '<i style="--c:var(--solar)"></i>Storm Watch active' : `<i style="--c:rgba(242,244,248,.4);box-shadow:none"></i>Storm Watch ${site.stormWatch ? 'standby' : 'off'}`;
   if (S.ercot) { const e = S.ercot, bad = e.condition !== 'normal';
-    $('chipErcot').className = 'chipx' + (bad ? ' alert' : ''); $('chipErcot').innerHTML = `<i style="--c:${bad ? 'var(--out)' : 'var(--batt)'}"></i>ERCOT ${bad ? e.title : 'normal'}${e.demandMw ? ` · ${Math.round(e.demandMw / e.capacityMw * 100)}% load` : ''}`; }
+    $('chipErcot').className = 'chipx' + (bad ? ' alert' : ''); $('chipErcot').innerHTML = `<i style="--c:${bad ? 'var(--out)' : 'var(--batt)'}"></i>ERCOT ${bad ? esc(e.title) : 'normal'}${e.demandMw ? ` · ${Math.round(e.demandMw / e.capacityMw * 100)}% load` : ''}`; }
   if (S.nws) { const a = S.nws[0];
-    $('chipNws').className = 'chipx' + (a ? ' alert' : ''); $('chipNws').innerHTML = a ? `<i style="--c:var(--out)"></i>${a.event}` : '<i style="--c:var(--batt)"></i>No weather alerts'; }
+    $('chipNws').className = 'chipx' + (a ? ' alert' : ''); $('chipNws').innerHTML = a ? `<i style="--c:var(--out)"></i>${esc(a.event)}` : '<i style="--c:var(--batt)"></i>No weather alerts'; }
   $('synced').textContent = S.live ? new Date(S.live.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'connecting…';
   $('syncDot').style.background = stale ? 'var(--warn)' : '';
 }
