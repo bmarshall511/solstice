@@ -293,3 +293,55 @@ describe('sending', () => {
     expect((await buildDigest('s', mondayOf(localDay()))).autopilot.powerwall).toEqual({ sent: 1, refused: 0, suggested: 0, scopeMissing: 0 });
   });
 });
+
+describe('storm reserve: escalation, the automatic way back, heat (docs/audit-2026-10.md Q10)', () => {
+  const pass = () => db.kv.set('s:pw:last:backup', { at: Date.now() - PW_CHANGE_INTERVAL_MS - 1000 });   // past the hourly slot
+  it('PW-9 a Watch that becomes a Warning still goes back to the reserve from before the storm (20%, not 50%)', async () => {
+    await setScope(WITH);
+    await storm([{ event: 'Flood Watch', severity: 'Severe' }]);
+    expect(await (await call('/api/powerwall/rules/storm/apply', { method: 'POST' })).json()).toMatchObject({ result: 'sent', value: 50 });
+    expect(await db.kv.get('s:pw:stormRevert')).toMatchObject({ prev: 20, to: 50 });
+    await pass(); await storm([{ event: 'Tornado Warning', severity: 'Extreme' }]);
+    expect(await (await call('/api/powerwall/rules/storm/apply', { method: 'POST' })).json()).toMatchObject({ result: 'sent', value: 100 });
+    expect(await db.kv.get('s:pw:stormRevert')).toMatchObject({ prev: 20, to: 100 });
+  });
+  it('PW-10 in Suggest, a raise that was applied comes back down by itself when the storm passes, with a push', async () => {
+    await setScope(WITH);
+    await storm([{ event: 'Flood Watch', severity: 'Severe' }]);
+    await call('/api/powerwall/rules/storm/apply', { method: 'POST' });
+    await pass(); await storm([]);
+    expect(await PW.evaluatePowerwall('s', {}, ['storm'])).toMatchObject({ storm: { mode: 'suggest', action: 'set', value: 20, result: 'sent', autoRevert: true } });
+    expect(tesla.at(-1)).toMatchObject({ body: { backup_reserve_percent: 20 } });
+    expect(await db.kv.get('s:pw:stormRevert')).toBeNull();
+    expect(await db.q(`SELECT kind, title FROM alerts WHERE kind = 'storm'`)).toEqual([{ kind: 'storm', title: 'Reserve back to 20%' }]);
+    // with no stored revert (nothing was raised by Solstice), a passing storm sends nothing
+    tesla.length = 0;
+    expect(await PW.evaluatePowerwall('s', {}, ['storm'])).toMatchObject({ storm: { mode: 'suggest', action: 'none' } });
+    expect(tesla).toEqual([]);
+  });
+  it('PW-11 heat, fire-weather and air-quality warnings never raise the reserve; a severe freeze still does', async () => {
+    const W = await import('../../server/src/watch.js');
+    expect(W.isStormAlert({ event: 'Extreme Heat Warning', severity: 'Extreme' })).toBe(false);
+    expect(W.isStormAlert({ event: 'Red Flag Warning', severity: 'Severe' })).toBe(false);
+    expect(W.isStormAlert({ event: 'Air Quality Alert', severity: 'Severe' })).toBe(false);
+    expect(W.isStormAlert({ event: 'Flood Watch', severity: 'Severe' })).toBe(true);
+    expect(W.isStormAlert({ event: 'Freeze Warning', severity: 'Severe' })).toBe(true);
+    await setScope(WITH);
+    await storm([{ event: 'Extreme Heat Warning', severity: 'Extreme' }]);
+    expect(await PW.evaluatePowerwall('s', {}, ['storm'])).toMatchObject({ storm: { action: 'none' } });
+  });
+});
+
+describe('the nightly watchdog (5-minute cron)', () => {
+  it('WD-1 quiet while the nightly run is recent; one alert a day once it is more than 26 hours old', async () => {
+    await db.kv.set('ercot', { at: Date.now(), data: { condition: 'normal', title: 'Normal', note: null, eea: 0, demandMw: 1, capacityMw: 2, at: 'x' } });
+    const tick = async () => (await (await call('/api/cron/nest', { cookie: '', headers: { authorization: `Bearer ${CRON}` } })).json()).watch.s.watchdog;
+    await db.kv.set('cron:sync:done', Date.now() - 20 * 3600e3);
+    expect(await tick()).toMatchObject({ ok: true });
+    await db.kv.set('cron:sync:done', Date.now() - 27 * 3600e3);
+    expect(await tick()).toMatchObject({ stored: true });
+    expect(await tick()).toMatchObject({ stored: false });                // once a day
+    expect(await db.q(`SELECT kind, title FROM alerts WHERE kind = 'anomaly'`)).toEqual([{ kind: 'anomaly', title: 'The nightly update didn’t run' }]);
+    expect((await call('/api/cron/nest', { cookie: '', headers: { authorization: 'Bearer wrong' } })).status).toBe(401);
+  });
+});

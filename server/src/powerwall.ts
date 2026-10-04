@@ -126,7 +126,11 @@ export async function applySuggestion(siteId: string, s: Suggestion & { revert?:
     return { ok: false, result: 'unchanged', command: s.command, value: s.value ?? '', reason, suggestion: s };
   }
   const r = s.command === 'grid_import_export' ? await setGridExportRule(siteId, String(s.value), ctx) : await setBackupReserve(siteId, Number(s.value), ctx);
-  if (r.ok && s.revert === 'store' && typeof s.current === 'number') await kv.set(revertKey(siteId), { prev: s.current, to: Number(s.value), at: now } satisfies Revert);
+  if (r.ok && s.revert === 'store' && typeof s.current === 'number') {
+    // a Watch that became a Warning (50 → 100): keep the reserve from before the storm, not the Watch's 50
+    const had = await kv.get<Revert | null>(revertKey(siteId));
+    await kv.set(revertKey(siteId), { prev: had && had.to === s.current ? had.prev : s.current, to: Number(s.value), at: now } satisfies Revert);
+  }
   if (r.ok && s.revert === 'clear') await kv.set(revertKey(siteId), null);
   return { ...r, suggestion: s };
 }
@@ -144,6 +148,13 @@ export async function evaluatePowerwall(siteId: string, settings: Record<string,
     await kv.set(`${siteId}:pw:suggest:${rule}`, { ...s, at: now });
     if (s.action !== 'set') { out[rule] = { mode, action: s.action }; continue; }
     if (mode === 'auto') { const r = await applySuggestion(siteId, s, 'auto', now); out[rule] = { mode, action: 'set', value: s.value, result: r.result, reason: r.reason }; continue; }
+    // Suggest still asks before a storm raise, but the way back is automatic (owner, Q10 of docs/audit-2026-10.md): a raise that was
+    // applied has stored its revert, and once the storm has passed that revert is sent without waiting for a tap
+    if (rule === 'storm' && (s as Suggestion & { revert?: string }).revert === 'clear') {
+      const r = await applySuggestion(siteId, s, 'auto', now);
+      if (r.ok) await notify(siteId, 'storm', `Reserve back to ${s.value}%`, `${s.reason} Solstice set it back on its own, as it does after every storm raise.`, { rule, value: s.value }, { key: `pw:storm:revert:${s.value}:${localDay(new Date(now))}`, now, url: '/?go=v-ins' });
+      out[rule] = { mode, action: 'set', value: s.value, result: r.result, reason: r.reason, autoRevert: true }; continue;
+    }
     const n = await notify(siteId, 'approval', `${RULE_LABELS[rule]}: ${s.command === 'backup' ? `${s.value}%` : s.value}?`, s.reason, { rule, value: s.value, current: s.current },
       { key: `pw:${rule}:${s.value}:${localDay(new Date(now))}`, now, url: '/?go=v-ins' });
     if (n.stored) await logPowerwall(siteId, { at: now, rule, command: s.command, value: s.value, result: 'suggested', reason: s.reason, source: 'auto' });

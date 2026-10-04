@@ -11,7 +11,10 @@ import { notify, notifyAnomalies, type NotifyResult } from './notify.js';
 
 /** NWS events that threaten the house or the grid feeding it. Any Severe or Extreme alert counts too. */
 export const STORM_EVENTS = /(severe thunderstorm|tornado|winter storm|ice storm|blizzard|extreme cold|hard freeze|hurricane|tropical storm|high wind)/i;
-export const isStormAlert = (a: Pick<NwsAlert, 'event' | 'severity'>) => STORM_EVENTS.test(a.event) || /^(severe|extreme)$/i.test(a.severity ?? '');
+/** Severe or Extreme alerts that are not about the weather hitting the house: heat, fire weather, air quality, dust, fog, frost. ERCOT's
+ *  own conservation calls cover heat strain on the grid, so these never raise the reserve (a heat wave held it at 100% for days). */
+export const NOT_STORM_EVENTS = /(heat|red flag|fire weather|fire warning|air quality|air stagnation|dust|smoke|fog|frost|beach|rip current|small craft)/i;
+export const isStormAlert = (a: Pick<NwsAlert, 'event' | 'severity'>) => STORM_EVENTS.test(a.event) || (/^(severe|extreme)$/i.test(a.severity ?? '') && !NOT_STORM_EVENTS.test(a.event));
 export const isWarning = (a: Pick<NwsAlert, 'event'>) => /warning|emergency/i.test(a.event);
 
 export type StormNow = { alerts: NwsAlert[]; warning: boolean; watch: boolean; stormWatchEnabled: boolean | null; stormWatchActive: boolean; soc: number | null; active: boolean };
@@ -56,7 +59,7 @@ export type ErcotData = { condition: string | null; title: string | null; note: 
 export async function ercotNow(now = Date.now()): Promise<ErcotData> {
   const cached = await kv.get<{ at: number; data: ErcotData }>('ercot');
   if (cached && now - cached.at < 5 * 60_000) return cached.data;
-  const [prc, sd] = await Promise.all(['daily-prc', 'supply-demand'].map(n => fetch(`https://www.ercot.com/api/1/services/read/dashboards/${n}.json`).then(r => r.json()))) as [any, any];
+  const [prc, sd] = await Promise.all(['daily-prc', 'supply-demand'].map(n => fetch(`https://www.ercot.com/api/1/services/read/dashboards/${n}.json`, { signal: AbortSignal.timeout(8_000) }).then(r => { if (!r.ok) throw new Error(`ERCOT ${n}: HTTP ${r.status}`); return r.json(); }))) as [any, any];
   const latest = (sd.data as any[]).filter(x => x.demand > 0).at(-1);
   const data = { condition: prc.current_condition?.state ?? null, title: prc.current_condition?.title ?? null, note: prc.current_condition?.condition_note ?? null,
     eea: prc.current_condition?.eea_level ?? 0, demandMw: latest?.demand ?? null, capacityMw: latest?.capacity ?? null, at: sd.lastUpdated };
