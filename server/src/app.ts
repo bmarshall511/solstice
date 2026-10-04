@@ -4,7 +4,7 @@ import { q, one, kv, migrate } from './db.js';
 import { config } from './config.js';
 import { hashPassword, verifyPassword, startSession, endSession, currentUser, requireUser, requireSite, tooManyAttempts, recordAttempt, signState, verifyState, multiUser,
   ownerKey, checkOwnerKey, startOwnerSession, endOwnerSession, endOtherOwnerSessions, endOwnerSessionById, listOwnerSessions, ownerAttemptLimited, guestAttempts, clientIp,
-  signOwnerState, consumeOwnerState, setCookie, readCookie } from './auth.js';
+  signOwnerState, consumeOwnerState, setCookie, readCookie, safeEqual } from './auth.js';
 import { gate, presenceHidden, setPreview, PREVIEW_COOKIE } from './access.js';
 import { createShare, listShares, revokeShare, revokeAllShares, redeemShare, pruneShares, guestMaxAge, EXPIRY, DEFAULT_EXPIRY, LABEL_MAX, GUEST_COOKIE } from './share.js';
 import { authorizeUrl, exchangeCode } from './tesla/auth.js';
@@ -28,7 +28,7 @@ import { panelsDay, panelAlerts, panelWatch } from './panels.js';
 import { flowsFor, FlowsInputError } from './flows.js';
 import { outageDetail } from './outage.js';
 
-import { alertRoutes } from './notify.js';
+import { alertRoutes, notify } from './notify.js';
 import { ercotNow, fiveMinuteWatch, nightlyWatch, cronSites, fiveMinuteSteps, nightlySteps } from './watch.js';
 import { digestRoutes, maybeWeeklyDigest } from './digest.js';
 import { presenceRoutes, setPresence } from './appliances/presence.js';
@@ -196,12 +196,15 @@ app.get('/auth/callback', wrap(async (req, res) => {
 }));
 
 /* ======================= nightly sync (Vercel Cron) ======================= */
+/** Vercel Cron's bearer, compared in constant time. */
+const cronOk = (req: Request) => !!process.env.CRON_SECRET && safeEqual(String(req.headers.authorization ?? ''), `Bearer ${process.env.CRON_SECRET}`);
 app.get('/api/cron/sync', wrap(async (req, res) => {
-  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'unauthorized' });
+  if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
   const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL');
   const out: Record<string, unknown> = {};
   const t0 = Date.now();
-  for (const s of sites) out[s.id] = await syncSite(s.id, Math.floor(50_000 / sites.length), { nightly: true }).catch(e => ({ error: e.message }));
+  // the sync gets 30 s, leaving the learning layer, the nightly alerts and the prune room inside Vercel's 60 s (it had 50 s)
+  for (const s of sites) out[s.id] = await syncSite(s.id, Math.floor(30_000 / sites.length), { nightly: true }).catch(e => ({ error: e.message }));
   await q(`DELETE FROM readings WHERE ts < $1`, [Date.now() - 3 * 864e5]); // live snapshots are short-lived; history lives in `energy`
   await pruneShares().catch(e => console.error('[solstice] pruning share links', e)); // revoked/expired links leave the owner's list after 30 days
 
@@ -209,7 +212,9 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
   for (const s of sites) out[`learn:${s.id}`] = await runLearn(s.id, { deadline: t0 + 55_000 }).catch(e => ({ error: e.message }));
   for (const s of sites) out[`watch:${s.id}`] = await nightlyWatch(s.id);   // watch.ts: bill due and the other nightly alert checks
   // raw per-panel readings older than 90 days go, after the learning layer has written the day's per-panel figures (pvs.ts)
-  out.pvsPrune = await prunePvs().catch(e => ({ error: e.message }));
+  out.pvsPrune = Date.now() - t0 < 55_000 ? await prunePvs().catch(e => ({ error: e.message })) : { skipped: 'out of time; tomorrow night' };
+  await kv.set(SYNC_DONE_KEY, Date.now());   // the 5-minute watchdog (below) alerts when this is more than 26 h old
+  out.ms = Date.now() - t0;
   res.json(out);
 }));
 
@@ -450,7 +455,7 @@ app.post('/api/appliances/pool/autopilot', express.json(), wrap(async (req, res)
 }));
 /** Nightly (8:15 PM Central): Autopilot re-plans tomorrow for every site; Auto mode writes it, Suggest stores it. */
 app.get('/api/cron/pool', wrap(async (req, res) => {
-  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'unauthorized' });
+  if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
   const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL'), out: Record<string, unknown> = {};
   for (const s of sites) { const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; out[s.id] = await poolDetail(s.id, settings, await rateFor(s.id), { fresh: true, act: true }).then(d => d.autopilot).catch(e => ({ error: e.message })); }
   res.json(out);
@@ -464,8 +469,10 @@ async function acSlope(id: string) {
   const rows = await q<{ day: string; kwh: number }>(`SELECT day, (SUM(home_wh) / 1000.0)::float8 kwh FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day`, [id, addDays(localDay(), -120), localDay()]);
   let highs = await kv.get<{ at: number; byDay: Record<string, number> }>('wx:highs');
   if (!highs || Date.now() - highs.at > 12 * 3600_000) { // daily highs for the last 120 days from Open-Meteo's archive
-    const loc = siteLocation(), w = loc && await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${loc.lat}&longitude=${loc.lon}&start_date=${addDays(localDay(), -120)}&end_date=${localDay()}&daily=temperature_2m_max&temperature_unit=fahrenheit&timezone=America%2FChicago`).then(r => r.json()).catch(() => null) as any;
-    highs = { at: Date.now(), byDay: Object.fromEntries((w?.daily?.time ?? []).map((d: string, i: number) => [d, w.daily.temperature_2m_max[i]])) }; await kv.set('wx:highs', highs);
+    const loc = siteLocation(), w = loc && await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${loc.lat}&longitude=${loc.lon}&start_date=${addDays(localDay(), -120)}&end_date=${localDay()}&daily=temperature_2m_max&temperature_unit=fahrenheit&timezone=America%2FChicago`, { signal: AbortSignal.timeout(10_000) }).then(r => r.ok ? r.json() : null).catch(() => null) as any;
+    const byDay = Object.fromEntries((w?.daily?.time ?? []).map((d: string, i: number) => [d, w.daily.temperature_2m_max[i]]));
+    // a failed fetch keeps the last good highs (it used to cache an empty set for 12 h)
+    if (Object.keys(byDay).length) { highs = { at: Date.now(), byDay }; await kv.set('wx:highs', highs); } else highs = highs ?? { at: 0, byDay: {} };
   }
   const pts = rows.map(r => ({ t: highs!.byDay[r.day], u: r.kwh })).filter(p => p.t != null && p.t >= 80 && p.u > 5);
   let slope = 2.5;
@@ -545,14 +552,23 @@ presenceRoutes(app, async id => { const rec = await kv.get<any>(`${id}:ac:plan`)
 powerwallRoutes(app);
 fiveMinuteSteps.powerwall = powerwallTick; nightlySteps.powerwall = powerwallNightly;
 fiveMinuteSteps.digest = maybeWeeklyDigest; nightlySteps.digest = maybeWeeklyDigest;
-fiveMinuteSteps.panels = panelWatch;   // panels.ts: a panel silent through an hour of daylight, or the relay itself (read-only)
+fiveMinuteSteps.panels = panelWatch;
+/* Watchdog: Vercel never retries a cron, so a nightly run that died (timeout, deploy, outage) would be silent. The 5-minute tick
+ * pushes one alert a day while the last finished nightly run is more than 26 hours old. */
+const SYNC_DONE_KEY = 'cron:sync:done';
+fiveMinuteSteps.watchdog = async (id, now) => {
+  const done = await kv.get<number>(SYNC_DONE_KEY); if (done == null) { await kv.set(SYNC_DONE_KEY, now); return { armed: true }; }   // first run after deploy
+  const h = (now - done) / 3600e3; if (h <= 26) return { ok: true, hours: Math.round(h * 10) / 10 };
+  return notify(id, 'anomaly', 'The nightly update didn\u2019t run', `Solstice's nightly job last finished ${Math.round(h)} hours ago, so history, learning and alerts may be stale. It runs at 5:15 AM; check Vercel's cron logs if this repeats.`,
+    { hours: Math.round(h) }, { key: `watchdog:sync:${localDay(new Date(now))}`, now, url: '/?go=v-ins' });
+};   // panels.ts: a panel silent through an hour of daylight, or the relay itself (read-only)
 /**
  * Fires every 5 minutes; sampling.ts decides what is due. Nest (with acTick: AC learning and due plan steps) every 5 minutes 10:00–22:00
  * in cooling season, every 15 minutes otherwise; a read-only pool read every 15 minutes of scheduled pump hours plus 02:00 and 05:00.
  * A tick with nothing due answers without touching the database.
  */
 app.get('/api/cron/nest', wrap(async (req, res) => {
-  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'unauthorized' });
+  if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
   const tick = await cronTick(Date.now(), {
     sites: async () => (await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL')).map(s => s.id),
     acTick: async id => acTick(id, await kv.get<Record<string, any>>('settings:owner') ?? {}, await rateFor(id), await acSlope(id)),
