@@ -2,7 +2,7 @@ import { $, clamp, fmtDur, clock12, niceDate, localDate, addDays, svgText, path,
 import { api } from '../lib/api.js';
 import { yearRingCard, yearModel } from '../scenes/yearring.js';
 import { createFlowsCard, mountFlows } from '../scenes/flows.js';
-import { veil } from '../lib/frost.js';
+import { veil, esc } from '../lib/frost.js';
 import { lockBillCards } from './guest.js';
 
 let range = 'day', day = null;
@@ -44,7 +44,7 @@ async function drawBars(S) {
   let o = '';
   [0, .5, 1].forEach(t => o += `<line x1="10" x2="${W - 10}" y1="${10 + (H - 40) * (1 - t)}" y2="${10 + (H - 40) * (1 - t)}" stroke="rgba(255,255,255,.06)"/>`);
   rows.forEach((r, i) => { const x = 10 + i * bw, h1 = r.solar / mx * (H - 40), h2 = r.home / mx * (H - 40), w = Math.max(2, bw * .36);
-    o += `<rect x="${x + bw * .12}" y="${H - 30 - h1}" width="${w}" height="${h1}" rx="${Math.min(4, w / 2)}" fill="#ffc15e"><title>${r.date ?? r.month}: solar ${r.solar.toFixed(0)} kWh</title></rect>`;
+    o += `<rect x="${x + bw * .12}" y="${H - 30 - h1}" width="${w}" height="${h1}" rx="${Math.min(4, w / 2)}" fill="#ffc15e"><title>${esc(r.date ?? r.month)}: solar ${r.solar.toFixed(0)} kWh</title></rect>`;
     o += `<rect x="${x + bw * .12 + w + 1.5}" y="${H - 30 - h2}" width="${w}" height="${h2}" rx="${Math.min(4, w / 2)}" fill="#6cc4ff" fill-opacity=".75"><title>home ${r.home.toFixed(0)} kWh</title></rect>`;
     if (outageDays.has(r.date ?? r.month)) o += `<circle cx="${x + bw / 2}" cy="${H - 34 - Math.max(h1, h2) - 8}" r="3.5" fill="#ff5a4e"/>`;
     o += svgText(x + bw / 2, H - 12, label(r, i), { size: 10, anchor: 'middle' }); });
@@ -120,7 +120,7 @@ export function drawSocHeat(S) {
   const reserve = S.now?.site?.reservePct ?? 20, rows = G.soc, D = rows.length, ch = 176 / D;
   const col = v => { const st = [[16, 21, 31], [29, 92, 74], [78, 240, 166], [217, 255, 240]], t = Math.max(0, Math.min(.999, v / 100)) * 3, i = Math.floor(t), f = t - i; return `rgb(${st[i].map((c, j) => Math.round(c + (st[i + 1][j] - c) * f)).join(',')})`; };
   let o = '';
-  rows.forEach((r, d) => r.forEach((v, h) => { if (v == null) return; o += `<rect x="${22 + h * 11.9}" y="${4 + d * ch}" width="11.4" height="${Math.max(1, ch - .6)}" rx="1.2" fill="${v <= reserve + .5 ? '#ff7a66' : col(v)}"><title>${G.dates[d]} ${clock12(h)}: ${Math.round(v)}%</title></rect>`; }));
+  rows.forEach((r, d) => r.forEach((v, h) => { if (v == null) return; o += `<rect x="${22 + h * 11.9}" y="${4 + d * ch}" width="11.4" height="${Math.max(1, ch - .6)}" rx="1.2" fill="${v <= reserve + .5 ? '#ff7a66' : col(v)}"><title>${esc(G.dates[d])} ${clock12(h)}: ${Math.round(v)}%</title></rect>`; }));
   [0, 6, 12, 18].forEach(h => o += svgText(22 + h * 11.9, 188, ['12a', '6a', '12p', '6p'][h / 6], { size: 9 }));
   o += svgText(0, 12, niceDate(G.dates[0]).split(' ')[1], { size: 8.5 }) + svgText(0, 180, 'today', { size: 8.5 });
   $('socHeat').innerHTML = o;
@@ -156,7 +156,7 @@ export function drawOutages(S) {
   let s = '<line x1="6" x2="304" y1="28" y2="28" stroke="rgba(255,255,255,.1)"/>';
   months.forEach((m, i) => s += svgText(6 + i * 24.8 + 12, 58, new Date(m + '-15').toLocaleDateString('en-US', { month: 'narrow' }), { anchor: 'middle' }));
   recent.forEach(o => { const f = (Date.parse(o.ts) - Date.parse(yearAgo)) / (365 * 864e5), r = 3 + Math.sqrt(o.duration_s / 3600) * 5;
-    s += `<circle cx="${6 + f * 298}" cy="28" r="${r}" fill="#ff5a4e" fill-opacity=".3" stroke="#ff5a4e"><title>${o.ts.slice(0, 16).replace('T', ' ')} · ${fmtDur(o.duration_s / 3600)}</title></circle>`; });
+    s += `<circle cx="${6 + f * 298}" cy="28" r="${r}" fill="#ff5a4e" fill-opacity=".3" stroke="#ff5a4e"><title>${esc(o.ts.slice(0, 16).replace('T', ' '))} · ${fmtDur(o.duration_s / 3600)}</title></circle>`; });
   $('outStrip').innerHTML = s;
   $('outList').innerHTML = O.slice(0, 8).map(o => { const d = new Date(o.ts);
     return `<div class="ev"><div class="d">${d.toLocaleDateString('en-US', { month: 'short' })}<b>${d.getDate()}</b></div><div class="m"><b>${d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric' })}</b><br>${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} · Powerwalls kept the home running</div><div class="t">${fmtDur(o.duration_s / 3600)}</div></div>`; }).join('') || '<div class="empty">No outages on record.</div>';
@@ -170,7 +170,7 @@ function drawBillList(S) {
   $('billList').innerHTML = R.length ? R.map(r => { const ok = r.checks.every(c => c.ok);
     if (S.guest) return `<div class="bill" style="cursor:default"><div class="bm"><b>${niceDate(r.billDate, { month: 'long', year: 'numeric' })}</b><br>${niceDate(r.period.from)} – ${niceDate(r.period.to)} · ${r.pec.deliveredKwh.toLocaleString()} kWh bought · ${(r.pec.receivedKwh ?? 0).toLocaleString()} sent</div>
       <div class="bt">${veil()}<small style="color:${ok ? 'var(--batt)' : 'var(--warn)'}">${ok ? '✓ matches Tesla' : '! check'}</small></div></div>`;   // no detail sheet for a guest
-    return `<div class="bill" data-bill="${r.billDate}"><div class="bm"><b>${niceDate(r.billDate, { month: 'long', year: 'numeric' })}</b><br>${niceDate(r.period.from)} – ${niceDate(r.period.to)} · ${r.pec.deliveredKwh.toLocaleString()} kWh bought</div>
+    return `<div class="bill" data-bill="${esc(r.billDate)}"><div class="bm"><b>${niceDate(r.billDate, { month: 'long', year: 'numeric' })}</b><br>${niceDate(r.period.from)} – ${niceDate(r.period.to)} · ${r.pec.deliveredKwh.toLocaleString()} kWh bought</div>
       <div class="bt">${money2(r.total)}<small style="color:${ok ? 'var(--batt)' : 'var(--warn)'}">${ok ? '✓ matches Tesla' : '! check'}</small></div></div>`; }).join('')
     : '<div class="empty">No bills yet.</div>';
   document.querySelectorAll('[data-bill]').forEach(el => el.onclick = () => openBillDetail(S, R.find(r => r.billDate === el.dataset.bill)));
@@ -180,9 +180,9 @@ function openBillDetail(S, r) {
   $('sheetBody').innerHTML = `<div class="shead"><h4>${niceDate(r.billDate, { month: 'long', year: 'numeric' })} bill</h4><button class="x" id="sheetX" aria-label="Close">×</button></div>
     <p class="sub">${niceDate(r.period.from)} – ${niceDate(r.period.to)} · ${r.period.days} days</p>
     <table class="btable">
-      <tr><td>Bought from PEC</td><td>${r.pec.deliveredKwh.toLocaleString()} kWh</td></tr><tr><td>Sent to PEC</td><td>${r.pec.receivedKwh} kWh</td></tr>
+      <tr><td>Bought from PEC</td><td>${r.pec.deliveredKwh.toLocaleString()} kWh</td></tr><tr><td>Sent to PEC</td><td>${esc(r.pec.receivedKwh)} kWh</td></tr>
       <tr><td>Tesla measured bought / sent</td><td>${r.tesla.importKwh == null ? '—' : Math.round(r.tesla.importKwh).toLocaleString()} / ${r.tesla.exportKwh == null ? '—' : Math.round(r.tesla.exportKwh)} kWh</td></tr>
-      ${r.charges.map(c => `<tr><td>${c.label}${c.kwh ? ` · ${c.kwh.toLocaleString()} kWh @ $${c.rate}` : ''}</td><td>${money2(c.amount)}</td></tr>`).join('')}
+      ${r.charges.map(c => `<tr><td>${esc(c.label)}${c.kwh ? ` · ${c.kwh.toLocaleString()} kWh @ $${esc(c.rate)}` : ''}</td><td>${money2(c.amount)}</td></tr>`).join('')}
       <tr><td><b style="color:var(--text)">Total</b></td><td><b>${money2(r.total)}</b></td></tr></table>
     <button class="danger" id="billRemove">Remove this bill</button>`;
   $('phone').classList.add('open');
@@ -204,7 +204,7 @@ export function drawBills(S) {
   const yoy = last.lastYear?.homeKwh ? (() => { const h = last.tesla.homeKwh, ph = last.lastYear.homeKwh, s = last.tesla.solarKwh, ps = last.lastYear.solarKwh;
     return `<div class="check"><i class="${Math.abs(h / ph - 1) > .1 ? 'wa' : 'ok'}">${Math.abs(h / ph - 1) > .1 ? '!' : '✓'}</i><div><b>Versus the same dates last year:</b> home use ${h >= ph ? '+' : ''}${Math.round((h / ph - 1) * 100)}%, solar ${s >= ps ? '+' : ''}${Math.round((s / ps - 1) * 100)}%, bought from PEC ${last.tesla.importKwh >= last.lastYear.importKwh ? '+' : ''}${Math.round((last.tesla.importKwh / last.lastYear.importKwh - 1) * 100)}%.</div></div>`; })() : '';
   $('billChecks').innerHTML = `<div class="card"><div class="h"><b>${niceDate(last.billDate, { month: 'long' })} bill check</b><span class="badge ${last.checks.every(c => c.ok) ? 'g' : ''}">${last.checks.every(c => c.ok) ? 'all good' : 'look at this'}</span></div>
-    <div style="margin-top:8px">${last.checks.map(c => `<div class="check"><i class="${c.ok ? 'ok' : 'al'}">${c.ok ? '✓' : '!'}</i><div><b>${c.label}.</b> ${c.detail}</div></div>`).join('')}${yoy}</div>${cov}
+    <div style="margin-top:8px">${last.checks.map(c => `<div class="check"><i class="${c.ok ? 'ok' : 'al'}">${c.ok ? '✓' : '!'}</i><div><b>${esc(c.label)}.</b> ${esc(c.detail)}</div></div>`).join('')}${yoy}</div>${cov}
     <div class="kv"><span>${niceDate(last.period.from)} – ${niceDate(last.period.to)} · total</span><b>${S.guest ? veil() : money2(last.total)}</b>
     <span>Your rate, all-in</span><b>${S.guest ? veil('$•.••••/kWh') : last.tariff ? `$${last.tariff.importRateAllIn.toFixed(4)}/kWh` : '—'}</b><span>Solar + Powerwall covered</span><b style="color:var(--batt)">${last.solarShareOfHome ?? '—'}% of home use</b>
     <span>Without solar it would have been</span><b>${S.guest ? veil() : money2(last.withoutSolarCost)}</b></div></div>`;
@@ -248,7 +248,7 @@ export function drawBills(S) {
   const M = rate != null ? (S.monthly ?? []).slice(-12) : [], top = Math.max(1, ...M.map(m => fixed + m.home * rate)) * 1.05; // no rate: no dollar bars
   let b = '';
   M.forEach((m, i) => { const x = 6 + i * 25.5, wo = fixed + m.home * rate, paid = fixed + m.import * rate - m.export * (T.exportCredit ?? 0), h1 = wo / top * 98, h2 = Math.max(0, paid) / top * 98;
-    b += `<rect x="${x}" y="${104 - h1}" width="19" height="${h1}" rx="5" fill="rgba(255,255,255,.13)"><title>${m.month}: without solar $${wo.toFixed(0)}</title></rect><rect x="${x + 4}" y="${104 - h2}" width="11" height="${h2}" rx="3" fill="#ffc15e"><title>paid ≈ $${paid.toFixed(0)}</title></rect>` +
+    b += `<rect x="${x}" y="${104 - h1}" width="19" height="${h1}" rx="5" fill="rgba(255,255,255,.13)"><title>${esc(m.month)}: without solar $${wo.toFixed(0)}</title></rect><rect x="${x + 4}" y="${104 - h2}" width="11" height="${h2}" rx="3" fill="#ffc15e"><title>paid ≈ $${paid.toFixed(0)}</title></rect>` +
       svgText(x + 9.5, 120, new Date(m.month + '-15').toLocaleDateString('en-US', { month: 'narrow' }), { anchor: 'middle' }); });
   $('billChart').innerHTML = b;
 }
@@ -269,14 +269,14 @@ export function openBillSheet(S, refresh) {
       const ok = bill.checks?.lineItemsSumToTotal && bill.checks?.registersConsistent;
       $('billPreview').innerHTML = `<table class="btable">
         <tr><td>Billing period</td><td>${niceDate(bill.period.from)} – ${niceDate(bill.period.to)} (${bill.period.days} days)</td></tr>
-        <tr><td>Bought from PEC</td><td>${bill.deliveredKwh.toLocaleString()} kWh</td></tr><tr><td>Sent to PEC</td><td>${bill.receivedKwh} kWh</td></tr>
-        ${bill.charges.map(c => `<tr><td>${c.label}${c.kwh ? ` · ${c.kwh.toLocaleString()} kWh @ $${c.rate}` : ''}</td><td>${money2(c.amount)}</td></tr>`).join('')}
+        <tr><td>Bought from PEC</td><td>${bill.deliveredKwh.toLocaleString()} kWh</td></tr><tr><td>Sent to PEC</td><td>${esc(bill.receivedKwh)} kWh</td></tr>
+        ${bill.charges.map(c => `<tr><td>${esc(c.label)}${c.kwh ? ` · ${c.kwh.toLocaleString()} kWh @ $${esc(c.rate)}` : ''}</td><td>${money2(c.amount)}</td></tr>`).join('')}
         <tr><td><b style="color:var(--text)">Total</b></td><td><b>${money2(bill.total)}</b></td></tr></table>
         <p class="${ok ? 'sub' : 'err'}">${ok ? '✓ The line items add up and the meter readings are consistent.' : "⚠ Some numbers didn't add up. Check them against the PDF before saving."}</p>
         <div class="row2"><button class="ghost" id="billCancel">Cancel</button><button class="primary" id="billSave" style="margin-top:0">Save bill</button></div>`;
       $('billCancel').onclick = () => $('phone').classList.remove('open');
       $('billSave').onclick = async () => { await api.saveBill(bill); $('phone').classList.remove('open'); toast('$', 'rgba(255,193,94,.2)', 'Bill saved', `${niceDate(bill.billDate, { month: 'long' })} · ${money2(bill.total)}. Checking it against Tesla now`); refresh(); };
-    } catch (e) { $('billPreview').innerHTML = `<p class="err">${e.message}</p>`; }
+    } catch (e) { $('billPreview').innerHTML = `<p class="err">${esc(e.message)}</p>`; }
   };
   $('billFile').onchange = e => e.target.files[0] && handle(e.target.files[0]);
   const drop = $('drop');

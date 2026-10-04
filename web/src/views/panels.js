@@ -25,7 +25,7 @@ export function drawPerformance(S) {
   const exp = r => K * S.gtiByDate[r.date], mx = Math.max(...rows.map(r => Math.max(r.solar, exp(r)))) * 1.08, bw = 290 / rows.length;
   let o = '';
   rows.forEach((r, i) => { const x = 14 + i * bw, h1 = r.solar / mx * 110, h2 = exp(r) / mx * 110, ratio = r.solar / exp(r), low = S.gtiByDate[r.date] > 2.5 && ratio < .9;
-    o += `<rect x="${x}" y="${120 - h2}" width="${bw - 2}" height="${h2}" rx="2" fill="rgba(255,255,255,.12)"/><rect x="${x + 1}" y="${120 - h1}" width="${bw - 4}" height="${h1}" rx="2" fill="${low ? '#ff7a66' : '#ffc15e'}"><title>${r.date}: ${r.solar.toFixed(1)} kWh · expected ${exp(r).toFixed(1)} (${Math.round(ratio * 100)}%)</title></rect>`;
+    o += `<rect x="${x}" y="${120 - h2}" width="${bw - 2}" height="${h2}" rx="2" fill="rgba(255,255,255,.12)"/><rect x="${x + 1}" y="${120 - h1}" width="${bw - 4}" height="${h1}" rx="2" fill="${low ? '#ff7a66' : '#ffc15e'}"><title>${esc(r.date)}: ${r.solar.toFixed(1)} kWh · expected ${exp(r).toFixed(1)} (${Math.round(ratio * 100)}%)</title></rect>`;
     if (i % 7 === 0) o += svgText(x + bw / 2, 136, niceDate(r.date), { anchor: 'middle', size: 9 }); });
   $('prChart').innerHTML = o;
   const clear = rows.filter(r => S.gtiByDate[r.date] > 4.5), ratio = clear.length ? clear.reduce((a, r) => a + r.solar / exp(r), 0) / clear.length : null;
@@ -202,7 +202,7 @@ function drawHealth() {
     const shown = D.today && p?.pctToday != null && a.days.at(-1)?.day !== D.date ? [...a.days.slice(-6), today] : a.days;
     return `<div class="flagbox"><div class="ft"><b>${esc(a.name)}</b><span>${p?.pctToday != null ? `${Math.round(p.pctToday)}%` : '—'}</span></div>
       <p>Consistently low for ${shown.filter(d => d.pct < 85).length} days: shade, soiling or a failing microinverter.</p>
-      <div class="d7">${shown.map(d => `<div class="${d.pct < 85 ? 'l' : ''}">${d.pct}<small>${esc(d.label ?? niceDate(d.day))}</small></div>`).join('')}</div>
+      <div class="d7">${shown.map(d => `<div class="${d.pct < 85 ? 'l' : ''}">${esc(d.pct)}<small>${esc(d.label ?? niceDate(d.day))}</small></div>`).join('')}</div>
       <div class="kv">
         <span>Today</span><b>${f(p?.kwh, 2)} kWh · median ${f(med, 2)}</b>
         ${!D.sunDown && p?.kw != null ? `<span>Now, DC in → AC</span><b>${f(p.kwDc, 3)} → ${f(p.kw, 3)} kW</b>
@@ -211,7 +211,7 @@ function drawHealth() {
         <span>Flagged</span><b>${niceDate(a.day)}${al ? ` · ${al.pushed ? 'push sent' : 'in the feed'}` : ''}</b>
       </div>
       ${a.diag ? `<p class="why"><b>${esc(a.diag.lead)}</b>${esc(a.diag.text)}</p>` : ''}
-      <button class="link" style="margin-top:10px" data-show="${a.id}">Show on the Live roof</button></div>`; };
+      <button class="link" style="margin-top:10px" data-show="${esc(a.id)}">Show on the Live roof</button></div>`; };
   const nrHtml = D.relay.silent
     ? `<div class="nr"><i></i><div><b>Relay last heard ${clock(Date.parse(D.relay.heardAt ?? D.relay.lastPoll))}</b><small>No per-panel readings for ${D.relay.silentMin ?? Math.round(D.relay.ageS / 60)} min of daylight. ${esc(D.relay.note ?? 'The Mac running the PVS relay may be asleep or off the network')}; no single panel is to blame.</small></div></div>`
     : miss.map(m => { const due = m.pushAt && Date.parse(m.pushAt) > Date.parse(D.at);

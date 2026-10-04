@@ -331,8 +331,11 @@ explainOnTap(toast, () => S.ownerName);
 
 async function boot() {
   const params = new URLSearchParams(location.search);
-  if (params.get('tesla_error')) toast('!', 'rgba(255,90,78,.25)', 'Tesla connection failed', params.get('tesla_error'));
-  if (params.get('nest_error')) toast('!', 'rgba(255,90,78,.25)', 'Nest link failed', params.get('nest_error'));
+  // the server sends fixed codes only (never upstream text); each maps to one sentence here
+  const OAUTH_ERR = { expired: 'Sign-in expired. Try again.', denied: 'Access was not granted. Try again and allow access.', failed: 'Something went wrong. Try again.' };
+  if (params.get('tesla_error')) toast('!', 'rgba(255,90,78,.25)', 'Tesla connection failed', OAUTH_ERR[params.get('tesla_error')] ?? OAUTH_ERR.failed);
+  if (params.get('nest_error')) toast('!', 'rgba(255,90,78,.25)', 'Nest link failed', OAUTH_ERR[params.get('nest_error')] ?? OAUTH_ERR.failed);
+  if (params.has('tesla_error') || params.has('nest_error') || params.has('nest')) history.replaceState(null, '', location.pathname + location.hash);   // a reload doesn't toast again
   if (params.get('nest') === 'linked') toast('✓', 'rgba(78,240,166,.2)', 'Nest linked', 'Solstice can now see the thermostat. Open Insights → Appliances → AC.');
   if (ownerLink) {   // first open of the owner link on this device: trade the key for the owner cookie
     const ok = await api.owner(ownerLink).then(() => true, () => false);

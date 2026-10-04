@@ -44,22 +44,22 @@ function logText(l, withRule) {
   const v = val(l.command, l.value), at = clock(l.at), who = l.result === 'sent' ? (l.source === 'owner' ? 'you applied' : 'auto') : '';
   const t = { sent: `set ${v} at ${at}`, suggested: `suggested ${v} · not applied`, refused: `${v} refused: ${l.reason ?? ''}`, scope_missing: `${v} not sent: energy_cmds missing`,
     unchanged: `no change: ${l.reason ?? ''}`, error: `${v} failed: ${l.reason ?? ''}`, no_account: 'not sent: no Tesla account' }[l.result] ?? `${l.result} ${v}`;
-  return withRule ? `${RULE[l.rule]?.title ?? l.rule ?? l.command} · ${esc(t)}${who ? ` <em>${who}</em>` : ''}` : esc(t.charAt(0).toUpperCase() + t.slice(1) + (who ? ` (${who})` : '') + '.');
+  return withRule ? `${esc(RULE[l.rule]?.title ?? l.rule ?? l.command)} · ${esc(t)}${who ? ` <em>${who}</em>` : ''}` : esc(t.charAt(0).toUpperCase() + t.slice(1) + (who ? ` (${who})` : '') + '.');
 }
 const day = at => niceDate(dayOf(at));
 
 function recHtml(r, cmds, floor) {
   const s = r.suggestion ?? {}, v = s.value, reason = esc(s.reason ?? '');
   if (r.mode === 'off') return `<div class="rec none"><b>Off.</b> No suggestions and no pushes for this rule.</div>`;
-  if (r.mode === 'auto') return s.action === 'set' ? `<div class="rec auto"><b>Auto: sets ${val(s.command, v)} ${autoWhen[r.id]}.</b> ${reason} Every change is logged below.</div>`
+  if (r.mode === 'auto') return s.action === 'set' ? `<div class="rec auto"><b>Auto: sets ${esc(val(s.command, v))} ${autoWhen[r.id]}.</b> ${reason} Every change is logged below.</div>`
     : `<div class="rec auto"><b>Auto: no change.</b> ${reason}</div>`;
   if (s.action !== 'set') return `<div class="rec none"><b>${s.action === 'wait' ? 'Waiting.' : 'No change.'}</b> ${reason}</div>`;
   if (skipped(r.id, v)) return `<div class="rec none"><b>Skipped for today.</b> ${reason}</div>`;
-  const head = r.id === 'reserve' ? `Suggest: ${v}% tonight.` : r.id === 'storm' ? `Suggest: reserve to ${v}%.` : `Suggest: ${EXPORT[v] ?? v} (${code(v)}).`;
-  const apply = r.id === 'reserve' ? `Apply ${v}%` : r.id === 'storm' ? `Apply: ${v}%` : `Apply ${EXPORT[v] ?? v}`;
-  const skipL = r.id === 'export' ? `Keep ${EXPORT[s.current] ?? s.current ?? 'as is'}` : RULE[r.id].skip;
+  const head = r.id === 'reserve' ? `Suggest: ${esc(v)}% tonight.` : r.id === 'storm' ? `Suggest: reserve to ${esc(v)}%.` : `Suggest: ${esc(EXPORT[v] ?? v)} (${code(v)}).`;
+  const apply = r.id === 'reserve' ? `Apply ${esc(v)}%` : r.id === 'storm' ? `Apply: ${esc(v)}%` : `Apply ${esc(EXPORT[v] ?? v)}`;
+  const skipL = r.id === 'export' ? `Keep ${esc(EXPORT[s.current] ?? s.current ?? 'as is')}` : RULE[r.id].skip;
   return `<div class="rec"><b>${head}</b> ${r.id === 'export' ? reason.replace(/\b(battery_ok|pv_only)\b/g, m => code(m)) : reason}
-    ${cmds ? '' : `<p class="fine" style="margin-top:8px">${teslaSteps(r.id, v)}</p>`}
+    ${cmds ? '' : `<p class="fine" style="margin-top:8px">${esc(teslaSteps(r.id, v))}</p>`}
     <div class="row2"><button class="apply" data-apply="${r.id}">${apply}</button><button class="skip" data-skip="${r.id}">${skipL}</button></div></div>`;
 }
 
@@ -68,8 +68,8 @@ export function drawPowerwallRules(S) {
   const cmds = !!P.scope?.energyCmds, site = S.now?.site ?? {}, exp = P.rules.find(r => r.id === 'export')?.suggestion?.current;
   const modes = Object.fromEntries(P.rules.map(r => [r.id, r.mode])), word = rulesMode(modes);
   $('pwrBadge').textContent = /in Auto/.test(word) ? word : `${P.rules.length} rules · ${word}`; $('pwrBadge').className = `badge${word === 'Off' ? '' : ' g'}`;
-  $('pwrCur').innerHTML = `<span>reserve <b>${site.reservePct ?? P.rules.find(r => r.id === 'reserve')?.suggestion?.current ?? '—'}%</b></span><span>export <b>${EXPORT[exp] ?? exp ?? '—'}</b></span>` +
-    `<span>Storm Watch <b>${site.stormWatch == null ? '—' : site.stormWatch ? 'on' : 'off'}</b></span><span>mode <b>${MODE[site.mode] ?? site.mode ?? '—'}</b></span>`;
+  $('pwrCur').innerHTML = `<span>reserve <b>${esc(site.reservePct ?? P.rules.find(r => r.id === 'reserve')?.suggestion?.current ?? '—')}%</b></span><span>export <b>${esc(EXPORT[exp] ?? exp ?? '—')}</b></span>` +
+    `<span>Storm Watch <b>${site.stormWatch == null ? '—' : site.stormWatch ? 'on' : 'off'}</b></span><span>mode <b>${esc(MODE[site.mode] ?? site.mode ?? '—')}</b></span>`;
   $('pwrScope').innerHTML = cmds
     ? `<div class="scope"><b>Solstice can change these settings.</b> Tesla granted the energy commands permission (<code style="font:10.5px 'JetBrains Mono'">energy_cmds</code>). Suggest shows a change and waits for you. Auto makes it, inside the limits shown under each rule.</div>`
     : `<div class="scope miss"><b>Solstice can read these settings but can't change them yet.</b> It needs Tesla's energy commands permission (<code style="font:10.5px 'JetBrains Mono'">energy_cmds</code>). Reconnect once in your own browser and approve the new permission. Until then each rule shows its steps in the Tesla app.<br><a class="link" href="/auth/login">Re-connect Tesla ›</a></div>`;

@@ -205,11 +205,11 @@ describe('OAuth links: minted only by the owner, callbacks verify a signed singl
     expect(cb.headers.get('location')).toBe('/');
     expect(teslaAuth.exchangeCode).toHaveBeenCalledWith('test-code', null);
     const replay = await call(`/auth/callback?code=test-code&state=${encodeURIComponent(state)}`);
-    expect(replay.headers.get('location')).toBe('/?tesla_error=Sign-in+expired.+Try+again.');
+    expect(replay.headers.get('location')).toBe('/?tesla_error=expired');
     const body = state.slice(0, state.lastIndexOf('.'));
     for (const forged of [`${body}.AAAA`, `owner.tesla.${Date.now() + 60_000}.00.x`, auth.signState(0), auth.signOwnerState('tesla', -1000), auth.signOwnerState('nest', 60_000), '']) {
       const r = await call(`/auth/callback?code=test-code&state=${encodeURIComponent(forged)}`);
-      expect(r.headers.get('location'), forged).toBe('/?tesla_error=Sign-in+expired.+Try+again.');
+      expect(r.headers.get('location'), forged).toBe('/?tesla_error=expired');
     }
     expect(teslaAuth.exchangeCode).toHaveBeenCalledTimes(1);
   });
@@ -221,10 +221,10 @@ describe('OAuth links: minted only by the owner, callbacks verify a signed singl
     const state = stateOf(start);
     const cb = await call(`/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`);
     expect(cb.headers.get('location')).toBe('/?nest=linked');
-    expect((await call(`/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`)).headers.get('location')).toBe('/?nest_error=bad+state');
+    expect((await call(`/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`)).headers.get('location')).toBe('/?nest_error=expired');
     const tesla = stateOf(await call('/auth/login', { cookie }));   // a Tesla state is not a Nest state
     for (const forged of [tesla, `owner.nest.${Date.now() + 60_000}.00.x`, auth.signState(0, 60_000), auth.signOwnerState('nest', -1000)]) {
-      expect((await call(`/auth/google/callback?code=test-code&state=${encodeURIComponent(forged)}`)).headers.get('location'), forged).toBe('/?nest_error=bad+state');
+      expect((await call(`/auth/google/callback?code=test-code&state=${encodeURIComponent(forged)}`)).headers.get('location'), forged).toBe('/?nest_error=expired');
     }
   });
 });

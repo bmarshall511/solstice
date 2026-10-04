@@ -152,7 +152,7 @@ describe('relay configuration', () => {
       expect(err.message).not.toContain(PW);
     };
     refuse({ ...ok, PVS_PASSWORD: '' }, /missing in the env file: PVS_PASSWORD/);
-    refuse({ PVS_HOST: '10.0.0.9', PVS_PASSWORD: PW }, /missing in the env file: SOLSTICE_URL, SOLSTICE_OWNER_KEY/);
+    refuse({ PVS_HOST: '10.0.0.9', PVS_PASSWORD: PW }, /missing in the env file: SOLSTICE_URL, SOLSTICE_INGEST_TOKEN/);
     refuse({ ...ok, PVS_HOST: 'https://10.0.0.9' }, /PVS_HOST must be a bare host/);
     refuse({ ...ok, PVS_HOST: '10.0.0.9/vars' }, /PVS_HOST must be a bare host/);
     refuse({ ...ok, SOLSTICE_URL: 'http://app.invalid' }, /must be https/);
@@ -384,6 +384,27 @@ describe('relay → Solstice (the real app on PGlite)', () => {
     expect(stored.map(r => r.ts.getTime())).toEqual([t0, Date.parse(m1)]);
     expect(stored[0]).toMatchObject({ sn: 'TEST-INV-02', kw: 0.192, kw_dc: 0.1987, v: 32.8, t: 43.5, kwh: 2511.204102 });
     expect((await rows('TEST-INV-03'))[0]).toMatchObject({ kw: 0, kw_dc: 0, v: 0, t: null, kwh: 2702 });
+  });
+
+  it('API-6 with SOLSTICE_INGEST_TOKEN the relay posts without the owner key, makes no owner session, and the token opens nothing else', async () => {
+    const TOKEN = 'test-ingest-token-synthetic-abcdefghijklmnop';   // test-only
+    process.env.PVS_INGEST_TOKEN = TOKEN;
+    await revokeRelaySessions();
+    const before = (await db.q('SELECT id FROM owner_sessions')).length;
+    const cfg = relay.loadConfig({ PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW, SOLSTICE_URL: base, SOLSTICE_INGEST_TOKEN: TOKEN }), state = newState();
+    const m0 = recentMsmt(40); pvs.vars = pvsVars(m0);
+    try {
+      expect((await relay.pollOnce(cfg, state)).posted).toMatchObject({ ok: true, inserted: 3 });
+      expect(state.apiCookie).toBeNull();
+      expect((await db.q('SELECT id FROM owner_sessions')).length).toBe(before);              // no owner session for the relay
+      const bearer = { authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };
+      expect((await fetch(`${base}/api/pvs/heartbeat`, { method: 'POST', headers: bearer, body: JSON.stringify({ pvs: 'ok' }) })).status).toBe(200);
+      for (const [m, path] of [['GET', '/api/pvs/latest'], ['GET', '/api/settings'], ['POST', '/api/appliances/ac/command'], ['POST', '/api/pvs/layout']] as const)
+        expect((await fetch(`${base}${path}`, { method: m, headers: bearer, ...(m === 'POST' ? { body: '{}' } : {}) })).status).toBe(401);
+      expect((await fetch(`${base}/api/pvs/readings`, { method: 'POST', headers: { ...bearer, authorization: 'Bearer wrong-token-wrong-token-wrong-token-xx' }, body: '{}' })).status).toBe(401);
+      process.env.PVS_INGEST_TOKEN = '';                                                       // no token configured: bearer opens nothing
+      expect((await fetch(`${base}/api/pvs/heartbeat`, { method: 'POST', headers: bearer, body: JSON.stringify({ pvs: 'ok' }) })).status).toBe(401);
+    } finally { pvs.vars = pvsVars(MSMT); delete process.env.PVS_INGEST_TOKEN; }
   });
 
   it('API-2 a 401 (cookie revoked) unlocks again once and the poll still lands; a retried poll stores nothing twice', async () => {
