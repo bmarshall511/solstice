@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Solstice · AC controls and manual hold</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* page scaffolding for the mockup only (same as t-enhancements and u-panels) */
+html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+body{background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.col{width:100%;max-width:393px;margin:0 auto;padding:28px 0 60px}
+.intro{padding:0 20px}
+.intro .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.intro h2{font-size:30px;line-height:1.1;font-weight:300;letter-spacing:-.02em;margin-bottom:12px}
+.intro p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.frame{margin-top:34px}
+.frame>.sect{margin:0 20px 10px}
+.pagepad{padding:0 20px}
+.ctx{margin:10px 20px 0;font-size:11px;color:var(--mute);text-align:center;letter-spacing:.04em}
+.cap{margin:12px 20px 0;padding:12px 14px;border-radius:16px;background:rgba(0,0,0,.25);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.55}
+.cap b{color:var(--text);font-weight:600}
+.cap p+p{margin-top:6px}
+.cap .new{color:var(--batt)}
+.cap .same{color:var(--mute)}
+.cap .wr{color:var(--solar)}
+.cap code,.wrules code{font:11.5px "JetBrains Mono";color:var(--text)}
+.wrules{margin:34px 20px 0}
+.wrules h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:10px}
+.wrules ul{list-style:none;display:grid;gap:8px}
+.wrules li{font-size:12.5px;color:var(--dim);line-height:1.55;padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b)}
+.wrules li b{color:var(--text);font-weight:600}
+.ghostcard{opacity:.45}
+.twinstub{position:relative;height:120px;margin:10px -16px 0;border-radius:20px;overflow:hidden;background:radial-gradient(80% 90% at 60% 100%,rgba(255,158,102,.18),rgba(0,0,0,0) 70%),radial-gradient(60% 60% at 30% 40%,rgba(108,196,255,.12),rgba(0,0,0,0) 70%),rgba(0,0,0,.2)}
+.twinstub .hud{bottom:10px}
+.pstates{display:flex;gap:6px;flex-wrap:wrap;margin:10px 20px 0}
+.pstates button{all:unset;cursor:pointer;font-size:11px;padding:5px 10px;border-radius:999px;background:var(--glass);border:1px solid var(--glass-b);color:var(--dim)}
+.pstates button.on{color:var(--text);border-color:rgba(108,196,255,.45);background:rgba(108,196,255,.1)}
+.dev{position:relative;width:100%;height:700px;overflow:hidden;background:#05060a}
+@media (min-width:394px){.dev{border-radius:44px;border:1px solid rgba(255,255,255,.14)}}
+.dev .inner{position:absolute;inset:0;padding:54px 20px 0;overflow:hidden}
+.dev .sheet{left:8px;right:8px}
+.dev.open .scrim{opacity:1}
+.dev .primary{margin-top:14px;width:100%;box-sizing:border-box}
+
+/* ---------- NEW: Thermostat card ---------- */
+.tstat .dial{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}
+.tstat .step{all:unset;cursor:pointer;flex:none;width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:26px;font-weight:300;background:rgba(255,255,255,.07);border:1px solid var(--glass-b);color:var(--text)}
+.tstat .step:active{background:rgba(255,255,255,.14)}
+.tstat .step[disabled]{opacity:.3;cursor:default}
+.tstat .sp{flex:1;text-align:center;min-width:0}
+.tstat .sp small{display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);font-weight:600}
+.tstat .sp b{display:block;font-size:54px;font-weight:300;letter-spacing:-.03em;line-height:1.05;font-variant-numeric:tabular-nums}
+.tstat .sp b sup{font-size:24px;vertical-align:22px;margin-left:1px}
+.tstat .sp b.cool{color:#9fd6ff}.tstat .sp b.heat{color:#ffb38a}.tstat .sp b.off{color:var(--mute)}
+.tstat .sp b{white-space:nowrap}.tstat .sp b.rng{font-size:42px}.tstat .sp b.rng sup{font-size:20px;vertical-align:16px}
+.tstat .sp b .dash{display:inline;font-size:30px;vertical-align:10px;color:var(--mute);margin:0 4px}
+.tstat .sp span{display:block;font-size:12px;color:var(--dim);margin-top:2px}
+.tstat .sp span.sending{color:var(--solar)}
+.tstat .sp span.ok{color:var(--batt)}
+.tstat .seg2.wide{margin-top:14px}.tstat .seg2.wide button{flex:1;text-align:center;padding:9px 6px;font-size:12px}
+.tstat .seg2.wide button.on.cool{background:rgba(108,196,255,.2)}.tstat .seg2.wide button.on.heat{background:rgba(255,158,102,.2)}.tstat .seg2.wide button.on.off{background:rgba(255,255,255,.12)}
+.tstat .xtra{display:flex;gap:8px;margin-top:10px}
+.tstat .xtra button{all:unset;cursor:pointer;flex:1;display:flex;align-items:center;justify-content:center;gap:7px;padding:10px 8px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);font-size:12.5px;font-weight:600;color:var(--dim)}
+.tstat .xtra button i{width:7px;height:7px;border-radius:50%;background:var(--mute)}
+.tstat .xtra button.on{color:var(--text);border-color:rgba(78,240,166,.4);background:rgba(78,240,166,.08)}
+.tstat .xtra button.on i{background:var(--batt);box-shadow:0 0 6px var(--batt)}
+.tstat .xtra button small{font:500 10.5px "JetBrains Mono";color:var(--mute);font-weight:500}
+/* the plan line and the hold banner */
+.follow{display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:12px;color:var(--dim);line-height:1.45}
+.follow i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--batt);box-shadow:0 0 10px var(--batt);margin-top:5px}
+.follow b{color:var(--text);font-weight:600}
+.hold{margin-top:12px;padding:12px 14px;border-radius:16px;background:rgba(196,162,255,.09);border:1px solid rgba(196,162,255,.32);font-size:12.5px;line-height:1.5;color:var(--dim)}
+.hold .hh{display:flex;align-items:center;gap:8px}
+.hold .hh i{flex:none;width:8px;height:8px;border-radius:50%;background:#c4a2ff;box-shadow:0 0 10px #c4a2ff}
+.hold .hh b{color:var(--text);font-weight:700;font-size:13.5px}
+.hold .hh em{margin-left:auto;font:500 10.5px "JetBrains Mono";font-style:normal;color:#c4a2ff;flex:none}
+.hold p{margin-top:4px}
+.hold p b{color:var(--text);font-weight:600}
+.hold .bar{height:4px;border-radius:2px;background:rgba(255,255,255,.08);margin-top:9px;overflow:hidden}
+.hold .bar i{display:block;height:100%;border-radius:2px;background:#c4a2ff}
+.hold .row2{display:flex;gap:8px;margin-top:10px}
+.hold .row2 button{all:unset;cursor:pointer;flex:1;text-align:center;padding:9px 10px;border-radius:12px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);font-weight:600;font-size:12.5px;color:var(--text)}
+.hold .row2 button.p{background:rgba(196,162,255,.18);border-color:rgba(196,162,255,.4)}
+.hold.paused{background:rgba(255,255,255,.04);border-color:var(--glass-b)}
+.hold.paused .hh i{background:var(--mute);box-shadow:none}.hold.paused .hh em{color:var(--mute)}
+.learn{margin-top:12px}
+.learn .row2{display:flex;gap:8px;margin-top:10px}
+.learn .row2 button{all:unset;cursor:pointer;flex:1;text-align:center;padding:9px 10px;border-radius:12px;font-weight:700;font-size:12.5px}
+.learn .row2 .y{background:var(--solar);color:#1a1204}
+.learn .row2 .n{background:rgba(255,255,255,.08);border:1px solid var(--glass-b);color:var(--text);font-weight:600}
+/* the band header becomes a button (Today: Nest vs Solstice) */
+.bandbtn{all:unset;cursor:pointer;font-size:11px;color:var(--dim);display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;border:1px solid var(--glass-b);background:rgba(255,255,255,.04);white-space:nowrap}
+.bandbtn:after{content:"✎";font-size:10px;color:var(--mute)}
+/* sheets */
+.bands{display:grid;gap:8px;margin-top:14px}
+.brow{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
+.brow .bt{flex:1;min-width:0;font-size:13.5px;font-weight:600}
+.brow .bt small{display:block;font-size:11px;color:var(--mute);font-weight:400;margin-top:1px}
+.stp{display:flex;align-items:center;gap:6px;flex:none}
+.stp button{all:unset;cursor:pointer;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);font-size:16px}
+.stp b{font:500 14px "JetBrains Mono";min-width:34px;text-align:center}
+.stp .to{font-size:11px;color:var(--mute)}
+.fan{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.fan button{all:unset;cursor:pointer;text-align:center;padding:12px 0;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);font:500 13px "JetBrains Mono"}
+.fan button.on{border-color:rgba(78,240,166,.5);background:rgba(78,240,166,.1)}
+.tline .h2 i{background:#c4a2ff;box-shadow:0 0 8px #c4a2ff}
+.tline .h2 em{color:#c4a2ff}
+.ghost{color:var(--mute)}
+</style></head><body>
+<div class="col">
+
+  <div class="intro">
+    <div class="k">Mockup v · AC controls and manual hold</div>
+    <h2>Set the thermostat from Solstice, and Autopilot respects what you set.</h2>
+    <p>These frames are the AC half of the decisions from Oct 4. A new <b>Thermostat</b> card has the setpoint, mode, Eco and fan timer. When you change the temperature, here or on the wall, a <b>hold</b> banner says what you set and when Autopilot takes over again. The comfort band becomes editable. Every number is illustrative. Buttons are inert except −/+, the mode switch and the state chips, which show each state.</p>
+  </div>
+
+  <!-- ================= Frame 1 · Thermostat card, following the plan ================= -->
+  <div class="frame" id="f1">
+    <div class="sect">Frame 1 · Insights › Appliances › AC · following the plan</div>
+    <div class="pagepad">
+      <div class="card tstat" id="t1">
+        <div class="h"><b>Thermostat</b><span class="badge g">Hallway · online</span></div>
+        <div class="dial">
+          <button class="step" data-d="-1" aria-label="One degree cooler">−</button>
+          <div class="sp"><small>Cool to</small><b class="cool" data-v>76<sup>°</sup></b><span data-s>Indoor 76.5° · 50% · cooling</span></div>
+          <button class="step" data-d="1" aria-label="One degree warmer">+</button>
+        </div>
+        <div class="seg2 wide" data-mode><button class="on cool" data-m="cool">Cool</button><button data-m="heat">Heat</button><button data-m="range">Heat · Cool</button><button data-m="off">Off</button></div>
+        <div class="xtra"><button data-x="eco"><i></i>Eco</button><button data-x="fan"><i></i>Fan <small>off</small></button></div>
+        <div class="follow" data-follow><i></i><span><b>Autopilot · Auto.</b> Following today's plan: 76° now, 76° at 9 PM, night band from 10 PM.</span></div>
+      </div>
+      <div class="card ghostcard">
+        <div class="h"><b>AC · thermal twin</b><span class="badge g">Linked · Nest</span></div>
+        <div class="twinstub"><div class="hud">Cooling · 1.7 kW · set 76°</div></div>
+      </div>
+    </div>
+    <div class="ctx">tap − / + (it waits 1.5 s after your last tap, then sends) · tap a mode</div>
+    <div class="cap">
+      <p><b class="new">New:</b> a <b>Thermostat</b> card at the top of the AC panel, above the thermal twin.</p>
+      <p><b>−/+</b> moves the setpoint 1° at a time and sends it 1.5 s after your last tap, so five quick taps are one Nest command. While it is sending, the line under the number reads "Sending 78°…", then "Set · Nest confirmed".</p>
+      <p><b>Mode</b> switches between Cool, Heat, Heat · Cool and Off. Changing the mode asks you to confirm.</p>
+      <p><b>Eco</b> is a toggle. <b>Fan</b> opens the timer sheet (frame 6).</p>
+      <p>The green line says what Autopilot is doing right now.</p>
+      <p><b class="same">Unchanged:</b> the thermal twin card, the plan card, the Autopilot card and the Home/Away control. They move down by one card and are otherwise identical.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 2 · you changed it here ================= -->
+  <div class="frame" id="f2">
+    <div class="sect">Frame 2 · you set 78° from the app at 3:52 PM</div>
+    <div class="pagepad">
+      <div class="card tstat">
+        <div class="h"><b>Thermostat</b><span class="badge g">Hallway · online</span></div>
+        <div class="dial">
+          <button class="step" aria-label="One degree cooler">−</button>
+          <div class="sp"><small>Cool to</small><b class="cool">78<sup>°</sup></b><span class="ok">Set · Nest confirmed 3:52 PM</span></div>
+          <button class="step" aria-label="One degree warmer">+</button>
+        </div>
+        <div class="seg2 wide"><button class="on cool">Cool</button><button>Heat</button><button>Heat · Cool</button><button>Off</button></div>
+        <div class="xtra"><button><i></i>Eco</button><button><i></i>Fan <small>off</small></button></div>
+        <div class="hold">
+          <div class="hh"><i></i><b>Holding your 78°</b><em>until 9:00 PM</em></div>
+          <p>You set it here at 3:52 PM. Autopilot skips its steps until <b>9:00 PM</b>, the plan's next change ("evening, comfort band"), then goes back to the plan.</p>
+          <div class="bar"><i style="width:4%"></i></div>
+          <div class="row2"><button class="p">Resume now</button><button>Hold until morning</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> any setpoint or mode you choose, here or on the wall, starts a <b>hold</b>. It lasts until the plan's next step, but never less than 2 h and never more than 8 h (your choice, Q2).</p>
+      <p>The banner shows what is held, why and until when, with a thin progress bar.</p>
+      <ul style="margin:6px 0 0 16px">
+        <li><b>Resume now</b> ends the hold. Autopilot then applies the step due now, still inside its own limits.</li>
+        <li><b>Hold until morning</b> extends the hold to the plan's 7 AM step.</li>
+      </ul>
+      <p><b class="wr">Writes:</b> your tap sends exactly the value you chose, inside 65–85° cool and 55–80° heat. It isn't limited to 2° per step or one write per 30 minutes, and it doesn't use up Autopilot's 30-minute slot.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 3 · you changed it on the wall ================= -->
+  <div class="frame" id="f3">
+    <div class="sect">Frame 3 · someone set 72° on the wall at 9:14 PM</div>
+    <div class="pagepad">
+      <div class="card tstat">
+        <div class="h"><b>Thermostat</b><span class="badge g">Hallway · online</span></div>
+        <div class="dial">
+          <button class="step" aria-label="One degree cooler">−</button>
+          <div class="sp"><small>Cool to</small><b class="cool">72<sup>°</sup></b><span>Indoor 75.8° · 48% · cooling</span></div>
+          <button class="step" aria-label="One degree warmer">+</button>
+        </div>
+        <div class="seg2 wide"><button class="on cool">Cool</button><button>Heat</button><button>Heat · Cool</button><button>Off</button></div>
+        <div class="xtra"><button><i></i>Eco</button><button><i></i>Fan <small>off</small></button></div>
+        <div class="hold">
+          <div class="hh"><i></i><b>Holding 72° set at the thermostat</b><em>until 11:14 PM</em></div>
+          <p>Solstice saw the change at 9:15 PM. The next step (night band, 10 PM) is less than 2 h away, so the hold runs the 2-hour minimum, to <b>11:14 PM</b>.</p>
+          <div class="bar"><i style="width:2%"></i></div>
+          <div class="row2"><button class="p">Resume now</button><button>Hold until morning</button></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="h"><b>Autopilot</b><span class="seg2"><button>Off</button><button>Suggest</button><button class="on">Auto</button></span></div>
+        <div class="status"><i style="background:#c4a2ff;box-shadow:0 0 10px #c4a2ff"></i><span><b>Holding your change until 11:14 PM.</b> Plan steps in that time are skipped, not stacked up.</span></div>
+        <div class="tline">
+          <div class="h2"><i></i><span>Oct 4</span><p>You set 72° at the thermostat (9:14 PM). Holding until 11:14 PM<em>hold</em></p></div>
+          <div><i></i><span>Oct 4</span><p>Set 76° (evening, comfort band) at 9:00 PM</p></div>
+          <div><i></i><span>Oct 4</span><p>Set 76° (morning, comfort band) at 7:00 AM</p></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">
+      <p><b class="new">How it knows:</b> Solstice keeps the value it last sent. A reading that differs from it, with no Solstice write in between, is a change by someone at home. That works now that Nest's own schedule is off (Q1).</p>
+      <p>For now it can take up to 5 minutes in the daytime and 15 at night to notice; Google's instant change events come in a later batch (Q3).</p>
+      <p>A <b>mode change</b> holds the same way. <b>Off</b> or <b>Heat</b> pauses AC Autopilot until the mode is back to Cool (frame 4).</p>
+      <p><b class="new">Also fixed:</b> the three bugs that made Solstice undo your changes:</p>
+      <ul style="margin:6px 0 0 16px">
+        <li>a step the thermostat already matched was never marked done</li>
+        <li>the night step was re-applied after midnight</li>
+        <li>the plan was recalculated every 5 minutes; it's now frozen once the day starts</li>
+      </ul>
+      <p><b class="same">Unchanged:</b> the Autopilot card's layout, mode switch, signals, week chart and log. Hold entries in the log get a lilac dot.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 4 · modes ================= -->
+  <div class="frame" id="f4">
+    <div class="sect">Frame 4 · the other modes</div>
+    <div class="pstates" id="mstates"><button class="on" data-s="heat">Heat</button><button data-s="range">Heat · Cool</button><button data-s="off">Off</button><button data-s="eco">Eco</button></div>
+    <div class="pagepad" style="margin-top:10px">
+      <div class="card tstat" id="t4">
+        <div class="h"><b>Thermostat</b><span class="badge g">Hallway · online</span></div>
+        <div class="dial">
+          <button class="step" aria-label="One degree cooler">−</button>
+          <div class="sp"><small data-l>Heat to</small><b class="heat" data-v>68<sup>°</sup></b><span data-s>Indoor 66.1° · 41% · heating</span></div>
+          <button class="step" aria-label="One degree warmer">+</button>
+        </div>
+        <div class="seg2 wide" data-mode><button data-m="cool">Cool</button><button class="on heat" data-m="heat">Heat</button><button data-m="range">Heat · Cool</button><button data-m="off">Off</button></div>
+        <div class="xtra"><button data-x="eco"><i></i>Eco</button><button><i></i>Fan <small>off</small></button></div>
+        <div class="hold paused" data-hold><div class="hh"><i></i><b>AC Autopilot paused</b><em>Heat</em></div><p>Autopilot only plans cooling. It starts again when the thermostat is back in Cool. Your heat setpoint is yours alone.</p></div>
+      </div>
+    </div>
+    <div class="cap">
+      <p><b>Heat</b> shows one setpoint (55–80°). <b>Heat · Cool</b> shows both, as "68 – 76", and −/+ moves the one you last tapped; Nest keeps them at least 3° apart.</p>
+      <p><b>Off</b> greys the number out and hides −/+.</p>
+      <p><b>Eco</b> shows Nest's eco temperatures. It is the same signal Home/Away Assist uses, so Eco also reads as Away for presence.</p>
+      <p>In all four states AC Autopilot is paused, and the grey banner says so.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 5 · comfort band sheet ================= -->
+  <div class="frame" id="f5">
+    <div class="sect">Frame 5 · Today: Nest vs Solstice › tap the band</div>
+    <div class="pagepad">
+      <div class="card">
+        <div class="h"><b>Today: Nest vs Solstice</b><button class="bandbtn">Band 74–78°</button></div>
+        <p class="fine ghost">(the comfort chart, savings and reasons below are unchanged)</p>
+      </div>
+    </div>
+    <div class="dev open" style="margin-top:14px">
+      <div class="inner">
+        <div class="card" style="margin-top:0"><div class="h"><b>Today: Nest vs Solstice</b><button class="bandbtn">Band 74–78°</button></div></div>
+      </div>
+      <div class="scrim"></div>
+      <div class="sheet" style="transform:none">
+        <div class="grab"></div>
+        <div class="shead"><h4>Comfort band</h4><button class="x" aria-label="Close">✕</button></div>
+        <p class="sub">Autopilot plans only inside these. Manual changes can go anywhere from 65° to 85°.</p>
+        <div class="bands">
+          <div class="brow"><span class="bt">Home<small>daytime, 7 AM – 10 PM</small></span><span class="stp"><button>−</button><b>74°</b></span><span class="stp"><span class="to">to</span><b>78°</b><button>+</button></span></div>
+          <div class="brow"><span class="bt">Night<small>10 PM – 7 AM</small></span><span class="stp"><button>−</button><b>74°</b></span><span class="stp"><span class="to">to</span><b>76°</b><button>+</button></span></div>
+          <div class="brow"><span class="bt">Away<small>Nest Eco or Away until…</small></span><span class="stp"><button>−</button><b>80°</b><button>+</button></span></div>
+          <div class="brow"><span class="bt">Night hours</span><span class="stp"><button>−</button><b style="min-width:52px">10 PM</b></span><span class="stp"><span class="to">to</span><b style="min-width:44px">7 AM</b><button>+</button></span></div>
+        </div>
+        <button class="primary">Save band</button>
+        <p class="fine" style="text-align:center;margin-top:10px">Takes effect at the next plan step. A hold in force is left alone.</p>
+      </div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> the band text in the plan card header becomes a compact "Band 74–78°" button. It opens this sheet, with steppers for Home, Night, Away and the night hours.</p>
+      <p>Saving writes only Solstice's own settings, and never the thermostat directly. The server checks every value: it must be inside 65–85°, and each low must be at or below its high.</p>
+      <p><b class="same">Unchanged:</b> the rest of the plan card.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 6 · fan timer sheet ================= -->
+  <div class="frame" id="f6">
+    <div class="sect">Frame 6 · Thermostat › Fan</div>
+    <div class="dev open" style="height:470px">
+      <div class="inner"><div class="card tstat" style="margin-top:0"><div class="h"><b>Thermostat</b><span class="badge g">Hallway · online</span></div><div class="xtra"><button><i></i>Eco</button><button class="on"><i></i>Fan <small>58 m left</small></button></div></div></div>
+      <div class="scrim"></div>
+      <div class="sheet" style="transform:none">
+        <div class="grab"></div>
+        <div class="shead"><h4>Run the fan</h4><button class="x" aria-label="Close">✕</button></div>
+        <p class="sub">Circulates air without cooling. Nest stops it on its own when the time is up.</p>
+        <div class="fan"><button>15 m</button><button>30 m</button><button class="on">1 h</button><button>2 h</button><button>4 h</button><button>8 h</button><button>12 h</button><button>Stop</button></div>
+        <button class="primary">Run for 1 h</button>
+      </div>
+    </div>
+    <div class="cap"><p><b class="new">New:</b> Nest's own fan timer, which ends by itself. While it runs, the chip shows the time left. The fan timer doesn't start a hold, because it doesn't change the temperature.</p></div>
+  </div>
+
+  <!-- ================= Frame 7 · learning from holds ================= -->
+  <div class="frame" id="f7">
+    <div class="sect">Frame 7 · after a week of the same change</div>
+    <div class="pagepad">
+      <div class="card tstat">
+        <div class="h"><b>Thermostat</b><span class="badge g">Hallway · online</span></div>
+        <div class="follow"><i></i><span><b>Autopilot · Auto.</b> Following today's plan: 76° now, night band from 10 PM.</span></div>
+        <div class="rec learn"><b>You keep setting 74° around 10 PM</b><br>4 of the last 7 nights, each held through the night. Make 74° your night setpoint? Autopilot would plan 74° from 10 PM, and you wouldn't need to change it.
+          <div class="row2"><button class="y">Make 74° the night setpoint</button><button class="n">Not now</button></div></div>
+      </div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> when the same kind of change happens on 4 of 7 days, Solstice suggests changing the band. Same kind means a similar time (±1 h), the same direction, and within 1° of each other. Nothing changes unless you tap.</p>
+      <p>"Not now" hides that suggestion for 14 days.</p>
+    </div>
+  </div>
+
+  <div class="wrules">
+    <h3>The rules behind these frames</h3>
+    <ul>
+      <li><b>Your taps are yours.</b> Manual setpoints are checked only against 65–85° cool and 55–80° heat. They aren't limited by Autopilot's 2° step or 30-minute rule, and they don't use up Autopilot's 30-minute slot. Taps wait 1.5 s and then send once. That keeps you well inside Google's limit of 5 commands a minute per thermostat.</li>
+      <li><b>Autopilot's limits don't change.</b> When it writes (and it never writes during a hold), it stays inside 65–85°, moves at most 2° per step and writes at most once per 30 minutes. Off still means no Nest writes at all.</li>
+      <li><b>A hold</b> lasts until the next plan step, at least 2 h and at most 8 h. Resume now and Hold until morning change that.</li>
+      <li><b>What ends a hold early:</b> going Away (Nest Eco or Away until…). Marking Home doesn't end one.</li>
+      <li><b>When the hold ends</b>, Autopilot applies the step due at that time.</li>
+      <li><b>Every change is logged:</b> who made it (you here, the wall, or Autopilot), the old and new value, and the hold window.</li>
+      <li><b>Unchanged:</b> the thermal twin, plan chart, savings row, reasons, Autopilot card layout, Home/Away and the Away until… sheet. No pool writes. Pool controls are mockup w.</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+/* frame 1: −/+ with the 1.5 s send delay, and the mode switch */
+(function () {
+  const c = document.getElementById('t1'), v = c.querySelector('[data-v]'), s = c.querySelector('[data-s]'), f = c.querySelector('[data-follow] span');
+  let sp = 76, t = null, mode = 'cool';
+  c.querySelectorAll('.step').forEach(b => b.onclick = () => {
+    if (mode === 'off') return;
+    sp = Math.max(65, Math.min(85, sp + +b.dataset.d)); v.innerHTML = `${sp}<sup>°</sup>`;
+    s.className = 'sending'; s.textContent = `Sending ${sp}°…`; clearTimeout(t);
+    t = setTimeout(() => { s.className = 'ok'; s.textContent = 'Set · Nest confirmed'; f.innerHTML = `<b>Holding your ${sp}°</b> until 9:00 PM, the plan's next step.`; }, 1500);
+  });
+  c.querySelector('[data-mode]').onclick = e => { const b = e.target.closest('button'); if (!b) return; mode = b.dataset.m;
+    c.querySelectorAll('[data-mode] button').forEach(x => x.className = x === b ? `on ${mode === 'range' ? 'cool' : mode}` : '');
+    v.className = (mode === 'off' ? 'off' : mode === 'heat' ? 'heat' : 'cool') + (mode === 'range' ? ' rng' : '');
+    v.innerHTML = mode === 'off' ? 'Off' : mode === 'heat' ? '68<sup>°</sup>' : mode === 'range' ? '68<span class="dash">–</span>76<sup>°</sup>' : `${sp}<sup>°</sup>`;
+    c.querySelector('.sp small').textContent = mode === 'off' ? 'Thermostat' : mode === 'heat' ? 'Heat to' : mode === 'range' ? 'Keep between' : 'Cool to';
+    c.querySelectorAll('.step').forEach(x => x.style.visibility = mode === 'off' ? 'hidden' : '');
+    f.innerHTML = mode === 'cool' ? "<b>Autopilot · Auto.</b> Following today's plan." : '<b>Autopilot paused</b> until the thermostat is back in Cool.'; };
+  c.querySelector('[data-x="eco"]').onclick = e => e.currentTarget.classList.toggle('on');
+})();
+/* frame 4: state chips */
+(function () {
+  const c = document.getElementById('t4'), v = c.querySelector('[data-v]'), l = c.querySelector('[data-l]'), s = c.querySelector('[data-s]'), h = c.querySelector('[data-hold]');
+  const S = {
+    heat: { l: 'Heat to', v: '68<sup>°</sup>', k: 'heat', s: 'Indoor 66.1° · 41% · heating', m: 'heat', hb: 'AC Autopilot paused', he: 'Heat', hp: 'Autopilot only plans cooling. It starts again when the thermostat is back in Cool. Your heat setpoint is yours alone.' },
+    range: { l: 'Keep between', v: '68<span class="dash">–</span>76<sup>°</sup>', k: 'cool', s: 'Indoor 71.0° · 45% · idle', m: 'range', hb: 'AC Autopilot paused', he: 'Heat · Cool', hp: 'Autopilot plans a single cooling setpoint, so it waits until the thermostat is back in Cool. −/+ moves the end you tapped last.' },
+    off: { l: 'Thermostat', v: 'Off', k: 'off', s: 'Indoor 77.2° · 52% · off', m: 'off', hb: 'AC Autopilot paused', he: 'Off', hp: 'The thermostat is off. Solstice sends nothing until you, or someone at the wall, turn it back on.' },
+    eco: { l: 'Eco · Away', v: '82<sup>°</sup>', k: 'cool', s: 'Nest eco 50–82° · Home/Away Assist', m: 'cool', hb: 'Away · Eco', he: 'Eco', hp: 'Nest is in Eco, so presence reads Away and Autopilot plans the away temperature. Tap Eco to turn it off.' } };
+  document.getElementById('mstates').onclick = e => { const b = e.target.closest('button'); if (!b) return; const x = S[b.dataset.s];
+    document.querySelectorAll('#mstates button').forEach(y => y.classList.toggle('on', y === b));
+    l.textContent = x.l; v.innerHTML = x.v; v.className = x.k + (b.dataset.s === 'range' ? ' rng' : ''); s.textContent = x.s;
+    c.querySelectorAll('[data-mode] button').forEach(y => y.className = y.dataset.m === x.m ? `on ${x.m === 'range' ? 'cool' : x.m}` : '');
+    c.querySelector('[data-x="eco"]').classList.toggle('on', b.dataset.s === 'eco');
+    c.querySelectorAll('.step').forEach(y => y.style.visibility = b.dataset.s === 'off' ? 'hidden' : '');
+    h.innerHTML = `<div class="hh"><i></i><b>${x.hb}</b><em>${x.he}</em></div><p>${x.hp}</p>`; };
+})();
+</script>
+</body></html>

@@ -33,7 +33,7 @@ vi.mock(import('../../server/src/appliances/nest.js'), async importOriginal => {
   const real = await importOriginal();
   const blocked = (what: string) => vi.fn(async () => { throw new Error(`${what} in integration test`); });
   return { ...real, nestConfigured: () => true, nestLinked: vi.fn(async () => true), readNest: vi.fn(), setCool: vi.fn(async () => ({})),
-    nestExchangeCode: blocked('nestExchangeCode'), setHeat: blocked('setHeat'), setMode: blocked('setMode'), setEco: blocked('setEco') };
+    nestExchangeCode: blocked('nestExchangeCode'), ownerCommand: blocked('ownerCommand') };
 });
 vi.mock(import('../../server/src/tesla/client.js'), async importOriginal => ({ ...(await importOriginal()), teslaFor: vi.fn() }));
 vi.mock(import('../../server/src/pdf.js'), () => ({ pdfToLayoutText: vi.fn() }));

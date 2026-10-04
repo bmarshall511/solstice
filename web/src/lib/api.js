@@ -74,6 +74,9 @@ export const api = {
   acApply: () => send('POST', 'appliances/ac/apply'),
   acSettings: patch => send('POST', 'appliances/ac/settings', patch),
   acUntrim: () => send('POST', 'appliances/ac/untrim'),
+  // v-ac-control: the owner's own thermostat commands and the hold banner
+  acCommand: cmd => send('POST', 'appliances/ac/command', cmd),
+  acHold: action => send('POST', 'appliances/ac/hold', { action }),
   models: () => get('models'),
   saveSettings: patch => send('PUT', 'settings', patch),
   // t-enhancements: alerts feed, web push, weekly digest, presence, Powerwall rules (all owner-only)

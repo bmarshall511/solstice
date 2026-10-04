@@ -32,7 +32,7 @@ vi.mock('../../server/src/appliances/nest.js', async orig => {
   const blocked = (what: string) => vi.fn(async () => { throw new Error(`${what} in redaction test`); });
   return { ...real, nestConfigured: () => true, nestLinked: vi.fn(async () => true),
     readNest: vi.fn(async () => { throw new Error('Nest: enterprises/test-project/devices/dev-test is unreachable'); }),
-    nestExchangeCode: blocked('nestExchangeCode'), setCool: blocked('setCool'), setHeat: blocked('setHeat'), setMode: blocked('setMode'), setEco: blocked('setEco') };
+    nestExchangeCode: blocked('nestExchangeCode'), setCool: blocked('setCool'), ownerCommand: blocked('ownerCommand') };
 });
 
 const KEY = 'test-owner-key-synthetic-redact-abcdefghij-kl';   // test-only

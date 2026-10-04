@@ -306,6 +306,13 @@
           <p class="fine" id="poolSeasonNote" hidden>kWh per day by season, the baseline Autopilot adjusts from each day’s data.</p>
           </div>
           <div id="applAc" hidden>
+            <div class="card tstat" id="acTstat" data-owner hidden>
+              <div class="h"><b>Thermostat</b><span class="badge g" id="tsBadge">—</span></div>
+              <div class="dial"><button class="step" id="tsDown" aria-label="One degree cooler">−</button><div class="sp"><small id="tsLabel">Cool to</small><b id="tsVal">—</b><span id="tsLine">—</span></div><button class="step" id="tsUp" aria-label="One degree warmer">+</button></div>
+              <div class="seg2 wide" id="tsMode" role="group" aria-label="Thermostat mode"><button data-m="COOL">Cool</button><button data-m="HEAT">Heat</button><button data-m="HEATCOOL">Heat · Cool</button><button data-m="OFF">Off</button></div>
+              <div class="xtra"><button id="tsEco" aria-pressed="false"><i></i>Eco</button><button id="tsFan" aria-pressed="false"><i></i>Fan <small id="tsFanT">off</small></button></div>
+              <div id="tsHold"></div>
+            </div>
             <div class="card"><div class="h"><b>AC · thermal twin</b><span class="badge" id="acBadge">—</span></div>
               <div class="ring3d pool3d" id="acTwin"><div class="hud" id="acHud">—</div><div class="tlab" id="acLab"></div></div>
               <div class="scrub"><span id="acScrubT">—</span><input type="range" id="acScrub" min="0" max="24" step=".25" value="12"><small>drag through today's plan</small></div>
