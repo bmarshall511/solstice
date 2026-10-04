@@ -884,4 +884,23 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.side){visibili
 .fan button{all:unset;cursor:pointer;text-align:center;padding:12px 0;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);font:500 13px "JetBrains Mono"}
 .fan button.on{border-color:rgba(78,240,166,.5);background:rgba(78,240,166,.1)}
 #fanGo{width:100%;box-sizing:border-box}
+/* v-ac-control frames 5 and 7: band button and sheet, the band suggestion */
+.bandbtn{all:unset;cursor:pointer;font-size:11px;color:var(--dim);display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;border:1px solid var(--glass-b);background:rgba(255,255,255,.04);white-space:nowrap;flex:none}
+.bandbtn:after{content:"✎";font-size:10px;color:var(--mute)}
+html[data-role=guest] .bandbtn,html[data-as=guest] .bandbtn{pointer-events:none}
+html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:none}
+.bands{display:grid;gap:8px;margin-top:14px}
+.brow{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
+.brow .bt{flex:1;min-width:0;font-size:13.5px;font-weight:600}
+.brow .bt small{display:block;font-size:11px;color:var(--mute);font-weight:400;margin-top:1px}
+.stp{display:flex;align-items:center;gap:6px;flex:none}
+.stp button{all:unset;cursor:pointer;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);font-size:16px}
+.stp b{font:500 14px "JetBrains Mono";min-width:34px;text-align:center}
+.stp .to{font-size:11px;color:var(--mute)}
+#bandGo{width:100%;box-sizing:border-box}
+.bands b[id^="bv_"]{cursor:pointer}
+.learn .row2{display:flex;gap:8px;margin-top:10px}
+.learn .row2 button{all:unset;cursor:pointer;flex:1;text-align:center;padding:9px 10px;border-radius:12px;font-weight:700;font-size:12.5px}
+.learn .row2 .y{background:var(--solar);color:#1a1204}
+.learn .row2 .n{background:rgba(255,255,255,.08);border:1px solid var(--glass-b);color:var(--text);font-weight:600}
 /* end v-ac-control */
