@@ -179,7 +179,7 @@ function holdHtml(d, mode) {
   const P = d.plan, now = localHour(), next = P.steps.filter(x => x.hour > now).slice(0, 2), cur = currentStepOf(P, now);
   const txt = s.autopilot === 'off' ? '<b>Autopilot · Off.</b> Solstice makes no thermostat changes.'
     : s.autopilot === 'suggest' && !d.applied?.approved ? '<b>Autopilot · Suggest.</b> Today’s plan is waiting for your approval below.'
-    : `<b>Autopilot · ${s.autopilot === 'auto' ? 'Auto' : 'Suggest'}.</b> Following today’s plan: ${cur ? `${cur.coolF}° now` : 'nothing due now'}${next.map(x => `, ${x.coolF}° at ${hm(x.hour)}`).join('')}.`;
+    : `<b>Autopilot · ${s.autopilot === 'auto' ? 'Auto' : 'Suggest'}.</b> Following today’s plan: ${cur ? `${cur.coolF}° now` : 'nothing due now'}${next.map(x => `, ${x.coolF}° at ${x.hour % 12 || 12}${x.hour % 1 ? ':' + String(Math.round(x.hour % 1 * 60)).padStart(2, '0') : ''} ${x.hour < 12 ? 'AM' : 'PM'}`).join('')}.`;
   return `<div class="follow"><i class="${s.autopilot === 'off' ? 'off' : ''}"></i><span>${txt}</span></div>`;
 }
 const currentStepOf = (P, h) => [...P.steps].reverse().find(x => x.hour <= h) ?? P.steps[P.steps.length - 1];

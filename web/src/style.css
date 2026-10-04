@@ -883,4 +883,5 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.side){visibili
 .fan{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
 .fan button{all:unset;cursor:pointer;text-align:center;padding:12px 0;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);font:500 13px "JetBrains Mono"}
 .fan button.on{border-color:rgba(78,240,166,.5);background:rgba(78,240,166,.1)}
+#fanGo{width:100%;box-sizing:border-box}
 /* end v-ac-control */
