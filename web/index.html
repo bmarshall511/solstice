@@ -312,6 +312,7 @@
               <div class="seg2 wide" id="tsMode" role="group" aria-label="Thermostat mode"><button data-m="COOL">Cool</button><button data-m="HEAT">Heat</button><button data-m="HEATCOOL">Heat · Cool</button><button data-m="OFF">Off</button></div>
               <div class="xtra"><button id="tsEco" aria-pressed="false"><i></i>Eco</button><button id="tsFan" aria-pressed="false"><i></i>Fan <small id="tsFanT">off</small></button></div>
               <div id="tsHold"></div>
+              <div id="tsSuggest"></div>
             </div>
             <div class="card"><div class="h"><b>AC · thermal twin</b><span class="badge" id="acBadge">—</span></div>
               <div class="ring3d pool3d" id="acTwin"><div class="hud" id="acHud">—</div><div class="tlab" id="acLab"></div></div>
@@ -323,7 +324,7 @@
             </div>
             <div class="card" id="acLink" hidden><div class="h"><b>Link Nest</b><span>one-time</span></div><p id="acLinkTxt"></p><a class="primary" id="acLinkBtn" href="/auth/google">Sign in with Google</a></div>
             <div class="card sched" id="acPlan" hidden>
-              <div class="h"><b>Today: Nest vs Solstice</b><span id="acBand" class="fine"></span></div>
+              <div class="h"><b>Today: Nest vs Solstice</b><button class="bandbtn" id="acBand" aria-label="Edit the comfort band">—</button></div>
               <div class="comfort"><svg viewBox="0 0 353 170" id="acComfort"></svg></div>
               <div class="legend" style="justify-content:flex-start"><span><i style="background:#ff9e66"></i>Outdoor</span><span><i style="background:rgba(255,255,255,.7)"></i>Indoor</span><span><i style="background:rgba(108,196,255,.6)"></i>Nest setpoint</span><span><i style="background:#4ef0a6"></i>Solstice plan</span><span><i style="background:rgba(255,193,94,.5)"></i>Solar</span></div>
               <div class="deltas" id="acDeltas"></div>

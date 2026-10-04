@@ -51,6 +51,8 @@ vi.mock('@electric-sql/pglite', async importOriginal => {
 
 const NOW = Date.parse('2026-09-25T18:00:00Z'); // Friday 13:00 CDT
 const RATE = .1064, SLOPE = 2.5;
+/** Live readings with `w` W of spare solar over the 15 minutes before `at` (ac.ts pre-cools only on measured spare solar, Q7). */
+const spare = async (site: string, w = 5000, at = Date.now()) => { for (const m of [1, 5, 10]) await q(`INSERT INTO readings (site_id, ts, solar_w, load_w) VALUES ($1, $2, $3, 1000) ON CONFLICT DO NOTHING`, [site, at - m * 60_000, 1000 + w]); };
 const W0 = powerModel([]);
 const NAMES = new Map(CIRCUITS.map(c => [c.id, c.name]));
 const seedForecast = (over?: Record<number, Partial<Daily>>) => kv.set('pool:forecast', { at: Date.now(), days: forecastDays(localDay(), over) });
@@ -249,20 +251,21 @@ describe('AC Autopilot (acTick)', () => {
   });
 
   it('an approved plan steps the setpoint by at most 2° toward the plan, then records the step', async () => {
-    await approve('ac-step');
+    await approve('ac-step'); await spare('ac-step');
     nest({ coolF: 80 });
     expect(await tick('ac-step')).toEqual({ sampled: true, applied: true });
     expect(setCool).toHaveBeenCalledTimes(1);
     expect(setCool).toHaveBeenLastCalledWith('dev-test', 78, 'suggest');
-    expect(await kv.get('ac-step:ac:plan')).toEqual({ date: '2026-09-25', approved: true, lastStepHour: null });
+    expect(await kv.get('ac-step:ac:plan')).toEqual({ date: '2026-09-25', approved: true, lastStepHour: null, precoolOn: true, precoolRan: true });
     expect((await kv.get<any[]>('ac-step:ac:log'))?.[0]).toEqual({ at: NOW, day: '2026-09-25', text: 'Set 78° (pre-cool on solar surplus)', delta: 'stepping' });
 
     vi.setSystemTime(NOW + 30 * 60_000); // the safety guard allows one setpoint write per 30 minutes (13:30 is still the 11:00 step)
+    await spare('ac-step');
     nest({ coolF: 76 });
     await tick('ac-step');
     expect(setCool).toHaveBeenCalledTimes(2);
     expect(setCool).toHaveBeenLastCalledWith('dev-test', 74, 'suggest');
-    expect(await kv.get('ac-step:ac:plan')).toEqual({ date: '2026-09-25', approved: true, lastStepHour: 11 });
+    expect(await kv.get('ac-step:ac:plan')).toEqual({ date: '2026-09-25', approved: true, lastStepHour: 11, precoolOn: true, precoolRan: true });
 
     nest({ coolF: 74 });
     await tick('ac-step');
@@ -511,6 +514,7 @@ describe('learning layer: prediction hooks, control days and trims on PGlite', (
     // 18:40: the trimmed plan is back to 76°, the untrimmed one still coasting at 78°; the thermostat reads 78°
     vi.setSystemTime(Date.parse('2026-09-25T18:40:00-05:00'));
     await seedForecast();
+    for (const site of ['lp-trim', 'lp-plain']) await kv.set(`${site}:ac:plan`, { date: '2026-09-25', approved: true, lastStepHour: null, precoolRan: true });   // pre-cooled earlier, so the coast applies
     nest({ coolF: 78 });
     await acTick('lp-plain', settingsAuto, RATE, SLOPE);
     expect(setCool).not.toHaveBeenCalled();
@@ -528,7 +532,7 @@ describe('learning layer: prediction hooks, control days and trims on PGlite', (
   it('a depth trim still reaches the thermostat 2° at a time, once per 30 minutes, and not at all with Autopilot Off', async () => {
     await kv.set(learnAcKey('lp-depth'), { at: NOW, day: '2026-09-25', trim: { what: 'depth', amount: 1, unit: '°F', reason: 'flat out', day: '2026-09-25' }, measured: null, warmupFPerH: null, coolKw: null });
     expect((await acDetail('lp-depth', {}, RATE, SLOPE)).plan.steps[1]).toMatchObject({ hour: 11, coolF: 75 });
-    nest({ coolF: 78 });
+    nest({ coolF: 78 }); await spare('lp-depth');
     await acTick('lp-depth', { ac: { autopilot: 'off' } }, RATE, SLOPE);
     expect(setCool).not.toHaveBeenCalled();
     await acTick('lp-depth', settingsAuto, RATE, SLOPE);
@@ -537,7 +541,7 @@ describe('learning layer: prediction hooks, control days and trims on PGlite', (
     nest({ coolF: 76 });
     await acTick('lp-depth', settingsAuto, RATE, SLOPE);
     expect(setCool).toHaveBeenCalledTimes(1);                                         // one write per 30 minutes
-    vi.setSystemTime(NOW + 31 * 60_000);
+    vi.setSystemTime(NOW + 31 * 60_000); await spare('lp-depth');
     await acTick('lp-depth', settingsAuto, RATE, SLOPE);
     expect(setCool).toHaveBeenLastCalledWith('dev-test', 75, 'auto');
     await kv.set('nest:setpointWrite:dev-test', null);

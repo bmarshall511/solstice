@@ -63,7 +63,9 @@ function drawPlan(S, sim, outdoor, sunH) {
   const nx = X(localHour()); o += `<line x1="${nx}" y1="14" x2="${nx}" y2="150" stroke="#fff" stroke-opacity=".5"/><circle cx="${nx}" cy="14" r="3" fill="#fff"/>`;
   svg.innerHTML = o;
   const b = d.settings.band;
-  $('acBand').textContent = `${b.homeLo}°–${b.homeHi}° home · ${b.nightLo}°–${b.nightHi}° night · away ${d.settings.awayF}°`;
+  $('acBand').textContent = `Band ${b.homeLo}–${b.homeHi}°`;
+  $('acBand').title = `${b.homeLo}°–${b.homeHi}° home · ${b.nightLo}°–${b.nightHi}° night · away ${d.settings.awayF}°`;
+  $('acBand').onclick = () => { if (!S.guest) openBand(S); };
   // r-learning savings row: the plan's two kWh figures (learn/ac.ts), each with its confidence tier from plan.conf
   const sv = (label, v, tier) => `<div><small>${label}</small><b>${v == null ? '—' : `${Number(v).toFixed(1)} kWh`}</b><span>today's plan</span>${confChip(tier) && `<span style="margin-top:5px">${confChip(tier)}</span>`}</div>`;
   $('acDeltas').innerHTML = sv('kWh shifted onto solar', P.shiftedKwh, P.conf?.shiftedKwh) + sv('Evening kWh avoided', P.eveningAvoidedKwh, P.conf?.eveningAvoidedKwh) + `
@@ -136,6 +138,12 @@ function drawThermostat(S) {
   $('tsFan').classList.toggle('on', !!st.fanTimer); $('tsFan').setAttribute('aria-pressed', !!st.fanTimer);
   $('tsFanT').textContent = st.fanTimer ? (fanLeft != null ? (fanLeft >= 60 ? `${Math.floor(fanLeft / 60)} h ${fanLeft % 60} m left` : `${fanLeft} m left`) : 'on') : 'off';
   $('tsHold').innerHTML = holdHtml(d, mode);
+  // frame 7: the same manual change on 4 of the last 7 days becomes a band suggestion (nothing changes unless tapped)
+  const sg = d.suggestion, hr = sg ? `${Math.round(sg.hour) % 12 || 12} ${sg.hour < 12 ? 'AM' : 'PM'}` : '';
+  $('tsSuggest').innerHTML = sg ? `<div class="rec learn"><b>You keep setting ${sg.f}° around ${hr}</b><br>${sg.days} of the last ${sg.of} ${sg.window === 'night' ? 'nights' : 'days'}. Make ${sg.f}° your ${sg.window === 'night' ? 'night' : 'daytime'} setpoint? Autopilot would plan ${sg.f}° ${sg.window === 'night' ? `from ${d.settings.nightFrom % 12 || 12} ${d.settings.nightFrom < 12 ? 'AM' : 'PM'}` : 'through the day'} instead of ${sg.from}°, and you wouldn’t need to change it.
+    <div class="row2"><button class="y" data-sg="accept">Make ${sg.f}° the ${sg.window === 'night' ? 'night' : 'daytime'} setpoint</button><button class="n" data-sg="dismiss">Not now</button></div></div>` : '';
+  $('tsSuggest').onclick = async e => { const b = e.target.closest('[data-sg]'); if (!b) return; b.disabled = true; b.textContent = '…';
+    try { S.ac = await api.acSuggestion(b.dataset.sg, sg.key); } catch (err) { alert(err.message); } drawAc(S); };
   // −/+ : one degree, sent once 1.5 s after the last tap
   const bump = dir => {
     const cur = ts.pending ?? { mode: st.mode, coolF: st.coolF, heatF: st.heatF }, n = { ...cur };
@@ -189,6 +197,36 @@ async function send(S, cmd) {
   catch (e) { ts.pending = null; ts.line = { cls: 'err', text: e.message }; }
   drawAc(S);
   setTimeout(() => { ts.line = null; if (!ts.timer) drawThermostat(S); }, 6000);
+}
+/* frame 5: the comfort band sheet. Saving writes only Solstice's settings; the plan uses them from its next step. */
+function openBand(S) {
+  const s = S.ac.settings, v = { homeLo: s.band.homeLo, homeHi: s.band.homeHi, nightLo: s.band.nightLo, nightHi: s.band.nightHi, awayF: s.awayF, nightFrom: s.nightFrom, nightTo: s.nightTo };
+  const hr = h => `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`, LIM = { t: [65, 85], nightFrom: [18, 23], nightTo: [4, 11] };
+  const row = (label, sub, a, b) => `<div class="brow"><span class="bt">${label}<small>${sub}</small></span><span class="stp"><button data-k="${a}" data-d="-1" aria-label="Lower">−</button><b id="bv_${a}"></b></span>${b ? `<span class="stp"><span class="to">to</span><b id="bv_${b}"></b><button data-k="${b}" data-d="1" aria-label="Higher">+</button></span>` : `<button class="stp-plus" data-k="${a}" data-d="1" aria-label="Higher" style="all:unset;cursor:pointer;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);font-size:16px">+</button>`}</div>`;
+  $('sheetBody').innerHTML = `<div class="shead"><h4>Comfort band</h4><button class="x" id="bandX" aria-label="Close">✕</button></div>
+    <p class="sub">Autopilot plans only inside these. Manual changes can go anywhere from 65° to 85°. Tap a number to choose which end −/+ moves.</p>
+    <div class="bands" id="bands">${row('Home', `daytime, <span id="bsub_day"></span>`, 'homeLo', 'homeHi')}${row('Night', '<span id="bsub_night"></span>', 'nightLo', 'nightHi')}${row('Away', 'Nest Eco or Away until…', 'awayF')}${row('Night hours', 'when the night band starts and ends', 'nightFrom', 'nightTo')}</div>
+    <button class="primary" id="bandGo">Save band</button>
+    <p class="fine" style="text-align:center;margin-top:10px">Takes effect at the next plan step. A hold in force is left alone.</p>`;
+  const draw = () => { Object.entries(v).forEach(([k, x]) => { $(`bv_${k}`).textContent = k === 'nightFrom' || k === 'nightTo' ? hr(x) : `${x}°`; });
+    $('bsub_day').textContent = `${hr(v.nightTo)} – ${hr(v.nightFrom)}`; $('bsub_night').textContent = `${hr(v.nightFrom)} – ${hr(v.nightTo)}`; };
+  // −/+ move the end of a pair you tapped last (default: − the low end, + the high end), so a band can widen and narrow
+  const PAIRS = { homeLo: 'homeHi', homeHi: 'homeLo', nightLo: 'nightHi', nightHi: 'nightLo', nightFrom: 'nightTo', nightTo: 'nightFrom' }, picked = {};
+  const pairOf = k => ['homeLo', 'homeHi'].includes(k) ? 'home' : ['nightLo', 'nightHi'].includes(k) ? 'night' : ['nightFrom', 'nightTo'].includes(k) ? 'hours' : k;
+  $('bands').onclick = e => {
+    const num = e.target.closest('b[id^="bv_"]');
+    if (num) { const k = num.id.slice(3); if (PAIRS[k]) { picked[pairOf(k)] = k; document.querySelectorAll('#bands b').forEach(x => x.style.borderBottom = Object.values(picked).includes(x.id.slice(3)) ? '2px solid rgba(255,255,255,.4)' : ''); } return; }
+    const b = e.target.closest('[data-k]'); if (!b) return;
+    const k = picked[pairOf(b.dataset.k)] ?? b.dataset.k, d = +b.dataset.d, lim = LIM[k] ?? LIM.t;
+    v[k] = Math.max(lim[0], Math.min(lim[1], v[k] + d));
+    if (k === 'homeLo' && v.homeLo > v.homeHi) v.homeHi = v.homeLo; if (k === 'homeHi' && v.homeHi < v.homeLo) v.homeLo = v.homeHi;
+    if (k === 'nightLo' && v.nightLo > v.nightHi) v.nightHi = v.nightLo; if (k === 'nightHi' && v.nightHi < v.nightLo) v.nightLo = v.nightHi;
+    draw(); };
+  $('bandX').onclick = () => $('phone').classList.remove('open');
+  $('bandGo').onclick = async () => { const go = $('bandGo'); go.textContent = 'Saving…';
+    try { await api.acSettings({ band: { homeLo: v.homeLo, homeHi: v.homeHi, nightLo: v.nightLo, nightHi: v.nightHi }, awayF: v.awayF, nightFrom: v.nightFrom, nightTo: v.nightTo }); $('phone').classList.remove('open'); await loadAc(S); }
+    catch (e) { alert(e.message); go.textContent = 'Save band'; } };
+  draw(); $('phone').classList.add('open');
 }
 const FAN = [[900, '15 m'], [1800, '30 m'], [3600, '1 h'], [7200, '2 h'], [14400, '4 h'], [28800, '8 h'], [43200, '12 h'], [0, 'Stop']];
 function openFan(S) {

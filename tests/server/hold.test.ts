@@ -65,3 +65,46 @@ describe('guardManual: the owner\'s own commands', () => {
     expect(guardManual(cmd as any, st as any).ok).toBe(ok);
   });
 });
+
+import { acPatchError, bandSuggestion, bandFor, precoolDecision, AC_DEFAULTS, type HoldRecord } from '../../server/src/appliances/ac.js';
+import { bandMid } from '../../server/src/learn/ac.js';
+
+describe('AC settings patches (the band sheet)', () => {
+  it.each([
+    [{ band: { homeLo: 73, homeHi: 77 } }, null],
+    [{ band: { homeLo: 79 } }, 'each low must be at or below its high'],
+    [{ band: { nightHi: 90 } }, 'band temperatures must be whole degrees 65–85°'],
+    [{ band: { homeLo: 74.5 } }, 'band temperatures must be whole degrees 65–85°'],
+    [{ band: { extra: 1 } }, 'band has unknown keys'],
+    [{ awayF: 82, nightFrom: 22, nightTo: 7 }, null],
+    [{ awayF: 90 }, 'away must be a whole degree 65–85°'],
+    [{ nightFrom: 12 }, 'night starts between 18:00 and 23:00'],
+    [{ nightTo: 13 }, 'night ends between 4:00 and 11:00'],
+    [{ autopilot: 'auto' }, null], [{ autopilot: 'yes' }, 'bad mode'],
+    [{ precoolDepth: 9 }, 'unknown setting precoolDepth'],
+  ])('%j → %s', (patch, err) => { expect(acPatchError(patch as any, {})).toBe(err); });
+});
+
+describe('band suggestion from repeated holds (frame 7)', () => {
+  const S = { ...AC_DEFAULTS, band: { ...AC_DEFAULTS.band } };
+  const H = (day: string, hour: number, coolF: number, planF = 76): HoldRecord => ({ at: 0, day, hour, coolF, planF });
+  it('4 of the last 7 nights at 74° around 10 PM suggest a 74° night setpoint', () => {
+    const sg = bandSuggestion([H('2026-10-04', 22.1, 74), H('2026-10-03', 21.6, 74), H('2026-10-01', 22.5, 73), H('2026-09-29', 21.9, 74), H('2026-10-02', 15, 78)], S, '2026-10-04');
+    expect(sg).toMatchObject({ key: 'night:74', window: 'night', f: 74, days: 4, from: 76 });
+  });
+  it('3 days, mixed directions, or older than a week: nothing', () => {
+    expect(bandSuggestion([H('2026-10-04', 22, 74), H('2026-10-03', 22, 74), H('2026-10-01', 22, 74)], S, '2026-10-04')).toBeNull();
+    expect(bandSuggestion([H('2026-10-04', 22, 74), H('2026-10-03', 22, 74), H('2026-10-01', 22, 78, 76), H('2026-09-30', 22, 79)], S, '2026-10-04')).toBeNull();
+    expect(bandSuggestion([H('2026-10-04', 22, 74), H('2026-10-03', 22, 74), H('2026-10-01', 22, 74), H('2026-09-20', 22, 74)], S, '2026-10-04')).toBeNull();
+  });
+  it('the band it sets makes the plan use exactly that value', () => {
+    const night = (b: typeof S.band) => Math.max(b.nightLo, Math.min(b.nightHi, bandMid({ ...S, band: b })));
+    for (const f of [70, 74, 75, 76, 78, 80]) expect(night(bandFor({ window: 'night', f }, S.band))).toBe(f);
+    for (const f of [72, 75, 77, 80]) expect(bandMid({ ...S, band: bandFor({ window: 'day', f }, S.band) })).toBe(f);
+  });
+});
+
+describe('pre-cool on spare solar: start at a full AC, keep at half', () => {
+  it.each([[null, false, false], [1800, false, true], [1000, false, false], [1000, true, true], [800, true, false]] as const)
+  ('spare %s W, already on %s → %s', (spareW, on, want) => { expect(precoolDecision({ spareW, acKw: 1.8, on })).toBe(want); });
+});
