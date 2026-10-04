@@ -837,3 +837,50 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.side){visibili
 .ph .flagbox .why b{color:var(--text)}
 .ins.lanom[data-go]{cursor:pointer}
 /* end u-panels */
+/* ---------- v-ac-control: Thermostat card, hold banner, fan sheet ---------- */
+.tstat[hidden]{display:none}
+.tstat .dial{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}
+.tstat .step{all:unset;cursor:pointer;flex:none;width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:26px;font-weight:300;background:rgba(255,255,255,.07);border:1px solid var(--glass-b);color:var(--text)}
+.tstat .step:active{background:rgba(255,255,255,.14)}
+.tstat .step:focus-visible{outline:2px solid var(--home);outline-offset:2px}
+.tstat .sp{flex:1;text-align:center;min-width:0}
+.tstat .sp small{display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);font-weight:600}
+.tstat .sp b{display:block;font-size:54px;font-weight:300;letter-spacing:-.03em;line-height:1.05;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tstat .sp b sup{font-size:24px;vertical-align:22px;margin-left:1px}
+.tstat .sp b.rng{font-size:42px}.tstat .sp b.rng sup{font-size:20px;vertical-align:16px}
+.tstat .sp b.cool{color:#9fd6ff}.tstat .sp b.heat{color:#ffb38a}.tstat .sp b.off{color:var(--mute)}
+.tstat .sp b .dash{display:inline;font-size:30px;vertical-align:10px;color:var(--mute);margin:0 4px}
+.tstat .sp b .pick{border-bottom:2px solid rgba(255,255,255,.35)}
+.tstat .sp span{display:block;font-size:12px;color:var(--dim);margin-top:2px}
+.tstat .sp span.sending{color:var(--solar)}.tstat .sp span.ok{color:var(--batt)}.tstat .sp span.err{color:var(--warn)}
+.tstat .seg2.wide{margin-top:14px}.tstat .seg2.wide button{flex:1;text-align:center;padding:9px 6px;font-size:12px}
+.tstat .seg2.wide button.on.cool{background:rgba(108,196,255,.2)}.tstat .seg2.wide button.on.heat{background:rgba(255,158,102,.2)}.tstat .seg2.wide button.on.off{background:rgba(255,255,255,.12)}
+.tstat .xtra{display:flex;gap:8px;margin-top:10px}
+.tstat .xtra button{all:unset;cursor:pointer;flex:1;display:flex;align-items:center;justify-content:center;gap:7px;padding:10px 8px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);font-size:12.5px;font-weight:600;color:var(--dim)}
+.tstat .xtra button i{width:7px;height:7px;border-radius:50%;background:var(--mute)}
+.tstat .xtra button.on{color:var(--text);border-color:rgba(78,240,166,.4);background:rgba(78,240,166,.08)}
+.tstat .xtra button.on i{background:var(--batt);box-shadow:0 0 6px var(--batt)}
+.tstat .xtra button small{font:500 10.5px "JetBrains Mono";color:var(--mute)}
+.follow{display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:12px;color:var(--dim);line-height:1.45}
+.follow i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--batt);box-shadow:0 0 10px var(--batt);margin-top:5px}
+.follow i.off{background:var(--mute);box-shadow:none}
+.follow b{color:var(--text);font-weight:600}
+.hold{margin-top:12px;padding:12px 14px;border-radius:16px;background:rgba(196,162,255,.09);border:1px solid rgba(196,162,255,.32);font-size:12.5px;line-height:1.5;color:var(--dim)}
+.hold .hh{display:flex;align-items:center;gap:8px}
+.hold .hh i{flex:none;width:8px;height:8px;border-radius:50%;background:#c4a2ff;box-shadow:0 0 10px #c4a2ff}
+.hold .hh b{color:var(--text);font-weight:700;font-size:13.5px;min-width:0}
+.hold .hh em{margin-left:auto;font:500 10.5px "JetBrains Mono";font-style:normal;color:#c4a2ff;flex:none}
+.hold p{margin-top:4px}.hold p b{color:var(--text);font-weight:600}
+.hold .bar{height:4px;border-radius:2px;background:rgba(255,255,255,.08);margin-top:9px;overflow:hidden}
+.hold .bar i{display:block;height:100%;border-radius:2px;background:#c4a2ff}
+.hold .row2{display:flex;gap:8px;margin-top:10px}
+.hold .row2 button{all:unset;cursor:pointer;flex:1;text-align:center;padding:9px 10px;border-radius:12px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);font-weight:600;font-size:12.5px;color:var(--text)}
+.hold .row2 button.p{background:rgba(196,162,255,.18);border-color:rgba(196,162,255,.4)}
+.hold.paused{background:rgba(255,255,255,.04);border-color:var(--glass-b)}
+.hold.paused .hh i{background:var(--mute);box-shadow:none}.hold.paused .hh em{color:var(--mute)}
+.status i.hold-dot{background:#c4a2ff;box-shadow:0 0 10px #c4a2ff}
+.tline i.h{background:#c4a2ff;box-shadow:0 0 8px #c4a2ff}.tline em.h{color:#c4a2ff}
+.fan{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+.fan button{all:unset;cursor:pointer;text-align:center;padding:12px 0;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);font:500 13px "JetBrains Mono"}
+.fan button.on{border-color:rgba(78,240,166,.5);background:rgba(78,240,166,.1)}
+/* end v-ac-control */
