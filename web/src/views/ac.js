@@ -140,7 +140,7 @@ function drawThermostat(S) {
   $('tsHold').innerHTML = holdHtml(d, mode);
   // frame 7: the same manual change on 4 of the last 7 days becomes a band suggestion (nothing changes unless tapped)
   const sg = d.suggestion, hr = sg ? `${Math.round(sg.hour) % 12 || 12} ${sg.hour < 12 ? 'AM' : 'PM'}` : '';
-  $('tsSuggest').innerHTML = sg ? `<div class="rec learn"><b>You keep setting ${sg.f}° around ${hr}</b><br>${sg.days} of the last ${sg.of} ${sg.window === 'night' ? 'nights' : 'days'}. Make ${sg.f}° your ${sg.window === 'night' ? 'night' : 'daytime'} setpoint? Autopilot would plan ${sg.f}° ${sg.window === 'night' ? `from ${hm(d.settings.nightFrom)}` : 'through the day'} instead of ${sg.from}°, and you wouldn’t need to change it.
+  $('tsSuggest').innerHTML = sg ? `<div class="rec learn"><b>You keep setting ${sg.f}° around ${hr}</b><br>${sg.days} of the last ${sg.of} ${sg.window === 'night' ? 'nights' : 'days'}. Make ${sg.f}° your ${sg.window === 'night' ? 'night' : 'daytime'} setpoint? Autopilot would plan ${sg.f}° ${sg.window === 'night' ? `from ${d.settings.nightFrom % 12 || 12} ${d.settings.nightFrom < 12 ? 'AM' : 'PM'}` : 'through the day'} instead of ${sg.from}°, and you wouldn’t need to change it.
     <div class="row2"><button class="y" data-sg="accept">Make ${sg.f}° the ${sg.window === 'night' ? 'night' : 'daytime'} setpoint</button><button class="n" data-sg="dismiss">Not now</button></div></div>` : '';
   $('tsSuggest').onclick = async e => { const b = e.target.closest('[data-sg]'); if (!b) return; b.disabled = true; b.textContent = '…';
     try { S.ac = await api.acSuggestion(b.dataset.sg, sg.key); } catch (err) { alert(err.message); } drawAc(S); };
