@@ -5,7 +5,8 @@
 //   node scripts/pvs-relay.mjs [env-file] [--once] [--dry-run]
 //
 //   env-file   KEY=VALUE file outside this repo (default ~/.solstice/pvs.env): PVS_HOST, PVS_PASSWORD, SOLSTICE_URL,
-//              SOLSTICE_OWNER_KEY, optional PVS_CERT_SHA256.
+//              SOLSTICE_INGEST_TOKEN (preferred: the app's PVS_INGEST_TOKEN, good only for the two relay routes) or the older
+//              SOLSTICE_OWNER_KEY (full owner access), optional PVS_CERT_SHA256.
 //   --once     one poll, then exit (0 = posted, 1 = failed). The first manual test.
 //   --dry-run  one poll that prints the payload it would post and never contacts Solstice.
 //   (neither)  keeps running and polls once per 5-minute clock bucket. launchd starts it (scripts/README.md).
@@ -82,8 +83,9 @@ const fingerprint = s => String(s ?? '').replace(/[^0-9a-f]/gi, '').toUpperCase(
 export function loadConfig(env, { dryRun = false } = {}) {
   if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0')
     throw new FatalError('NODE_TLS_REJECT_UNAUTHORIZED=0 turns off certificate checks for every connection, the Solstice API included. Unset it; the relay trusts the PVS certificate on its own.');
-  const need = ['PVS_HOST', 'PVS_PASSWORD', ...(dryRun ? [] : ['SOLSTICE_URL', 'SOLSTICE_OWNER_KEY'])];
+  const need = ['PVS_HOST', 'PVS_PASSWORD', ...(dryRun ? [] : ['SOLSTICE_URL'])];
   const missing = need.filter(k => !env[k]);
+  if (!dryRun && !env.SOLSTICE_INGEST_TOKEN && !env.SOLSTICE_OWNER_KEY) missing.push('SOLSTICE_INGEST_TOKEN');
   if (missing.length) throw new FatalError(`missing in the env file: ${missing.join(', ')}`);
 
   const host = String(env.PVS_HOST).trim().toLowerCase();
@@ -103,12 +105,14 @@ export function loadConfig(env, { dryRun = false } = {}) {
       throw new FatalError('SOLSTICE_URL must be https:// (plain http only for localhost), so the owner key never travels in the clear');
     if (api.pathname !== '/' || api.search || api.hash || api.username) throw new FatalError('SOLSTICE_URL must be the app origin only, for example https://<your-app>');
   }
-  if (!dryRun && String(env.SOLSTICE_OWNER_KEY).trim().length < 32) throw new FatalError('SOLSTICE_OWNER_KEY must be the app\'s OWNER_KEY (32+ characters)');
+  if (!dryRun && env.SOLSTICE_INGEST_TOKEN && String(env.SOLSTICE_INGEST_TOKEN).trim().length < 32) throw new FatalError('SOLSTICE_INGEST_TOKEN must be the app\'s PVS_INGEST_TOKEN (32+ characters)');
+  if (!dryRun && !env.SOLSTICE_INGEST_TOKEN && String(env.SOLSTICE_OWNER_KEY).trim().length < 32) throw new FatalError('SOLSTICE_OWNER_KEY must be the app\'s OWNER_KEY (32+ characters)');
 
   return {
     pvsHost: pvs.host, pvsHostname: pvs.hostname.replace(/^\[|\]$/g, ''), pvsPort: Number(pvs.port || 443),
     pvsPassword: String(env.PVS_PASSWORD).trim(), pvsCertSha256: pin,
     apiOrigin: api?.origin ?? null, ownerKey: env.SOLSTICE_OWNER_KEY ? String(env.SOLSTICE_OWNER_KEY).trim() : null,
+    ingestToken: env.SOLSTICE_INGEST_TOKEN ? String(env.SOLSTICE_INGEST_TOKEN).trim() : null,
   };
 }
 
@@ -290,15 +294,18 @@ export async function apiLogin(cfg, state) {
   return cookie;
 }
 
-/** POST one poll to /api/pvs/readings with the owner cookie; unlocks first if needed and once more on a 401. */
+/** How this relay authenticates to Solstice: the ingest token as a bearer (two routes only), else the owner cookie. */
+const apiAuth = (cfg, state) => cfg.ingestToken ? { Authorization: `Bearer ${cfg.ingestToken}` } : { Cookie: state.apiCookie };
+/** POST one poll to /api/pvs/readings: with the ingest token, or with the owner cookie (unlocking first if needed and once more on a 401). */
 export async function postReadings(cfg, state, payload) {
   const send = () => apiFetch(cfg, '/api/pvs/readings', { method: 'POST', body: JSON.stringify(payload),
-    headers: { 'Content-Type': 'application/json', 'User-Agent': UA, Cookie: state.apiCookie } });
-  if (!state.apiCookie) await apiLogin(cfg, state);
+    headers: { 'Content-Type': 'application/json', 'User-Agent': UA, ...apiAuth(cfg, state) } });
+  if (!cfg.ingestToken && !state.apiCookie) await apiLogin(cfg, state);
   let r = await send();
-  if (r.status === 401) { await apiLogin(cfg, state); r = await send(); }
+  if (r.status === 401 && !cfg.ingestToken) { await apiLogin(cfg, state); r = await send(); }
   const { text, json } = await bodyOf(r);
-  if (r.status === 401) throw new FatalError('Solstice still answers 401 with a fresh owner cookie; check SOLSTICE_URL and SOLSTICE_OWNER_KEY');
+  if (r.status === 401) throw new FatalError(cfg.ingestToken ? 'Solstice refused SOLSTICE_INGEST_TOKEN (401); copy the current PVS_INGEST_TOKEN from the Vercel env into the env file'
+    : 'Solstice still answers 401 with a fresh owner cookie; check SOLSTICE_URL and SOLSTICE_OWNER_KEY');
   if (!r.ok || !json?.ok) throw new Error(`POST /api/pvs/readings answered HTTP ${r.status}: ${(json?.error ?? text).slice(0, 200)}`);
   return json;
 }
@@ -308,11 +315,11 @@ export async function postReadings(cfg, state, payload) {
 export async function postHeartbeat(cfg, state, e) {
   const body = JSON.stringify({ pvs: e.pvs ?? 'error', http: Number.isInteger(e.http) ? e.http : null, error: describe(e).slice(0, 300),
     uptimeS: Number.isFinite(e.uptimeS) ? e.uptimeS : null });
-  const send = () => apiFetch(cfg, '/api/pvs/heartbeat', { method: 'POST', body, headers: { 'Content-Type': 'application/json', 'User-Agent': UA, Cookie: state.apiCookie } });
+  const send = () => apiFetch(cfg, '/api/pvs/heartbeat', { method: 'POST', body, headers: { 'Content-Type': 'application/json', 'User-Agent': UA, ...apiAuth(cfg, state) } });
   try {
-    if (!state.apiCookie) await apiLogin(cfg, state);
+    if (!cfg.ingestToken && !state.apiCookie) await apiLogin(cfg, state);
     let r = await send();
-    if (r.status === 401) { await apiLogin(cfg, state); r = await send(); }
+    if (r.status === 401 && !cfg.ingestToken) { await apiLogin(cfg, state); r = await send(); }
     if (!r.ok) state.log?.(`heartbeat: POST /api/pvs/heartbeat answered HTTP ${r.status}`);
     return r.ok;
   } catch (err) { state.log?.(`heartbeat: ${describe(err)}`); return false; }

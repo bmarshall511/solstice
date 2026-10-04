@@ -7,7 +7,7 @@
 // are served exactly as a guest's (same allow-list, same 401s); the owner's writes are unaffected, so preview can be
 // switched off again.
 import type { Request, Response, NextFunction } from 'express';
-import { ownerSession, readCookie, setCookie } from './auth.js';
+import { ownerSession, readCookie, setCookie, safeEqual } from './auth.js';
 import { guestShare } from './share.js';
 import { GUEST_GET, serveThrough } from './redact.js';
 import { PRESENCE_FIXED } from './appliances/presence.js';
@@ -30,6 +30,11 @@ const OPEN_ROUTES = new Set([
   'GET /auth/callback', 'GET /auth/google/callback',                // OAuth redirects: signed, single-use state from an owner-only route
 ]);
 const denied = (res: Response) => res.status(401).json({ error: 'owner_required' });
+/* The PVS relay's own credential (scripts/pvs-relay.mjs): `Authorization: Bearer <PVS_INGEST_TOKEN>` opens these two routes and
+ * nothing else, so the Mac running the relay no longer needs the owner key (security review M3). The owner cookie still works. */
+const INGEST_ROUTES = new Set(['POST /api/pvs/readings', 'POST /api/pvs/heartbeat']);
+export const ingestOk = (req: Request) => { const t = process.env.PVS_INGEST_TOKEN ?? '', h = String(req.headers.authorization ?? '');
+  return t.length >= 32 && h.startsWith('Bearer ') && safeEqual(h.slice(7), t); };
 
 /** Resolve the role for this request (req.role, req.guestView, req.preview), then allow, serve through a guest view, or refuse. */
 export async function gate(req: Request, res: Response, next: NextFunction) {
@@ -44,6 +49,7 @@ export async function gate(req: Request, res: Response, next: NextFunction) {
     req.preview = owner && readCookie(req, PREVIEW_COOKIE) === '1';
     req.guestView = req.role === 'guest' || (req.preview && method === 'GET');
     if (OPEN_ROUTES.has(`${method} ${path}`)) return next();
+    if (!owner && INGEST_ROUTES.has(`${method} ${path}`) && ingestOk(req)) return next();
     if (req.guestView) {
       const view = method === 'GET' ? GUEST_GET.get(path) : undefined;
       if (!view) return denied(res);                                               // fail closed: no view, no access
