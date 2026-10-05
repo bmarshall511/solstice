@@ -91,7 +91,7 @@ export const guestBills = (rows: unknown) => (Array.isArray(rows) ? rows : []).m
 const POOL_ERROR = 'Couldn’t reach the pool controller.';
 const schedule = { name: true, rpm: true, start: true, stop: true } as const;
 const hourly = [{ rpm: true, frac: true }] as const;
-const poolPlan = { month: true, waterTemp: true, turnovers: true, hours: true, boostHours: true, start: true, stop: true, boostAt: true,
+const poolPlan = { month: true, waterTemp: true, turnovers: true, goal: true, rpm: true, hours: true, boostHours: true, start: true, stop: true, boostAt: true,
   schedules: [{ ...schedule, why: true }], kwhPerDay: true, costPerMonth: 'veil', onSolarPct: true, turnoverPerDay: true, hourly, uvKwh: true } as const;
 const autopilot = { mode: true, nextRunAt: true, pending: true, filterHours: true, filterCleanedOn: true,
   signals: { waterTemp: true, sunKwhM2: true, sunPct: true, high: true, heatDays: true, rainPct: true, rainMm: true, rainYesterdayMm: true, useDays: true, pollen: true },
@@ -102,7 +102,8 @@ const POOL: Rule = {
   pending: { date: true, plan: poolPlan, why: true },
   extras: { hourlyToday: true, todayKwh: true, nowW: true, uvW: true, lightReadings30d: true },
   spaSession: { spaGallons: true, spaTemp: true, spaSet: true, riseF: true, heatMinutes: true, propaneGal: true, pumpWattsAtSpa: true, blowerWatts: true, electricUsdPerHour: 'veil' },
-  settings: { gallons: true, spaGallons: true, designGpm: true, filterRpm: true, boostRpm: true, uv: true, autopilot: true },
+  settings: { gallons: true, spaGallons: true, designGpm: true, filterRpm: true, boostRpm: true, uv: true, autopilot: true, turnoverGoal: true, skimHours: true, boostCircuit: true },
+  water: { goal: true, skimHours: true, movedTurnovers: true, projectedTurnovers: true, gallons: true },   // mockup w frame 5: the planner's ring
   snapshot: { at: true, airTemp: true, freezeMode: true, bodies: [{ temp: true, setPoint: true, heating: true }] },
   live: { watts: true, rpm: true, running: true, gpm: true, at: true, waterTemp: true, airTemp: true, freezeMode: true, on: true, activeRpm: true },
   model: { measured: [{ rpm: true, watts: true }], curve: [{ rpm: true, watts: true }] },

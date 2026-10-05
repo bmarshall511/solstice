@@ -105,7 +105,7 @@ const SNAP: PoolSnapshot = {
 const CTX: PoolGuardContext = { circuits: SNAP.circuits, pumpCircuits: SNAP.pump!.circuits.map(c => c.circuitId), minRpm: 450, maxRpm: 3450, managed: [6, 8, 5] };
 // POOL_DEFAULTS, copied until tests-T4 (X2) exports them
 const POOL: PoolSettings = { gallons: 14995, spaGallons: 1000, designGpm: 120, filterRpm: 1500, boostRpm: 2400, poolCircuit: 6, boostCircuit: 8, featureCircuits: [5], autopilot: 'auto', uv: true,
-  heaterBtu: 400_000, propaneUsdPerGal: 3.0, loads: { '2': 1100, '3': 500, '4': 100 } };
+  heaterBtu: 400_000, propaneUsdPerGal: 3.0, loads: { '2': 1100, '3': 500, '4': 100 }, turnoverGoal: 3, skimHours: 1 };
 const BELL = [0, 0, 0, 0, 0, 0, 0, .5, 1.5, 3, 4.5, 5.5, 6, 6, 5.5, 4.5, 3, 1.5, .5, 0, 0, 0, 0, 0];
 const W0 = powerModel([]);
 const poolPlan = (settings: PoolSettings) => planFor({ waterTemp: 88, solarKw: BELL, settings, W: W0, rate: .1064, month: 6, names: new Map() });
@@ -307,7 +307,7 @@ describe('write paths call the guard (fake ScreenLogic session, fake SDM, in-mem
     it.each([
       [87, 'settings point the filter at the spa', { poolCircuit: 1 } as Partial<PoolSettings>, 'circuit 1 (Spa) is the spa'],
       [88, 'settings replace the freeze circuit', { featureCircuits: [132] } as Partial<PoolSettings>, 'freeze protection'],
-      [89, 'settings ask for 3,451 RPM', { filterRpm: 3451 } as Partial<PoolSettings>, '3451 RPM is outside'],
+      [89, 'settings ask for 3,451 RPM (the skim speed)', { boostRpm: 3451 } as Partial<PoolSettings>, '3451 RPM is outside'],
       [90, 'settings point the boost at the pool light', { boostCircuit: 3 } as Partial<PoolSettings>, 'a light'],
     ] as const)('%i applyPlan refuses and logs when %s', async (_n, _case, over, why) => {
       const settings: PoolSettings = { ...POOL, ...over };

@@ -9,11 +9,14 @@ import { usd } from '../tariff.js';
 import { confidenceFor } from '../learn/confidence.js';
 
 export type PoolSettings = { gallons: number; spaGallons: number; designGpm: number; filterRpm: number; boostRpm: number; poolCircuit: number; boostCircuit: number; featureCircuits: number[]; autopilot: Mode; uv: boolean;
-  heaterBtu: number; propaneUsdPerGal: number; loads: Record<string, number> };
+  heaterBtu: number; propaneUsdPerGal: number; loads: Record<string, number>; turnoverGoal: number; skimHours: number };
 // From the construction plan: 14,995 gal pool, ~1,000 gal spa, designed for 120 GPM; Ultra UV sanitizer; 400k BTU propane heater;
 // other circuits' draws (W): 1.5 HP blower, 500 W pool light, 100 W spa light, ~60 W UV lamp while the pump runs.
 const DEFAULTS: PoolSettings = { gallons: 14995, spaGallons: 1000, designGpm: 120, filterRpm: 1500, boostRpm: 2400, poolCircuit: 6, boostCircuit: 8, featureCircuits: [5], autopilot: 'suggest', uv: true,
-  heaterBtu: 400_000, propaneUsdPerGal: 3.0, loads: { '2': 1100, '3': 500, '4': 100 } };
+  heaterBtu: 400_000, propaneUsdPerGal: 3.0, loads: { '2': 1100, '3': 500, '4': 100 },
+  turnoverGoal: 3, skimHours: 1 };   // mockup w frame 5: the owner's goal (about 3 turnovers a day, Option A of the October audit) and a daily skim hour
+/** The planner's search space: whole pump hours up to PUMP_HOURS_MAX a day at a filter speed in 50 RPM steps between these. */
+export const FILTER_RPM_MIN = 1200, FILTER_RPM_MAX = 2400, PUMP_HOURS_MAX = 12, PUMP_HOURS_MIN = 4;
 export { DEFAULTS as POOL_DEFAULTS };
 const UV_W = 60;
 // Typical pool-water temperature by month for central Texas (°F): used only for the season table; the live plan uses the real reading.
@@ -82,25 +85,42 @@ const onSolarPct = (prof: Profile, W: (r: number) => number, solarKw: number[]) 
 
 /* ---------- the optimizer ---------- */
 export type Plan = ReturnType<typeof planFor>;
+/**
+ * The turnover planner (mockup w frame 5): the filter speed and whole pump hours that move `turnoverGoal` × the pool's gallons a day
+ * for the least energy, within PUMP_HOURS_MAX hours, with `skimHours` of the run at the boost speed. Lower speeds move water for
+ * less energy (power rises faster than flow), so the answer is the slowest speed that still fits. Flow is the model (gpmAt).
+ */
+export function goalPlan(s: PoolSettings, W: (r: number) => number) {
+  const skim = Math.max(0, Math.min(3, s.skimHours ?? 1)), need = s.gallons * (s.turnoverGoal ?? 3);
+  const moved = (h: number, r: number) => ((h - skim) * gpmAt(r, s.designGpm) + skim * gpmAt(s.boostRpm, s.designGpm)) * 60;
+  let best: { rpm: number; hours: number; kwh: number } | null = null;
+  for (let r = FILTER_RPM_MIN; r <= FILTER_RPM_MAX; r += 50) for (let h = Math.max(PUMP_HOURS_MIN, skim + 1); h <= PUMP_HOURS_MAX; h++) {
+    if (moved(h, r) < need) continue;
+    const kwh = ((h - skim) * W(r) + skim * W(s.boostRpm)) / 1000;
+    if (!best || kwh < best.kwh - 1e-9) best = { rpm: r, hours: h, kwh };
+    break;   // more hours at this speed only cost more
+  }
+  return { rpm: best?.rpm ?? FILTER_RPM_MAX, hours: best?.hours ?? PUMP_HOURS_MAX, skim, reached: !!best };
+}
 export function planFor(o: { waterTemp: number; solarKw: number[]; settings: PoolSettings; W: (r: number) => number; rate: number | null; month: number; names: Map<number, string>; force?: { hours: number; boost: number } }) {
   const { waterTemp: t, settings: s, W } = o;
-  // how much water to move: at least one turnover, more when warm (algae pressure and use), less when cold; and the 1 h per 10 °F rule of thumb
-  const turnovers = t >= 85 ? 1.25 : t >= 70 ? 1 : t >= 60 ? .75 : .6;
-  const turnoverH = s.gallons * turnovers / (gpmAt(s.filterRpm, s.designGpm) * 60);
-  const hours = o.force?.hours ?? Math.min(12, Math.max(4, Math.round(Math.max(turnoverH, t / 10))));
-  const boostH = o.force?.boost ?? ((s.uv ? t >= 85 : t >= 70) ? 1 : 0); // with UV sanitizing the flow, long low runs matter more than boosts
+  const g = goalPlan(s, W), rpm = g.rpm;
+  const hours = o.force?.hours ?? g.hours;
+  const boostH = Math.min(o.force?.boost ?? g.skim, hours);
   // put the run where the sun is: the contiguous window with the most solar; with no solar data, the default 08:00 start
   let best = 8, bestSum = 0;
-  for (let st = 5; st + hours <= 20; st++) { const sum = o.solarKw.slice(st, st + hours).reduce((a, v) => a + v, 0); if (sum > bestSum) { bestSum = sum; best = st; } }
+  for (let st = Math.min(5, 24 - hours); st + hours <= Math.max(20, hours); st++) { const sum = o.solarKw.slice(st, st + hours).reduce((a, v) => a + v, 0); if (sum > bestSum) { bestSum = sum; best = st; } }
+  if (best + hours > 24) best = 24 - hours;
   const start = best, stop = best + hours;
-  const boostAt = boostH ? o.solarKw.slice(start, stop).reduce((bi, v, i, arr) => v > arr[bi] ? i : bi, 0) + start : null;
+  const boostAt = boostH ? Math.min(stop - boostH, o.solarKw.slice(start, stop).reduce((bi, v, i, arr) => v > arr[bi] ? i : bi, 0) + start) : null;
   const schedules: Array<Sched & { rpm: number; name: string; why: string }> = [
-    { circuitId: s.poolCircuit, start: start * 60, stop: stop * 60, rpm: s.filterRpm, name: o.names.get(s.poolCircuit) ?? 'Pool', why: `${hours} h of filtration at ${s.filterRpm.toLocaleString()} RPM, ${Math.round(turnovers * 100) / 100}× turnover of ${s.gallons.toLocaleString()} gal, while the panels are producing` }];
-  if (boostAt != null) schedules.push({ circuitId: s.boostCircuit, start: boostAt * 60, stop: boostAt * 60 + 60, rpm: s.boostRpm, name: o.names.get(s.boostCircuit) ?? 'High Speed', why: `a one-hour skim boost at ${s.boostRpm.toLocaleString()} RPM at the sunniest hour, for surface debris and pollen` });
+    { circuitId: s.poolCircuit, start: start * 60, stop: stop % 24 * 60, rpm, name: o.names.get(s.poolCircuit) ?? 'Pool', why: `${hours} h of filtration at ${rpm.toLocaleString()} RPM toward ${s.turnoverGoal ?? 3} turnovers of ${s.gallons.toLocaleString()} gal a day` }];
+  if (boostAt != null) schedules.push({ circuitId: s.boostCircuit, start: boostAt * 60, stop: (boostAt + boostH) % 24 * 60, rpm: s.boostRpm, name: o.names.get(s.boostCircuit) ?? 'High Speed', why: `${boostH === 1 ? 'a one-hour' : `a ${boostH}-hour`} skim at ${s.boostRpm.toLocaleString()} RPM at the sunniest hour, for surface debris and mixing` });
   const speeds = new Map(schedules.map(x => [x.circuitId, x.rpm]));
   const prof = hourlyRpm(schedules, speeds), kwh = dayKwh(prof, W) + (s.uv ? hoursOn(prof) * UV_W / 1000 : 0);
-  return { month: o.month, waterTemp: t, turnovers, hours, boostHours: boostH, start, stop, boostAt, schedules, kwhPerDay: Math.round(kwh * 10) / 10,
-    costPerMonth: usd(kwh * 30.4, o.rate), onSolarPct: onSolarPct(prof, W, o.solarKw), turnoverPerDay: Math.round(hours * gpmAt(s.filterRpm, s.designGpm) * 60 / s.gallons * 100) / 100, hourly: prof, uvKwh: s.uv ? Math.round(hoursOn(prof) * UV_W) / 1000 : 0 };
+  const turnoverPerDay = Math.round(prof.reduce((a, h) => a + h.slices.reduce((b, r) => b + gpmAt(r, s.designGpm) * 15, 0), 0) / s.gallons * 100) / 100;
+  return { month: o.month, waterTemp: t, turnovers: turnoverPerDay, goal: s.turnoverGoal ?? 3, rpm, hours, boostHours: boostH, start, stop, boostAt, schedules, kwhPerDay: Math.round(kwh * 10) / 10,
+    costPerMonth: usd(kwh * 30.4, o.rate), onSolarPct: onSolarPct(prof, W, o.solarKw), turnoverPerDay, hourly: prof, uvKwh: s.uv ? Math.round(hoursOn(prof) * UV_W) / 1000 : 0 };
 }
 
 /* ---------- storage ---------- */
@@ -222,7 +242,7 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   const seasons = [[11, 'Dec–Feb'], [2, 'Mar–May'], [5, 'Jun–Aug'], [8, 'Sep–Nov']].map(([m, label]) => {
     const months = [m as number, ((m as number) + 1) % 12, ((m as number) + 2) % 12], avg = Math.round(months.reduce((a, i) => a + WATER_BY_MONTH[i], 0) / 3);
     const p = planFor({ waterTemp: avg, solarKw, settings, W, rate, month: m as number, names });
-    return { label, waterTemp: p.waterTemp, hours: p.hours, boostHours: p.boostHours, rpm: settings.filterRpm, kwhPerDay: p.kwhPerDay, costPerMonth: p.costPerMonth, current: seasonOf(month) === seasonOf(m as number) };
+    return { label, waterTemp: p.waterTemp, hours: p.hours, boostHours: p.boostHours, rpm: p.rpm, kwhPerDay: p.kwhPerDay, costPerMonth: p.costPerMonth, current: seasonOf(month) === seasonOf(m as number) };
   });
   // today so far, in 15-minute steps up to the current quarter-hour: the pump's measured watts where a reading exists for the
   // quarter-hour, the schedule × curve otherwise; the UV lamp while the pump runs; plus the other circuits from readings
@@ -239,9 +259,17 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   const btu = rise != null ? settings.spaGallons * 8.34 * rise : null, heatMin = btu != null ? Math.round(btu / (settings.heaterBtu * .82) * 60) : null, propaneGal = btu != null ? Math.round(btu / .82 / 91_500 * 100) / 100 : null;
   const spaRpm = speeds.get(1) ?? 3190, spaSession = { spaGallons: settings.spaGallons, spaTemp, spaSet, riseF: rise, heatMinutes: heatMin, propaneGal, propaneUsd: propaneGal != null ? Math.round(propaneGal * settings.propaneUsdPerGal * 100) / 100 : null,
     pumpWattsAtSpa: Math.round(W(spaRpm)), blowerWatts: settings.loads['2'] ?? 0, electricUsdPerHour: usd((W(spaRpm) + (settings.loads['2'] ?? 0) + (settings.loads['4'] ?? 0)) / 1000, rate, true) };
+  // frame 5's ring: water moved today from the pump's own readings (quarter-hours read, short gaps in a run filled, unread ones off),
+  // and what the rest of today's controller schedule adds
+  const rpmRows = await q<{ ts: string; running: boolean; rpm: number }>(`SELECT ts::text, running, rpm::float8 rpm FROM pool_readings WHERE site_id = $1 AND day = $2`, [siteId, localDay()]);
+  const readRpm = rpmRows.length ? filledQuarters(meanByQuarter(rpmRows.map(r => ({ ts: Number(r.ts), watts: r.running ? Number(r.rpm) : 0 }))), nowQ, true) : Array(96).fill(null);
+  const qRpm = prof.flatMap(h => h.slices), gal = (r: number) => gpmAt(r, settings.designGpm) * 15;
+  const movedGal = qRpm.slice(0, nowQ).reduce((a, r, i) => a + gal(readRpm[i] ?? r), 0), restGal = qRpm.slice(nowQ).reduce((a, r) => a + gal(r), 0);
+  const water = { goal: settings.turnoverGoal, skimHours: settings.skimHours, movedTurnovers: Math.round(movedGal / settings.gallons * 100) / 100,
+    projectedTurnovers: Math.round((movedGal + restGal) / settings.gallons * 100) / 100, gallons: settings.gallons };
   const untilAll = await kv.get<Record<string, number>>(`${siteId}:pool:until`) ?? {}, nowMs = Date.now();
   const until = Object.fromEntries(Object.entries(untilAll).filter(([id, t]) => t > nowMs && snap?.circuits.find(c => c.id === Number(id))?.on));   // only runs still going
-  return { id: 'pool', runFor: await kv.get<Record<string, number>>(`${siteId}:pool:runFor`) ?? {}, until, autopilot: auto, pending, extras: { hourlyToday: extraHourly.map(v => Math.round(v * 1000) / 1000), todayKwh: Math.round(extraKwh * 100) / 100, nowW: extraNowW, loads: settings.loads, uvW: settings.uv ? UV_W : 0, lightReadings30d: lightH[0]?.h ?? 0 }, spaSession, name: 'Pool pump', linked: configured() && !!snap, error, settings, snapshot: snap,
+  return { id: 'pool', water, runFor: await kv.get<Record<string, number>>(`${siteId}:pool:runFor`) ?? {}, until, autopilot: auto, pending, extras: { hourlyToday: extraHourly.map(v => Math.round(v * 1000) / 1000), todayKwh: Math.round(extraKwh * 100) / 100, nowW: extraNowW, loads: settings.loads, uvW: settings.uv ? UV_W : 0, lightReadings30d: lightH[0]?.h ?? 0 }, spaSession, name: 'Pool pump', linked: configured() && !!snap, error, settings, snapshot: snap,
     live: snap?.pump ? { watts: snap.pump.watts, rpm: snap.pump.rpm, running: snap.pump.running, gpm: snap.pump.gpm, at: snap.at, waterTemp, airTemp: snap.airTemp, freezeMode: snap.freezeMode,
       on: snap.circuits.filter(c => c.on).map(c => c.name), activeRpm: Math.max(0, ...snap.circuits.filter(c => c.on).map(c => speeds.get(c.id) ?? 0)) } : null,
     model: { measured: await measuredPoints(siteId), curve: [1000, 1500, 1800, 2400, 3000, 3450].map(r => ({ rpm: r, watts: Math.round(W(r)) })) },
@@ -269,6 +297,14 @@ async function logPool(siteId: string, text: string, delta?: string) {
   const log = await kv.get<Array<{ at: number; day: string; text: string; delta?: string }>>(`${siteId}:pool:autolog`) ?? [];
   log.unshift({ at: Date.now(), day: localDay(), text, delta });
   await kv.set(`${siteId}:pool:autolog`, log.slice(0, 30));
+}
+/** Why a turnover goal patch (frame 5's steppers) is unusable, or null: 1–4 turnovers a day in half steps, 0–3 whole skim hours. */
+export function goalPatchError(b: any): string | null {
+  if (!b || typeof b !== 'object') return 'send turnoverGoal and/or skimHours';
+  if ('turnoverGoal' in b && !(typeof b.turnoverGoal === 'number' && b.turnoverGoal >= 1 && b.turnoverGoal <= 4 && Number.isInteger(b.turnoverGoal * 2))) return 'turnovers a day are 1–4, in half steps';
+  if ('skimHours' in b && !(Number.isInteger(b.skimHours) && b.skimHours >= 0 && b.skimHours <= 3)) return 'the skim is 0–3 hours';
+  if (!('turnoverGoal' in b) && !('skimHours' in b)) return 'send turnoverGoal and/or skimHours';
+  return null;
 }
 /** A pool command that cannot reach the controller at all (no ScreenLogic credentials on this server): 503, not a hang. */
 export class PoolUnavailable extends Error {}
@@ -306,7 +342,7 @@ export async function applyPlan(siteId: string, plan: Plan, snap: PoolSnapshot, 
   if (!snap.pump) throw new Error('No pump found on the controller');
   const w = planWrite(plan, snap, settings), replace = w.replaceCircuits;
   const r = await guardedWrite(siteId, 'a pool schedule write', w);
-  const record = { at: Date.now(), plan: { start: plan.start, stop: plan.stop, boostAt: plan.boostAt, schedules: plan.schedules }, removed: r.removed, added: r.added,
+  const record = { at: Date.now(), plan: { start: plan.start, stop: plan.stop, boostAt: plan.boostAt, rpm: plan.rpm, boostHours: plan.boostHours, schedules: plan.schedules }, removed: r.removed, added: r.added,
     previousSpeeds: snap.pump.circuits.filter(c => replace.includes(c.circuitId)) };
   await kv.set(`${siteId}:pool:applied`, record);
   await kv.set(`${siteId}:pool:last`, null as any);

@@ -1,11 +1,11 @@
 // The owner's own pool commands (mockup w batch 1): guardOwnerPool, writeOwnerPool on a fake controller that keeps state (so the
 // read-back is real), and poolCommand on PGlite (the reading, the remembered run time, the activity log). All data synthetic; nothing
 // here opens a ScreenLogic session.
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { q, kv, migrate } from '../../server/src/db.js';
 import { guardOwnerPool, GuardRefusal } from '../../server/src/appliances/guards.js';
 import { writeOwnerPool } from '../../server/src/appliances/screenlogic.js';
-import { poolCommand } from '../../server/src/appliances/pool.js';
+import { poolCommand, poolDetail, goalPatchError, recordReading } from '../../server/src/appliances/pool.js';
 
 const NAMES: Array<[number, string, number]> = [[1, 'Spa', 1], [2, 'Air Blower', 0], [3, 'Pool Light', 7], [5, 'Waterfall', 13], [6, 'Pool', 2], [8, 'High Speed', 0]];
 /** A fake controller with state: circuits on/off and egg timers, pump slots (Pool, High Speed, Waterfall, Spa, freeze 132). */
@@ -123,5 +123,20 @@ describe('poolCommand (PGlite)', () => {
     expect(await kv.get('pb:pool:until')).toEqual({});
     await poolCommand('pb', { kind: 'spaHeat', on: true, setF: 101 }, u.run);
     expect((await kv.get<any[]>('pb:pool:autolog'))![0].text).toBe('You set spa heat to 101°');
+  });
+  it('PC-12 the goal patch: 1–4 turnovers in half steps, 0–3 whole skim hours', () => {
+    expect(goalPatchError({ turnoverGoal: 3 })).toBeNull();
+    expect(goalPatchError({ turnoverGoal: 2.5, skimHours: 0 })).toBeNull();
+    for (const b of [{ turnoverGoal: 4.5 }, { turnoverGoal: 2.25 }, { turnoverGoal: '3' }, { skimHours: 1.5 }, { skimHours: 4 }, {}, null]) expect(goalPatchError(b), JSON.stringify(b)).not.toBeNull();
+  });
+  it('PC-13 the ring: water moved today comes from the readings (a run read at 2,000 RPM), not from the schedule', async () => {
+    const { localDay, localMidnight } = await import('../../server/src/tesla/client.js');
+    const t0 = localMidnight(localDay()).getTime(), snap = (await writeOwnerPool({ kind: 'speed', id: 8, rpm: 2400 }, fakeUnit().run, 0));
+    // two hours at 2,000 RPM from midnight, read every 15 minutes: 2 h × gpmAt(2000) = 2 × 69.57 × 60 = 8,348 gal = 0.56 of 14,995
+    for (let k = 0; k < 8; k++) await recordReading('pw', { ...snap, at: t0 + k * 900_000 + 60_000, pump: { ...snap.pump!, running: true, rpm: 2000, watts: 370 }, schedules: [] });
+    vi.setSystemTime(t0 + 3 * 3600e3);   // 03:00: the 02:00–03:00 quarters have no read, so they count as off
+    const d = await poolDetail('pw', {}, null);
+    expect(d.water).toMatchObject({ goal: 3, skimHours: 1, movedTurnovers: .56, projectedTurnovers: .56, gallons: 14995 });   // no schedule left today
+    vi.useRealTimers();
   });
 });

@@ -16,7 +16,7 @@ import { SOLAR, warrantedDcPct, systemYear } from './system.js';
 import { siteLocation, exactLocation } from './site.js';
 import { currentTariff, netEnergyCost, NO_TARIFF } from './tariff.js';
 import { appliances, comingSoon } from './appliances/index.js';
-import { poolDetail, applyPlan, restorePrevious, poolCommand, PoolUnavailable } from './appliances/pool.js';
+import { poolDetail, applyPlan, restorePrevious, poolCommand, PoolUnavailable, goalPatchError } from './appliances/pool.js';
 import { readPool } from './appliances/screenlogic.js';
 import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, bandFor, dismissSuggestion, recordNest, observeHold } from './appliances/ac.js';
 import { oidcError, eventOf, seenEvent, applyTraits, isSettingEvent } from './appliances/nestEvents.js';
@@ -484,6 +484,16 @@ app.post('/api/appliances/pool/command', express.json({ limit: '1kb' }), wrap(as
   const sid = site(req);
   try { await poolCommand(sid, cmd as PoolOwnerCommand); }
   catch (e) { if (e instanceof GuardRefusal) return res.status(400).json({ error: e.reason }); if (e instanceof PoolUnavailable) return res.status(503).json({ error: e.message }); throw e; }
+  res.json(await poolDetail(sid, await settingsFor(req), await rateFor(sid)));
+}));
+/** Frame 5's goal: turnovers a day and the daily skim hours. Saved with the owner's pool settings; the next plan uses them. */
+app.post('/api/appliances/pool/goal', express.json({ limit: '1kb' }), wrap(async (req, res) => {
+  const bad = goalPatchError(req.body); if (bad) return res.status(400).json({ error: bad });
+  const patch = Object.fromEntries(['turnoverGoal', 'skimHours'].filter(k => k in req.body).map(k => [k, req.body[k]]));
+  const cur = (await settingsFor(req)).pool ?? {};
+  if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ pool: { ...cur, ...patch } })]);
+  else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), pool: { ...cur, ...patch } });
+  const sid = site(req);
   res.json(await poolDetail(sid, await settingsFor(req), await rateFor(sid)));
 }));
 app.post('/api/appliances/pool/autopilot', express.json(), wrap(async (req, res) => {

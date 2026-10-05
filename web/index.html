@@ -282,16 +282,18 @@
             <div class="two" id="poolStats"></div>
             <p class="fine" id="poolNote"></p>
           </div>
-          <div class="card sched" id="poolSched" hidden>
-            <div class="h"><b>Pump schedule</b><span class="seg2" id="schMode"><button data-m="now">Now</button><button data-m="rec" class="on">Recommended</button><button data-m="both">Both</button></span></div>
-            <div class="dialwrap"><svg viewBox="0 0 320 320" id="dial24"></svg><div class="dialc"><small id="dcLbl">—</small><b id="dcKwh">—</b><span id="dcSub"></span></div></div>
-            <div id="schNow" hidden></div>
-            <div id="schRec">
-              <div class="deltas" id="schDeltas"></div>
-              <div class="reasons" id="schWhy"></div><div class="dots" id="schDots"></div>
-              <div class="kv" id="schSteps" style="display:none"></div>
-              <div id="schActions"></div>
-            </div>
+          <div class="card" id="poolSched" hidden>
+            <div class="h"><b>Turnover planner</b><span class="badge g" id="plMode">Autopilot</span></div>
+            <div class="pl-goal"><div class="pl-ring"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="9"/><circle id="plArc" cx="50" cy="50" r="42" fill="none" stroke="#6cc4ff" stroke-width="9" stroke-linecap="round"/></svg><div class="c"><div><b id="plMoved">—</b><small id="plOf"></small></div></div></div>
+              <div class="gt" id="plTxt"></div></div>
+            <div class="pl-day" id="plDay"></div>
+            <div class="pl-tlab"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>12a</span></div>
+            <div class="pl-list" id="plList"></div>
+            <div data-owner><div class="pc-lbl">Goal</div>
+              <div class="pc-rpm"><div class="bt">Turnovers a day<small id="plGal"></small></div><div class="stp"><button id="plGdn" aria-label="Fewer">−</button><b id="plGoal"></b><button id="plGup" aria-label="More">+</button></div></div>
+              <div class="pc-rpm"><div class="bt">Daily skim hour<small>High Speed at its saved speed</small></div><div class="stp"><button id="plSdn" aria-label="Less">−</button><b id="plSkim"></b><button id="plSup" aria-label="More">+</button></div></div></div>
+            <div class="pl-nums" id="plNums"></div>
+            <p class="fine" id="plNote" style="margin-top:10px"></p>
           </div>
           <div class="card auto" id="poolAuto" hidden>
             <div class="h"><b>Autopilot</b><span class="seg2" id="autoMode"><button data-m="off">Off</button><button data-m="suggest">Suggest</button><button data-m="auto">Auto</button></span><span class="badge g" id="autoBadge" data-guest>Autopilot</span></div>
