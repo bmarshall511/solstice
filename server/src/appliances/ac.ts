@@ -12,6 +12,7 @@ import { median } from '../learn/models.js';
 import type { Tier } from '../learn/confidence.js';
 import { presenceFor } from './presence.js';
 import { changed, ours, holdUntil, holdOver, morningAfter, getHold, setHold, lastSent, SAME_F, type Hold, type HoldBy } from './hold.js';
+import { SPARE_SOC } from '../spare.js';
 
 export type AcSettings = { band: { homeLo: number; homeHi: number; nightLo: number; nightHi: number }; awayF: number; nightFrom: number; nightTo: number; precoolDepth: number; coastF: number; maxStepF: number; humidityCap: number; autopilot: Mode; presence: 'home' | 'away' };
 const DEFAULTS: AcSettings = { band: { homeLo: 74, homeHi: 78, nightLo: 74, nightHi: 76 }, awayF: 80, nightFrom: 22, nightTo: 7, precoolDepth: 2, coastF: 78, maxStepF: 2, humidityCap: 60, autopilot: 'suggest', presence: 'home' };
@@ -255,9 +256,11 @@ export function precoolDecision(o: { spareW: number | null; acKw: number; on: bo
   if (o.spareW == null) return false;
   return o.spareW >= (o.on ? PRECOOL_KEEP : PRECOOL_START) * o.acKw * 1000;
 }
-async function spareSolarW(siteId: string, cooling: boolean, acKw: number, now = Date.now()) {
-  const r = await q<{ n: number; w: number | null }>(`SELECT COUNT(*)::int n, AVG(solar_w - load_w)::float8 w FROM readings WHERE site_id = $1 AND ts > $2 AND solar_w IS NOT NULL AND load_w IS NOT NULL`, [siteId, now - SURPLUS_WINDOW_MS]);
+export async function spareSolarW(siteId: string, cooling: boolean, acKw: number, now = Date.now()) {
+  // mockup ad: spare only while the Powerwalls are full (95%+); below that the "surplus" is charging them for the evening, not free
+  const r = await q<{ n: number; w: number | null; soc: number | null }>(`SELECT COUNT(*)::int n, AVG(solar_w - load_w)::float8 w, AVG(soc)::float8 soc FROM readings WHERE site_id = $1 AND ts > $2 AND solar_w IS NOT NULL AND load_w IS NOT NULL`, [siteId, now - SURPLUS_WINDOW_MS]);
   if (!r[0] || r[0].n < 2 || r[0].w == null) return null;
+  if (r[0].soc == null || r[0].soc < SPARE_SOC) return 0;
   return r[0].w + (cooling ? acKw * 1000 : 0);
 }
 

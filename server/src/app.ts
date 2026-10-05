@@ -34,6 +34,7 @@ import { alertRoutes, notify } from './notify.js';
 import { ercotNow, fiveMinuteWatch, nightlyWatch, cronSites, fiveMinuteSteps, nightlySteps } from './watch.js';
 import { gridWatch } from './gridwatch.js';
 import { pruneOld } from './retention.js';
+import { spareWatch, spareHistory } from './spare.js';
 import { digestRoutes, maybeWeeklyDigest } from './digest.js';
 import { presenceRoutes, setPresence } from './appliances/presence.js';
 import { powerwallRoutes, powerwallTick, powerwallNightly } from './powerwall.js';
@@ -334,6 +335,8 @@ app.get('/api/flows', wrap(async (req, res) => {
   catch (e) { if (e instanceof FlowsInputError) return res.status(400).json({ error: e.message }); throw e; }
 }));
 
+/** Mockup ad: days with spare solar and kWh sent to PEC by month, and whether there is spare solar now (owner only). */
+app.get('/api/spare', wrap(async (req, res) => res.json(await spareHistory(site(req)))));
 app.get('/api/daily', wrap(async (req, res) => {
   const id = site(req), days = Math.min(800, Number(req.query.days ?? 30)), from = addDays(localDay(), -days + 1);
   res.json(await q(`SELECT e.day date, ${kwhCols}, s.mn "socMin", s.mx "socMax" FROM energy e
@@ -629,7 +632,8 @@ powerwallRoutes(app);
 fiveMinuteSteps.powerwall = powerwallTick; nightlySteps.powerwall = powerwallNightly;
 fiveMinuteSteps.digest = maybeWeeklyDigest; nightlySteps.digest = maybeWeeklyDigest;
 fiveMinuteSteps.panels = panelWatch;
-fiveMinuteSteps.grid = gridWatch;   // mockup ab: grid down / Powerwalls low / grid back (after the storm step's live read)
+fiveMinuteSteps.grid = gridWatch;
+fiveMinuteSteps.spare = spareWatch;   // mockup ad: the pool speeds up on real spare solar (Auto only)   // mockup ab: grid down / Powerwalls low / grid back (after the storm step's live read)
 nightlySteps.alwaysOn = alwaysOnWatch;   // breakdown.ts: one push when the always-on base stays up three nights
 /* Watchdog: Vercel never retries a cron, so a nightly run that died (timeout, deploy, outage) would be silent. The 5-minute tick
  * pushes one alert a day while the last finished nightly run is more than 26 hours old. */

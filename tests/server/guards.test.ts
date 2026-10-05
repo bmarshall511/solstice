@@ -560,21 +560,21 @@ describe('write paths call the guard (fake ScreenLogic session, fake SDM, in-mem
       await H.db.kv.set(`${SITE}:ac:control`, { count: 1, days: {} });   // not a control day
     });
     it('P1 no spare solar: holds the band (76°) instead of pre-cooling, and says so', async () => {
-      H.readings.spare = [{ n: 3, w: -800 }];
+      H.readings.spare = [{ n: 3, w: -800, soc: 98 }];
       await tick();
       expect(H.sdm).toEqual([]);                                                                 // 76 already: nothing to send
       const log = (await H.db.kv.get(`${SITE}:ac:log`)) as any[] ?? [];
       expect(log.some(l => /pre-cooling/.test(l.text))).toBe(false);
     });
     it('P2 a full AC of spare solar starts the pre-cool; half an AC keeps it; less ends it', async () => {
-      H.readings.spare = [{ n: 3, w: 3500 }];                                                    // the AC is 3.25 kW (estimated) here
+      H.readings.spare = [{ n: 3, w: 3500, soc: 98 }];                                                    // the AC is 3.25 kW (estimated) here
       await tick();
       expect(H.sdm.map(s => s.body.params.coolCelsius)).toEqual([23.33]);                      // 76 → 74
       expect(((await H.db.kv.get(`${SITE}:ac:plan`)) as any)).toMatchObject({ precoolOn: true, precoolRan: true });
-      H.nestState.coolF = 74; H.nestState.hvac = 'COOLING'; H.readings.spare = [{ n: 3, w: -900 }];   // AC on: + its 3.25 kW back, 2.35 kW ≥ half
+      H.nestState.coolF = 74; H.nestState.hvac = 'COOLING'; H.readings.spare = [{ n: 3, w: -900, soc: 98 }];   // AC on: + its 3.25 kW back, 2.35 kW ≥ half
       vi.setSystemTime(at('13:40')); await tick();
       expect(H.sdm).toHaveLength(1);
-      H.readings.spare = [{ n: 3, w: -2000 }];
+      H.readings.spare = [{ n: 3, w: -2000, soc: 98 }];
       vi.setSystemTime(at('14:20')); await tick();
       expect(H.sdm.map(s => s.body.params.coolCelsius)).toEqual([23.33, 24.44]);               // back to 76
       expect(((await H.db.kv.get(`${SITE}:ac:plan`)) as any).precoolOn).toBe(false);

@@ -380,7 +380,7 @@ describe('everything else is refused to guests', () => {
     // owner-only reads, pinned: a new GET must be added here on purpose (and has no guest view). /api/alerts and /api/push/key: notify.ts;
     // /api/digest: digest.ts; /api/presence: appliances/presence.ts; /api/powerwall/rules and /api/tesla/scopes: powerwall.ts
     expect(reads.map(([, p]) => p).sort()).toEqual(['/api/alerts', '/api/appliances/day', '/api/auth/devices', '/api/bills', '/api/breakdown', '/api/digest', '/api/export.csv', '/api/flows', '/api/outage',
-      '/api/powerwall/rules', '/api/presence', '/api/push/key', '/api/share', '/api/site', '/api/tesla/scopes', '/auth/google', '/auth/login']);
+      '/api/powerwall/rules', '/api/presence', '/api/push/key', '/api/share', '/api/site', '/api/spare', '/api/tesla/scopes', '/auth/google', '/auth/login']);
     for (const [, path] of reads) for (const cookie of [guest, preview]) {
       const r = await call(path, { cookie });
       expect(r.status, `${path} as ${cookie === guest ? 'guest' : 'preview'}`).toBe(401);
