@@ -117,7 +117,7 @@ describe('unaccounted: Tesla\'s home and export totals beyond the ribbons into t
     await seed('u', stamps(DAY).map((ts, k) => row(ts, k < 100 ? { ...TESLA, h: 45, x: 12 } : k < 150 ? { ...TESLA, h: 38 } : TESLA, TESLA_SPLIT)));
     // pool: the fixture controller with one program, Pool 08:00–17:00 at 1,500 RPM, and no readings; AC: 30 min of COOLING at a learned 2 kW
     await kv.set('u:pool:last', poolSnapshot(NOW, { schedules: [{ id: 1, circuitId: 6, start: 480, stop: 1020, dayMask: 127, flags: 0, heatCmd: 4, heatSetPoint: 70 }] }));
-    await kv.set('u:ac:learned', { at: Date.now(), learned: { coolKw: 2, heatKw: null, samples: 5, heatSamples: 0 } });
+    await kv.set('u:ac:learned:v2', { at: Date.now(), learned: { coolKw: 2, heatKw: null, samples: 5, heatSamples: 0, diag: { lateKw: null, lateSamples: 0, regressionKw: null, regressionHours: 0 } } });
     const nest = stamps(DAY).map(ts => Date.parse(ts));
     await q(`INSERT INTO nest_readings (site_id, ts, day, hour, hvac) SELECT 'u', t, $1, 0, CASE WHEN t >= $2 AND t < $3 THEN 'COOLING' ELSE 'OFF' END FROM unnest($4::bigint[]) t`,
       [DAY, Date.parse(`${DAY}T12:00:00-05:00`), Date.parse(`${DAY}T12:30:00-05:00`), nest]);
