@@ -25,12 +25,14 @@ beforeAll(async () => {
   await q(`INSERT INTO sites (id, user_id, tesla_account_id, name) VALUES ('bd', NULL, 1, 'Test')`);
   for (let i = 40; i >= 0; i--) {
     const d = addDays('2026-10-05', -i), base = i <= 3 && i >= 1 ? 1.7 : 1.1;   // the last three full nights run 0.6 kW high
-    for (const r of day(d, base)) await q(`INSERT INTO energy (site_id, ts, epoch, day, hour, home_wh) VALUES ('bd', $1, $2, $3, $4, $5)`, [rfc3339(new Date(r.epoch)), r.epoch, r.day, r.hour, Math.round(r.kw * 1000 / 12)]);
+    // one statement per day (arrays through unnest): row by row this setup ran past the 60 s hook limit under load
+    const rows = day(d, base);
+    await q(`INSERT INTO energy (site_id, ts, epoch, day, hour, home_wh) SELECT 'bd', ts, epoch, $1, hour, wh FROM unnest($2::text[], $3::bigint[], $4::int[], $5::int[]) AS x(ts, epoch, hour, wh)`,
+      [d, rows.map(r => rfc3339(new Date(r.epoch))), rows.map(r => r.epoch), rows.map(r => r.hour), rows.map(r => Math.round(r.kw * 1000 / 12))]);
     if (i > 10) continue;   // Nest readings every 15 min for the last ten days only: cooling 14:00–15:00
-    for (let t = localMidnight(d).getTime(); t < localMidnight(addDays(d, 1)).getTime(); t += 3 * B) {
-      const h = Number(rfc3339(new Date(t)).slice(11, 13));
-      await q(`INSERT INTO nest_readings (site_id, ts, day, hour, hvac) VALUES ('bd', $1, $2, $3, $4)`, [t, d, h, h === 14 ? 'COOLING' : 'OFF']);
-    }
+    const ts: number[] = [], hrs: number[] = [];
+    for (let t = localMidnight(d).getTime(); t < localMidnight(addDays(d, 1)).getTime(); t += 3 * B) { ts.push(t); hrs.push(Number(rfc3339(new Date(t)).slice(11, 13))); }
+    await q(`INSERT INTO nest_readings (site_id, ts, day, hour, hvac) SELECT 'bd', ts, $1, hour, CASE WHEN hour = 14 THEN 'COOLING' ELSE 'OFF' END FROM unnest($2::bigint[], $3::int[]) AS x(ts, hour)`, [d, ts, hrs]);
   }
 });
 
