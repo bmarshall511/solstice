@@ -121,6 +121,21 @@ export async function measuredQuarters(siteId: string, day: string): Promise<Arr
   const rows = await q<{ ts: string; running: boolean; watts: number }>(`SELECT ts::text, running, watts FROM pool_readings WHERE site_id = $1 AND day = $2`, [siteId, day]);
   return meanByQuarter(rows.map(r => ({ ts: Number(r.ts), watts: r.running ? Number(r.watts) : 0 })));
 }
+/**
+ * A past day's quarter-hours from its readings: measured where read; a gap of up to an hour between two running reads (a missed read)
+ * takes their average; any other unread quarter was outside the schedule, so 0. With `today`, the last two elapsed quarters stay null
+ * (the schedule fills them) because their read may simply not have happened yet.
+ */
+export function filledQuarters(measured: Array<number | null>, quarters: number, today: boolean): Array<number | null> {
+  const out = measured.slice(), read = out.map((v, i) => v != null ? i : -1).filter(i => i >= 0 && i < quarters);
+  for (let i = 0; i < quarters; i++) {
+    if (out[i] != null) continue;
+    if (today && i >= quarters - 2) continue;
+    const l = [...read].reverse().find(j => j < i), r = read.find(j => j > i);
+    out[i] = l != null && r != null && r - l <= 5 && measured[l]! > 0 && measured[r]! > 0 ? (measured[l]! + measured[r]!) / 2 : 0;
+  }
+  return out;
+}
 export function meanByQuarter(rows: Array<{ ts: number; watts: number }>) {
   const sum = Array<number>(96).fill(0), n = Array<number>(96).fill(0);
   for (const r of rows) { const i = quarterOf(r.ts); sum[i] += r.watts; n[i]++; }
@@ -147,7 +162,8 @@ export type DaySpan = { day: string; quarters: number; elapsedMs: number; length
  * watts where a reading exists for the quarter-hour and the stored schedule × power curve otherwise, plus the UV lamp while the pump runs
  * and the other circuits (blower, lights) from readings, each holding until the next for at most 10 min. Database only: the programs come
  * from the last stored snapshot (or the applied plan while the snapshot is cleared), never from a ScreenLogic read.
- * `source`: 'readings' when readings cover at least 80% of the scheduled pump quarter-hours in the range, 'schedule' otherwise,
+ * Past quarter-hours come from that day's own readings (filledQuarters); days with no read at all take the read days' average.
+ * `source`: 'readings' when days with readings make up at least 80% of the range, 'schedule' otherwise,
  * 'none' with neither a schedule nor readings. `rpm`/`watts` describe the longest program and `kwhPerDay` the schedule alone.
  */
 export async function poolKwhBetween(siteId: string, spans: DaySpan[], settingsAll: Record<string, any>) {
@@ -158,20 +174,25 @@ export async function poolKwhBetween(siteId: string, spans: DaySpan[], settingsA
     const planned: Array<Sched & { rpm: number }> = (await kv.get<any>(`${siteId}:pool:applied`))?.plan?.schedules ?? [];
     speeds = new Map(planned.map(s => [s.circuitId, s.rpm])); schedules = planned;
   }
-  const W = powerModel(await measuredPoints(siteId)), prof = hourlyRpm(schedules, speeds), sched = scheduledQuarters(schedules), slices = prof.flatMap(h => h.slices);
+  const W = powerModel(await measuredPoints(siteId)), prof = hourlyRpm(schedules, speeds), slices = prof.flatMap(h => h.slices);
   const rows = spans.length ? await q<{ ts: string; day: string; running: boolean; watts: number; circuits: number[] }>(`SELECT ts::text, day, running, watts::float8 watts, circuits
     FROM pool_readings WHERE site_id = $1 AND day BETWEEN $2 AND $3 ORDER BY ts`, [siteId, spans[0].day, spans[spans.length - 1].day]) : [];
   const byDay = new Map<string, typeof rows>();
   for (const r of rows) { const a = byDay.get(r.day); if (a) a.push(r); else byDay.set(r.day, [r]); }
-  let wh = 0, scheduledQ = 0, coveredQ = 0;
-  for (const s of spans) {
-    const rd = byDay.get(s.day) ?? [], measured = meanByQuarter(rd.map(r => ({ ts: Number(r.ts), watts: r.running ? Number(r.watts) : 0 })));
+  // A day's own readings say which schedule ran that day (reads happen only in scheduled quarter-hours plus 02:05 and 05:05), so the
+  // schedule stored now (which may be a temporary all-day one) only fills today's last half hour and ranges with no readings at all.
+  let wh = 0, readMs = 0, unreadMs = 0; const dayWh: number[] = [];
+  spans.forEach((s, k) => {
+    const rd = byDay.get(s.day) ?? [];
+    if (!rd.length && rows.length) { unreadMs += s.elapsedMs; return; }   // filled below from the days that have readings
+    const measured = rd.length ? filledQuarters(meanByQuarter(rd.map(r => ({ ts: Number(r.ts), watts: r.running ? Number(r.watts) : 0 }))), s.quarters, k === spans.length - 1 && s.quarters < 96) : Array(96).fill(null);
     const runs = slices.slice(0, s.quarters).filter((r, i) => (measured[i] ?? r) > 0).length;
-    wh += quarterWh(prof, W, measured).slice(0, s.quarters).reduce((a, v) => a + v, 0) + (settings.uv ? runs * UV_W / 4 : 0);
-    for (let i = 1; i < rd.length; i++) wh += (rd[i - 1].circuits ?? []).reduce((a, c) => a + (settings.loads[String(c)] ?? 0), 0) * Math.min(600_000, Number(rd[i].ts) - Number(rd[i - 1].ts)) / 3600_000;
-    sched.slice(0, s.quarters).forEach((on, i) => { if (on) { scheduledQ++; if (measured[i] != null) coveredQ++; } });
-  }
-  const coverage = scheduledQ ? coveredQ / scheduledQ : rows.length ? 1 : 0;
+    let d = quarterWh(prof, W, measured).slice(0, s.quarters).reduce((a, v) => a + v, 0) + (settings.uv ? runs * UV_W / 4 : 0);
+    for (let i = 1; i < rd.length; i++) d += (rd[i - 1].circuits ?? []).reduce((a, c) => a + (settings.loads[String(c)] ?? 0), 0) * Math.min(600_000, Number(rd[i].ts) - Number(rd[i - 1].ts)) / 3600_000;
+    wh += d; if (rd.length) { readMs += s.elapsedMs; dayWh.push(d); }
+  });
+  if (unreadMs && readMs) wh += dayWh.reduce((a, v) => a + v, 0) / readMs * unreadMs;   // days without a single read: the read days' average rate
+  const coverage = readMs + unreadMs ? readMs / (readMs + unreadMs) : 0;
   const main = schedules.map(s => ({ rpm: speeds.get(s.circuitId) ?? 0, min: (s.stop - s.start + 1440) % 1440 || 1440 })).sort((a, b) => b.min - a.min)[0];
   return { kwh: Math.round(wh / 10) / 100, source: !schedules.length && !rows.length ? 'none' as const : coverage >= .8 ? 'readings' as const : 'schedule' as const,
     coverage: Math.round(coverage * 100) / 100, rpm: main?.rpm ?? null, watts: main ? Math.round(W(main.rpm)) : null,
