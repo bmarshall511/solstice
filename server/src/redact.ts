@@ -167,7 +167,7 @@ export const GUEST_GET: ReadonlyMap<string, View> = new Map<string, View>([
   ['/api/now', view({
     reading: { ts: true, solarKw: true, homeKw: true, batteryKw: true, gridKw: true, soc: true, gridStatus: true, islandStatus: true, stormActive: true },
     today: kwh,
-    site: { name: fixed('Home'), installed: true, batteryCount: true, batteries: [{ name: true, kwh: true, kw: true }], capacityKwh: true, maxPowerKw: true,
+    site: { name: fixed('Home'), installed: true, batteryCount: true, batteries: [{ name: true, kwh: true, kw: true }], capacityKwh: true, measuredKwh: true, modelKwh: true, maxPowerKw: true,
       reservePct: true, mode: true, stormWatch: true, solar: SOLAR },
     outage: { active: true, since: true },
     health: { lastLive: true, lastHistory: true, stale: true, liveError: fixed(UNAVAILABLE),

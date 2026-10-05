@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Solstice · Powerwall capacity</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* page scaffolding for the mockup only (same as v–ae) */
+html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+body{background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.col{width:100%;max-width:393px;margin:0 auto;padding:28px 0 60px}
+.intro{padding:0 20px}
+.intro .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.intro h2{font-size:30px;line-height:1.1;font-weight:300;letter-spacing:-.02em;margin-bottom:12px}
+.intro p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.frame{margin-top:34px}
+.frame>.sect{margin:0 20px 10px}
+.pagepad{padding:0 20px}
+.cap{margin:12px 20px 0;padding:12px 14px;border-radius:16px;background:rgba(0,0,0,.25);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.55}
+.cap b{color:var(--text);font-weight:600}
+.cap p+p{margin-top:6px}
+.cap .new{color:var(--batt)}.cap .same{color:var(--mute)}
+.wrules{margin:34px 20px 0}
+.wrules h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:10px}
+.wrules ul{list-style:none;display:grid;gap:8px}
+.wrules li{font-size:12.5px;color:var(--dim);line-height:1.55;padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b)}
+.wrules li b{color:var(--text);font-weight:600}
+/* NEW: the capacity card */
+.bc-big{display:flex;align-items:baseline;gap:8px;margin-top:10px}
+.bc-big b{font-size:30px;font-weight:300;letter-spacing:-.02em}
+.bc-big span{font-size:12px;color:var(--dim)}
+.bc-meter{position:relative;height:12px;border-radius:6px;background:rgba(255,255,255,.06);margin-top:12px;overflow:hidden}
+.bc-meter i{position:absolute;left:0;top:0;bottom:0;border-radius:6px;background:var(--batt);opacity:.85}
+.bc-meter s{position:absolute;top:-2px;bottom:-2px;width:2px;background:rgba(255,255,255,.55)}
+.bc-lab{position:relative;display:flex;justify-content:space-between;font:500 9.5px "JetBrains Mono";color:var(--mute);margin-top:4px}
+.bc-lab em{position:absolute;left:70%;transform:translateX(-50%);font-style:normal;white-space:nowrap}
+.bc-months{display:flex;align-items:flex-end;gap:4px;height:64px;margin-top:14px}
+.bc-months div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:3px;height:100%}
+.bc-months i{display:block;width:100%;border-radius:3px 3px 0 0;background:var(--batt);opacity:.75}
+.bc-months small{font:500 9px "JetBrains Mono";color:var(--mute)}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cmp div{padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b);font-size:12px;line-height:1.5;color:var(--dim)}
+.cmp small{display:block;font:600 10px Manrope;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin-bottom:4px}
+.cmp b{color:var(--text);font:inherit;font-weight:600}
+</style></head><body>
+<div class="col">
+  <div class="intro">
+    <div class="k">Mockup af · Powerwall capacity</div>
+    <h2>How much the Powerwalls really hold, measured from your own evenings.</h2>
+    <p>Everything in the app assumes the nameplate 27 kWh (and takes 95% of it for the outage estimate). Your data says otherwise: across 141 evening discharges since September 2025, each 1% of charge delivered 0.24 kWh, so a full charge gives about <b>24.0 kWh</b>, 89% of nameplate. It has not faded measurably over that time. The figures below are your real ones.</p>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 1 · Insights › Home · new card</div>
+    <div class="pagepad"><div class="card">
+      <div class="h"><b>Powerwall capacity</b><span>measured</span></div>
+      <div class="bc-big"><b>24.0</b><span>kWh a full charge delivers · 89% of the 27 kWh nameplate</span></div>
+      <div class="bc-meter"><i style="width:88.9%"></i><s style="left:70%"></s></div>
+      <div class="bc-lab"><span>0</span><em>70% warranty floor</em><span>27 kWh</span></div>
+      <div class="bc-months" id="mon"></div>
+      <p class="fine" style="margin-top:10px">From 141 evening discharges since September 2025 (each 2 h or longer, 25% of charge or more). Steady: the monthly figures range 23.6–25.1 kWh with no downward trend. Two Powerwall 2s installed December 2020.</p>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> the measured capacity, how it compares with the nameplate and the warranty floor (Tesla's Powerwall 2 warranty promises 70% after 10 years), and the median for each month, so a fade would show as the bars stepping down.</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 2 · the estimates use it</div>
+    <div class="pagepad"><div class="cmp">
+      <div><small>Today</small>Outage view: Powerwalls 64% · <b>16.4 kWh</b> (64% × 27 × 95%). A 2 kW house lasts about <b>8.2 h</b>.</div>
+      <div><small>Proposed</small>Outage view: Powerwalls 64% · <b>15.4 kWh</b> (64% × 24.0 measured). A 2 kW house lasts about <b>7.7 h</b>.</div>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> the outage view, the Now screen's "how long the Powerwalls last", the 48-hour battery forecast and History's cycle count use the measured 24.0 kWh instead of 27 × 95% (25.7). Estimates get about 6% shorter, and more honest.</p>
+      <p>The ladder's footnote says "measured" instead of "× 27 kWh × 95%". Layouts don't change.</p>
+    </div>
+  </div>
+
+  <div class="wrules">
+    <h3>The rules</h3>
+    <ul>
+      <li><b>Measured</b> nightly from evening discharges: 2 h or more of steady discharge that lowers the charge by 25% or more; energy out ÷ charge used.</li>
+      <li><b>The figure used</b> is the median of the last 90 days with at least 5 measurements; until then, nameplate × 95% as today.</li>
+      <li><b>A fade</b>: if a month's median falls 5% below the year's, Insights says so on this card (no push).</li>
+      <li><b>Unchanged:</b> the reserve, Storm Watch, the Powerwall rules, and every other card.</li>
+    </ul>
+  </div>
+</div>
+<script>
+// the owner's real monthly medians, kWh, Sep 2025 – Oct 2026 (scaled from 20 kWh so small differences show)
+const M = [['S', 24.2], ['O', 24.5], ['N', 23.6], ['D', 24.0], ['J', 24.4], ['F', 23.7], ['M', 23.9], ['A', 24.0], ['M', 24.1], ['J', 24.5], ['J', 23.6], ['A', 24.1], ['S', 25.1], ['O', 23.9]];
+document.getElementById('mon').innerHTML = M.map(([m, v]) => `<div><i style="height:${(v - 20) / 7 * 50}px" title="${v} kWh"></i><small>${m}</small></div>`).join('');
+</script>
+</body></html>

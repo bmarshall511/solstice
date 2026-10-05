@@ -378,8 +378,8 @@ describe('everything else is refused to guests', () => {
   it('RED-10 every GET without a guest view answers 401 to a guest and to the owner previewing, before its handler runs', async () => {
     const reads = routes().filter(([m, p]) => m === 'GET' && !OPEN.has(`${m} ${p}`) && !redact.GUEST_GET.has(p.toLowerCase()));
     // owner-only reads, pinned: a new GET must be added here on purpose (and has no guest view). /api/alerts and /api/push/key: notify.ts;
-    // /api/digest: digest.ts; /api/presence: appliances/presence.ts; /api/powerwall/rules and /api/tesla/scopes: powerwall.ts
-    expect(reads.map(([, p]) => p).sort()).toEqual(['/api/alerts', '/api/appliances/day', '/api/auth/devices', '/api/bills', '/api/breakdown', '/api/digest', '/api/export.csv', '/api/flows', '/api/outage',
+    // /api/digest: digest.ts; /api/presence: appliances/presence.ts; /api/powerwall/rules and /api/tesla/scopes: powerwall.ts; /api/capacity: capacity.ts
+    expect(reads.map(([, p]) => p).sort()).toEqual(['/api/alerts', '/api/appliances/day', '/api/auth/devices', '/api/bills', '/api/breakdown', '/api/capacity', '/api/digest', '/api/export.csv', '/api/flows', '/api/outage',
       '/api/powerwall/rules', '/api/presence', '/api/push/key', '/api/share', '/api/site', '/api/spare', '/api/tesla/scopes', '/auth/google', '/auth/login']);
     for (const [, path] of reads) for (const cookie of [guest, preview]) {
       const r = await call(path, { cookie });

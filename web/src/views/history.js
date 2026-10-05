@@ -127,7 +127,7 @@ export function drawSocHeat(S) {
   const days = (S.daily ?? []).slice(-30).filter(d => d.socMax != null);
   if (!days.length) { $('socStats').innerHTML = '<div><span>Battery history</span><b>loading…</b><em>backfilling from Tesla</em></div>'; return; }
   const full = days.filter(d => d.socMax >= 99).length, atRes = days.filter(d => d.socMin <= reserve + .5).length, avgMax = days.reduce((a, d) => a + d.socMax, 0) / days.length;
-  const cyc = days.reduce((a, d) => a + (d.discharge ?? 0), 0) / days.length / (S.now?.site?.capacityKwh || 27);
+  const cyc = days.reduce((a, d) => a + (d.discharge ?? 0), 0) / days.length / (S.now?.site?.measuredKwh || S.now?.site?.capacityKwh || 27);   // mockup af: a cycle = what a full charge really delivers
   $('socStats').innerHTML = `<div><span>Reached 100%</span><b>${full} of ${days.length}</b><em>days</em></div><div><span>Typical daily peak</span><b>${Math.round(avgMax)}%</b><em>average high</em></div>
     <div><span>Hit the ${reserve}% reserve</span><b>${atRes} of ${days.length}</b><em>days</em></div><div><span>Cycles per day</span><b>${cyc.toFixed(2)}</b><em>30-day average</em></div>`;
 }

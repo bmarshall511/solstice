@@ -7,6 +7,7 @@
 //   rules    the anomaly rules → open, update and resolve rows in `anomalies`
 //   predict  today's 48-hour forecast, the always-on load for tonight and the billing-cycle projection → predictions (one insert)
 // About 20 round trips whatever the data size (no per-model or per-row queries). Every step is timed and caught on its own.
+import { capacityOf, modelKwh } from '../capacity.js';
 import { kv, hourWh } from '../db.js';
 import { localDay, addDays, localMidnight, localAt, rfc3339 } from '../tesla/client.js';
 import { learnAcKw } from '../appliances/ac.js';
@@ -307,7 +308,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     if (!fc.ready) waiting.push(`fc48: ${fc.why}`);
     else {
       const info = (await lq<{ info: any }>(`SELECT info FROM sites WHERE id = $1`, [siteId]))[0]?.info ?? {};
-      const capKwh = (info.nameplate_energy ?? 0) / 1000 || 27, maxKw = (info.nameplate_power ?? 0) / 1000 || 10, reservePct = info.backup_reserve_percent ?? 20;
+      const capKwh = modelKwh(await capacityOf(siteId), (info.nameplate_energy ?? 0) / 1000), maxKw = (info.nameplate_power ?? 0) / 1000 || 10, reservePct = info.backup_reserve_percent ?? 20;
       const startHour = +rfc3339(new Date(now)).slice(11, 13);
       const f = forecast48({ w: fc.w, startDate: today, startHour, soc0: fc.soc0, yieldK: fc.yieldK, profile: fc.profile, capKwh, maxKw, reservePct });
       const first = { yieldK: round(fc.yieldK, 3), soc0: fc.soc0, capKwh, maxKw, reservePct, startHour };
