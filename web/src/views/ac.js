@@ -120,7 +120,7 @@ function drawThermostat(S) {
   const d = S.ac, st = d.state, card = $('acTstat');
   card.hidden = !!S.guest || !d.linked || !st;
   if (card.hidden) return;
-  $('tsBadge').textContent = `${st.name ?? 'Thermostat'} · ${st.online ? 'online' : 'offline'}`; $('tsBadge').className = `badge${st.online ? ' g' : ''}`;
+  freshAc(S);   // mockup x: the badge carries the age of the last Nest sample
   const p = ts.pending ?? { mode: st.mode, coolF: st.coolF, heatF: st.heatF }, mode = st.eco ? 'ECO' : p.mode;
   const v = $('tsVal'), k = mode === 'HEAT' ? 'heat' : mode === 'OFF' ? 'off' : 'cool';
   $('tsLabel').textContent = { COOL: 'Cool to', HEAT: 'Heat to', HEATCOOL: 'Keep between', OFF: 'Thermostat', ECO: 'Eco · Away' }[mode] ?? mode;
@@ -167,6 +167,15 @@ function drawThermostat(S) {
   const hb = $('tsHold');
   hb.onclick = async e => { const b = e.target.closest('[data-hold]'); if (!b) return; b.disabled = true; b.textContent = '…';
     try { S.ac = await api.acHold(b.dataset.hold); drawAc(S); } catch (err) { alert(err.message); drawAc(S); } };
+}
+/** "Hallway · 4 min ago" (green); amber "Nest · 26 min ago" past 20 minutes (Nest is sampled every 5–15); "offline" when Nest says so. */
+const NEST_STALE_MS = 20 * 60_000;
+export function freshAc(S) {
+  const st = S.ac?.state, b = $('tsBadge'); if (!st || !b || $('acTstat').hidden) return;
+  const age = Date.now() - st.at, t = age < 60_000 ? 'just now' : age < 3600_000 ? `${Math.floor(age / 60_000)} min ago` : `${Math.floor(age / 3600_000)} h ago`;
+  if (!st.online) { b.className = 'badge'; b.textContent = `${st.name ?? 'Thermostat'} \u00b7 offline`; }
+  else if (age > NEST_STALE_MS) { b.className = 'badge a'; b.textContent = `Nest \u00b7 ${t}`; }
+  else { b.className = 'badge g'; b.innerHTML = `${esc(st.name ?? 'Thermostat')} \u00b7 <small>${t}</small>`; }
 }
 /** The banner under the controls: a hold, Autopilot paused by the mode, or what Autopilot is doing. */
 function holdHtml(d, mode) {

@@ -294,7 +294,7 @@ app.get('/api/now', wrap(async (req, res) => {
       gridStatus: r.grid_status, islandStatus: r.island_status, stormActive: !!r.storm_mode_active },
     today: await one(`SELECT ${kwhCols} FROM energy WHERE site_id = $1 AND day = $2`, [id, localDay()]),
     site: summary(await siteInfo(id)), outage,
-    health: { lastLive: lastLive ?? null, lastHistory: lastHistory ?? null, stale: !lastLive || Date.now() - lastLive > 3 * 60_000, liveError, errors },
+    health: { lastLive: lastLive ?? null, lastHistory: lastHistory ?? null, stale: !r || Date.now() - Number(r.ts) > 3 * 60_000, liveError, errors },   // by the reading's own time (mockup x), not the fetch's
   });
 }));
 

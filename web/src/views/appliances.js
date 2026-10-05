@@ -1,4 +1,4 @@
-import { $, money, money2, niceDate } from '../lib/util.js';
+import { $, money, money2, niceDate, localHour } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { every, stop } from '../lib/poll.js';
 import { createPoolTwin } from '../scenes/pooltwin.js';
@@ -26,6 +26,20 @@ async function load(S) {
   drawPool(S); S.onPool?.();
 }
 
+/* ---------- mockup x: the badge carries the age of the last controller read ---------- */
+const POOL_STALE_MS = 20 * 60_000;
+const ageText = ms => ms < 60_000 ? 'just now' : ms < 3600_000 ? `${Math.floor(ms / 60_000)} min ago` : `${Math.floor(ms / 3600_000)} h ago`;
+/** Whether the pump is scheduled to run at this minute of the Chicago day (a stop before the start wraps midnight). */
+const scheduledNow = d => { const m = Math.floor(localHour() * 60); return (d.current?.schedules ?? []).some(s => s.stop > s.start ? m >= s.start && m < s.stop : m >= s.start || m < s.stop); };
+/** "Linked · 2 min ago" (green); amber "Read 34 min ago" past 20 minutes while the pump is scheduled; the age in grey otherwise. */
+export function freshPool(S) {
+  const d = S.pool, at = d?.live?.at ?? d?.snapshot?.at, b = $('poolBadge');
+  if (!d || !(d.linked || d.live) || !at) return;
+  const age = Date.now() - at, sched = scheduledNow(d);
+  if (sched && age > POOL_STALE_MS) { b.className = 'badge a'; b.textContent = `Read ${ageText(age)}`; return; }
+  b.className = sched ? 'badge g' : 'badge n'; b.innerHTML = `Linked \u00b7 <small>${ageText(age)}</small>`;
+}
+
 /** The flow twin's state from the ScreenLogic snapshot. */
 function twinState(d) {
   const L = d.live, on = new Set(L?.on ?? []), snap = d.snapshot;
@@ -41,7 +55,7 @@ export function drawPool(S) {
   const d = S.pool; if (!d) return;
   const L = d.live, sp = d.settings, linked = d.linked || !!L;
   ['poolSched', 'poolAuto', 'poolSeason', 'poolSeasonNote'].forEach(id => $(id).hidden = !linked);
-  $('poolBadge').textContent = linked ? 'Linked · ScreenLogic' : 'Not linked'; $('poolBadge').className = 'badge' + (linked ? ' g' : '');
+  if (!linked) { $('poolBadge').textContent = 'Not linked'; $('poolBadge').className = 'badge'; } else freshPool(S);
   if (!linked) { $('poolHud').textContent = d.error ?? 'Add the ScreenLogic system name and password to link the pool.'; return; }
   if (!twin) twin = createPoolTwin($('poolTwin'));
   const st = twinState(d); twin.set(st);

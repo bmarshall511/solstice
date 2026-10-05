@@ -88,15 +88,36 @@ export function renderStatic(S) {
   $('tExpE').innerHTML = today.export != null ? S.guest ? `≈ ${veil('$•.••')} credit` : credit != null ? `≈ $${(today.export * credit).toFixed(2)} credit` : 'rate unknown' : '—';
 
   // status chips
-  const stale = S.now?.health?.stale;
-  $('chipGw').innerHTML = stale ? '<i style="--c:var(--warn)"></i>Tesla not reporting' : '<i></i>Powerwalls online';
+  freshness(S);   // the Powerwalls chip, the greeting's time and the flow note (mockup x; also every second from main.js)
   $('chipStorm').innerHTML = S.live?.stormActive ? '<i style="--c:var(--solar)"></i>Storm Watch active' : `<i style="--c:rgba(242,244,248,.4);box-shadow:none"></i>Storm Watch ${site.stormWatch ? 'standby' : 'off'}`;
   if (S.ercot) { const e = S.ercot, bad = e.condition !== 'normal';
     $('chipErcot').className = 'chipx' + (bad ? ' alert' : ''); $('chipErcot').innerHTML = `<i style="--c:${bad ? 'var(--out)' : 'var(--batt)'}"></i>ERCOT ${bad ? esc(e.title) : 'normal'}${e.demandMw ? ` · ${Math.round(e.demandMw / e.capacityMw * 100)}% load` : ''}`; }
   if (S.nws) { const a = S.nws[0];
     $('chipNws').className = 'chipx' + (a ? ' alert' : ''); $('chipNws').innerHTML = a ? `<i style="--c:var(--out)"></i>${esc(a.event)}` : '<i style="--c:var(--batt)"></i>No weather alerts'; }
-  $('synced').textContent = S.live ? new Date(S.live.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'connecting…';
-  $('syncDot').style.background = stale ? 'var(--warn)' : '';
+}
+
+/* ---------- mockup x: how old the live reading is, every second ---------- */
+const STALE_MS = 3 * 60_000;
+const clockOf = ts => new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+export const ageText = ms => ms < 60_000 ? 'just now' : ms < 3600_000 ? `${Math.floor(ms / 60_000)} min ago` : `${Math.floor(ms / 3600_000)} h ago`;
+/** The Powerwalls chip, the greeting's time, the flow card's note and the dimming, from the newest reading's own timestamp. */
+export function freshness(S) {
+  const r = S.live, offline = !!S.nowOffline || (typeof navigator !== 'undefined' && navigator.onLine === false);
+  const age = r ? Date.now() - r.ts : null, stale = offline || age == null || age >= STALE_MS;
+  const chip = $('chipGw');
+  chip.classList.toggle('stale', !!r && stale);
+  if (offline) chip.innerHTML = '<i></i>Can\u2019t reach Solstice \u00b7 retrying';
+  else if (r && stale) chip.innerHTML = `<i></i>Last reading ${ageText(age)}`;
+  else if (r) chip.innerHTML = '<i></i>Powerwalls online';
+  $('chips').classList.toggle('offline', offline);
+  const syn = $('synced');
+  syn.textContent = !r ? (offline ? 'offline' : 'connecting\u2026') : offline ? `offline \u00b7 as of ${clockOf(r.ts)}` : stale ? `as of ${clockOf(r.ts)}` : clockOf(r.ts);
+  syn.classList.toggle('asof', !!r && stale);
+  $('syncDot').style.background = r && stale ? 'var(--solar)' : '';
+  if (r && stale && !S.twinReplay && !S.outageActive) { $('flowNote').textContent = `as of ${clockOf(r.ts)}`; $('flowNote').classList.add('asof'); }
+  else if (!stale) $('flowNote').classList.remove('asof');
+  document.querySelector('.orbwrap')?.classList.toggle('dimmed', !!r && stale);
+  $('house')?.classList.toggle('dimmed', !!r && stale);
 }
 
 /* ---------- weather + 48h forecast ---------- */

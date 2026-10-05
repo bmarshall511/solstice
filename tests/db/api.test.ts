@@ -53,6 +53,16 @@ describe('single-owner mode', () => {
     expect(await r.json()).toEqual({ mode: 'single', owner: true, user: null, site: { id: 's', name: 'Test Site' } });
   });
 
+  it('/api/now judges "Tesla not reporting" by the reading\u2019s own time, not the last fetch (mockup x)', async () => {
+    const now = Date.now();
+    await q(`INSERT INTO readings (site_id, ts, solar_w, battery_w, grid_w, load_w, soc, grid_status, island_status, storm_mode_active) VALUES ('s', $1, 0, 0, 500, 500, 50, 'Active', 'on_grid', false)`, [now - 10 * 60_000]);
+    await kv.set('s:lastLive', now);                                          // fetched just now, but the reading itself is 10 minutes old
+    const j = await (await get('/api/now')).json();
+    expect(j.health.stale).toBe(true);
+    await q(`INSERT INTO readings (site_id, ts, solar_w, battery_w, grid_w, load_w, soc, grid_status, island_status, storm_mode_active) VALUES ('s', $1, 0, 0, 500, 500, 50, 'Active', 'on_grid', false)`, [now - 30_000]);
+    expect((await (await get('/api/now')).json()).health.stale).toBe(false);
+  });
+
   it('PUT /api/settings merges top-level keys into the owner settings', async () => {
     expect((await send('PUT', '/api/settings', { calm: { enabled: true } })).status).toBe(200);
     expect((await send('PUT', '/api/settings', { pool: { autopilot: 'suggest' } })).status).toBe(400);   // only through /api/appliances/pool/autopilot
