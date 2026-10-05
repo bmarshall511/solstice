@@ -7,14 +7,14 @@ import { createAurora } from './scenes/aurora.js';
 import { createOrb } from './scenes/orb.js';
 import { createLandscape } from './scenes/landscape.js';
 import { createHomeView } from './scenes/home.js';
-import { renderLive, renderStatic, renderWeather } from './views/now.js';
+import { renderLive, renderStatic, renderWeather, freshness } from './views/now.js';
 import { initHistory, drawHistoryChart, landscapeData, drawSocHeat, drawRecords, drawOutages, drawBills, openBillSheet } from './views/history.js';
 import { initPanels, drawPerformance, roofHud } from './views/panels.js';
 import { drawAlerts, initPlanner, drawAC, drawOvernight, drawHealth, initOutage } from './views/insights.js';
 import { drawSettings, drawConnections, openRawData, applyAlertPrefs } from './views/settings.js';
 import { every } from './lib/poll.js';
-import { initAppliances, poolTwin, drawPool } from './views/appliances.js';
-import { initAc, thermalTwin, drawAc } from './views/ac.js';
+import { initAppliances, poolTwin, drawPool, freshPool } from './views/appliances.js';
+import { initAc, thermalTwin, drawAc, freshAc } from './views/ac.js';
 import { initLearn } from './views/learn.js';
 import { createDayRing } from './scenes/dayring.js';
 import { explainOnTap } from './lib/frost.js';
@@ -39,7 +39,7 @@ const isOn = id => $(id).classList.contains('on');
 
 /* ---------------- loading ---------------- */
 async function loadNow() {
-  S.now = await api.now();
+  try { S.now = await api.now(); S.nowOffline = false; } catch (e) { S.nowOffline = true; safe(freshness)(S); throw e; }   // mockup x: "Can't reach Solstice"
   api.day(localDate()).then(d => { S.today = d; safe(drawDayRing)(); }).catch(() => {});
   if (!S.live || (S.now.reading && S.now.reading.ts >= S.live.ts)) S.live = S.now.reading;
   updateOutage();
@@ -261,7 +261,7 @@ function frame(now) {
   }
 }
 requestAnimationFrame(frame);
-setInterval(() => { if (document.hidden) return; safe(renderLive)(S); safe(sideSummary)(); }, 1000);
+setInterval(() => { if (document.hidden) return; safe(renderLive)(S); safe(sideSummary)(); safe(freshness)(S); safe(freshPool)(S); safe(freshAc)(S); }, 1000);
 
 function sideSummary() {
   const r = S.live; if (!r) return;
