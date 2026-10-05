@@ -86,6 +86,7 @@ export const api = {
   capacity: () => get('capacity'),
   breakdown: range => get(`breakdown?range=${encodeURIComponent(range)}`),   // mockup y
   acSuggestion: (action, key) => send('POST', 'appliances/ac/suggestion', { action, key }),
+  acNudge: (dir, keep) => send('POST', 'appliances/ac/nudge', { dir, keep }),
   models: () => get('models'),
   saveSettings: patch => send('PUT', 'settings', patch),
   // t-enhancements: alerts feed, web push, weekly digest, presence, Powerwall rules (all owner-only)

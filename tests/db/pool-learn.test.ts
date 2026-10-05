@@ -53,12 +53,13 @@ describe('pool learning', () => {
 describe('AC: the patterns behind a suggestion (mockup ae)', () => {
   const S = { band: { homeLo: 74, homeHi: 78, nightLo: 74, nightHi: 76 }, nightFrom: 22, nightTo: 7 } as any;
   const h = (day: string, hour: number, coolF: number, planF = 76): HoldRecord => ({ at: T(day, '07:00'), day: `2026-10-${day}`, hour, coolF, planF });
-  it('AC-L1 two mornings warmer than the plan make a pattern at 2 of 4; no suggestion until 4', () => {
-    const two = [h('04', 7, 77.9), h('05', 7.5, 77.2)];   // within 1 h and 1° of each other (7:00 and 8:06 would be two groups)
-    expect(changePatterns(two, S, '2026-10-05')).toMatchObject([{ f: 78, planF: 76, dir: 1, days: 2, window: 'day' }]);
+  it('AC-L1 two mornings warmer than the plan make a pattern at 2 of 4; no suggestion until 4 (then the day target + 1°)', () => {
+    const two = [h('04', 7, 77.9), h('05', 8.1, 77.2)];   // mockup ag: 7:00 and 8:06 now count together (same part of the day, same direction)
+    expect(changePatterns(two, S, '2026-10-05')).toMatchObject([{ f: 77, from: 76, planF: 76, dir: 1, days: 2, window: 'day', set: [78, 77] }]);
     expect(bandSuggestion(two, S, '2026-10-05')).toBeNull();
     const four = [...two, h('02', 7, 78), h('03', 7.5, 78)];
-    expect(bandSuggestion(four, S, '2026-10-05')).toMatchObject({ f: 78, days: 4, window: 'day' });
+    expect(bandSuggestion(four, S, '2026-10-05')).toMatchObject({ f: 77, days: 4, window: 'day' });
+    expect(changePatterns(four, { ...S, dayF: 78, nightF: 77, driftF: 1 }, '2026-10-05')).toEqual([]);   // once the target is 78°, those changes are not warmer than it
   });
   it('AC-L2 setpoints read back from Celsius show as whole degrees, as on the thermostat', () => {
     expect([wholeF(77.9), wholeF(76.8), wholeF(null)]).toEqual([78, 77, null]);

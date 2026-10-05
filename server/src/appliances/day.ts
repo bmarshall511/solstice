@@ -6,7 +6,7 @@ import { q } from '../db.js';
 import { localDay } from '../tesla/client.js';
 import { hourlyRpm, powerModel, pumpSchedules, meanByQuarter, quarterWh, type QuarterWatts } from './pool.js';
 import type { PoolSnapshot } from './screenlogic.js';
-import { AC_DEFAULTS, type AcSettings } from './ac.js';
+import { acSettingsOf, type AcSettings } from './ac.js';
 
 export type AcPhase = 'pre-cool' | 'cool' | 'coast' | 'idle';
 export type DayEnergy = { solarKw: number; homeKw: number; batteryKw: number; gridKw: number; importKw: number; exportKw: number; soc: number | null; buckets: number };
@@ -124,7 +124,7 @@ export async function applianceDay(siteId: string, date: string, settingsAll?: R
   ]);
   const K = new Map(kvRows.map(r => [r.key, r.value]));
   const all = settingsAll ?? K.get('settings:owner') ?? {};
-  const settings: AcSettings = { ...AC_DEFAULTS, ...(all.ac ?? {}), band: { ...AC_DEFAULTS.band, ...(all.ac?.band ?? {}) } };
+  const settings: AcSettings = acSettingsOf(all);
   return buildDay({ date, span: spanOf(date), energy, soc, pool, nest, snapshot: K.get(keys[0]) ?? null, applied: K.get(keys[1]) ?? null, settings,
     acKw: acKwFrom(K.get(keys[2]), K.get(keys[3])) });
 }

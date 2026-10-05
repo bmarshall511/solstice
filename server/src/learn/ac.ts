@@ -15,7 +15,7 @@ import { confidence, type Tier } from './confidence.js';
 import { MODELS, mean, median, round } from './models.js';
 
 /** The middle of the home band, as planFor computes it: the setpoint pre-cool and coast are measured from. */
-export const bandMid = (s: AcSettings) => Math.min(s.band.homeHi, Math.max(s.band.homeLo, Math.round((s.band.homeLo + s.band.homeHi) / 2)));
+export const bandMid = (s: AcSettings) => s.dayF ?? Math.min(s.band.homeHi, Math.max(s.band.homeLo, Math.round((s.band.homeLo + s.band.homeHi) / 2)));   // mockup ag: the day target
 const clock = (h: number) => { const H = Math.floor(h) % 24, M = Math.round((h % 1) * 60); return `${H % 12 || 12}${M ? ':' + String(M).padStart(2, '0') : ''} ${H < 12 ? 'AM' : 'PM'}`; };
 const niceDay = (d: string) => new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
 const and = (a: string[]) => a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} and ${a.at(-1)}`;
