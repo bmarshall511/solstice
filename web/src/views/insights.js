@@ -88,6 +88,57 @@ export function drawAC(S) {
 }
 
 /* ---------- overnight baseline ---------- */
+/* ---------- mockup y: Where your energy goes ---------- */
+const EG = { ac: ['AC', '#ff9e66'], alwaysOn: ['Always-on', '#c4a2ff'], big: ['Big loads', 'var(--solar)'], pool: ['Pool', '#6cc4ff'], other: ['Everything else', 'rgba(255,255,255,.35)'] };
+const eg = { range: 'week', open: new Set(), data: null, timer: null };
+const clk = ms => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+/** Owner only (main.js boot): loads the card now and every 15 minutes while visible; the range switch reloads it. */
+export function initBreakdown(S, every) {
+  $('egCard').hidden = !!S.guest; if (S.guest) return;
+  $('egRange').onclick = e => { const b = e.target.closest('button'); if (!b || b.dataset.r === eg.range) return; eg.range = b.dataset.r; loadBreakdown(); };
+  $('egParts').onclick = e => { const p = e.target.closest('.part'); if (!p) return; eg.open.has(p.dataset.id) ? eg.open.delete(p.dataset.id) : eg.open.add(p.dataset.id); drawBreakdown(); };
+  $('egParts').onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('.part')) { e.preventDefault(); e.target.closest('.part').click(); } };
+  eg.timer ??= every(15 * 60_000, loadBreakdown);
+}
+async function loadBreakdown() {
+  document.querySelectorAll('#egRange button').forEach(b => b.classList.toggle('on', b.dataset.r === eg.range));
+  try { eg.data = await api.breakdown(eg.range); } catch (e) { $('egSub').textContent = `Couldn\u2019t load: ${e.message}`; return; }
+  drawBreakdown();
+}
+function drawBreakdown() {
+  const d = eg.data; if (!d) return;
+  $('egTotal').textContent = Math.round(d.homeKwh);
+  const n = d.range === 'week' ? 7 : 30;
+  $('egSub').textContent = !d.days ? 'No full day with thermostat readings yet' : d.range === 'today' ? 'kWh so far today'
+    : d.days < n ? `kWh a day \u00b7 ${d.days} of the last ${n} days (the ones with thermostat readings)` : `kWh a day \u00b7 last ${n} days`;
+  const sum = d.parts.reduce((a, p) => a + p.kwh, 0) || 1;
+  $('egBar').innerHTML = d.parts.map(p => `<i style="background:${EG[p.id][1]};width:${p.kwh / sum * 100}%"></i>`).join('');
+  const note = p => p.id === 'ac' ? (p.hours != null ? `Cooling ${p.hours} h${d.range === 'today' ? ' today' : ' a day'} \u00d7 ${p.kw.toFixed(1)} kW` : 'From the heat model')
+    : p.id === 'alwaysOn' ? (p.kw != null ? `${p.kw.toFixed(2)} kW every hour, from the quietest stretch of each night` : 'Not enough night data yet')
+    : p.id === 'big' ? `${d.range === 'today' ? `${d.bursts.length} bursts today` : `${p.perDay} bursts a day`}${p.minutes ? `, ${p.minutes[0] === p.minutes[1] ? p.minutes[0] : `${p.minutes[0]}\u2013${p.minutes[1]}`} min at about ${p.burstKw} kW` : ''}: looks like the water heater, dryer, oven or range`
+    : p.id === 'pool' ? 'Pump, UV and extras' : 'Lights, stovetop, TVs, small appliances';
+  $('egParts').innerHTML = d.parts.map(p => `<div class="part${eg.open.has(p.id) ? ' open' : ''}" data-id="${p.id}" role="button" tabindex="0" aria-expanded="${eg.open.has(p.id)}">
+    <i class="dot" style="background:${EG[p.id][1]}"></i><b>${EG[p.id][0]}</b><span class="v">${p.kwh.toFixed(1)} kWh<em>${p.share}%</em></span>
+    <small>${esc(note(p))}. <span class="conf ${p.conf === 'measured' ? 'm' : 'e'}">${p.conf}</span></small>${eg.open.has(p.id) ? detail(p, d) : ''}</div>`).join('');
+}
+function detail(p, d) {
+  if (p.id === 'big') {
+    if (d.range !== 'today') return `<div class="detail"><p class="fine">Switch to Today to see each burst.</p></div>`;
+    const t0 = new Date(); t0.setHours(0, 0, 0, 0); const day = 864e5, x = ms => Math.max(0, Math.min(100, (ms - t0.getTime()) / day * 100));
+    return `<div class="detail"><div class="eg-strip">${d.bursts.map(b => `<i style="left:${x(b.start)}%;width:${b.minutes / 1440 * 100}%"></i>`).join('')}
+      <span class="ax" style="left:0;transform:none">12a</span><span class="ax" style="left:25%">6a</span><span class="ax" style="left:50%">12p</span><span class="ax" style="left:75%">6p</span><span class="ax" style="left:auto;right:0;transform:none">12a</span></div>
+      <div class="eg-bursts">${d.bursts.map(b => `<b>${clk(b.start)}</b><span>${b.minutes} min \u00b7 ${b.kw} kW</span><em>${b.kwh} kWh</em>`).join('') || '<span style="grid-column:1/4">None yet today.</span>'}</div></div>`;
+  }
+  if (p.id === 'alwaysOn' && d.trend?.length) {
+    const mx = Math.max(...d.trend.map(t => t.kw)) || 1, mon = m => new Date(`${m}-15T12:00:00`).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }).replace(' ', " '");
+    return `<div class="detail"><div class="eg-trend">${d.trend.map((t, i) => `<i class="${i === d.trend.length - 1 ? 'now' : ''}" style="height:${Math.max(8, t.kw / mx * 100)}%" title="${mon(t.month)}: ${t.kw} kW"></i>`).join('')}</div>
+      <div class="eg-tlab"><span>${mon(d.trend[0].month)}</span><span>monthly \u00b7 lowest night</span><span>${mon(d.trend.at(-1).month)}</span></div>
+      <p class="fine" style="margin-top:8px">A typical home\u2019s base is 0.3\u20130.6 kW. A fridge or freezer in a warm room runs more in summer.</p></div>`;
+  }
+  if (p.id === 'ac' || p.id === 'pool') return `<div class="detail"><p class="fine">Details on the ${p.id === 'ac' ? 'AC' : 'Pool'} card in Appliances.</p></div>`;
+  return '';
+}
+
 export function drawOvernight(S) {
   const N = (S.overnight ?? []).filter(n => n.date < localDate()); if (N.length < 5) return;
   const mx = Math.max(...N.map(n => n.kw)) * 1.1, X = i => 8 + i / (N.length - 1) * 294, Y = v => 90 - v / mx * 80;

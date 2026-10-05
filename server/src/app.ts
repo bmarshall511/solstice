@@ -27,6 +27,7 @@ import { GuardRefusal, explainRefusal, type ManualCommand } from './appliances/g
 import { pvsRouter, prunePvs } from './pvs.js';
 import { panelsDay, panelAlerts, panelWatch } from './panels.js';
 import { flowsFor, FlowsInputError } from './flows.js';
+import { breakdownFor, alwaysOnWatch } from './breakdown.js';
 import { outageDetail } from './outage.js';
 
 import { alertRoutes, notify } from './notify.js';
@@ -318,6 +319,12 @@ app.get('/api/day', wrap(async (req, res) => {
     totals: await one(`SELECT ${kwhCols} FROM energy WHERE site_id = $1 AND day = $2`, [id, date]) });
 }));
 
+/** Insights › Home "Where your energy goes" (mockup y, breakdown.ts): kWh a day by part, today's big loads, the always-on trend. Owner-only. */
+app.get('/api/breakdown', wrap(async (req, res) => {
+  const range = String(req.query.range ?? 'week');
+  if (!['today', 'week', 'month'].includes(range)) return res.status(400).json({ error: 'range must be today, week or month' });
+  res.json(await breakdownFor(site(req), range as 'today' | 'week' | 'month', await settingsFor(req)));
+}));
 /** History "Where every kWh went": seven paths for a day or the 30 days ending on `date`, with pool/AC and "unaccounted" (flows.ts). */
 app.get('/api/flows', wrap(async (req, res) => {
   try { res.json(await flowsFor(site(req), String(req.query.range ?? 'day'), req.query.date == null ? undefined : String(req.query.date), await settingsFor(req))); }
@@ -574,6 +581,7 @@ powerwallRoutes(app);
 fiveMinuteSteps.powerwall = powerwallTick; nightlySteps.powerwall = powerwallNightly;
 fiveMinuteSteps.digest = maybeWeeklyDigest; nightlySteps.digest = maybeWeeklyDigest;
 fiveMinuteSteps.panels = panelWatch;
+nightlySteps.alwaysOn = alwaysOnWatch;   // breakdown.ts: one push when the always-on base stays up three nights
 /* Watchdog: Vercel never retries a cron, so a nightly run that died (timeout, deploy, outage) would be silent. The 5-minute tick
  * pushes one alert a day while the last finished nightly run is more than 26 hours old. */
 const SYNC_DONE_KEY = 'cron:sync:done';
