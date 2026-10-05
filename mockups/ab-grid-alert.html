@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Solstice · Grid alerts</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* page scaffolding for the mockup only (same as v–aa) */
+html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+body{background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.col{width:100%;max-width:393px;margin:0 auto;padding:28px 0 60px}
+.intro{padding:0 20px}
+.intro .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.intro h2{font-size:30px;line-height:1.1;font-weight:300;letter-spacing:-.02em;margin-bottom:12px}
+.intro p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.frame{margin-top:34px}
+.frame>.sect{margin:0 20px 10px}
+.pagepad{padding:0 20px}
+.cap{margin:12px 20px 0;padding:12px 14px;border-radius:16px;background:rgba(0,0,0,.25);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.55}
+.cap b{color:var(--text);font-weight:600}
+.cap p+p{margin-top:6px}
+.cap .new{color:var(--batt)}.cap .same{color:var(--mute)}
+.wrules{margin:34px 20px 0}
+.wrules h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:10px}
+.wrules ul{list-style:none;display:grid;gap:8px}
+.wrules li{font-size:12.5px;color:var(--dim);line-height:1.55;padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b)}
+.wrules li b{color:var(--text);font-weight:600}
+/* the lock screen, as in approved mockup t (frame 2) */
+.lock{position:relative;margin:0 auto;width:100%;height:520px;overflow:hidden;background:radial-gradient(90% 60% at 50% 0%,#1d2c4a 0%,#070910 70%)}
+@media (min-width:394px){.lock{border-radius:44px;border:1px solid rgba(255,255,255,.14)}}
+.lock .clock{text-align:center;padding-top:54px}
+.lock .clock small{display:block;font-size:15px;font-weight:600;color:rgba(255,255,255,.8)}
+.lock .clock b{display:block;font-size:72px;font-weight:600;letter-spacing:-.03em;line-height:1.05;color:rgba(255,255,255,.92)}
+.nlist{position:absolute;left:10px;right:10px;bottom:22px;display:grid;gap:8px}
+.ntf{display:flex;gap:10px;padding:11px 12px;border-radius:22px;background:rgba(60,64,78,.55);border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
+.ntf .ic{flex:none;width:38px;height:38px;border-radius:9px;background:radial-gradient(circle at 40% 35%,#ffe2a8,#ffc15e 45%,#c47a1c);box-shadow:inset 0 0 0 1px rgba(255,255,255,.2)}
+.ntf .bd{flex:1;min-width:0}
+.ntf .tp{display:flex;justify-content:space-between;gap:8px}
+.ntf .tp b{font-size:14px;font-weight:700;line-height:1.3;min-width:0}
+.ntf .tp span{flex:none;font-size:12px;color:rgba(255,255,255,.55)}
+.ntf p{font-size:13.5px;line-height:1.35;color:rgba(255,255,255,.88);margin-top:1px}
+.nlab{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.5);font-weight:600;margin:6px 6px -2px}
+/* the in-app alerts list, as the app draws it (insights.js) */
+.feed{display:grid;gap:10px}
+.feed .card{margin:0}
+</style></head><body>
+<div class="col">
+  <div class="intro">
+    <div class="k">Mockup ab · Grid alerts</div>
+    <h2>A push when the grid goes down, when the Powerwalls run low, and when it comes back.</h2>
+    <p>Settings › Alerts already has "Grid outage started or ended" and "Battery low during an outage", but nothing sends them today: the app only shows a toast while it is open. These frames make them real pushes from the 5-minute check that already reads the Powerwalls. Times and figures are illustrative.</p>
+  </div>
+
+  <!-- ================= Frame 1 · during an outage ================= -->
+  <div class="frame">
+    <div class="sect">Frame 1 · lock screen during an outage</div>
+    <div class="pagepad"><div class="lock">
+      <div class="clock"><small>Thursday, October 15</small><b>8:41</b></div>
+      <div class="nlist">
+        <div class="nlab">low battery · once per outage</div>
+        <div class="ntf"><div class="ic"></div><div class="bd"><div class="tp"><b>Powerwalls at 30% · grid still down</b><span>8:40 PM</span></div>
+          <p>About 4 h left at 1.6 kW. AC off adds about 3 h. Down since 3:42 PM.</p></div></div>
+        <div class="nlab">grid down</div>
+        <div class="ntf"><div class="ic"></div><div class="bd"><div class="tp"><b>Grid down · on Powerwalls</b><span>3:45 PM</span></div>
+          <p>Since 3:42 PM. Powerwalls 64%, about 9 h at 2.1 kW now; longer with the AC off. Tap for the outage view.</p></div></div>
+      </div>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> <b>Grid down</b> goes out on the first 5-minute check that sees the grid gone (Tesla's live status, which the storm check already reads). It gives the start time, the charge, and how long that lasts at what the house draws right then, the same estimate as the outage view.</p>
+      <p><b class="new">New:</b> <b>Powerwalls at 30%</b> goes out once per outage when the charge drops below 30% while the grid is still down, with the time left and what turning the AC off buys.</p>
+      <p>Both open the Now screen, which is already in outage mode.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 2 · grid back ================= -->
+  <div class="frame">
+    <div class="sect">Frame 2 · lock screen when it comes back</div>
+    <div class="pagepad"><div class="lock" style="height:380px">
+      <div class="clock"><small>Thursday, October 15</small><b>9:58</b></div>
+      <div class="nlist">
+        <div class="nlab">grid back</div>
+        <div class="ntf"><div class="ic"></div><div class="bd"><div class="tp"><b>Grid is back</b><span>9:55 PM</span></div>
+          <p>Out 6 h 10 m (3:42–9:52 PM). The Powerwalls carried the house down to 22%; they recharge from here.</p></div></div>
+      </div>
+    </div></div>
+    <div class="cap"><p><b class="new">New:</b> <b>Grid is back</b> on the first check that sees the grid active again: how long it was out, and the lowest charge the Powerwalls reached.</p></div>
+  </div>
+
+  <!-- ================= Frame 3 · in the app ================= -->
+  <div class="frame">
+    <div class="sect">Frame 3 · Insights › Today · the alerts list</div>
+    <div class="pagepad"><div class="feed">
+      <div class="card" style="--c:var(--batt)"><div class="ins"><div class="ic">⚡</div><div><b>Grid is back</b> <time>· 9:55 PM</time><p>Out 6 h 10 m (3:42–9:52 PM). The Powerwalls carried the house down to 22%; they recharge from here.</p></div></div></div>
+      <div class="card" style="--c:var(--solar)"><div class="ins"><div class="ic">↓</div><div><b>Powerwalls at 30% · grid still down</b> <time>· 8:40 PM</time><p>About 4 h left at 1.6 kW. AC off adds about 3 h. Down since 3:42 PM.</p></div></div></div>
+      <div class="card" style="--c:var(--out)"><div class="ins"><div class="ic">⚡</div><div><b>Grid down · on Powerwalls</b> <time>· 3:45 PM</time><p>Since 3:42 PM. Powerwalls 64%, about 9 h at 2.1 kW now; longer with the AC off.</p></div></div></div>
+    </div></div>
+    <div class="cap"><p><b class="same">As today:</b> every push is also kept in the alerts list, in the same cards as the other alerts. Only the phone buzz is limited (frame 4's rules); the list keeps everything.</p></div>
+  </div>
+
+  <!-- ================= Frame 4 · settings ================= -->
+  <div class="frame">
+    <div class="sect">Frame 4 · Settings › Alerts (unchanged)</div>
+    <div class="pagepad"><div class="group">
+      <div class="row" style="--c:var(--out)"><div class="ri">⚡</div><div class="rt">Grid outage started or ended</div><div class="sw on"></div></div>
+      <div class="row" style="--c:var(--solar)"><div class="ri">↓</div><div class="rt">Battery low during an outage<small>Below 30%</small></div><div class="sw on"></div></div>
+    </div></div>
+    <div class="cap"><p><b class="same">Unchanged:</b> these two switches are already there. They now control the three pushes: the first covers grid down and grid back, the second the 30% warning.</p></div>
+  </div>
+
+  <div class="wrules">
+    <h3>The rules</h3>
+    <ul>
+      <li><b>Source:</b> the 5-minute check that already reads Tesla's live status for the storm watch. No extra Tesla calls.</li>
+      <li><b>Fresh readings only:</b> a reading older than 10 minutes never starts or ends an outage. If Tesla stops answering, nothing is sent (the Now screen's amber "Last reading … ago" chip from mockup x covers that).</li>
+      <li><b>One push each:</b> one "down" and one "back" per outage, one 30% warning per outage; at most 6 grid pushes a day. A blip shorter than 5 minutes may be missed between checks; Tesla's own outage history still records it.</li>
+      <li><b>Read-only:</b> nothing is written to the Powerwalls, the pool or the AC.</li>
+      <li><b>Unchanged:</b> the Now screen's outage mode and its toast, the outage view, and every other alert.</li>
+    </ul>
+  </div>
+</div>
+</body></html>

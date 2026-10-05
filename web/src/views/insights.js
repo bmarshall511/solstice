@@ -8,6 +8,12 @@ import { guestPlan } from './guest.js';
 export function drawAlerts(S) {
   const cards = [], site = S.now?.site ?? {};
   const card = (c, icon, title, when, body, link) => cards.push(`<div class="card" style="--c:${c}"><div class="ins"><div class="ic">${icon}</div><div><b>${title}</b> <time>· ${when}</time><p>${body}</p></div></div>${link ?? ''}</div>`);
+  // mockup ab: stored grid alerts, newest first (the feed is already newest first)
+  for (const a of S.gridFeed ?? []) {
+    const ev = a.data?.event, at = new Date(a.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const when = Date.now() - Date.parse(a.createdAt) < 864e5 ? at : `${new Date(a.createdAt).toLocaleDateString('en-US', { weekday: 'short' })} ${at}`;
+    card(ev === 'back' ? 'var(--batt)' : ev === 'low' ? 'var(--solar)' : 'var(--out)', ev === 'low' ? '\u2193' : '\u26a1', esc(a.title), when, esc(a.body.replace(/ Tap for the outage view\.$/, '')));
+  }
   if (S.now?.health?.stale) card('var(--warn)', '⏻', 'Tesla stopped reporting', S.now.health.lastLive ? ago(S.now.health.lastLive) : 'now', 'No live data for over 3 minutes. Check the gateway Wi-Fi, or open the Tesla app to see if it can reach your Powerwalls.');
   (S.nws ?? []).slice(0, 2).forEach(a => card('var(--out)', '⛈', esc(a.event), 'NWS', `${esc(a.headline)}${/hail/i.test(a.description ?? '') ? ' If hail hits, check the Panels tab afterwards for any drop in output.' : ''}${site.stormWatch ? ' Storm Watch will charge the Powerwalls ahead of it.' : ''}`));
   const bad = (S.reconcile ?? []).filter(r => r.checks.some(c => !c.ok)).at(-1);
