@@ -11,7 +11,8 @@ import { renderLive, renderStatic, renderWeather } from './views/now.js';
 import { initHistory, drawHistoryChart, landscapeData, drawSocHeat, drawRecords, drawOutages, drawBills, openBillSheet } from './views/history.js';
 import { initPanels, drawPerformance, roofHud } from './views/panels.js';
 import { drawAlerts, initPlanner, drawAC, drawOvernight, drawHealth, initOutage } from './views/insights.js';
-import { drawSettings, drawConnections, openRawData } from './views/settings.js';
+import { drawSettings, drawConnections, openRawData, applyAlertPrefs } from './views/settings.js';
+import { every } from './lib/poll.js';
 import { initAppliances, poolTwin, drawPool } from './views/appliances.js';
 import { initAc, thermalTwin, drawAc } from './views/ac.js';
 import { initLearn } from './views/learn.js';
@@ -46,8 +47,12 @@ async function loadNow() {
 }
 
 async function loadHistory() {
+  // each part on its own: one failing endpoint keeps its last good value instead of freezing every History view
+  const keep = (p, prev) => p.then(v => v, e => { console.warn(e.message); if (prev === undefined) throw e; return prev; });
   const [daily, monthly, gridDays, records, outages, overnight, reconcile, profile] = await Promise.all([
-    api.daily(400), api.monthly(13), api.gridDays(30), api.records(), api.outages(), api.overnight(60), api.reconcile(), api.profile(14)]);
+    keep(api.daily(400), S.daily), keep(api.monthly(13), S.monthly), keep(api.gridDays(30), S.gridDays), keep(api.records(), S.records), keep(api.outages(), S.outages),
+    keep(api.overnight(60), S.overnight), keep(api.reconcile(), S.reconcileRaw), keep(api.profile(14), S.profileRaw)]);
+  S.reconcileRaw = reconcile; S.profileRaw = profile;
   Object.assign(S, { daily, monthly, gridDays, records, outages, overnight, reconcile: reconcile.map(b => billRow(b, daily)) });
   S.tariff = S.reconcile.findLast(r => r.tariff?.importRateAllIn > 0)?.tariff ?? null; // learned from the newest parsed bill (server: currentTariff); null = rate unknown
   S.profile = Array.from({ length: 24 }, (_, h) => profile.hours.find(x => x.hour === h)?.home ?? 2);
@@ -183,7 +188,7 @@ async function loadApplDay() {
 }
 const aurora = createAurora($('aurora')), orb = createOrb($('orb')), land = createLandscape($('land'), $('landTip')), roof = createHomeView($('roof'), 'sun');
 $('roofBars').onclick = e => { const on = !S.roofBars; S.roofBars = on; e.currentTarget.classList.toggle('on', on); e.currentTarget.setAttribute('aria-pressed', on); $('roofBarsKey').classList.toggle('on', on); roof.setBars(on); };   // mockup p-roof-veil
-initHistory(S); initPanels(S, roof); initPlanner(S); initAppliances(S); initAc(S);
+initHistory(S); initPanels(S, roof); initPlanner(S);   // initAppliances / initAc start in boot(), once the role is known
 const outage = initOutage(S);
 mountPowerwallRules();   // t-enhancements: the Powerwall rules card, directly below Outage readiness
 let applSel = 'pool';
@@ -256,7 +261,7 @@ function frame(now) {
   }
 }
 requestAnimationFrame(frame);
-setInterval(() => { safe(renderLive)(S); safe(sideSummary)(); }, 1000);
+setInterval(() => { if (document.hidden) return; safe(renderLive)(S); safe(sideSummary)(); }, 1000);
 
 function sideSummary() {
   const r = S.live; if (!r) return;
@@ -368,6 +373,8 @@ async function boot() {
   }
   started = true;
   const prefs = await api.settings().catch(() => ({}));
+  if (!S.guest) applyAlertPrefs(prefs.alerts);
+  initAppliances(S); initAc(S);   // after the role is known: a locked device no longer sends a 401 every 3 minutes
   S.location = setSiteLocation(prefs.location);  // exact coordinates + ZIP from the server env; weather, NWS and the sun wait for them
   if (typeof prefs.calm === 'boolean') S.calm = prefs.calm;
   else if (S.guest && !S.asGuest) { const c = guestCalm(); if (c != null) S.calm = c; }   // a guest keeps Calm mode on this device
@@ -377,7 +384,6 @@ async function boot() {
   S.onModels = () => { safe(renderWeather)(S); if (S.pool) safe(drawPool)(S); }; initLearn(S);   // r-learning: the model report (owner only) and its badge text
   const welcome = S.guest && !S.asGuest ? pendingWelcome() : null;
   if (welcome) showGate('welcome', { welcomeKey: welcome });
-  const every = (ms, fn) => { const run = () => fn().catch(e => console.warn(e.message)); run(); setInterval(run, ms); };
   every(30_000, loadNow);                 // live status (the server asks Tesla at most every ~25 s)
   every(5 * 60_000, loadHistory);
   every(15 * 60_000, loadWeather);
@@ -389,11 +395,13 @@ async function boot() {
   if (goV && /^v-(now|hist|roof|ins|set)$/.test(goV)) { go(goV); if (goV === 'v-ins' && /^(today|appl|plan|home)$/.test(goP ?? '')) $('insSeg').querySelector(`[data-p="${goP}"]`)?.click(); history.replaceState(null, '', location.pathname); }
   loadArchive().catch(e => console.warn('archive', e.message));
   // keep history current: sync now, then every 5 min while open; keep going while there are missing days to backfill
-  const sync = async () => { const r = await api.sync().catch(() => null); if (r?.filled || r?.done?.includes('lastHistory')) loadHistory().catch(() => {}); if (r?.remaining > 0) setTimeout(sync, 1500);
-    S.syncInfo = r; $('sideDays').textContent = r?.remaining ? `loading… ${r.remaining} days left` : $('sideDays').textContent; refreshStatus(); };
-  if (!S.guest) { sync(); setInterval(sync, 5 * 60_000); } // syncing is a write: the owner's device keeps history current
-  setInterval(async () => { const s = await api.status().catch(() => null); S.status = s; safe(drawHealth)(S, s); }, 60_000);
-  api.status().then(s => { S.status = s; safe(drawHealth)(S, s); }).catch(() => {});
+  // one task, so a slow sync and the next 5-minute run can't overlap (the backfill keeps going inside the task while days remain)
+  const sync = async () => { for (;;) {
+    const r = await api.sync().catch(() => null); if (r?.filled || r?.done?.includes('lastHistory')) loadHistory().catch(() => {});
+    S.syncInfo = r; $('sideDays').textContent = r?.remaining ? `loading… ${r.remaining} days left` : $('sideDays').textContent; refreshStatus();
+    if (!(r?.remaining > 0)) return; await new Promise(res => setTimeout(res, 1500)); } };
+  if (!S.guest) every(5 * 60_000, sync); // syncing is a write: the owner's device keeps history current
+  every(60_000, async () => { const s = await api.status().catch(() => null); S.status = s; safe(drawHealth)(S, s); });
 }
 boot();
 

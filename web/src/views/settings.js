@@ -13,7 +13,8 @@ const NEW_PREFS = [['approval', 'var(--batt)', '✓', 'Waiting for your approval
   ['ercot', 'var(--grid)', '⌁', 'Grid stress (ERCOT)', 'Conservation call or EEA'], ['panel', 'var(--out)', '▦', 'Panel fault', 'From the PVS relay · a panel well below its neighbours'],
   ['digest', 'var(--batt)', '◷', 'Weekly digest', 'Monday 7 AM']];
 let prefs = {};
-api.settings().then(p => { prefs = p.alerts ?? {}; document.querySelectorAll('[data-pref]').forEach(el => el.classList.toggle('on', prefs[el.dataset.pref] !== false)); }).catch(() => {});
+/** The alert switches from the settings boot() already read (this module used to fetch them itself at load, before sign-in). */
+export function applyAlertPrefs(alerts) { prefs = alerts ?? {}; document.querySelectorAll('[data-pref]').forEach(el => el.classList.toggle('on', prefs[el.dataset.pref] !== false)); }
 const load = () => prefs;
 
 /** Settings › Connections: Tesla (with the backup-history retry line), Open-Meteo, ScreenLogic and Nest. */
