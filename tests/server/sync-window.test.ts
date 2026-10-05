@@ -288,5 +288,5 @@ describe('per-path energy split', () => {
     const nulls = await one<{ n: number }>(`SELECT COUNT(*)::int n FROM energy WHERE site_id = 'bf' AND solar_home_wh IS NULL`);
     expect(nulls!.n).toBe(stamps('2026-02-21').length);                   // only the day Tesla had no split for
     log.mockRestore();
-  });
+  }, 60_000);   // two full nightly back-fills (30 + 2 days of 288 buckets): 3.5 s alone, 10–11 s in a full parallel run, so the 20 s default flaked under load
 });
