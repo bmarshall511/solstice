@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Solstice · Where your energy goes</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* page scaffolding for the mockup only (same as v and x) */
+html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+body{background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.col{width:100%;max-width:393px;margin:0 auto;padding:28px 0 60px}
+.intro{padding:0 20px}
+.intro .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.intro h2{font-size:30px;line-height:1.1;font-weight:300;letter-spacing:-.02em;margin-bottom:12px}
+.intro p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.frame{margin-top:34px}
+.frame>.sect{margin:0 20px 10px}
+.pagepad{padding:0 20px}
+.cap{margin:12px 20px 0;padding:12px 14px;border-radius:16px;background:rgba(0,0,0,.25);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.55}
+.cap b{color:var(--text);font-weight:600}
+.cap p+p{margin-top:6px}
+.cap .new{color:var(--batt)}.cap .same{color:var(--mute)}
+.wrules{margin:34px 20px 0}
+.wrules h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:10px}
+.wrules ul{list-style:none;display:grid;gap:8px}
+.wrules li{font-size:12.5px;color:var(--dim);line-height:1.55;padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b)}
+.wrules li b{color:var(--text);font-weight:600}
+.ghostcard{opacity:.45}
+.minstub{height:70px;margin-top:10px;border-radius:12px;background:rgba(255,255,255,.03)}
+
+/* ---------- NEW: Where your energy goes ---------- */
+.eg .seg2{flex:none}
+.eg .total{display:flex;align-items:baseline;gap:8px;margin-top:10px}
+.eg .total b{font-size:30px;font-weight:300;letter-spacing:-.02em}
+.eg .total span{font-size:12px;color:var(--dim)}
+.eg .bar{display:flex;height:16px;border-radius:8px;overflow:hidden;margin-top:10px;gap:2px}
+.eg .bar i{display:block;height:100%}
+.eg .parts{display:grid;gap:2px;margin-top:12px}
+.eg .part{all:unset;cursor:pointer;display:grid;grid-template-columns:10px 1fr auto;gap:4px 10px;align-items:baseline;padding:9px 4px;border-top:1px solid rgba(255,255,255,.06)}
+.eg .part:first-child{border-top:none}
+.eg .part .dot{width:10px;height:10px;border-radius:3px;align-self:center}
+.eg .part b{font-size:13.5px;font-weight:600}
+.eg .part .v{font:500 13px "JetBrains Mono";text-align:right;white-space:nowrap}
+.eg .part .v em{font-style:normal;color:var(--mute);margin-left:6px;font-size:11px}
+.eg .part small{grid-column:2/4;font-size:11.5px;color:var(--dim);line-height:1.45}
+.eg .part small .conf{font:600 9.5px Manrope;letter-spacing:.06em;text-transform:uppercase;padding:1px 6px;border-radius:999px;margin-left:4px;vertical-align:1px}
+.conf.m{color:var(--batt);border:1px solid rgba(78,240,166,.35)}.conf.e{color:var(--solar);border:1px solid rgba(255,193,94,.35)}
+.eg .part.open{background:rgba(255,255,255,.03);border-radius:12px}
+.eg .detail{grid-column:1/4;margin-top:8px;min-width:0}
+.eg-strip{position:relative;height:34px;border-radius:8px;background:rgba(255,255,255,.04);margin-top:6px}
+.eg-strip i{position:absolute;top:6px;bottom:6px;border-radius:3px;background:var(--solar)}
+.eg-strip .ax{position:absolute;bottom:-15px;font:500 9px "JetBrains Mono";color:var(--mute);transform:translateX(-50%)}
+.eg-bursts{display:grid;grid-template-columns:auto 1fr auto;gap:5px 10px;margin-top:22px;font-size:12px;color:var(--dim)}
+.eg .eg-bursts b{font:500 11.5px "JetBrains Mono";color:var(--text);font-weight:500}
+.eg .eg-bursts em{font-style:normal;color:var(--mute);text-align:right;font:500 11px "JetBrains Mono"}
+.eg-trend{display:flex;align-items:flex-end;gap:4px;height:46px;margin-top:8px}
+.eg-trend i{flex:1;border-radius:3px 3px 0 0;background:#c4a2ff;opacity:.55}
+.eg-trend i.now{opacity:1}
+.eg-tlab{display:flex;justify-content:space-between;font:500 9px "JetBrains Mono";color:var(--mute);margin-top:4px}
+.lock{position:relative;margin:0 auto;width:100%;height:330px;overflow:hidden;background:radial-gradient(90% 60% at 50% 0%,#1d2c4a 0%,#070910 70%)}
+@media (min-width:394px){.lock{border-radius:44px;border:1px solid rgba(255,255,255,.14)}}
+.lock .clock{text-align:center;padding-top:40px}
+.lock .clock small{display:block;font-size:15px;font-weight:600;color:rgba(255,255,255,.8)}
+.lock .clock b{display:block;font-size:64px;font-weight:600;letter-spacing:-.03em;line-height:1.05;color:rgba(255,255,255,.92)}
+.ntf{position:absolute;left:10px;right:10px;bottom:22px;display:flex;gap:10px;padding:11px 12px;border-radius:22px;background:rgba(60,64,78,.55);border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
+.ntf .ic{flex:none;width:38px;height:38px;border-radius:9px;background:radial-gradient(circle at 40% 35%,#ffe2a8,#ffc15e 45%,#c47a1c)}
+.ntf .bd{flex:1;min-width:0}
+.ntf .tp{display:flex;justify-content:space-between;gap:8px}
+.ntf .tp b{font-size:14px;font-weight:700;line-height:1.3}
+.ntf .tp span{flex:none;font-size:12px;color:rgba(255,255,255,.55)}
+.ntf p{font-size:13.5px;line-height:1.35;color:rgba(255,255,255,.88);margin-top:1px}
+</style></head><body>
+<div class="col">
+
+  <div class="intro">
+    <div class="k">Mockup y · Where your energy goes</div>
+    <h2>A typical day, split into what Solstice can see.</h2>
+    <p>Solstice measures the AC (2.7 kW while it runs) and the pool. The rest of the house splits two ways: an always-on base from the quietest hours of the night, and big short loads that look like the water heater, the dryer and the oven. A new card in Insights › Home shows the split, today's big loads, and how the always-on base trends. Numbers are illustrative.</p>
+  </div>
+
+  <!-- ================= Frame 1 ================= -->
+  <div class="frame">
+    <div class="sect">Frame 1 · Insights › Home · new card</div>
+    <div class="pagepad">
+      <div class="card ghostcard"><div class="h"><b>Heat &amp; your AC</b><span>every 80°F+ day · real highs</span></div><div class="minstub"></div></div>
+      <div class="card eg" id="eg">
+        <div class="h"><b>Where your energy goes</b><span class="seg2" id="egRange"><button data-r="week" class="on">7 days</button><button data-r="today">Today</button><button data-r="month">30 days</button></span></div>
+        <div class="total"><b id="egTotal">72</b><span id="egSub">kWh a day · last 7 days</span></div>
+        <div class="bar" id="egBar"></div>
+        <div class="parts" id="egParts"></div>
+      </div>
+      <div class="card ghostcard"><div class="h"><b>Overnight baseline</b><span>1–5 AM average</span></div><div class="minstub"></div></div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> a card between "Heat &amp; your AC" and "Overnight baseline". It has a total, one stacked bar and five parts, each with kWh a day, a share, and a line on how it's measured:</p>
+      <ul style="margin:6px 0 0 16px">
+        <li><b>AC:</b> cooling time × 2.7 kW, measured.</li>
+        <li><b>Pool:</b> measured.</li>
+        <li><b>Always-on:</b> the quietest stretch of each night × 24 h.</li>
+        <li><b>Big loads:</b> bursts of 3 kW or more above the base, lasting 15 minutes or more, while the AC and the pool pump are off.</li>
+        <li><b>Everything else:</b> what's left.</li>
+      </ul>
+      <p>The switch at the top chooses the last 7 days, today, or the last 30 days. <b>Tap a part</b> to open it (frame 2).</p>
+      <p><b class="same">Unchanged:</b> every other card in Insights › Home.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 2 ================= -->
+  <div class="frame">
+    <div class="sect">Frame 2 · tap "Big loads" and "Always-on"</div>
+    <div class="pagepad">
+      <div class="card eg">
+        <div class="h"><b>Where your energy goes</b><span class="seg2"><button>7 days</button><button class="on">Today</button><button>30 days</button></span></div>
+        <div class="parts">
+          <div class="part open"><i class="dot" style="background:var(--solar)"></i><b>Big loads</b><span class="v">11.8 kWh<em>17%</em></span>
+            <small>6 bursts today, each 20–45 min at about 7 kW. Your water heater, dryer and oven or range all look like this.</small>
+            <div class="detail">
+              <div class="eg-strip"><i style="left:25%;width:2%"></i><i style="left:47%;width:1.6%"></i><i style="left:61%;width:2.6%"></i><i style="left:66%;width:2.2%"></i><i style="left:71%;width:3%"></i><i style="left:80%;width:1.5%"></i>
+                <span class="ax" style="left:0%;transform:none">12a</span><span class="ax" style="left:25%">6a</span><span class="ax" style="left:50%">12p</span><span class="ax" style="left:75%">6p</span><span class="ax" style="left:auto;right:0;transform:none">12a</span></div>
+              <div class="eg-bursts"><b>6:02 AM</b><span>30 min · 6.4 kW</span><em>2.6 kWh</em><b>11:20 AM</b><span>25 min · 5.1 kW</span><em>1.7 kWh</em><b>2:40 PM</b><span>40 min · 7.6 kW</span><em>3.1 kWh</em><b>3:55 PM</b><span>35 min · 7.1 kW</span><em>2.3 kWh</em><b>5:05 PM</b><span>45 min · 6.8 kW</span><em>1.6 kWh</em><b>7:15 PM</b><span>20 min · 5.4 kW</span><em>0.5 kWh</em></div>
+            </div></div>
+          <div class="part open"><i class="dot" style="background:#c4a2ff"></i><b>Always-on</b><span class="v">25.9 kWh<em>36%</em></span>
+            <small>1.08 kW every hour, from last night's quietest 30 minutes. The extra fridge and freezer, electronics and standby. <span class="conf m">measured</span></small>
+            <div class="detail">
+              <div class="eg-trend"><i style="height:62%"></i><i style="height:58%"></i><i style="height:44%"></i><i style="height:38%"></i><i style="height:48%"></i><i style="height:42%"></i><i style="height:44%"></i><i style="height:40%"></i><i style="height:46%"></i><i style="height:48%"></i><i style="height:46%"></i><i style="height:52%"></i><i class="now" style="height:50%"></i></div>
+              <div class="eg-tlab"><span>Oct '25</span><span>monthly · lowest night</span><span>Oct '26</span></div>
+              <p class="fine" style="margin-top:8px">0.95 kW in winter, 1.1 kW in summer: a fridge or freezer in a warm room works harder. A typical home's base is 0.3–0.6 kW.</p>
+            </div></div>
+        </div>
+      </div>
+    </div>
+    <div class="cap">
+      <p><b class="new">Big loads</b> opens a strip of today's bursts and a list with time, length, power and kWh above the base.</p>
+      <p><b class="new">Always-on</b> opens 13 months of the lowest-night figure, the same number the Overnight baseline card shows night by night.</p>
+      <p>AC and Pool open a short line linking to their cards in Appliances.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 3 ================= -->
+  <div class="frame">
+    <div class="sect">Frame 3 · the push when the always-on base rises</div>
+    <div class="lock">
+      <div class="clock"><small>Thursday, October 22</small><b>7:04</b></div>
+      <div class="ntf"><div class="ic"></div><div class="bd"><div class="tp"><b>Always-on is up: 1.6 kW</b><span>now</span></div><p>Three nights at 1.6 kW against your usual 1.1 kW. About 12 kWh a day more. A fridge or freezer may be struggling, or something was left on.</p></div></div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New push</b>, in the Unusual usage alert type you already have:</p>
+      <ul style="margin:6px 0 0 16px">
+        <li><b>When:</b> 3 nights in a row with the always-on base 0.3 kW or more above its 30-day median.</li>
+        <li><b>How often:</b> once, then not again until the base has come back down.</li>
+        <li><b>Where it goes:</b> sent at 7 AM, opening this card.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="wrules">
+    <h3>How each part is worked out</h3>
+    <ul>
+      <li><b>AC:</b> Nest cooling (or heating) time × the learned draw (2.7 kW, from 320 clean switches). <span style="color:var(--batt)">Measured.</span></li>
+      <li><b>Pool:</b> the existing pool figure (pump watts by reading, plus UV and extras).</li>
+      <li><b>Always-on:</b> the lowest 30-minute average of Tesla's home power between 1 and 5 AM, with the AC and the pump off, × 24 h.</li>
+      <li><b>Big loads:</b> 5-minute buckets at least 3 kW above that base for 15 minutes or more, with the AC and the pool pump off. Only the energy above the base counts. Labelled "looks like" a heater, dryer or oven, never as a certainty.</li>
+      <li><b>Everything else:</b> home − the four above: lights, the stovetop, TVs, small appliances.</li>
+      <li><b>Unchanged:</b> every other card. The History "Where every kWh went" card gets the corrected AC figure automatically.</li>
+    </ul>
+  </div>
+</div>
+<script>
+const P = { week: { total: 72, sub: 'kWh a day · last 7 days', parts: [['AC', '#ff9e66', 27.1, 'Cooling 10.0 h a day × 2.7 kW', 'm'], ['Always-on', '#c4a2ff', 25.9, '1.08 kW every hour, from the quietest stretch of each night', 'm'], ['Big loads', 'var(--solar)', 10.6, '7 bursts a day, 20–45 min at about 7 kW: water heater, dryer, oven or range', 'e'], ['Pool', '#6cc4ff', 3.1, 'Pump, UV and extras', 'm'], ['Everything else', 'rgba(255,255,255,.35)', 5.3, 'Lights, stovetop, TVs, small appliances', 'e']] },
+  today: { total: 68, sub: 'kWh so far today', parts: [['AC', '#ff9e66', 24.0, 'Cooling 8.9 h today × 2.7 kW', 'm'], ['Always-on', '#c4a2ff', 25.9, '1.08 kW every hour', 'm'], ['Big loads', 'var(--solar)', 11.8, '6 bursts today', 'e'], ['Pool', '#6cc4ff', 2.4, 'Pump, UV and extras', 'm'], ['Everything else', 'rgba(255,255,255,.35)', 3.9, 'Lights, stovetop, TVs, small appliances', 'e']] },
+  month: { total: 84, sub: 'kWh a day · last 30 days', parts: [['AC', '#ff9e66', 36.2, 'Cooling 13.4 h a day × 2.7 kW', 'm'], ['Always-on', '#c4a2ff', 27.4, '1.14 kW every hour', 'm'], ['Big loads', 'var(--solar)', 11.2, '7 bursts a day', 'e'], ['Pool', '#6cc4ff', 3.0, 'Pump, UV and extras', 'm'], ['Everything else', 'rgba(255,255,255,.35)', 6.2, 'Lights, stovetop, TVs, small appliances', 'e']] } };
+function draw(r) { const d = P[r], sum = d.parts.reduce((a, p) => a + p[2], 0);
+  document.getElementById('egTotal').textContent = d.total; document.getElementById('egSub').textContent = d.sub;
+  document.getElementById('egBar').innerHTML = d.parts.map(p => `<i style="background:${p[1]};width:${p[2] / sum * 100}%"></i>`).join('');
+  document.getElementById('egParts').innerHTML = d.parts.map(p => `<div class="part"><i class="dot" style="background:${p[1]}"></i><b>${p[0]}</b><span class="v">${p[2].toFixed(1)} kWh<em>${Math.round(p[2] / sum * 100)}%</em></span><small>${p[3]}. <span class="conf ${p[4]}">${p[4] === 'm' ? 'measured' : 'estimated'}</span></small></div>`).join('');
+  document.querySelectorAll('#egRange button').forEach(b => b.classList.toggle('on', b.dataset.r === r)); }
+document.getElementById('egRange').onclick = e => { const b = e.target.closest('button'); if (b) draw(b.dataset.r); };
+draw('week');
+</script>
+</body></html>
