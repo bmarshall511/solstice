@@ -28,6 +28,7 @@ const OPEN_ROUTES = new Set([
   'GET /api/auth/me',                                               // the role, and nothing about the site for a non-owner
   'GET /api/cron/sync', 'GET /api/cron/pool', 'GET /api/cron/nest', // Vercel Cron: keep their Authorization: Bearer CRON_SECRET check
   'GET /auth/callback', 'GET /auth/google/callback',                // OAuth redirects: signed, single-use state from an owner-only route
+  'POST /api/nest/events',                                          // Google Pub/Sub push: its own OIDC check (appliances/nestEvents.ts)
 ]);
 const denied = (res: Response) => res.status(401).json({ error: 'owner_required' });
 /* The PVS relay's own credential (scripts/pvs-relay.mjs): `Authorization: Bearer <PVS_INGEST_TOKEN>` opens these two routes and

@@ -164,7 +164,8 @@ function routes(): Array<[string, string]> {
   const stack = (app as any).router?.stack ?? (app as any)._router?.stack;
   return stack.filter((l: any) => l.route).flatMap((l: any) => Object.keys(l.route.methods).filter(m => m !== '_all').map(m => [m.toUpperCase(), l.route.path]));
 }
-const OPEN = new Set(['POST /api/auth/owner', 'POST /api/auth/guest', 'POST /api/auth/leave', 'GET /api/auth/me', 'GET /api/cron/sync', 'GET /api/cron/pool', 'GET /api/cron/nest', 'GET /auth/callback', 'GET /auth/google/callback']);
+const OPEN = new Set(['POST /api/auth/owner', 'POST /api/auth/guest', 'POST /api/auth/leave', 'GET /api/auth/me', 'GET /api/cron/sync', 'GET /api/cron/pool', 'GET /api/cron/nest', 'GET /auth/callback', 'GET /auth/google/callback',
+  'POST /api/nest/events']);   // Google Pub/Sub push: refused without Google's OIDC token for our subscription (nest-events.test.ts NE-6)
 
 /* ======================= RED-1..4: the helpers ======================= */
 describe('view helpers', () => {
