@@ -6,15 +6,14 @@ import { veil, esc } from '../lib/frost.js';
 import { kIndex, posOf, tint, rgba, tileStyle, deficit } from '../lib/panels.js';
 
 let cleanings = [];
-const cleanedOn = () => cleanings[0]?.day ?? null;
 async function loadCleanings(S) { cleanings = (await api.events().catch(() => [])).filter(e => e.type === 'cleaned'); drawCleanLog(S); }
 function drawCleanLog(S) {
   const last = cleanings[0];
   $('cleaned').outerHTML = last
     ? `<div id="cleaned" class="kv" style="margin-top:12px"><span>Last cleaning logged</span><b>${niceDate(last.day, { month: 'short', day: 'numeric' })} <button class="link" id="undoClean" style="margin:0 0 0 8px;padding:4px 10px">Undo</button></b></div>`
     : `<button class="link" id="cleaned">✓ I cleaned the panels</button>`;
-  if (last) $('undoClean').onclick = async () => { await api.deleteEvent(last.id); toast('↺', 'rgba(255,255,255,.12)', 'Cleaning removed', `The ${niceDate(last.day)} entry is gone.`); await loadCleanings(S); drawPerformance(S); };
-  else $('cleaned').onclick = async () => { await api.addEvent('cleaned', localDate()); toast('✓', 'rgba(78,240,166,.2)', 'Cleaning logged', 'Solstice will compare the next sunny days against last year. Tap Undo if that was a mistake.'); await loadCleanings(S); drawPerformance(S); };
+  if (last) $('undoClean').onclick = async () => { await api.deleteEvent(last.id); toast('↺', 'rgba(255,255,255,.12)', 'Cleaning removed', `The ${niceDate(last.day)} entry is gone.`); await loadCleanings(S); drawPerformance(S); loadSoiling(S); };
+  else $('cleaned').onclick = async () => { await api.addEvent('cleaned', localDate()); toast('✓', 'rgba(78,240,166,.2)', 'Cleaning logged', 'The next 3 clear days set the new clean level. Tap Undo if that was a mistake.'); await loadCleanings(S); drawPerformance(S); loadSoiling(S); };
 }
 
 /** Daily solar vs what the day's sunlight should give (baseline yield learned from the same season last year). */
@@ -32,7 +31,6 @@ export function drawPerformance(S) {
   $('prTxt').innerHTML = ratio == null ? 'Not enough clear days yet to judge performance.'
     : `On clear days over the last month, the panels made <b style="color:var(--text)">${Math.round(ratio * 100)}%</b> of what the same sunlight produced this time last year. ${ratio >= .95 ? "That's healthy, with no sign of lost output." : ratio >= .9 ? 'A little low. Worth watching.' : 'Noticeably low. Check the cleaning card below.'}`;
   drawWarranty(S);
-  drawCleaning(S, rows, exp);
 }
 
 /** Measured output per unit of full sun against the SunPower 25-year power warranty (docs/system-specs.md). */
@@ -49,33 +47,50 @@ function drawWarranty(S) {
   $('prTxt').innerHTML += w;
 }
 
-function drawCleaning(S, rows, exp) {
-  const cleaned = cleanedOn(), after = cleaned ? rows.filter(r => r.date > cleaned) : rows;
-  const clear = after.filter(r => S.gtiByDate[r.date] > 4.5).slice(-7);
-  const ratio = clear.length ? clear.reduce((a, r) => a + r.solar / exp(r), 0) / clear.length : null;
-  const loss = ratio == null ? null : Math.max(0, 1 - ratio), score = loss == null ? 0 : Math.round(Math.min(100, loss / .15 * 100));
-  S.dust = { score, loss };   // the Live roof's dust veil
-  const r = 34, C = 2 * Math.PI * r, col = score > 60 ? '#ff7a66' : score > 35 ? '#ffc15e' : '#4ef0a6';
+/* mockup ai: the Cleaning check from the server's clear-day comparison (server/src/soiling.ts): clean level after the last 5 mm rain or
+   logged cleaning, the latest 3 clear days against it, hot panels allowed for. Reloaded when a cleaning is logged or undone. */
+const md = d => `${+d.slice(5, 7)}/${+d.slice(8)}`, MON3 = d => new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+async function loadSoiling(S) { try { S.soiling = await api.soiling(); } catch { /* keep the last */ } drawCleaning(S); }
+function drawCleaning(S) {
+  const s = S.soiling; if (s === undefined) return;
+  const loss = s?.lossPct ?? null, score = s?.score ?? 0;
+  S.dust = { score: loss == null ? 0 : score, loss: loss == null ? null : loss / 100 };   // the Live roof's dust veil
+  const r = 34, C = 2 * Math.PI * r, col = s?.state === 'dusty' ? '#ffc15e' : s?.state === 'getting' ? '#ffc15e' : '#4ef0a6';
   $('cleanRing').innerHTML = `<circle cx="42" cy="42" r="${r}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="7"/><circle cx="42" cy="42" r="${r}" fill="none" stroke="${col}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${C * score / 100} ${C}" transform="rotate(-90 42 42)"/>
     <text x="42" y="44" text-anchor="middle" fill="#f2f4f8" font-size="20" font-family="Manrope" font-weight="300">${loss == null ? '—' : score}</text><text x="42" y="58" text-anchor="middle" fill="rgba(242,244,248,.5)" font-size="8.5" font-family="Manrope">dust score</text>`;
-  $('cleanBadge').textContent = loss == null ? 'waiting' : score > 60 ? 'Likely dusty' : score > 35 ? 'Getting dusty' : 'Clean';
-  $('cleanBadge').className = 'badge' + (score > 35 ? '' : ' g');
-  $('clLoss').textContent = loss == null ? '—' : loss < .02 ? 'on par' : `−${Math.round(loss * 100)}%`;
-  const avgSolar = rows.slice(-14).reduce((a, r) => a + r.solar, 0) / Math.min(14, rows.length), lostKwh = loss ? avgSolar * loss / (1 - loss) : 0;
-  $('clCost').innerHTML = loss ? `≈ ${lostKwh.toFixed(1)} kWh/day · ${S.guest ? veil('$••/mo') : `${S.tariff ? `$${(lostKwh * 30 * S.tariff.importRateAllIn).toFixed(0)}` : '—'}/mo`}` : '—';
-  const w = S.wx, today = localDate();
-  if (w) { const t = w.daily.time, p = w.daily.precipitation_sum, pp = w.daily.precipitation_probability_max, ti = t.indexOf(today);
-    let li = -1; for (let i = ti - 1; i >= 0; i--) if ((p[i] ?? 0) >= 2) { li = i; break; }
-    let ni = -1; for (let i = ti; i < t.length; i++) if ((pp[i] ?? 0) >= 50) { ni = i; break; }
-    $('clRain').textContent = li < 0 ? '30+ days ago' : `${ti - li} days ago · ${p[li].toFixed(0)} mm`;
-    $('clNext').textContent = ni < 0 ? 'none in the forecast' : `${niceDate(t[ni], { weekday: 'short', month: 'short', day: 'numeric' })} · ${pp[ni]}%`; }
-  $('cleanTxt').innerHTML = loss == null ? 'Solstice needs a few clear days to compare against.'
-    : cleaned && after.length < 3 ? `You logged a cleaning on ${niceDate(cleaned)}. Solstice is measuring the next few sunny days against last year's baseline.`
-    : score > 35 ? `On clear days the panels are running about <b style="color:var(--text)">${Math.round(loss * 100)}% below</b> last year's output for the same sunlight. When the loss is spread evenly across days like this, it's usually dust or pollen.`
-    : `The panels are producing what last year's baseline says they should for this much sunlight. No cleaning needed.`;
+  const st = s?.state ?? 'measuring';
+  $('cleanBadge').textContent = !s ? 'waiting' : st === 'dusty' ? 'Dusty' : st === 'getting' ? 'Getting dusty' : st === 'clean' ? 'Clean' : s.resetOn ? 'Clean' : 'measuring';
+  $('cleanBadge').className = 'badge' + (st === 'dusty' || st === 'getting' ? '' : ' g');
+  $('clLoss').textContent = loss == null ? '—' : loss < .5 ? 'on par' : `−${loss}%`;
+  $('clRef').textContent = !s ? '—' : s.ref ? `${MON3(s.ref.from)}–${md(s.ref.to)}, after the ${s.ref.after === 'cleaning' ? 'cleaning' : s.ref.after === 'rain' ? 'rain' : 'first clear days'}` : `after ${3 - Math.min(2, s.clearSince)} more clear day${3 - s.clearSince === 1 ? '' : 's'}`;
+  $('clRain').textContent = !s ? '—' : s.lastRain ? `${s.lastRain.daysAgo === 0 ? 'today' : `${s.lastRain.daysAgo} day${s.lastRain.daysAgo === 1 ? '' : 's'} ago`} · ${Math.round(s.lastRain.mm)} mm` : 'none in 3 months';
+  $('clNext').textContent = !s ? '—' : s.nextRain ? `${new Date(`${s.nextRain.day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · ${Math.round(s.nextRain.mm)} mm` : 'none in the forecast';
+  $('clCost').innerHTML = s?.kwhPerDay ? `≈ ${s.kwhPerDay.toFixed(1)} kWh/day · ${S.guest ? veil('$••/mo') : `${s.dollarsPerMonth != null ? `$${s.dollarsPerMonth}` : '—'}/mo`}` : '—';
+  const washed = s?.resetBy === 'rain' ? `The ${s.lastRain ? MON3(s.lastRain.day) : ''} rain washed the panels.` : s?.resetBy === 'cleaning' ? `You logged a cleaning on ${MON3(s.resetOn)}.` : '';
+  $('cleanTxt').innerHTML = !s ? 'Solstice needs the weather history to compare against; it arrives with the nightly update.'
+    : !s.ref ? `${washed} The next ${3 - Math.min(2, s.clearSince)} clear day${3 - s.clearSince === 1 ? '' : 's'} set the new clean level; after that each clear day is compared with it.`
+    : loss == null ? `${washed} The clean level is set; a few more clear days and Solstice compares them with it.`
+    : st === 'dusty' ? `On clear days the panels are running about <b style="color:var(--text)">${loss}% below</b> clean${s.kwhPerDay ? `, about ${s.kwhPerDay.toFixed(1)} kWh a day` : ''}. ${s.nextRain ? `About ${Math.round(s.nextRain.mm)} mm of rain is forecast ${new Date(`${s.nextRain.day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' })}, which should wash them; if it doesn't come, a rinse` : 'A rinse'} from the ground, early or late in the day, brings it back.`
+    : st === 'getting' ? `On clear days the panels are running about <b style="color:var(--text)">${loss}% below</b> clean. Worth watching; rain of 5 mm or more usually brings it back.`
+    : `The panels are producing what they did when clean for the same sunlight. No cleaning needed.`;
+  drawCleanChart(s);
+}
+function drawCleanChart(s) {
+  const svg = $('clChart'), key = $('clKey'), pts = s?.points ?? [];
+  svg.hidden = key.hidden = !pts.length; if (!pts.length) return;
+  const t0 = Date.parse(`${pts[0].day}T12:00:00Z`), t1 = Date.parse(`${localDate()}T12:00:00Z`), span = Math.max(1, (t1 - t0) / 864e5);
+  const ys = pts.map(p => p.y), lo = Math.floor(Math.min(...ys, s.ref?.y ?? 99) * 2) / 2 - .5, hi = Math.ceil(Math.max(...ys, s.ref?.y ?? 0) * 2) / 2 + .2;
+  const X = d => 26 + (Date.parse(`${d}T12:00:00Z`) - t0) / 864e5 / span * 296, Y = v => 112 - (v - lo) / (hi - lo) * 100;
+  let o = '';
+  for (let v = Math.ceil(lo); v <= hi; v++) o += `<line x1="26" x2="322" y1="${Y(v)}" y2="${Y(v)}" stroke="rgba(255,255,255,.06)"/><text x="2" y="${Y(v) + 3}" fill="rgba(242,244,248,.45)" font-size="9" font-family="JetBrains Mono">${v}</text>`;
+  for (let d = new Date(t0); d.getTime() <= t1; d.setUTCDate(d.getUTCDate() + 1)) if (d.getUTCDate() === 1) { const iso = d.toISOString().slice(0, 10); o += `<text x="${X(iso)}" y="134" fill="rgba(242,244,248,.45)" font-size="9" font-family="JetBrains Mono">${d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' })}</text>`; }
+  (s.rains ?? []).filter(r => r.day >= pts[0].day && r.day < localDate()).forEach(r => o += `<rect x="${X(r.day) - 1.5}" y="${112 - Math.min(40, r.mm)}" width="3" height="${Math.min(40, r.mm)}" fill="#6cc4ff" fill-opacity=".7"><title>${md(r.day)}: ${Math.round(r.mm)} mm</title></rect>`);
+  if (s.ref) o += `<line x1="${X(s.ref.from)}" x2="${X(pts.at(-1).day > s.ref.to ? pts.at(-1).day : s.ref.to)}" y1="${Y(s.ref.y)}" y2="${Y(s.ref.y)}" stroke="#4ef0a6" stroke-width="2"/>`;
+  pts.forEach(p => o += `<circle cx="${X(p.day)}" cy="${Y(p.y)}" r="3" fill="#ffd27a" fill-opacity=".9"><title>${md(p.day)}: ${p.y}</title></circle>`);
+  svg.innerHTML = o;
 }
 
-export function initPanels(S, roof) { loadCleanings(S).then(() => drawPerformance(S)); initPerPanel(S, roof); }
+export function initPanels(S, roof) { loadCleanings(S).then(() => drawPerformance(S)); loadSoiling(S); initPerPanel(S, roof); }
 
 /** Per-frame roof HUD text (the scene itself lives in scenes/roof.js). */
 export function roofHud(S, info, now) {

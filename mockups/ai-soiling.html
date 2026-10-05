@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Solstice · Panel cleanliness</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* page scaffolding for the mockup only (same as v–ah) */
+html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+body{background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.col{width:100%;max-width:393px;margin:0 auto;padding:28px 0 60px}
+.intro{padding:0 20px}
+.intro .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.intro h2{font-size:30px;line-height:1.1;font-weight:300;letter-spacing:-.02em;margin-bottom:12px}
+.intro p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.intro p+p{margin-top:8px}
+.frame{margin-top:34px}
+.frame>.sect{margin:0 20px 10px}
+.pagepad{padding:0 20px}
+.cap{margin:12px 20px 0;padding:12px 14px;border-radius:16px;background:rgba(0,0,0,.25);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.55}
+.cap b{color:var(--text);font-weight:600}
+.cap p+p{margin-top:6px}
+.cap .new{color:var(--batt)}.cap .same{color:var(--mute)}
+.wrules{margin:34px 20px 0}
+.wrules h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:10px}
+.wrules ul{list-style:none;display:grid;gap:8px}
+.wrules li{font-size:12.5px;color:var(--dim);line-height:1.55;padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b)}
+.wrules li b{color:var(--text);font-weight:600}
+/* NEW: the cleanliness card */
+.sl-big{display:flex;align-items:baseline;gap:8px;margin-top:10px}
+.sl-big b{font-size:30px;font-weight:300;letter-spacing:-.02em}
+.sl-big span{font-size:12px;color:var(--dim);line-height:1.4}
+.sl-key{display:flex;gap:12px;flex-wrap:wrap;font-size:10.5px;color:var(--mute);margin-top:4px}
+.sl-key i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+.sl-txt{font-size:12.5px;color:var(--dim);margin-top:10px;line-height:1.5}
+.sl-txt b{color:var(--text);font-weight:600}
+.sl-row{display:flex;gap:8px;margin-top:12px}
+.sl-row button{all:unset;cursor:pointer;flex:1;text-align:center;padding:9px 10px;border-radius:12px;font-weight:600;font-size:12.5px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);color:var(--text)}
+.push{border-radius:18px;padding:12px 14px;background:rgba(30,34,46,.95);border:1px solid var(--glass-b);display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start}
+.push .ic{width:30px;height:30px;border-radius:8px;background:#ffc15e;display:grid;place-items:center;color:#1a1204;font-weight:800}
+.push b{font-size:13px}.push p{font-size:12.5px;color:var(--dim);margin-top:2px;line-height:1.45}.push small{font-size:10.5px;color:var(--mute)}
+</style></head><body>
+<div class="col">
+  <div class="intro">
+    <div class="k">Mockup ai · Panel cleanliness (revised: the existing Cleaning check card)</div>
+    <h2>Dust takes about 2% a week in a hot dry spell. Rain gives it back.</h2>
+    <p>I compared every clear day's output with the sunlight that reached the panels (temperature-adjusted, since hot panels make less) across 13 months. In the long dry spells of Sep–Oct 2025 and Aug 2026 output fell about 2% a week; the 8/27 rain brought back about 6% in one day. Winter dry spells showed nothing.</p>
+    <p>Per panel there's nothing to report: since the relay started (9/28) all 30 panels stay within 95–104% of the median, and the existing "panel low" check already watches each one. Figures here are your real ones.</p>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 1 · Panels tab · the Cleaning check card, upgraded (today)</div>
+    <div class="pagepad"><div class="card">
+      <div class="h"><b>Cleaning check</b><span class="badge g">Clean</span></div>
+      <div class="cleanrow"><svg width="84" height="84" viewBox="0 0 84 84"><circle cx="42" cy="42" r="34" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="7"/><circle cx="42" cy="42" r="34" fill="none" stroke="#4ef0a6" stroke-width="7" stroke-linecap="round" stroke-dasharray="0.0 213.6" transform="rotate(-90 42 42)"/><text x="42" y="44" text-anchor="middle" fill="#f2f4f8" font-size="20" font-family="Manrope" font-weight="300">—</text><text x="42" y="58" text-anchor="middle" fill="rgba(242,244,248,.5)" font-size="8.5" font-family="Manrope">dust score</text></svg><p>The 10/1–10/2 rain (57 mm) washed the panels. The next 3 clear days set the new clean level; after that each clear day is compared with it.</p></div>
+      <div class="kv">
+        <span>Below clean · last 3 clear days</span><b>—</b>
+        <span>Clean level</span><b>after 3 clear days</b>
+        <span>Last rain of 5 mm or more</span><b>3 days ago · 36 mm</b>
+        <span>Next rain of 5 mm or more</span><b>none in the forecast</b>
+        <span>Value of the gap</span><b>—</b>
+      </div>
+      <svg id="ch1" viewBox="0 0 330 140" style="width:100%;margin-top:12px"></svg>
+      <div class="sl-key"><span><i style="background:#ffd27a"></i>clear-day output per unit of sun</span><span><i style="background:#6cc4ff"></i>rain ≥ 5 mm</span><span><i style="background:#4ef0a6"></i>clean level</span></div>
+      <button class="link" style="margin-top:10px">✓ I cleaned the panels</button>
+    </div></div>
+    <div class="cap">
+      <p><b class="same">Same card:</b> the title, badge, dust-score ring, the rows and the "I cleaned the panels" button (with its log and Undo) stay where they are; one row is added ("Clean level").</p>
+      <p><b class="new">Changed:</b> what it compares against. It was last year's output for the same sunlight; now it's the clean level set by the first 3 clear days after the last 5 mm rain (or your logged cleaning), with hot panels allowed for. The rows say "5 mm or more" for rain, the forecast row checks rain amounts (it used "50% chance"). <b class="new">New:</b> the clear-day chart with the rains, under the rows.</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 2 · the same card on 8/26 (replayed)</div>
+    <div class="pagepad"><div class="card">
+      <div class="h"><b>Cleaning check</b><span class="badge">Dusty</span></div>
+      <div class="cleanrow"><svg width="84" height="84" viewBox="0 0 84 84"><circle cx="42" cy="42" r="34" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="7"/><circle cx="42" cy="42" r="34" fill="none" stroke="#ffc15e" stroke-width="7" stroke-linecap="round" stroke-dasharray="117.5 213.6" transform="rotate(-90 42 42)"/><text x="42" y="44" text-anchor="middle" fill="#f2f4f8" font-size="20" font-family="Manrope" font-weight="300">55</text><text x="42" y="58" text-anchor="middle" fill="rgba(242,244,248,.5)" font-size="8.5" font-family="Manrope">dust score</text></svg><p>On clear days the panels are running about <b style="color:var(--text)">5.5% below</b> clean, about 2.5 kWh a day. About 7 mm of rain is forecast tomorrow, which should wash them; if it doesn't come, a rinse from the ground, early or late in the day, brings it back.</p></div>
+      <div class="kv">
+        <span>Below clean · last 3 clear days</span><b>−5.5%</b>
+        <span>Clean level</span><b>Jul 20–26, after the rain</b>
+        <span>Last rain of 5 mm or more</span><b>41 days ago · 19 mm</b>
+        <span>Next rain of 5 mm or more</span><b>Thu, Aug 27 · 7 mm</b>
+        <span>Value of the gap</span><b>≈ 2.5 kWh/day · $•/mo</b>
+      </div>
+      <svg id="ch2" viewBox="0 0 330 140" style="width:100%;margin-top:12px"></svg>
+      <button class="link" style="margin-top:10px">✓ I cleaned the panels</button>
+    </div></div>
+    <div class="cap">
+      <p>Replayed with the rule below, on Open-Meteo's archive (the live card reads Open-Meteo's forecast service, whose rain totals can differ a little): on 8/26 the last 3 clear days averaged 5.5% under the 3 clear days after the 7/16 rain. That day's forecast (Open-Meteo's archive of it) had 6.5 mm for 8/27; 12 mm fell, and the following clear days were back at 8.7–8.9, the highest of the summer.</p>
+      <p>The ring is the loss on a 0–10% scale (5% = 55 here, rounded); badge <b>Clean</b> under 3%, <b>Getting dusty</b> 3–5%, <b>Dusty</b> from 5%. The roof's dust veil follows the same score. $ uses your bill's rate, as today.</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 3 · the push (only when no rain is coming)</div>
+    <div class="pagepad"><div class="push"><div class="ic">☀</div><div><b>Panels look dusty</b><p>About 5% below clean (≈ 2.5 kWh a day) after 41 days without rain, and none in the 5-day forecast. A rinse would bring it back.</p><small>Solstice · example</small></div></div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> one push when the card is "dusty" and no 5 mm rain is forecast for 5 days; not again until it's clean (rain, or "I cleaned them"). Replayed over 13 months it would have sent <b>none</b>: both dusty spells (10/22/2025 and 8/26/2026) had rain of 5 mm or more forecast within 3 days, and it came. The card still shows "dusty" either way.</p>
+    </div>
+  </div>
+
+  <div class="wrules">
+    <h3>The rules</h3>
+    <ul>
+      <li><b>Clear day:</b> under 15% midday cloud and at least 4 kWh/m² of sun on the panel plane; output is divided by that sunlight and adjusted to 25 °C panels (−0.35% per °C).</li>
+      <li><b>Clean level:</b> the median of the first 3 clear days after a rain of 5 mm or more (or after you log a cleaning). <b>Now:</b> the median of the latest 3 clear days, from the 6th clear day on.</li>
+      <li><b>Dusty</b> at 5% or more below clean (replayed: twice in 13 months, both real; 7% never fired). The push also needs no 5 mm rain in the 5-day forecast.</li>
+      <li><b>Read only:</b> Tesla history and Open-Meteo (the archive for past days, the forecast for rain). No new device access.</li>
+      <li><b>Unchanged:</b> the card's layout, the cleaning log and Undo, the panel grid, the per-panel "panel low" check, and every other card.</li>
+    </ul>
+  </div>
+</div>
+<script>
+// real: clear days since July (temperature-adjusted kWh per kWh/m²) and rains of 5 mm or more
+const C = [["07-03",8.8],["07-09",8.4],["07-20",8.3],["07-23",8.65],["07-26",8.29],["07-27",8.37],["07-28",8.12],["08-02",8.1],["08-04",8.25],["08-08",8.15],["08-11",8.42],["08-12",8.72],["08-13",8.54],["08-16",8.19],["08-17",8.17],["08-23",8.11],["08-25",7.84],["08-26",7.45],["08-29",8.67],["08-30",8.88],["09-02",6.58],["09-05",8.35],["09-08",8.73],["09-15",8.45],["09-21",7.8],["09-22",8.48]];
+const RN = [["07-11",10],["07-13",10],["07-14",7],["07-15",17],["07-16",19],["08-27",12],["10-01",48],["10-02",57],["10-03",10]];
+const doy = s => (Date.parse(`2026-${s}T12:00:00Z`) - Date.parse('2026-07-01T12:00:00Z')) / 864e5;
+function draw(id, until, ref) {
+  const end = doy('10-06'), X = d => 26 + d / end * 296, Y = v => 112 - (v - 6.5) / 2.7 * 100;
+  let s = '';
+  [7, 8, 9].forEach(v => s += `<line x1="26" x2="322" y1="${Y(v)}" y2="${Y(v)}" stroke="rgba(255,255,255,.06)"/><text x="2" y="${Y(v) + 3}" fill="rgba(242,244,248,.45)" font-size="9" font-family="JetBrains Mono">${v}</text>`);
+  [['Jul', '07-01'], ['Aug', '08-01'], ['Sep', '09-01'], ['Oct', '10-01']].forEach(([l, d]) => s += `<text x="${X(doy(d))}" y="134" fill="rgba(242,244,248,.45)" font-size="9" font-family="JetBrains Mono">${l}</text>`);
+  RN.filter(([d]) => doy(d) <= doy(until)).forEach(([d, mm]) => s += `<rect x="${X(doy(d)) - 1.5}" y="${112 - Math.min(40, mm)}" width="3" height="${Math.min(40, mm)}" fill="#6cc4ff" fill-opacity=".7"/>`);
+  if (ref) s += `<line x1="${X(doy(ref[0]))}" x2="${X(doy(ref[1]))}" y1="${Y(ref[2])}" y2="${Y(ref[2])}" stroke="#4ef0a6" stroke-width="2"/>`;
+  C.filter(([d]) => doy(d) <= doy(until)).forEach(([d, v]) => s += `<circle cx="${X(doy(d))}" cy="${Y(v)}" r="3" fill="#ffd27a" fill-opacity=".9"/>`);
+  document.getElementById(id).innerHTML = s;
+}
+draw('ch1', '10-05', null);
+draw('ch2', '08-26', ['07-20', '08-26', 8.30]);
+</script>
+</body></html>

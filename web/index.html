@@ -241,11 +241,14 @@
           <div class="h"><b>Cleaning check</b><span class="badge g" id="cleanBadge">—</span></div>
           <div class="cleanrow"><svg width="84" height="84" viewBox="0 0 84 84" id="cleanRing"></svg><p id="cleanTxt">—</p></div>
           <div class="kv">
-            <span>Output vs baseline · last 7 clear days</span><b id="clLoss">—</b>
-            <span>Last real rain (Open-Meteo)</span><b id="clRain">—</b>
-            <span>Next likely rain</span><b id="clNext">—</b>
+            <span>Below clean · last 3 clear days</span><b id="clLoss">—</b>
+            <span>Clean level</span><b id="clRef">—</b>
+            <span>Last rain of 5 mm or more</span><b id="clRain">—</b>
+            <span>Next rain of 5 mm or more</span><b id="clNext">—</b>
             <span>Value of the gap</span><b id="clCost">—</b>
           </div>
+          <svg id="clChart" viewBox="0 0 330 140" style="width:100%;margin-top:12px" hidden></svg>
+          <div class="sl-key" id="clKey" hidden><span><i style="background:#ffd27a"></i>clear-day output per unit of sun</span><span><i style="background:#6cc4ff"></i>rain ≥ 5 mm</span><span><i style="background:#4ef0a6"></i>clean level</span></div>
           <button class="link" id="cleaned">✓ I cleaned the panels</button>
         </div>
         <div class="card">
