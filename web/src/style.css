@@ -985,6 +985,6 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .pc-row button small{font:500 10.5px "JetBrains Mono";color:var(--mute)}
 .pc-row button.on{border-color:rgba(255,122,102,.5);background:rgba(255,122,102,.1)}
 .pc-row button.send{border-color:rgba(255,193,94,.45)}
-.pc-heat .seg2{margin-top:10px}
+.pc-heat .seg2{display:flex;margin-top:10px}.pc-heat .seg2 button{flex:1;text-align:center;padding:9px 6px}
 .pc-heat .tstat{margin-top:4px}
 /* end w-pool-control */

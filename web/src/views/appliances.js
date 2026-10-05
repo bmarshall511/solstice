@@ -151,9 +151,9 @@ function openCircuit(S, id) {
   let heat = heat0, setF = set0;
   $('sheetBody').innerHTML = `<div class="shead"><h4>${esc(c.name)}</h4><button class="x" id="pcX" aria-label="Close">✕</button></div>
     <p class="sub">${c.on ? 'On' : 'Off'} · ${sched.length ? `on schedule ${sched.map(x => `${hm(x.start)}–${hm(x.stop)}`).join(', ')}` : 'not on any schedule'}</p>
-    <div id="pcRun"${c.on ? ' hidden' : ''}><div class="pc-lbl">Run for</div><div class="pc-runs${runs.length > 4 ? ' five' : ''}" id="pcRuns">${runs.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
     ${body ? `<div class="pc-heat"><div class="pc-lbl">Spa heat</div><div class="seg2 wide" id="pcHeat"><button data-h="0">Off</button><button data-h="1">On</button></div>
       <div class="tstat" id="pcDial"><div class="dial"><button class="step" id="pcHdn" aria-label="Cooler">\u2212</button><div class="sp"><small>Heat to</small><b class="heat" id="pcSet"></b><span>${body.heating ? 'heating now' : 'heater off now'}</span></div><button class="step" id="pcHup" aria-label="Warmer">+</button></div></div></div>` : ''}
+    <div id="pcRun"${c.on ? ' hidden' : ''}><div class="pc-lbl">Run for</div><div class="pc-runs${runs.length > 4 ? ' five' : ''}" id="pcRuns">${runs.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
     ${!body && rpm0 != null ? `<div class="pc-rpm"><div class="bt">Speed<small>whenever ${esc(c.name)} runs · ${lim.min.toLocaleString()}–${lim.max.toLocaleString()}</small></div><div class="stp"><button id="pcDn" aria-label="Slower">−</button><b id="pcRpm"></b><button id="pcUp" aria-label="Faster">+</button></div></div>` : ''}
     <button class="primary" id="pcGo"></button>${c.on ? '<button class="link" id="pcOff" hidden>Turn off</button>' : ''}
     <p class="fine" id="pcNote" style="margin-top:10px"></p>`;
