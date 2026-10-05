@@ -110,7 +110,7 @@ function drawBreakdown() {
   $('egTotal').textContent = Math.round(d.homeKwh);
   const n = d.range === 'week' ? 7 : 30;
   $('egSub').textContent = !d.days ? 'No full day with thermostat readings yet' : d.range === 'today' ? 'kWh so far today'
-    : d.days < n ? `kWh a day \u00b7 ${d.days} of the last ${n} days (the ones with thermostat readings)` : `kWh a day \u00b7 last ${n} days`;
+    : d.days < n ? `kWh a day \u00b7 ${d.days} day${d.days === 1 ? '' : 's'} with Nest data` : `kWh a day \u00b7 last ${n} days`;
   const sum = d.parts.reduce((a, p) => a + p.kwh, 0) || 1;
   $('egBar').innerHTML = d.parts.map(p => `<i style="background:${EG[p.id][1]};width:${p.kwh / sum * 100}%"></i>`).join('');
   const note = p => p.id === 'ac' ? (p.hours != null ? `Cooling ${p.hours} h${d.range === 'today' ? ' today' : ' a day'} \u00d7 ${p.kw.toFixed(1)} kW` : 'From the heat model')
