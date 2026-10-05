@@ -152,16 +152,18 @@ describe('Q17 Nest cadence: 5 min 10:00–22:00 in cooling season (May–October
 /* ---------------------------------------------------------------- Q18: pool reads */
 // Reads sit 5 minutes into each quarter-hour (:05, :20, :35, :50), clear of the pump priming when a schedule starts or changes
 // speed on the quarter-hour; they used to land on :00, :15, :30 and :45, with the overnight checks at 02:00 and 05:00.
-describe('Q18 pool reads: every 15 min of scheduled pump hours at :05/:20/:35/:50, plus 02:05 and 05:05', () => {
-  const expected = ['02:05', '05:05', ...Array.from({ length: 36 }, (_, i) => hhmm(605 + i * 15))];
+describe('Q18 pool reads: every 15 min of scheduled pump hours at :05/:20/:35/:50, plus HH:05 of every other hour', () => {
+  /** Reads for pump hours [from, to) in minutes: every quarter-hour inside, and HH:05 of each hour outside (runs started elsewhere, the overnight checks). */
+  const readsFor = (from: number, to: number) => Array.from({ length: 96 }, (_, i) => i * 15 + 5).filter(m => (m >= from && m < to) || m % 60 === 5).map(hhmm);
+  const expected = readsFor(600, 1140);   // Pool 10a–7p (High Speed 2p–3p sits inside): 36 + 15 hourly = 51
 
-  it('the current schedule (Pool 10a–7p, High Speed 2p–3p) reads 38 times a day, never on the quarter-hour', () => {
+  it('the current schedule (Pool 10a–7p, High Speed 2p–3p) reads 51 times a day, never on the quarter-hour', () => {
     const m = poolReadMinutes(CURRENT).map(hhmm);
     expect(m).toEqual(expected);
-    expect(m).toHaveLength(38);
-    expect(m.slice(2, 4)).toEqual(['10:05', '10:20']);          // 5 minutes after the Pool program starts
+    expect(m).toHaveLength(51);
+    expect(m.slice(9, 12)).toEqual(['09:05', '10:05', '10:20']);   // hourly before the program, then every quarter-hour          // 5 minutes after the Pool program starts
     expect(m).toContain('14:05');                               // 5 minutes after High Speed starts
-    expect(m.at(-1)).toBe('18:50');
+    expect(m.slice(-6)).toEqual(['18:50', '19:05', '20:05', '21:05', '22:05', '23:05']);
     expect(m.every(x => Number(x.slice(3)) % 15 === 5)).toBe(true);
   });
 
@@ -175,11 +177,13 @@ describe('Q18 pool reads: every 15 min of scheduled pump hours at :05/:20/:35/:5
     expect(poolDue(at('2026-07-15 10:20'), sched, at('2026-07-15 10:20:02'))).toBe(false);
     expect(poolDue(at('2026-07-15 09:50'), sched, null)).toBe(false);   // before the Pool program starts
     expect(poolDue(at('2026-07-15 18:50'), sched, null)).toBe(true);
-    expect(poolDue(at('2026-07-15 19:05'), sched, null)).toBe(false);
+    expect(poolDue(at('2026-07-15 19:05'), sched, null)).toBe(true);    // the hourly read outside the schedule
+    expect(poolDue(at('2026-07-15 19:20'), sched, null)).toBe(false);
     expect(poolDue(at('2026-07-15 02:00'), null, null)).toBe(false);
     expect(poolDue(at('2026-07-15 02:05'), null, null)).toBe(true);
     expect(poolDue(at('2026-07-15 05:05'), null, null)).toBe(true);
-    expect(poolDue(at('2026-07-15 03:05'), null, null)).toBe(false);
+    expect(poolDue(at('2026-07-15 03:05'), null, null)).toBe(true);
+    expect(poolDue(at('2026-07-15 03:20'), null, null)).toBe(false);
   });
 
   /** Run every tick of a day through poolTick; readPool answers with the fixture snapshot at the tick's time. */
@@ -190,19 +194,19 @@ describe('Q18 pool reads: every 15 min of scheduled pump hours at :05/:20/:35/:5
     return reads;
   };
 
-  it('a whole day through poolTick: 38 reads, all stored in pool_readings; the first read of the day learns the schedule', async () => {
-    const reads = await day('2026-09-26');         // nothing cached: the 02:00 check reads, and its snapshot carries the schedule
+  it('a whole day through poolTick: 51 reads, all stored in pool_readings; the first read of the day learns the schedule', async () => {
+    const reads = await day('2026-09-26');         // nothing cached: the 00:05 read's snapshot carries the schedule
     expect(reads).toEqual(expected);
-    expect(readPool).toHaveBeenCalledTimes(38);
-    expect(H.readings).toHaveLength(38);
-    const [, , dayCol, hour, running, watts, rpm] = H.readings[2];   // 10:05
+    expect(readPool).toHaveBeenCalledTimes(51);
+    expect(H.readings).toHaveLength(51);
+    const [, , dayCol, hour, running, watts, rpm] = H.readings[10];   // 10:05
     expect([dayCol, hour, running, watts, rpm]).toEqual(['2026-09-26', 10, true, 153, 1500]);
   });
 
   it('light and freeze-protection schedules do not count as pump hours (fixture: Pool 8a–5p, High Speed 12p–1p, light 7p–10p)', async () => {
     const s = poolSnapshot(0).schedules.concat({ id: 4, circuitId: 132, start: 0, stop: 1440, dayMask: 127, flags: 0, heatCmd: 4, heatSetPoint: 70 });
     const reads = await day('2026-01-15', s);
-    expect(reads).toEqual(['02:05', '05:05', ...Array.from({ length: 36 }, (_, i) => hhmm(485 + i * 15))]);
+    expect(reads).toEqual(readsFor(480, 1020));   // Pool 8a–5p; the light and freeze programs add nothing
   });
 
   it('right after Autopilot applied a plan (pool:last cleared) the applied plan’s schedule is used', async () => {
@@ -213,11 +217,11 @@ describe('Q18 pool reads: every 15 min of scheduled pump hours at :05/:20/:35/:5
     expect(await poolTick('s', at('2026-09-26 10:05'))).toMatchObject({ read: true, rpm: 1500, watts: 153 });
   });
 
-  it('with no schedule known, only the overnight checks read', async () => {
+  it('with no schedule known, only the hourly reads happen (24)', async () => {
     H.S.read = async () => { throw new Error('unreachable'); };  // every read fails, so the schedule is never learned
     for (const t of ticks('2026-09-26')) await poolTick('s', t);
-    expect(vi.mocked(readPool).mock.calls).toHaveLength(2);
-    expect(logs.warn).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(readPool).mock.calls).toHaveLength(24);
+    expect(logs.warn).toHaveBeenCalledTimes(24);
   });
 
   it('a failed read is logged once and skipped: no retry in the tick, nor in a second invocation for the same slot', async () => {
@@ -283,7 +287,7 @@ describe('cronTick', () => {
     expect(c.acTick).toHaveBeenCalledWith('s');
   });
 
-  it('a whole cooling-season day: 192 acTicks, 38 pool reads, and every skipped tick logs at debug only', async () => {
+  it('a whole cooling-season day: 192 acTicks, 51 pool reads, and every skipped tick logs at debug only', async () => {
     H.store.set('s:pool:last', poolSnapshot(at('2026-07-15 00:00') - 30 * MIN, { schedules: CURRENT }));
     H.S.read = async () => poolSnapshot(H.S.now, { schedules: CURRENT });
     const acTick = vi.fn(async () => ({ sampled: true }));
@@ -294,7 +298,7 @@ describe('cronTick', () => {
       if ('skipped' in r) quiet++;
     }
     expect(acTick).toHaveBeenCalledTimes(192);
-    expect(readPool).toHaveBeenCalledTimes(38);
+    expect(readPool).toHaveBeenCalledTimes(51);
     // ticks with nothing due answer before the database: outside 10:00–22:00 Nest samples at :00/:15/:30/:45 and the pool slots
     // are :05/:20/:35/:50, so 4 of every 12 ticks there are quiet (it was 288 − 192 = 96 when both used the quarter-hour)
     expect(quiet).toBe(48);
@@ -324,7 +328,7 @@ describe('no path reaches a real device', () => {
     expect(unit.calls.every(c => c.netTimeout === 8000)).toBe(true);
     expect(snap.pump).toMatchObject({ id: 1, running: true, watts: 153, rpm: 1500, gpm: null });
     expect(snap.schedules.map(s => [s.circuitId, s.start, s.stop])).toEqual([[6, 600, 1140], [8, 840, 900]]);
-    expect(poolReadMinutes(snap.schedules)).toHaveLength(38);
+    expect(poolReadMinutes(snap.schedules)).toHaveLength(51);
   });
 
   it('the read-only fake refuses anything that is not a read', async () => {

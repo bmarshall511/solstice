@@ -7,7 +7,7 @@
 //   rules    the anomaly rules → open, update and resolve rows in `anomalies`
 //   predict  today's 48-hour forecast, the always-on load for tonight and the billing-cycle projection → predictions (one insert)
 // About 20 round trips whatever the data size (no per-model or per-row queries). Every step is timed and caught on its own.
-import { kv } from '../db.js';
+import { kv, hourWh } from '../db.js';
 import { localDay, addDays, localMidnight, localAt, rfc3339 } from '../tesla/client.js';
 import { learnAcKw } from '../appliances/ac.js';
 import { meanByQuarter, scheduledQuarters } from '../appliances/pool.js';
@@ -101,7 +101,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
            COUNT(*)::int buckets, (SUM(home_wh) FILTER (WHERE hour BETWEEN 1 AND 4) / 1000.0 / NULLIF(COUNT(*) FILTER (WHERE hour BETWEEN 1 AND 4) * 5 / 60.0, 0))::float8 overnight_kw, COUNT(*) FILTER (WHERE hour BETWEEN 1 AND 4)::int overnight_n
          FROM energy WHERE site_id = $1 AND day >= $2 AND day <= $3 GROUP BY day`, [siteId, from, today]),
       lq<{ day: string; hour: number; solar: number; home: number; n: number }>(
-        `SELECT day, hour::int, (SUM(solar_wh) / 1000.0)::float8 solar, (SUM(home_wh) / 1000.0)::float8 home, COUNT(*)::int n FROM energy WHERE site_id = $1 AND day >= $2 GROUP BY day, hour`,
+        `SELECT day, hour::int, (${hourWh('solar_wh')} / 1000.0)::float8 solar, (${hourWh('home_wh')} / 1000.0)::float8 home, COUNT(*)::int n FROM energy WHERE site_id = $1 AND day >= $2 GROUP BY day, hour`,   // one hour's kWh even for the repeated 01:00 (db.ts hourWh)
         [siteId, addDays(today, -15)]),
       lq<{ day: string; hour: number; n: number; last: number; at: number }>(
         `SELECT day, hour::int, COUNT(*)::int n, ((ARRAY_AGG(soe ORDER BY epoch DESC))[1])::float8 last, MAX(epoch)::float8 at FROM soe WHERE site_id = $1 AND day >= $2 GROUP BY day, hour`,

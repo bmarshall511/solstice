@@ -53,10 +53,14 @@ export function nestDue(now: number, lastAt: number | null) {
   const i = nestInterval(now);
   return firstTick(now, i) && (lastAt == null || lastAt < slotStart(now, i));
 }
-/** Whether the quarter-hour holding `minute` gets a pool read: an overnight check, or the pump is scheduled on (`scheduled`: 96 quarter-hours). */
+/**
+ * Whether the quarter-hour holding `minute` gets a pool read: every quarter-hour the pump is scheduled on (`scheduled`: 96 quarter-hours),
+ * the first quarter of every other hour (HH:05), so a run started outside Solstice (the Pentair app, the panel) is seen within the hour
+ * and counts toward the day's water, and the overnight checks.
+ */
 export function poolReadQuarter(minute: number, scheduled: readonly boolean[] | null) {
   const qi = Math.floor(minute / POOL_READ_MIN);
-  return POOL_CHECKS.some(c => Math.floor(c / POOL_READ_MIN) === qi) || !!scheduled?.[qi];
+  return qi % 4 === 0 || POOL_CHECKS.some(c => Math.floor(c / POOL_READ_MIN) === qi) || !!scheduled?.[qi];
 }
 /** Whether a pool read is due at this tick, given the pump's scheduled quarter-hours and the last read (null: none yet). */
 export function poolDue(now: number, scheduled: readonly boolean[] | null, lastAt: number | null) {

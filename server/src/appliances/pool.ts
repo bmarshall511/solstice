@@ -1,5 +1,5 @@
 // Pool pump appliance: what the IntelliFlo is doing, what the current schedule costs, and a season-aware smarter schedule.
-import { q, kv } from '../db.js';
+import { q, kv, hourWh } from '../db.js';
 import { readPool, writePoolPlan, writeOwnerPool, configured, type PoolSnapshot } from './screenlogic.js';
 import { localDay, addDays, rfc3339 } from '../tesla/client.js';
 import type { Appliance, ApplianceSummary } from './index.js';
@@ -170,7 +170,7 @@ export function pumpSchedules(snap: PoolSnapshot | null) {
 export const measuredPoints = (siteId: string) => q<{ rpm: number; watts: number }>(`SELECT rpm::int rpm, PERCENTILE_CONT(.5) WITHIN GROUP (ORDER BY watts)::float8 watts
   FROM pool_readings WHERE site_id = $1 AND running AND rpm > 0 AND watts > 0 GROUP BY rpm HAVING COUNT(*) >= 3`, [siteId]);
 const solarProfile = async (siteId: string) => {
-  const rows = await q<{ hour: number; kw: number }>(`SELECT hour::int, (SUM(solar_wh) / 1000.0 / 14)::float8 kw FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY hour`, [siteId, addDays(localDay(), -14), localDay()]);
+  const rows = await q<{ hour: number; kw: number }>(`SELECT hour::int, (SUM(s) / 1000.0 / 14)::float8 kw FROM (SELECT day, hour, ${hourWh('solar_wh')} s FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day, hour) x GROUP BY hour`, [siteId, addDays(localDay(), -14), localDay()]);
   const out = Array(24).fill(0); rows.forEach(r => out[r.hour] = r.kw); return out;
 };
 
@@ -294,7 +294,8 @@ export const guardContext = (snap: PoolSnapshot): PoolGuardContext => ({ circuit
   minRpm: snap.pump?.minRpm, maxRpm: snap.pump?.maxRpm, managed: [...MANAGED_CIRCUITS] });
 /** The exact ScreenLogic write applyPlan sends for a plan, so Autopilot can check it with the guard first. The snapshot must have a pump. */
 export const planWrite = (plan: Plan, snap: PoolSnapshot, settings: PoolSettings) => ({ pumpId: snap.pump!.id, speeds: plan.schedules.map(s => ({ circuitId: s.circuitId, rpm: s.rpm })),
-  replaceCircuits: [settings.poolCircuit, settings.boostCircuit, ...settings.featureCircuits], schedules: plan.schedules.map(s => ({ circuitId: s.circuitId, start: s.start, stop: s.stop })), guard: guardContext(snap) });
+  // Pool and High Speed only: the Waterfall is a switch, never a schedule Autopilot writes or removes (October audit, Q6)
+  replaceCircuits: [settings.poolCircuit, settings.boostCircuit], schedules: plan.schedules.map(s => ({ circuitId: s.circuitId, start: s.start, stop: s.stop })), guard: guardContext(snap) });
 /** Add a line to the pool activity log (the Autopilot log on the Pool card). */
 async function logPool(siteId: string, text: string, delta?: string) {
   const log = await kv.get<Array<{ at: number; day: string; text: string; delta?: string }>>(`${siteId}:pool:autolog`) ?? [];

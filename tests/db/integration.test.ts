@@ -97,7 +97,7 @@ describe('pool Autopilot', () => {
     await run('p-auto', 'auto');
     expect(writePoolPlan).toHaveBeenCalledTimes(1);
     expect(writePoolPlan).toHaveBeenCalledWith({
-      pumpId: 1, speeds: [{ circuitId: 6, rpm: 1750 }, { circuitId: 8, rpm: 2400 }], replaceCircuits: [6, 8, 5],
+      pumpId: 1, speeds: [{ circuitId: 6, rpm: 1750 }, { circuitId: 8, rpm: 2400 }], replaceCircuits: [6, 8],   // never the Waterfall (5): a switch only
       schedules: [{ circuitId: 6, start: 360, stop: 1140 }, { circuitId: 8, start: 720, stop: 780 }],
       // what the safety guard checks the write against: the fixture's circuits and pump slots, the pump's RPM range, and the
       // fixed managed circuits (Pool 6, High Speed 8, Waterfall 5)
