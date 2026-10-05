@@ -163,7 +163,7 @@ export function drawOvernight(S) {
   $('nightSum').innerHTML = [[base, 'always-on'], [ac, 'AC'], [pump, 'pool pump']].map(([v, l]) => `<div><b>${f(v)}</b><span>kW ${l}</span></div>`).join('');
   const parts = [base != null && `${f(base)} kW always-on (fridges, network, standby)`, ac >= .05 && `${f(ac)} kW AC`, pump >= .05 && `${f(pump)} kW the pool pump`].filter(Boolean);
   const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0];
-  const none = sp.length ? [ac < .05 && 'the AC', pump < .05 && 'the pool pump'].filter(Boolean) : [];
+  const none = sp.length ? [ac === 0 && 'the AC', pump === 0 && 'the pool pump'].filter(Boolean) : [];   // a part under 0.05 kW that did run is just left out
   $('nightTxt').innerHTML = `Between 1 and 5 AM your home averaged <b style="color:var(--text)">${f(kw)} kW</b> this week${list ? `: ${list}` : ''}.`
     + (none.length ? ` ${none.length === 2 ? "The AC and the pool pump didn’t run" : `${none[0][0].toUpperCase()}${none[0].slice(1)} didn’t run`}.` : '')
     + (base != null ? ' The always-on part is the same figure as in Where your energy goes.' : '')
