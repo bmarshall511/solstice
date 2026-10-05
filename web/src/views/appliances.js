@@ -224,7 +224,7 @@ async function clearUpSend(S, body) {
   try { S.pool = await api.poolClearUp(body); } catch (e) { pc.err = `Clear-up: ${e.message}`; }
   pc.clearBusy = false; drawPool(S);
 }
-function openClearUp(S) {
+export function openClearUp(S) {   // also offered after a hazy test (water.js, mockup aj)
   const d = S.pool, rates = d.clearUpRates ?? []; if (!rates.length) return;
   let days = 2, rpm = 2000;
   $('sheetBody').innerHTML = `<div class="shead"><h4>Clear-up</h4><button class="x" id="pcX" aria-label="Close">\u2715</button></div>

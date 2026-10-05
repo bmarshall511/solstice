@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Solstice · Pool water log</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* page scaffolding for the mockup only (same as v–ai) */
+html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+body{background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.col{width:100%;max-width:393px;margin:0 auto;padding:28px 0 60px}
+.intro{padding:0 20px}
+.intro .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.intro h2{font-size:30px;line-height:1.1;font-weight:300;letter-spacing:-.02em;margin-bottom:12px}
+.intro p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.intro p+p{margin-top:8px}
+.frame{margin-top:34px}
+.frame>.sect{margin:0 20px 10px}
+.pagepad{padding:0 20px}
+.cap{margin:12px 20px 0;padding:12px 14px;border-radius:16px;background:rgba(0,0,0,.25);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.55}
+.cap b{color:var(--text);font-weight:600}
+.cap p+p{margin-top:6px}
+.cap .new{color:var(--batt)}.cap .same{color:var(--mute)}
+.wrules{margin:34px 20px 0}
+.wrules h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:10px}
+.wrules ul{list-style:none;display:grid;gap:8px}
+.wrules li{font-size:12.5px;color:var(--dim);line-height:1.55;padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b)}
+.wrules li b{color:var(--text);font-weight:600}
+.m-sheet{border-radius:24px 24px 18px 18px;padding:8px 16px 16px;background:rgba(20,24,36,.92);border:1px solid var(--glass-b)}
+.m-grab{width:38px;height:4px;border-radius:2px;background:rgba(255,255,255,.2);margin:4px auto 12px}
+.m-sheet h4{font-size:17px;font-weight:600}
+.m-sub{font-size:12px;color:var(--dim);margin-top:2px;line-height:1.5}
+.m-stub{height:46px;margin-top:10px;border-radius:12px;background:rgba(255,255,255,.04)}
+/* NEW: the Water strip and sheets */
+.wq{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px}
+.wq div{padding:8px 8px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
+.wq small{display:block;font:600 9.5px Manrope;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+.wq b{display:block;font:500 17px "JetBrains Mono";margin-top:2px}
+.wq span{font-size:10.5px;color:var(--dim)}
+.wq .ok b{color:var(--batt)}.wq .lo b,.wq .hi b{color:#ffc15e}
+.wline{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--dim)}
+.wline b{color:var(--text);font-weight:600}
+.wbtn{all:unset;cursor:pointer;font-size:12.5px;font-weight:600;padding:8px 12px;border-radius:12px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);color:var(--text);white-space:nowrap}
+.trow{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;padding:11px 0;border-top:1px solid rgba(255,255,255,.06)}
+.trow:first-of-type{border-top:0}
+.trow .tl{font-size:13.5px;font-weight:600}
+.trow .tl small{display:block;font-size:11.5px;color:var(--dim);font-weight:400;margin-top:2px}
+.stepr{display:flex;align-items:center;gap:8px}
+.stepr button{all:unset;cursor:pointer;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);font-size:16px}
+.stepr b{min-width:46px;text-align:center;font:500 16px "JetBrains Mono"}
+.stepr b.off{color:var(--mute)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chips button{all:unset;cursor:pointer;padding:6px 10px;border-radius:999px;font-size:12px;background:rgba(255,255,255,.06);border:1px solid var(--glass-b);color:var(--dim)}
+.chips button.on{background:rgba(255,255,255,.18);color:var(--text)}
+.lab{font:600 10.5px Manrope;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin-top:14px}
+.go2{all:unset;box-sizing:border-box;width:100%;cursor:pointer;display:block;text-align:center;margin-top:14px;padding:12px;border-radius:14px;background:var(--solar);color:#1a1204;font-weight:700;font-size:14px}
+.key{display:flex;gap:12px;flex-wrap:wrap;font-size:10.5px;color:var(--mute);margin-top:4px}
+.key i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+.tl2{display:grid;gap:6px;margin-top:10px}
+.tl2 div{display:grid;grid-template-columns:auto 1fr;gap:8px;font-size:12px;color:var(--dim)}
+.tl2 em{font:500 10.5px "JetBrains Mono";font-style:normal;color:var(--mute);padding-top:1px}
+.tl2 b{color:var(--text);font-weight:600}
+.push{border-radius:18px;padding:12px 14px;background:rgba(30,34,46,.95);border:1px solid var(--glass-b);display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start}
+.push .ic{width:30px;height:30px;border-radius:8px;background:#6cc4ff;display:grid;place-items:center;color:#0b0f18;font-weight:800}
+.push b{font-size:13px}.push p{font-size:12.5px;color:var(--dim);margin-top:2px;line-height:1.45}.push small{font-size:10.5px;color:var(--mute)}
+</style></head><body>
+<div class="col">
+  <div class="intro">
+    <div class="k">Mockup aj · Pool water log</div>
+    <h2>Log a test in ten seconds, and let the pump plan learn from the water.</h2>
+    <p>I asked the controller (read only): it has <b>no chemistry sensors</b>, no IntelliChem (pH/ORP) and no salt chlorinator, so readings have to come from you. It does report the water temperature (77° pool, 89° spa today), and Solstice already knows every hour the pump ran and every Clear-up.</p>
+    <p>The test values below are illustrative: there are no readings yet.</p>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 1 · Pool card · new "Water" section</div>
+    <div class="pagepad"><div class="card">
+      <div class="h"><b>Water</b><span class="badge g">in range</span></div>
+      <div class="wq">
+        <div class="ok"><small>Chlorine</small><b>3.0</b><span>ppm FC</span></div>
+        <div class="ok"><small>pH</small><b>7.6</b><span>7.2–7.8</span></div>
+        <div class="ok"><small>Alkalinity</small><b>100</b><span>ppm</span></div>
+        <div class="lo"><small>CYA</small><b>20</b><span>low · 30–50</span></div>
+      </div>
+      <div class="wline"><span>Clear · tested <b>3 days ago</b> · water 77°</span><button class="wbtn">Log a test</button></div>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> a Water section on the pool card (Insights › Appliances › Pool, owner only): the last test, each value against its usual range, how clear the water was, and a button to log the next test. Values you didn't test show "—".</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 2 · Log a test (sheet)</div>
+    <div class="pagepad"><div class="m-sheet"><div class="m-grab"></div>
+      <h4>Log a test</h4><div class="m-sub">Today, 5:40 PM · water 77° (from the controller)</div>
+      <div style="margin-top:6px">
+        <div class="trow"><span class="tl">Free chlorine<small>ppm</small></span><span class="stepr"><button>−</button><b>3.0</b><button>+</button></span></div>
+        <div class="trow"><span class="tl">pH</span><span class="stepr"><button>−</button><b>7.6</b><button>+</button></span></div>
+        <div class="trow"><span class="tl">Alkalinity<small>ppm · optional</small></span><span class="stepr"><button>−</button><b class="off">—</b><button>+</button></span></div>
+        <div class="trow"><span class="tl">CYA (stabilizer)<small>ppm · optional</small></span><span class="stepr"><button>−</button><b class="off">—</b><button>+</button></span></div>
+      </div>
+      <div class="lab">The water</div>
+      <div class="chips"><button class="on">Clear</button><button>Hazy</button><button>Cloudy</button><button>Green</button></div>
+      <div class="lab">Added today</div>
+      <div class="chips"><button>Liquid chlorine</button><button class="on">Tablets</button><button>Shock</button><button>Acid</button><button>Other</button></div>
+      <button class="go2">Save test</button>
+      <p class="fine" style="text-align:center;margin-top:10px">Steppers start at your last test. Leave the optional ones at "—".</p>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> free chlorine (0–10 ppm in 0.5 steps) and pH (6.8–8.2 in 0.1) each time; alkalinity and CYA when you test them; how the water looks; what you added. The water temperature and the pump's run time are filled in by Solstice.</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 3 · the Water history (tap the section)</div>
+    <div class="pagepad"><div class="m-sheet"><div class="m-grab"></div>
+      <h4>Water · last 30 days</h4><div class="m-sub">Your tests against the pump's hours and the water temperature</div>
+      <svg id="wch" viewBox="0 0 330 150" style="width:100%;margin-top:10px"></svg>
+      <div class="key"><span><i style="background:#4ef0a6"></i>free chlorine</span><span><i style="background:#c4a2ff"></i>pH</span><span><i style="background:rgba(108,196,255,.6)"></i>pump hours</span></div>
+      <p class="m-sub" style="margin-top:10px">Between tests, chlorine fell about <b style="color:var(--text)">1.4 ppm a day</b> at 77–82° (6 tests). Hazy days followed weeks under 3 turnovers a day.</p>
+      <div class="tl2">
+        <div><em>Oct 5</em><span><b>3.0 · 7.6</b> · clear · tablets</span></div>
+        <div><em>Oct 2</em><span><b>1.5 · 7.8</b> · hazy</span></div>
+        <div><em>Sep 29</em><span><b>2.0 · 7.7</b> · clear</span></div>
+      </div>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> each test on a timeline with the daily pump hours behind it, and two plain findings once there are enough tests: how fast chlorine is used at this water temperature, and whether hazy water followed short run times.</p>
+      <p>Illustrative: the findings need about 6 tests over 3 weeks before they show.</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 4 · what it changes</div>
+    <div class="pagepad"><div class="card">
+      <div class="rec learn"><b>Hazy water logged</b><br>Start a 2-day Clear-up at 2,000 RPM? Autopilot holds the plan while it runs and goes back to it afterwards.
+        <div class="row2" style="display:flex;gap:8px;margin-top:10px"><button class="wbtn" style="flex:1;text-align:center;background:var(--solar);color:#1a1204;border:0">Start Clear-up</button><button class="wbtn" style="flex:1;text-align:center">Not now</button></div></div>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> logging Hazy, Cloudy or Green offers the Clear-up you already have (never starts it by itself). Chlorine and pH outside their range only show amber on the card; Solstice doesn't tell you what to add.</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 5 · optional reminder</div>
+    <div class="pagepad"><div class="push"><div class="ic">💧</div><div><b>Time to test the pool</b><p>Last test 5 days ago. Water is 84° and the pump ran 9 h a day since.</p><small>Solstice · example</small></div></div></div>
+    <div class="cap"><p><b class="new">New (optional):</b> one push when the last test is older than your interval (say 5 days); none while you test on time.</p></div>
+  </div>
+
+  <div class="wrules">
+    <h3>The rules</h3>
+    <ul>
+      <li><b>Ranges shown:</b> free chlorine 1–4 ppm, pH 7.2–7.8, alkalinity 80–120 ppm, CYA 30–50 ppm (common residential guidance). They only color the values; you can change them.</li>
+      <li><b>Pool only</b> to start; the spa can get its own log later if you test it separately.</li>
+      <li><b>Nothing is written to the controller.</b> A Clear-up starts only when you tap it.</li>
+      <li><b>Unchanged:</b> the planner, Autopilot, the Clear-up and every other card.</li>
+    </ul>
+  </div>
+</div>
+<script>
+// illustrative: six tests and 30 days of pump hours
+const T = [[2, 2.5, 7.5], [6, 3, 7.6], [10, 1.5, 7.7], [16, 2, 7.6], [24, 2, 7.7], [27, 1.5, 7.8], [30, 3, 7.6]];
+const H = Array.from({ length: 31 }, (_, i) => i < 20 ? 8 : i < 27 ? 9 : 24);
+const X = d => 24 + d / 30 * 298, Yc = v => 120 - v / 5 * 100, Yp = v => 120 - (v - 7) / 1 * 100;
+let s = '';
+H.forEach((h, i) => s += `<rect x="${X(i) - 3}" y="${120 - h / 24 * 60}" width="6" height="${h / 24 * 60}" fill="rgba(108,196,255,.25)"/>`);
+s += `<rect x="24" y="${Yc(4)}" width="298" height="${Yc(1) - Yc(4)}" fill="rgba(78,240,166,.06)"/>`;
+s += `<polyline points="${T.map(t => `${X(t[0])},${Yc(t[1])}`).join(' ')}" fill="none" stroke="#4ef0a6" stroke-width="2"/>` + T.map(t => `<circle cx="${X(t[0])}" cy="${Yc(t[1])}" r="3" fill="#4ef0a6"/>`).join('');
+s += `<polyline points="${T.map(t => `${X(t[0])},${Yp(t[2])}`).join(' ')}" fill="none" stroke="#c4a2ff" stroke-width="1.5" stroke-dasharray="3 3"/>`;
+[['Sep 5', 0], ['Sep 20', 15], ['Oct 5', 30]].forEach(([l, d]) => s += `<text x="${X(d)}" y="140" text-anchor="${d === 0 ? 'start' : d === 30 ? 'end' : 'middle'}" fill="rgba(242,244,248,.45)" font-size="9" font-family="JetBrains Mono">${l}</text>`);
+[0, 2, 4].forEach(v => s += `<text x="2" y="${Yc(v) + 3}" fill="rgba(242,244,248,.45)" font-size="9" font-family="JetBrains Mono">${v}</text>`);
+document.getElementById('wch').innerHTML = s;
+</script>
+</body></html>
