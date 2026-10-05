@@ -239,7 +239,9 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   const btu = rise != null ? settings.spaGallons * 8.34 * rise : null, heatMin = btu != null ? Math.round(btu / (settings.heaterBtu * .82) * 60) : null, propaneGal = btu != null ? Math.round(btu / .82 / 91_500 * 100) / 100 : null;
   const spaRpm = speeds.get(1) ?? 3190, spaSession = { spaGallons: settings.spaGallons, spaTemp, spaSet, riseF: rise, heatMinutes: heatMin, propaneGal, propaneUsd: propaneGal != null ? Math.round(propaneGal * settings.propaneUsdPerGal * 100) / 100 : null,
     pumpWattsAtSpa: Math.round(W(spaRpm)), blowerWatts: settings.loads['2'] ?? 0, electricUsdPerHour: usd((W(spaRpm) + (settings.loads['2'] ?? 0) + (settings.loads['4'] ?? 0)) / 1000, rate, true) };
-  return { id: 'pool', runFor: await kv.get<Record<string, number>>(`${siteId}:pool:runFor`) ?? {}, autopilot: auto, pending, extras: { hourlyToday: extraHourly.map(v => Math.round(v * 1000) / 1000), todayKwh: Math.round(extraKwh * 100) / 100, nowW: extraNowW, loads: settings.loads, uvW: settings.uv ? UV_W : 0, lightReadings30d: lightH[0]?.h ?? 0 }, spaSession, name: 'Pool pump', linked: configured() && !!snap, error, settings, snapshot: snap,
+  const untilAll = await kv.get<Record<string, number>>(`${siteId}:pool:until`) ?? {}, nowMs = Date.now();
+  const until = Object.fromEntries(Object.entries(untilAll).filter(([id, t]) => t > nowMs && snap?.circuits.find(c => c.id === Number(id))?.on));   // only runs still going
+  return { id: 'pool', runFor: await kv.get<Record<string, number>>(`${siteId}:pool:runFor`) ?? {}, until, autopilot: auto, pending, extras: { hourlyToday: extraHourly.map(v => Math.round(v * 1000) / 1000), todayKwh: Math.round(extraKwh * 100) / 100, nowW: extraNowW, loads: settings.loads, uvW: settings.uv ? UV_W : 0, lightReadings30d: lightH[0]?.h ?? 0 }, spaSession, name: 'Pool pump', linked: configured() && !!snap, error, settings, snapshot: snap,
     live: snap?.pump ? { watts: snap.pump.watts, rpm: snap.pump.rpm, running: snap.pump.running, gpm: snap.pump.gpm, at: snap.at, waterTemp, airTemp: snap.airTemp, freezeMode: snap.freezeMode,
       on: snap.circuits.filter(c => c.on).map(c => c.name), activeRpm: Math.max(0, ...snap.circuits.filter(c => c.on).map(c => speeds.get(c.id) ?? 0)) } : null,
     model: { measured: await measuredPoints(siteId), curve: [1000, 1500, 1800, 2400, 3000, 3450].map(r => ({ rpm: r, watts: Math.round(W(r)) })) },
@@ -281,8 +283,15 @@ export async function poolCommand(siteId: string, cmd: PoolOwnerCommand, run?: P
   try { snap = await writeOwnerPool(cmd, run); }
   catch (e) { if (e instanceof GuardRefusal) await logPool(siteId, `Refused your change: ${e.reason}`, 'refused'); throw e; }
   await recordReading(siteId, snap);
+  if (cmd.kind === 'spaHeat') { await logPool(siteId, cmd.on ? `You set spa heat to ${cmd.setF}°` : 'You turned spa heat off', 'you'); return snap; }
   const name = snap.circuits.find(c => c.id === cmd.id)?.name.replace(/[<>&"'`]/g, '') ?? `Circuit ${cmd.id}`;
-  if (cmd.kind === 'circuit' && cmd.on) await kv.set(`${siteId}:pool:runFor`, { ...(await kv.get<Record<string, number>>(`${siteId}:pool:runFor`) ?? {}), [cmd.id]: cmd.minutes! });
+  if (cmd.kind === 'circuit') {
+    if (cmd.on) await kv.set(`${siteId}:pool:runFor`, { ...(await kv.get<Record<string, number>>(`${siteId}:pool:runFor`) ?? {}), [cmd.id]: cmd.minutes! });
+    // when each circuit started from the app turns itself off (the Boost button's "time left"); gone once it is off
+    const until = { ...(await kv.get<Record<string, number>>(`${siteId}:pool:until`) ?? {}) };
+    if (cmd.on) until[cmd.id] = Date.now() + cmd.minutes! * 60_000; else delete until[cmd.id];
+    await kv.set(`${siteId}:pool:until`, until);
+  }
   const dur = (m: number) => m % 60 ? `${m} min` : `${m / 60} h`;
   await logPool(siteId, cmd.kind === 'speed' ? `You set ${name} to ${cmd.rpm.toLocaleString()} RPM` : cmd.on ? `You turned ${name} on for ${dur(cmd.minutes!)}` : `You turned ${name} off`, 'you');
   return snap;

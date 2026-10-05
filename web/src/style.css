@@ -978,4 +978,13 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .pc-rpm{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
 .pc-rpm .bt{font-size:13.5px;font-weight:600;min-width:0}.pc-rpm .bt small{display:block;font-size:11px;color:var(--mute);font-weight:400}
 #pcGo{width:100%;box-sizing:border-box;margin-top:14px;background:var(--batt);color:#04140c}
+/* frames 3–4: the Boost button and sheet, spa heat */
+.pc-row{display:flex;gap:8px;margin-top:10px}
+.pc-row:empty{display:none}
+.pc-row button{all:unset;box-sizing:border-box;cursor:pointer;flex:1;display:flex;align-items:center;justify-content:center;gap:7px;padding:11px 8px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);font-weight:600;font-size:12.5px}
+.pc-row button small{font:500 10.5px "JetBrains Mono";color:var(--mute)}
+.pc-row button.on{border-color:rgba(255,122,102,.5);background:rgba(255,122,102,.1)}
+.pc-row button.send{border-color:rgba(255,193,94,.45)}
+.pc-heat .seg2{margin-top:10px}
+.pc-heat .tstat{margin-top:4px}
 /* end w-pool-control */

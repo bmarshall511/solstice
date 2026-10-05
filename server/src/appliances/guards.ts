@@ -166,9 +166,16 @@ export function guardPoolWrite<W extends PoolWrite>(w: W, ctx: PoolGuardContext)
  * pump slot. Wider than Autopilot's limits on purpose (the spa, lights, jets and blower are the owner's to switch); never freeze
  * protection, and pump speeds stay inside the pump's range. The run time is the controller's egg timer, 1 min to 12 h.
  */
-export const POOL_RUN_MAX_MIN = 720;
-export type PoolOwnerCommand = { kind: 'circuit'; id: number; on: boolean; minutes?: number } | { kind: 'speed'; id: number; rpm: number };
-export function guardOwnerPool(c: PoolOwnerCommand, ctx: Omit<PoolGuardContext, 'managed'>): Verdict<PoolOwnerCommand> {
+export const POOL_RUN_MAX_MIN = 720, SPA_SET_MIN_F = 80, SPA_SET_MAX_F = 104, HEAT_MODE_OFF = 0, HEAT_MODE_HEATER = 3;
+export type PoolOwnerCommand = { kind: 'circuit'; id: number; on: boolean; minutes?: number } | { kind: 'speed'; id: number; rpm: number }
+  | { kind: 'spaHeat'; on: boolean; setF?: number };
+export function guardOwnerPool(c: PoolOwnerCommand, ctx: Omit<PoolGuardContext, 'managed'> & { hasSpa?: boolean }): Verdict<PoolOwnerCommand> {
+  if (c?.kind === 'spaHeat') {   // the spa's heater (frame 4): its setpoint 80–104 °F and heater on or off; it heats only while the Spa circuit runs
+    if (!ctx.hasSpa) return refuse('this controller reports no spa');
+    if (typeof c.on !== 'boolean') return refuse('heat must be on or off');
+    if (c.on && !(Number.isInteger(c.setF) && c.setF! >= SPA_SET_MIN_F && c.setF! <= SPA_SET_MAX_F)) return refuse(`spa heat is set ${SPA_SET_MIN_F}–${SPA_SET_MAX_F}°`);
+    return allow(c);
+  }
   if (!c || !Number.isInteger(c.id)) return refuse('pick a circuit');
   const info = ctx.circuits.find(x => x.id === c.id);
   if (c.id === FREEZE_CIRCUIT || /freeze/i.test(info?.name ?? '')) return refuse('freeze protection is never switched');

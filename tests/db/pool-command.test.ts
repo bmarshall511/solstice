@@ -12,12 +12,12 @@ const NAMES: Array<[number, string, number]> = [[1, 'Spa', 1], [2, 'Air Blower',
 function fakeUnit(o: { ignore?: boolean; slowAck?: boolean } = {}) {
   const on = new Map(NAMES.map(([id]) => [id, id === 6])), egg = new Map(NAMES.map(([id]) => [id, 720]));
   const slots = [{ circuitId: 6, speed: 1500 }, { circuitId: 8, speed: 2400 }, { circuitId: 5, speed: 3400 }, { circuitId: 1, speed: 3190 }, { circuitId: 132, speed: 1000 }];
-  const writes: string[] = [];
+  const writes: string[] = [], spa = { setPoint: 98, heatMode: 0 };
   const ack = async () => { if (o.slowAck) throw new Error('time out waiting for response'); return { val: true }; };
   const c: any = {
     getVersionAsync: async () => ({ version: 'test' }),
     equipment: {
-      getEquipmentStateAsync: async () => ({ airTemp: 70, freezeMode: 0, circuitArray: [...on].map(([id, s]) => ({ id, state: s ? 1 : 0 })), bodies: [{ id: 1, currentTemp: 75, setPoint: 89, heatMode: 0, heatStatus: 0 }] }),
+      getEquipmentStateAsync: async () => ({ airTemp: 70, freezeMode: 0, circuitArray: [...on].map(([id, s]) => ({ id, state: s ? 1 : 0 })), bodies: [{ id: 1, currentTemp: 75, setPoint: 89, heatMode: 0, heatStatus: 0 }, { id: 2, currentTemp: 89, ...spa, heatStatus: 0 }] }),
       getControllerConfigAsync: async () => ({ circuitArray: NAMES.map(([circuitId, name, fn]) => ({ circuitId, name, freeze: 0, function: fn, eggTimer: egg.get(circuitId) })) }),
       getEquipmentConfigurationAsync: async () => ({ pumps: [{ id: 1, type: 3, name: 'Pump', minSpeed: 450, maxSpeed: 3450, primingSpeed: 1000, circuits: [] }] }),
     },
@@ -26,6 +26,10 @@ function fakeUnit(o: { ignore?: boolean; slowAck?: boolean } = {}) {
       getPumpStatusAsync: async () => ({ isRunning: true, pumpWatts: 300, pumpRPMs: 1500, pumpGPMs: 255, pumpCircuits: slots.map(s => ({ ...s, isRPMs: true })) }),
       setPumpSpeedAsync: async (_p: number, idx: number, rpm: number) => { writes.push(`speed slot ${idx} ${rpm}`); if (!o.ignore) slots[idx].speed = rpm; return ack(); },
     },
+    bodies: {
+      setSetPointAsync: async (i: number, f: number) => { writes.push(`setpoint ${i} ${f}`); if (!o.ignore) spa.setPoint = f; return ack(); },
+      setHeatModeAsync: async (i: number, m: number) => { writes.push(`heat ${i} ${m}`); if (!o.ignore) spa.heatMode = m; return ack(); },
+    },
     circuits: {
       setCircuitRuntimebyIdAsync: async (id: number, m: number) => { writes.push(`egg ${id} ${m}`); egg.set(id, m); return ack(); },
       setCircuitStateAsync: async (id: number, s: boolean) => { writes.push(`state ${id} ${s}`); if (!o.ignore) on.set(id, s); return ack(); },
@@ -33,7 +37,7 @@ function fakeUnit(o: { ignore?: boolean; slowAck?: boolean } = {}) {
   };
   return { writes, egg, run: async <T>(fn: (c: any) => Promise<T>) => fn(c) };
 }
-const CTX = { circuits: NAMES.map(([id, name, fn]) => ({ id, name, function: fn })), pumpCircuits: [6, 8, 5, 1, 132], minRpm: 450, maxRpm: 3450 };
+const CTX = { circuits: NAMES.map(([id, name, fn]) => ({ id, name, function: fn })), pumpCircuits: [6, 8, 5, 1, 132], minRpm: 450, maxRpm: 3450, hasSpa: true };
 
 describe('guardOwnerPool', () => {
   it('PC-1 the owner may switch the spa, lights and blower (Autopilot may not); never freeze protection; run times 1 min–12 h', () => {
@@ -49,6 +53,22 @@ describe('guardOwnerPool', () => {
     expect(guardOwnerPool({ kind: 'speed', id: 3, rpm: 2000 }, CTX).ok).toBe(false);                     // a light has no pump speed
     expect(guardOwnerPool({ kind: 'speed', id: 6, rpm: 3500 }, CTX).ok).toBe(false);
     expect(guardOwnerPool({ kind: 'speed', id: 6, rpm: 1800.5 }, CTX).ok).toBe(false);
+  });
+});
+
+describe('spa heat (batch 2)', () => {
+  it('PC-9 the guard: 80–104° whole degrees when on; off needs no setpoint; no spa, no heat', () => {
+    expect(guardOwnerPool({ kind: 'spaHeat', on: true, setF: 100 }, CTX).ok).toBe(true);
+    expect(guardOwnerPool({ kind: 'spaHeat', on: false }, CTX).ok).toBe(true);
+    for (const setF of [79, 105, 100.5, undefined]) expect(guardOwnerPool({ kind: 'spaHeat', on: true, setF }, CTX).ok, String(setF)).toBe(false);
+    expect(guardOwnerPool({ kind: 'spaHeat', on: true, setF: 100 }, { ...CTX, hasSpa: false }).ok).toBe(false);
+  });
+  it('PC-10 on: the setpoint first, then the heater mode (3), on the spa body (index 1); off: mode 0 only', async () => {
+    const u = fakeUnit(), snap = await writeOwnerPool({ kind: 'spaHeat', on: true, setF: 100 }, u.run, 0);
+    expect(u.writes).toEqual(['setpoint 1 100', 'heat 1 3']);
+    expect(snap.bodies[1]).toMatchObject({ setPoint: 100, heatMode: 3 });
+    await writeOwnerPool({ kind: 'spaHeat', on: false }, u.run, 0);
+    expect(u.writes.slice(2)).toEqual(['heat 1 0']);
   });
 });
 
@@ -93,5 +113,15 @@ describe('poolCommand (PGlite)', () => {
     const saved = process.env.SCREENLOGIC_SYSTEM; delete process.env.SCREENLOGIC_SYSTEM;
     try { await expect(poolCommand('nu', { kind: 'circuit', id: 4, on: true, minutes: 30 })).rejects.toBeInstanceOf(PoolUnavailable); }
     finally { if (saved !== undefined) process.env.SCREENLOGIC_SYSTEM = saved; }
+  });
+  it('PC-11 the time each app-started circuit turns itself off is kept until it is turned off (the Boost button), and spa heat is logged', async () => {
+    const u = fakeUnit(), t0 = Date.now();
+    await poolCommand('pb', { kind: 'circuit', id: 8, on: true, minutes: 120 }, u.run);
+    const until = (await kv.get<Record<string, number>>('pb:pool:until'))![8];
+    expect(until).toBeGreaterThanOrEqual(t0 + 120 * 60_000); expect(until).toBeLessThan(t0 + 121 * 60_000);
+    await poolCommand('pb', { kind: 'circuit', id: 8, on: false }, u.run);
+    expect(await kv.get('pb:pool:until')).toEqual({});
+    await poolCommand('pb', { kind: 'spaHeat', on: true, setF: 101 }, u.run);
+    expect((await kv.get<any[]>('pb:pool:autolog'))![0].text).toBe('You set spa heat to 101°');
   });
 });

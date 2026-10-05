@@ -90,6 +90,7 @@ function drawControls(S) {
     const sub = busy ? 'sending…' : `${c.on ? 'on' : 'off'}${isSpa(c) ? (spaT != null ? ` · ${spaT}°` : '') : rpm ? ` · ${rpm.toLocaleString()} RPM` : ''}`;
     return `<button class="pc${c.on ? ' on' : ''}${busy ? ' send' : ''}" data-id="${c.id}" aria-pressed="${c.on}"><i></i><b>${esc(c.name)}</b><em data-more aria-label="${esc(c.name)} settings">›</em><small>${sub}</small></button>`;
   }).join('') + (pc.err ? `<p class="fine pc-err">${esc(pc.err)}</p>` : '');
+  drawBoost(S);
   let press = null;
   box.onpointerdown = e => { const b = e.target.closest('.pc'); if (!b) return; press = setTimeout(() => { press = 'long'; openCircuit(S, +b.dataset.id); }, 550); };
   box.onpointerup = box.onpointerleave = () => { if (press && press !== 'long') clearTimeout(press); };
@@ -101,9 +102,39 @@ function drawControls(S) {
     poolSend(S, c.on ? { kind: 'circuit', id, on: false } : { kind: 'circuit', id, on: true, minutes: d.runFor?.[id] ?? 60 });
   };
 }
+/* frame 3: Boost runs the boost circuit (High Speed) for 1–4 h on its timer; while it runs the button shows the time left and ends it */
+const boostId = S => S.pool?.settings?.boostCircuit ?? 8;
+const leftText = ms => { const m = Math.max(1, Math.round(ms / 60_000)); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} m` : `${m} m`; };
+function drawBoost(S) {
+  const d = S.pool, row = $('poolBoost'), id = boostId(S), c = d.snapshot?.circuits.find(x => x.id === id); if (!row) return;
+  if (S.guest || !c) { row.innerHTML = ''; return; }
+  const busy = pc.sending.has(id), until = d.until?.[id];
+  row.innerHTML = busy ? `<button class="send" disabled>Sending\u2026</button>`
+    : c.on ? `<button class="on" id="pcBoost">Boosting <small id="pcBoostLeft">${until ? `${leftText(until - Date.now())} left \u00b7 ` : ''}End</small></button>`
+    : `<button id="pcBoost">Boost <small>1\u20134 h</small></button>`;
+  if ($('pcBoost')) $('pcBoost').onclick = () => c.on ? poolSend(S, { kind: 'circuit', id, on: false }) : openBoost(S);
+}
+/** The Boost button's time left, on the 1 s tick. */
+export function tickBoost(S) { const u = S.pool?.until?.[boostId(S)], el = $('pcBoostLeft'); if (el && u) el.textContent = `${leftText(u - Date.now())} left \u00b7 End`; }
+function openBoost(S) {
+  const d = S.pool, id = boostId(S), snap = d.snapshot, c = snap.circuits.find(x => x.id === id), rpm0 = speedsOf(snap).get(id);
+  const lim = { min: snap.pump?.minRpm ?? 450, max: snap.pump?.maxRpm ?? 3450 }, hours = [60, 120, 180, 240];
+  let pick = hours.includes(d.runFor?.[id]) ? d.runFor[id] : 60, rpm = rpm0;
+  $('sheetBody').innerHTML = `<div class="shead"><h4>Boost</h4><button class="x" id="pcX" aria-label="Close">\u2715</button></div>
+    <p class="sub">${esc(c.name)} on top of the schedule, for skimming and mixing chemicals</p>
+    <div class="pc-lbl">For</div><div class="pc-runs" id="pcRuns">${hours.map(m => `<button data-m="${m}">${m / 60} h</button>`).join('')}</div>
+    ${rpm0 != null ? `<div class="pc-rpm"><div class="bt">Speed<small>${esc(c.name)}'s saved speed</small></div><div class="stp"><button id="pcDn" aria-label="Slower">\u2212</button><b id="pcRpm"></b><button id="pcUp" aria-label="Faster">+</button></div></div>` : ''}
+    <button class="primary" id="pcGo"></button>`;
+  const draw = () => { document.querySelectorAll('#pcRuns button').forEach(b => b.classList.toggle('on', +b.dataset.m === pick)); if ($('pcRpm')) $('pcRpm').textContent = rpm.toLocaleString(); $('pcGo').textContent = `Boost until ${clockAt(Date.now() + pick * 60_000)}`; };
+  $('pcRuns').onclick = e => { const b = e.target.closest('button'); if (!b) return; pick = +b.dataset.m; draw(); };
+  if ($('pcDn')) { const step = dv => { rpm = Math.max(lim.min, Math.min(lim.max, Math.round((rpm + dv) / 50) * 50)); draw(); }; $('pcDn').onclick = () => step(-50); $('pcUp').onclick = () => step(50); }
+  $('pcX').onclick = () => $('phone').classList.remove('open');
+  $('pcGo').onclick = () => { $('phone').classList.remove('open'); poolSend(S, ...(rpm0 != null && rpm !== rpm0 ? [{ kind: 'speed', id, rpm }] : []), { kind: 'circuit', id, on: true, minutes: pick }); };
+  draw(); $('phone').classList.add('open');
+}
 /** Send one or more commands for a circuit in order; the tile says "sending…" until the controller's read-back answers. */
 async function poolSend(S, ...cmds) {
-  const id = cmds[0].id, name = S.pool.snapshot?.circuits.find(c => c.id === id)?.name ?? 'Pool';
+  const id = cmds.find(c => c.id != null)?.id ?? 1, name = S.pool.snapshot?.circuits.find(c => c.id === id)?.name ?? 'Pool';
   pc.sending.add(id); pc.err = null; drawControls(S);
   try { for (const c of cmds) S.pool = await api.poolCommand(c); }
   catch (e) { pc.err = `${name}: ${e.message}`; }
@@ -115,29 +146,42 @@ function openCircuit(S, id) {
   const runs = /light/i.test(c.name) || isSpa(c) ? [...RUNS, LONG_RUN] : RUNS, sched = (d.current?.schedules ?? []).filter(x => x.circuitId === id);
   let pick = d.runFor?.[id] ?? 60, rpm = rpm0;
   if (!runs.some(r => r[0] === pick)) pick = 60;
+  // frame 4: the spa's heat (heater mode 3 = on, 0 = off) and setpoint 80–104°; the heater only runs while the Spa circuit is on
+  const body = isSpa(c) ? snap.bodies?.[1] : null, heat0 = body?.heatMode === 3, set0 = Math.min(104, Math.max(80, body?.setPoint || 100));
+  let heat = heat0, setF = set0;
   $('sheetBody').innerHTML = `<div class="shead"><h4>${esc(c.name)}</h4><button class="x" id="pcX" aria-label="Close">✕</button></div>
     <p class="sub">${c.on ? 'On' : 'Off'} · ${sched.length ? `on schedule ${sched.map(x => `${hm(x.start)}–${hm(x.stop)}`).join(', ')}` : 'not on any schedule'}</p>
     <div id="pcRun"${c.on ? ' hidden' : ''}><div class="pc-lbl">Run for</div><div class="pc-runs${runs.length > 4 ? ' five' : ''}" id="pcRuns">${runs.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
-    ${rpm0 != null ? `<div class="pc-rpm"><div class="bt">Speed<small>whenever ${esc(c.name)} runs · ${lim.min.toLocaleString()}–${lim.max.toLocaleString()}</small></div><div class="stp"><button id="pcDn" aria-label="Slower">−</button><b id="pcRpm"></b><button id="pcUp" aria-label="Faster">+</button></div></div>` : ''}
+    ${body ? `<div class="pc-heat"><div class="pc-lbl">Spa heat</div><div class="seg2 wide" id="pcHeat"><button data-h="0">Off</button><button data-h="1">On</button></div>
+      <div class="tstat" id="pcDial"><div class="dial"><button class="step" id="pcHdn" aria-label="Cooler">\u2212</button><div class="sp"><small>Heat to</small><b class="heat" id="pcSet"></b><span>${body.heating ? 'heating now' : 'heater off now'}</span></div><button class="step" id="pcHup" aria-label="Warmer">+</button></div></div></div>` : ''}
+    ${!body && rpm0 != null ? `<div class="pc-rpm"><div class="bt">Speed<small>whenever ${esc(c.name)} runs · ${lim.min.toLocaleString()}–${lim.max.toLocaleString()}</small></div><div class="stp"><button id="pcDn" aria-label="Slower">−</button><b id="pcRpm"></b><button id="pcUp" aria-label="Faster">+</button></div></div>` : ''}
     <button class="primary" id="pcGo"></button>${c.on ? '<button class="link" id="pcOff" hidden>Turn off</button>' : ''}
     <p class="fine" id="pcNote" style="margin-top:10px"></p>`;
   const draw = () => {
     document.querySelectorAll('#pcRuns button').forEach(b => b.classList.toggle('on', +b.dataset.m === pick));
     if ($('pcRpm')) $('pcRpm').textContent = rpm.toLocaleString();
-    const sped = rpm0 != null && rpm !== rpm0;
-    $('pcGo').textContent = c.on ? (sped ? `Save ${rpm.toLocaleString()} RPM` : 'Turn off') : `Turn on for ${runLabel(pick)}`;
-    if ($('pcOff')) $('pcOff').hidden = !sped;
-    $('pcNote').textContent = c.on ? (sped ? `The new speed applies now and whenever ${c.name} runs, schedules included.` : '')
+    const sped = rpm0 != null && rpm !== rpm0, heated = !!body && (heat !== heat0 || (heat && setF !== set0));
+    if (body) { document.querySelectorAll('#pcHeat button').forEach(b => b.classList.toggle('on', +b.dataset.h === +heat)); $('pcDial').hidden = !heat; $('pcSet').innerHTML = `${setF}<sup>\u00b0</sup>`; }
+    $('pcGo').textContent = c.on ? (heated ? (heat ? `Save heat \u00b7 ${setF}\u00b0` : 'Turn spa heat off') : sped ? `Save ${rpm.toLocaleString()} RPM` : 'Turn off')
+      : body ? `Spa on${heat ? ` \u00b7 heat to ${setF}\u00b0` : ''} for ${runLabel(pick)}` : `Turn on for ${runLabel(pick)}`;
+    if ($('pcOff')) $('pcOff').hidden = !(sped || heated);
+    $('pcNote').textContent = body ? `The heater only runs while the Spa circuit is on. Setpoint 80\u2013104\u00b0. Autopilot never touches the spa, its heat, the lights or the heater; only you do.`
+      : c.on ? (sped ? `The new speed applies now and whenever ${c.name} runs, schedules included.` : '')
       : `Turns itself off at ${clockAt(Date.now() + pick * 60_000)} (the controller's own timer, so it stops even if Solstice is offline).`;
   };
   const step = dv => { rpm = Math.max(lim.min, Math.min(lim.max, Math.round((rpm + dv) / 50) * 50)); draw(); };
   if ($('pcRuns')) $('pcRuns').onclick = e => { const b = e.target.closest('button'); if (!b) return; pick = +b.dataset.m; draw(); };
   if ($('pcDn')) { $('pcDn').onclick = () => step(-50); $('pcUp').onclick = () => step(50); }
+  if (body) {
+    $('pcHeat').onclick = e => { const b = e.target.closest('button'); if (!b) return; heat = b.dataset.h === '1'; draw(); };
+    $('pcHdn').onclick = () => { setF = Math.max(80, setF - 1); draw(); }; $('pcHup').onclick = () => { setF = Math.min(104, setF + 1); draw(); };
+  }
   $('pcX').onclick = () => $('phone').classList.remove('open');
   const close = () => $('phone').classList.remove('open');
   $('pcGo').onclick = () => {
-    const sped = rpm0 != null && rpm !== rpm0, cmds = sped ? [{ kind: 'speed', id, rpm }] : [];
-    if (!c.on) cmds.push({ kind: 'circuit', id, on: true, minutes: pick }); else if (!sped) cmds.push({ kind: 'circuit', id, on: false });
+    const sped = rpm0 != null && rpm !== rpm0, heated = !!body && (heat !== heat0 || (heat && setF !== set0));
+    const cmds = [...(heated ? [heat ? { kind: 'spaHeat', on: true, setF } : { kind: 'spaHeat', on: false }] : []), ...(sped ? [{ kind: 'speed', id, rpm }] : [])];
+    if (!c.on) cmds.push({ kind: 'circuit', id, on: true, minutes: pick }); else if (!sped && !heated) cmds.push({ kind: 'circuit', id, on: false });
     close(); poolSend(S, ...cmds);
   };
   if ($('pcOff')) $('pcOff').onclick = () => { close(); poolSend(S, { kind: 'circuit', id, on: false }); };

@@ -474,11 +474,12 @@ app.post('/api/appliances/pool/apply-tomorrow', wrap(async (req, res) => {
   await kv.set(`${id}:pool:pending`, null as any);
   res.json(r);
 }));
-/** The owner's own pool commands (mockup w): {kind:'circuit', id, on, minutes} or {kind:'speed', id, rpm}; answers the fresh Pool card. */
+/** The owner's own pool commands (mockup w): {kind:'circuit', id, on, minutes}, {kind:'speed', id, rpm} or {kind:'spaHeat', on, setF}; answers the fresh Pool card. */
 app.post('/api/appliances/pool/command', express.json({ limit: '1kb' }), wrap(async (req, res) => {
   const b = req.body ?? {}, kind = String(b.kind ?? ''), id = Number(b.id);
   const cmd = kind === 'circuit' ? { kind, id, on: b.on === true ? true : b.on === false ? false : (null as any), minutes: b.minutes == null ? undefined : Number(b.minutes) }
-    : kind === 'speed' ? { kind, id, rpm: Number(b.rpm) } : null;
+    : kind === 'speed' ? { kind, id, rpm: Number(b.rpm) }
+    : kind === 'spaHeat' ? { kind, on: b.on === true ? true : b.on === false ? false : (null as any), setF: b.setF == null ? undefined : Number(b.setF) } : null;
   if (!cmd) return res.status(400).json({ error: 'unknown pool command' });
   const sid = site(req);
   try { await poolCommand(sid, cmd as PoolOwnerCommand); }
