@@ -245,7 +245,7 @@ function drawComfort(S) {
 function hotDay(v, P) {
   const pf = P?.precool ? P.precoolFrom : 11, pt = P?.precool ? P.precoolTo : 16, ct = Math.min(21, pt + 4), out = [];
   for (let h = 0; h < 24; h++) {
-    const [f, k] = isNightAt(h, v) ? [v.nightF, 'n'] : v.precoolDepth && h >= pf && h < pt ? [v.dayF - v.precoolDepth, 'p'] : v.precoolDepth && h >= pt && h < ct ? [v.dayF + v.driftF, 'c'] : [v.dayF, 'd'];
+    const [f, k] = isNightAt(h, v) ? [v.nightF, 'n'] : v.precoolDepth && h >= pf && h < pt ? [v.dayF - v.precoolDepth, 'p'] : v.precoolDepth && v.driftF && h >= pt && h < ct ? [v.dayF + v.driftF, 'c'] : [v.dayF, 'd'];
     const last = out.at(-1); if (last && last[2] === f && last[3] === k) last[1] = h + 1; else out.push([h, h + 1, f, k]);
   }
   return out;

@@ -1054,6 +1054,7 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .ag-day i{display:grid;place-items:center;height:100%;font:500 10px "JetBrains Mono";font-style:normal;color:#0b0f18}
 .ag-dlab{position:relative;height:14px;font:500 9.5px "JetBrains Mono";color:var(--mute);margin-top:4px}
 .ag-dlab span{position:absolute;transform:translateX(-50%)}.ag-dlab span:first-child{transform:none}.ag-dlab span:last-child{transform:translateX(-100%)}
+#cmGo,#ngGo{display:block;width:100%;box-sizing:border-box;text-align:center;margin-top:14px}
 .ag-opt{all:unset;box-sizing:border-box;cursor:pointer;display:block;width:100%;padding:12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b);margin-top:10px}
 .ag-opt.pick{border-color:rgba(255,255,255,.4);background:rgba(255,255,255,.08)}
 .ag-opt b{font-size:13.5px}
