@@ -33,6 +33,7 @@ import { outageDetail } from './outage.js';
 import { alertRoutes, notify } from './notify.js';
 import { ercotNow, fiveMinuteWatch, nightlyWatch, cronSites, fiveMinuteSteps, nightlySteps } from './watch.js';
 import { gridWatch } from './gridwatch.js';
+import { poolChanges, dismissPoolSuggestion } from './appliances/poolLearn.js';
 import { pruneOld } from './retention.js';
 import { spareWatch, spareHistory } from './spare.js';
 import { digestRoutes, maybeWeeklyDigest } from './digest.js';
@@ -490,6 +491,19 @@ app.post('/api/appliances/pool/command', express.json({ limit: '1kb' }), wrap(as
   const sid = site(req);
   try { await poolCommand(sid, cmd as PoolOwnerCommand); }
   catch (e) { if (e instanceof GuardRefusal) return res.status(400).json({ error: e.reason }); if (e instanceof PoolUnavailable) return res.status(503).json({ error: e.message }); throw e; }
+  res.json(await poolDetail(sid, await settingsFor(req), await rateFor(sid)));
+}));
+/** Mockup ae: a pool suggestion. {action:'accept'|'dismiss', key:'skim:16'|'goal:3.5'}; accepting writes only Solstice's settings. */
+app.post('/api/appliances/pool/suggestion', express.json({ limit: '1kb' }), wrap(async (req, res) => {
+  const sid = site(req), action = String(req.body?.action ?? ''), key = String(req.body?.key ?? ''), m = /^(skim|goal):(\d{1,2}(?:\.5)?)$/.exec(key);
+  if (!m || !['accept', 'dismiss'].includes(action)) return res.status(400).json({ error: 'action must be accept or dismiss, with a skim or goal key' });
+  const settings = await settingsFor(req), cur = { ...POOL_DEFAULTS, ...(settings.pool ?? {}) }, live = await poolChanges(sid, { goal: cur.turnoverGoal, skimAt: cur.skimAt });
+  if (!live.suggestions.some(s => s.key === key)) return res.status(409).json({ error: 'That suggestion is no longer open' });
+  if (action === 'dismiss') await dismissPoolSuggestion(sid, key);
+  else {
+    const patch = m[1] === 'skim' ? { skimAt: Number(m[2]) } : { turnoverGoal: Number(m[2]) }, bad = m[1] === 'goal' ? goalPatchError(patch) : null; if (bad) return res.status(400).json({ error: bad });
+    await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), pool: { ...(settings.pool ?? {}), ...patch } });
+  }
   res.json(await poolDetail(sid, await settingsFor(req), await rateFor(sid)));
 }));
 /** Frame 7: save the Pool and High Speed runs ({schedules:[{circuitId,start,stop}], speeds?:[{circuitId,rpm}]}); answers the fresh Pool card. */

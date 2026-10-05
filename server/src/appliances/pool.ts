@@ -1,6 +1,7 @@
 // Pool pump appliance: what the IntelliFlo is doing, what the current schedule costs, and a season-aware smarter schedule.
 import { q, kv, hourWh } from '../db.js';
 import { readPool, writePoolPlan, writeOwnerPool, configured, type PoolSnapshot } from './screenlogic.js';
+import { noteYouRun, endYouRun, poolChanges } from './poolLearn.js';
 import { localDay, addDays, rfc3339 } from '../tesla/client.js';
 import type { Appliance, ApplianceSummary } from './index.js';
 import { autopilot, type Mode } from './autopilot.js';
@@ -9,12 +10,12 @@ import { usd } from '../tariff.js';
 import { confidenceFor } from '../learn/confidence.js';
 
 export type PoolSettings = { gallons: number; spaGallons: number; designGpm: number; filterRpm: number; boostRpm: number; poolCircuit: number; boostCircuit: number; featureCircuits: number[]; autopilot: Mode; uv: boolean;
-  heaterBtu: number; propaneUsdPerGal: number; loads: Record<string, number>; turnoverGoal: number; skimHours: number };
+  heaterBtu: number; propaneUsdPerGal: number; loads: Record<string, number>; turnoverGoal: number; skimHours: number; skimAt: number | null };
 // From the construction plan: 14,995 gal pool, ~1,000 gal spa, designed for 120 GPM; Ultra UV sanitizer; 400k BTU propane heater;
 // other circuits' draws (W): 1.5 HP blower, 500 W pool light, 100 W spa light, ~60 W UV lamp while the pump runs.
 const DEFAULTS: PoolSettings = { gallons: 14995, spaGallons: 1000, designGpm: 120, filterRpm: 1500, boostRpm: 2400, poolCircuit: 6, boostCircuit: 8, featureCircuits: [5], autopilot: 'suggest', uv: true,
   heaterBtu: 400_000, propaneUsdPerGal: 3.0, loads: { '2': 1100, '3': 500, '4': 100 },
-  turnoverGoal: 3, skimHours: 1 };   // mockup w frame 5: the owner's goal (about 3 turnovers a day, Option A of the October audit) and a daily skim hour
+  turnoverGoal: 3, skimHours: 1, skimAt: null };   // skimAt: the skim hour you chose (mockup ae); null = the sunniest hour of the run   // mockup w frame 5: the owner's goal (about 3 turnovers a day, Option A of the October audit) and a daily skim hour
 /** The planner's search space: whole pump hours up to PUMP_HOURS_MAX a day at a filter speed in 50 RPM steps between these. */
 export const FILTER_RPM_MIN = 1200, FILTER_RPM_MAX = 2400, PUMP_HOURS_MAX = 12, PUMP_HOURS_MIN = 4;
 export { DEFAULTS as POOL_DEFAULTS };
@@ -112,7 +113,8 @@ export function planFor(o: { waterTemp: number; solarKw: number[]; settings: Poo
   for (let st = Math.min(5, 24 - hours); st + hours <= Math.max(20, hours); st++) { const sum = o.solarKw.slice(st, st + hours).reduce((a, v) => a + v, 0); if (sum > bestSum) { bestSum = sum; best = st; } }
   if (best + hours > 24) best = 24 - hours;
   const start = best, stop = best + hours;
-  const boostAt = boostH ? Math.min(stop - boostH, o.solarKw.slice(start, stop).reduce((bi, v, i, arr) => v > arr[bi] ? i : bi, 0) + start) : null;
+  const sunniest = () => o.solarKw.slice(start, stop).reduce((bi, v, i, arr) => v > arr[bi] ? i : bi, 0) + start;
+  const boostAt = boostH ? Math.max(start, Math.min(stop - boostH, s.skimAt ?? sunniest())) : null;
   const schedules: Array<Sched & { rpm: number; name: string; why: string }> = [
     { circuitId: s.poolCircuit, start: start * 60, stop: stop % 24 * 60, rpm, name: o.names.get(s.poolCircuit) ?? 'Pool', why: `${hours} h of filtration at ${rpm.toLocaleString()} RPM toward ${s.turnoverGoal ?? 3} turnovers of ${s.gallons.toLocaleString()} gal a day` }];
   if (boostAt != null) schedules.push({ circuitId: s.boostCircuit, start: boostAt * 60, stop: (boostAt + boostH) % 24 * 60, rpm: s.boostRpm, name: o.names.get(s.boostCircuit) ?? 'High Speed', why: `${boostH === 1 ? 'a one-hour' : `a ${boostH}-hour`} skim at ${s.boostRpm.toLocaleString()} RPM at the sunniest hour, for surface debris and mixing` });
@@ -272,7 +274,8 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   const cu = await activeClearUp(siteId), clearUp = cu ? { ...cu, day: Math.min(cu.days, Math.floor((Date.now() - cu.startedAt) / 864e5) + 1) } : null;
   const clearUpRates = Array.from({ length: (CLEARUP_RPM_MAX - CLEARUP_RPM_MIN) / 50 + 1 }, (_, i) => CLEARUP_RPM_MIN + i * 50)
     .map(r => ({ rpm: r, kwhPerDay: Math.round((W(r) * 24 + (settings.uv ? UV_W * 24 : 0)) / 100) / 10, turnovers: Math.round(gpmAt(r, settings.designGpm) * 1440 / settings.gallons * 10) / 10 }));
-  return { id: 'pool', water, clearUp, clearUpRates, runFor: await kv.get<Record<string, number>>(`${siteId}:pool:runFor`) ?? {}, until, autopilot: auto, pending, extras: { hourlyToday: extraHourly.map(v => Math.round(v * 1000) / 1000), todayKwh: Math.round(extraKwh * 100) / 100, nowW: extraNowW, loads: settings.loads, uvW: settings.uv ? UV_W : 0, lightReadings30d: lightH[0]?.h ?? 0 }, spaSession, name: 'Pool pump', linked: configured() && !!snap, error, settings, snapshot: snap,
+  const changes = await poolChanges(siteId, { goal: settings.turnoverGoal, skimAt: settings.skimAt });
+  return { id: 'pool', water, clearUp, clearUpRates, changes, runFor: await kv.get<Record<string, number>>(`${siteId}:pool:runFor`) ?? {}, until, autopilot: auto, pending, extras: { hourlyToday: extraHourly.map(v => Math.round(v * 1000) / 1000), todayKwh: Math.round(extraKwh * 100) / 100, nowW: extraNowW, loads: settings.loads, uvW: settings.uv ? UV_W : 0, lightReadings30d: lightH[0]?.h ?? 0 }, spaSession, name: 'Pool pump', linked: configured() && !!snap, error, settings, snapshot: snap,
     live: snap?.pump ? { watts: snap.pump.watts, rpm: snap.pump.rpm, running: snap.pump.running, gpm: snap.pump.gpm, at: snap.at, waterTemp, airTemp: snap.airTemp, freezeMode: snap.freezeMode,
       on: snap.circuits.filter(c => c.on).map(c => c.name), activeRpm: Math.max(0, ...snap.circuits.filter(c => c.on).map(c => speeds.get(c.id) ?? 0)) } : null,
     model: { measured: await measuredPoints(siteId), curve: [1000, 1500, 1800, 2400, 3000, 3450].map(r => ({ rpm: r, watts: Math.round(W(r)) })) },
@@ -427,6 +430,9 @@ export async function poolCommand(siteId: string, cmd: PoolOwnerCommand, run?: P
   if (cmd.kind === 'spaHeat') { await logPool(siteId, cmd.on ? `You set spa heat to ${cmd.setF}°` : 'You turned spa heat off', 'you'); return snap; }
   const name = snap.circuits.find(c => c.id === cmd.id)?.name.replace(/[<>&"'`]/g, '') ?? `Circuit ${cmd.id}`;
   if (cmd.kind === 'circuit') {
+    // mockup ae: your Pool and High Speed runs feed the pool's learning (boosts by time of day, extra pump time)
+    const ps: PoolSettings = { ...DEFAULTS, ...((await kv.get<Record<string, any>>('settings:owner'))?.pool ?? {}) };
+    if (cmd.id === ps.poolCircuit || cmd.id === ps.boostCircuit) { if (cmd.on) await noteYouRun(siteId, { id: cmd.id, minutes: cmd.minutes!, boost: cmd.id === ps.boostCircuit }); else await endYouRun(siteId, cmd.id); }
     if (cmd.on) await kv.set(`${siteId}:pool:runFor`, { ...(await kv.get<Record<string, number>>(`${siteId}:pool:runFor`) ?? {}), [cmd.id]: cmd.minutes! });
     // when each circuit started from the app turns itself off (the Boost button's "time left"); gone once it is off
     const until = { ...(await kv.get<Record<string, number>>(`${siteId}:pool:until`) ?? {}) };
