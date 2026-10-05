@@ -36,6 +36,7 @@ import { gridWatch } from './gridwatch.js';
 import { poolChanges, dismissPoolSuggestion } from './appliances/poolLearn.js';
 import { pruneOld } from './retention.js';
 import { refreshCapacity, capacityOf, modelKwh, type Capacity } from './capacity.js';
+import { homeForecast } from './learn/homeModel.js';
 import { spareWatch, spareHistory } from './spare.js';
 import { digestRoutes, maybeWeeklyDigest } from './digest.js';
 import { presenceRoutes, setPresence } from './appliances/presence.js';
@@ -359,7 +360,8 @@ app.get('/api/profile', wrap(async (req, res) => {
   const days = Number(req.query.days ?? 14), to = localDay(), from = addDays(to, -days);
   res.json({ days, hours: await q(`SELECT hour::int, (SUM(h) / 1000.0 / $4)::float8 home, (SUM(s) / 1000.0 / $4)::float8 solar
     FROM (SELECT day, hour, ${hourWh('home_wh')} h, ${hourWh('solar_wh')} s FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day, hour) x GROUP BY hour ORDER BY hour`, [site(req), from, to, days]),
-    conf: await confidenceMap(site(req), ['fc48.solar', 'fc48.home', 'fc48.soc']) }); // learning layer: trust in the 48-hour forecast built on this profile
+    conf: await confidenceMap(site(req), ['fc48.solar', 'fc48.home', 'fc48.soc']),   // learning layer: trust in the 48-hour forecast built on this profile
+    scale: (await homeForecast(site(req)).catch(() => null))?.scale ?? {} }); // mockup ah: each day's total from its forecast high (learn/homeModel.ts)
 }));
 
 app.get('/api/grid-days', wrap(async (req, res) => {

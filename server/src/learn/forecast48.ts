@@ -15,14 +15,14 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 export type Fc48Point = { k: number; t: string; s: number; h: number; soc: number; g: number };
 
 /** 48-hour forecast: forecast sunlight × learned yield vs the typical hourly usage, with the Powerwalls simulated. */
-export function forecast48(o: { w: GtiPayload; startDate: string; startHour: number; soc0: number; yieldK: number; profile: number[]; capKwh: number; maxKw: number; reservePct: number }) {
-  const { w, startDate, startHour, soc0, yieldK, profile, capKwh, maxKw, reservePct } = o;
+export function forecast48(o: { w: GtiPayload; startDate: string; startHour: number; soc0: number; yieldK: number; profile: number[]; capKwh: number; maxKw: number; reservePct: number; dayScale?: Record<string, number> }) {
+  const { w, startDate, startHour, soc0, yieldK, profile, capKwh, maxKw, reservePct, dayScale } = o;   // dayScale: mockup ah (learn/homeModel.ts)
   const out: Fc48Point[] = []; let soc = soc0 / 100, full: string | null = null, low: { soc: number; h?: number; t?: string } = { soc: 1, h: 0 };
   const rows = w.hourly.time.map((t, i) => ({ t, i })).filter(r => r.t >= `${startDate}T${String(Math.floor(startHour)).padStart(2, '0')}`).slice(0, 49);
   rows.forEach(({ t, i }, k) => {
     // radiation is the mean over the *preceding* hour, so hour i describes (i-1 → i)
     const next = w.hourly.global_tilted_irradiance[i + 1] ?? 0;
-    const s = Math.max(0, next) / 1000 * yieldK, h = profile[+t.slice(11, 13)] ?? 2;
+    const s = Math.max(0, next) / 1000 * yieldK, h = (profile[+t.slice(11, 13)] ?? 2) * (dayScale?.[t.slice(0, 10)] ?? 1);
     let n = s - h, b;
     if (n > 0) b = -Math.min(n, maxKw, (1 - soc) * capKwh / .95); else b = Math.min(-n, maxKw, Math.max(0, soc - reservePct / 100) * capKwh * .95);
     soc = clamp(soc + (b < 0 ? -b * .95 : -b / .95) / capKwh, 0, 1);

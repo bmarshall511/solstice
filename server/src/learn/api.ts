@@ -10,6 +10,7 @@ import { lq } from './store.js';
 import { confidence, badge, type Tier } from './confidence.js';
 import { untrim, learnAcKey, controlKey, CONTROL_EVERY, type LearnAc, type ControlState } from './ac.js';
 import type { LearnRun, LogEntry } from './nightly.js';
+import { homeForecast } from './homeModel.js';
 
 type Score = { mae: number | null; mape: number | null; bias: number | null; n: number; lastDay: string | null };
 const T: Record<Tier, string> = { measured: 'm', learned: 'l', estimated: 'e', learning: 'n', unscored: 'u' };
@@ -76,6 +77,7 @@ export async function modelsReport(siteId: string, today = localDay()) {
     log: ((kvs['learn:log'] as LogEntry[] | undefined) ?? []).slice(0, 20),
     ac: { trim: ac?.trim?.day === today ? ac.trim : null, measured: ac?.measured ?? null, warmupFPerH: ac?.warmupFPerH ?? null,
       control: { every: CONTROL_EVERY, eligibleDays: ctl?.count ?? 0, nextIn: CONTROL_EVERY - ((ctl?.count ?? 0) % CONTROL_EVERY), today: ctl?.days?.[today] ?? null } },
+    home: await homeForecast(siteId).catch(() => null),   // mockup ah: "How it predicts" in the home-use sheet
   };
 }
 

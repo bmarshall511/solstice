@@ -184,7 +184,7 @@ describe('learning layer routes (owner-only)', () => {
     const r = await get('/api/models');
     expect(r.status).toBe(200);
     const m = await r.json();
-    expect(Object.keys(m)).toEqual(['summary', 'lastRun', 'models', 'anomalies', 'log', 'ac']);
+    expect(Object.keys(m)).toEqual(['summary', 'lastRun', 'models', 'anomalies', 'log', 'ac', 'home']);   // home: mockup ah's "How it predicts"
     expect(m.models.map((x: any) => x.id)).toEqual(['fc48.solar', 'fc48.home', 'fc48.soc', 'pool.kwhDay', 'ac.shifted', 'ac.eveningAvoided', 'bill.cycleImport', 'home.alwaysOn']);
     // the r-learning mockup's row fields
     expect(Object.keys(m.models[0])).toEqual(['id', 'label', 'unit', 'abs', 'dot', 't', 'v', 'tier', 'confidence', 'n', 'need', 'mape', 'mae', 'mad', 'bias', 'base', 'spark',

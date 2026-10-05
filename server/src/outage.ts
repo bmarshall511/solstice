@@ -10,6 +10,7 @@ import { learnAcKw, runtimeToday } from './appliances/ac.js';
 import type { PoolSnapshot } from './appliances/screenlogic.js';
 import { siteLocation } from './site.js';
 import { capacityOf, modelKwh, EFF } from './capacity.js';
+import { homeForecast } from './learn/homeModel.js';
 
 const HOURS = 48;                // the island simulation's horizon
 const CLOUDY_KWH = 25;           // tomorrow's forecast solar below this reads "clouds" (mockup n-outage)
@@ -66,9 +67,9 @@ export const SCENARIOS: Scenario[] = ['asis', 'noac', 'noacpool'];
  * The 48 hourly loads the simulation runs from now: the live draw for the current hour, then the typical hour (14-day profile),
  * minus what the scenario switches off (the AC's average draw, and the pump's scheduled kW for that hour), never below always-on.
  */
-export function scenarioLoads(o: { startHour: number; profile: number[]; drawKw: number; alwaysOnKw: number; acAvgKw: number; poolKwByHour: number[] }, sc: Scenario): number[] {
+export function scenarioLoads(o: { startHour: number; profile: number[]; drawKw: number; alwaysOnKw: number; acAvgKw: number; poolKwByHour: number[]; scaleByK?: number[] }, sc: Scenario): number[] {
   return Array.from({ length: HOURS }, (_, k) => {
-    const h = (Math.floor(o.startHour) + k) % 24, base = k === 0 ? o.drawKw : o.profile[h] ?? o.drawKw;
+    const h = (Math.floor(o.startHour) + k) % 24, base = k === 0 ? o.drawKw : (o.profile[h] ?? o.drawKw) * (o.scaleByK?.[k] ?? 1);   // mockup ah: the day's total from its forecast high
     const off = sc === 'asis' ? 0 : o.acAvgKw + (sc === 'noacpool' ? o.poolKwByHour[h] ?? 0 : 0);
     return Math.max(o.alwaysOnKw, base - off);
   });
@@ -171,7 +172,9 @@ export async function outageDetail(siteId: string, settingsAll: Record<string, a
   const { duty, source: dutySource } = acDuty({ measuredPct: rt.duty, high: byDate.get(today)?.high ?? null, slope: slope ?? 2.5, acKw });
 
   const usable = usableKwh(soc, capKwh), acAvgKw = acKw * duty;
-  const loadIn = { startHour, profile: prof, drawKw, alwaysOnKw, acAvgKw, poolKwByHour: poolHourly };
+  // mockup ah: each hour's typical load scaled to its day's total from the forecast high (learn/homeModel.ts; 1 without a fit)
+  const hf = await homeForecast(siteId, now.getTime()).catch(() => null), scaleByK = Array.from({ length: HOURS }, (_, k) => hf?.scale[addDays(today, Math.floor((Math.floor(startHour) + k) / 24))] ?? 1);
+  const loadIn = { startHour, profile: prof, drawKw, alwaysOnKw, acAvgKw, poolKwByHour: poolHourly, scaleByK };
   const scenarios = Object.fromEntries(SCENARIOS.map(sc => {
     const loadKw = scenarioLoads(loadIn, sc), sim = simulateIsland({ soc0: soc, capKwh, maxKw, solarKw, loadKw });
     return [sc, { drawKw: r3(loadKw[0]), backupH: loadKw[0] > 0 ? r3(usable / loadKw[0]) : null,

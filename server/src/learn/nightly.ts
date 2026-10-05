@@ -17,12 +17,13 @@ import { MODELS, MODEL_IDS, mean, median, round, type ModelDef, type ModelId } f
 import { lq, learnStats, logPrediction, type Prediction } from './store.js';
 import { confidence, type Tier } from './confidence.js';
 import { forecast48, learnYield } from './forecast48.js';
+import { highsOf, homePoints, fitHome, dayScales, forecastDays } from './homeModel.js';
 import { measuredSavings, trimFor, ranPrecool, learnAcKey, type AcDay, type PrecoolDay, type LearnAc, type TrimRecord } from './ac.js';
 import { evaluateRules, type MetricsByDay, type OpenAnomaly, type Verdict } from './rules.js';
 import { wxGti, gtiByDay, type Wx } from './wx.js';
 import { panelMetrics, LAYOUT_KEY, type Layout } from '../panels.js';
 
-export const LOOKBACK_DAYS = 60, SCORE_DAYS = 3, RETAIN_DAYS = 400;
+export const LOOKBACK_DAYS = 60, SCORE_DAYS = 3, RETAIN_DAYS = 400, ALWAYS_ON_NIGHTS = 7, ALWAYS_ON_MIN = 5;
 export type LogEntry = { at: number; day: string; text: string; delta?: string };
 export type LearnRun = { at: number; ms: number; queries: number; scored: string[]; predicted: number; waiting: string[];
   anomalies: { opened: string[]; resolved: string[]; open: number }; trim: TrimRecord | null; tiers: Record<string, Tier>;
@@ -92,10 +93,11 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
   };
 
   /* ---------- load ---------- */
-  const keys = { ac: learnAcKey(siteId), last: `${siteId}:learn:last`, log: `${siteId}:learn:log`, pump: `${siteId}:learn:pump`, pvsLayout: LAYOUT_KEY };
+  const keys = { ac: learnAcKey(siteId), last: `${siteId}:learn:last`, log: `${siteId}:learn:log`, pump: `${siteId}:learn:pump`, pvsLayout: LAYOUT_KEY,
+    youRuns: `${siteId}:pool:youRuns`, outsideRuns: `${siteId}:pool:outsideRuns`, clearup: `${siteId}:pool:clearup` };   // the last three: mockup ah's pool scoring
   const d = await step('load', async () => {
     // one round trip each, sent together (Neon's HTTP driver runs them in parallel; PGlite queues them)
-    const [kvRows, energyDaily, energyHourly, soeHourly, nestHourly, pool, preds] = await Promise.all([
+    const [kvRows, energyDaily, energyHourly, soeHourly, nestHourly, pool, extraRows, preds] = await Promise.all([
       lq<{ key: string; value: any }>(`SELECT key, value FROM kv WHERE key = ANY($1::text[])`, [Object.values(keys)]),
       lq<{ day: string; solar: number; home: number; imp: number; exp: number; buckets: number; overnight_kw: number | null; overnight_n: number }>(
         `SELECT day, (SUM(solar_wh) / 1000.0)::float8 solar, (SUM(home_wh) / 1000.0)::float8 home, (SUM(import_wh) / 1000.0)::float8 imp, (SUM(export_wh) / 1000.0)::float8 exp,
@@ -115,6 +117,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
          GROUP BY day, hour`, [siteId, from]),
       lq<{ day: string; ts: number; running: boolean; watts: number; rpm: number }>(
         `SELECT day, ts::float8 ts, running, watts, rpm FROM pool_readings WHERE site_id = $1 AND day >= $2 ORDER BY ts`, [siteId, addDays(today, -14)]),
+      lq<{ day: string }>(`SELECT day FROM daily_metrics WHERE site_id = $1 AND metric = 'pool.extra' AND day >= $2`, [siteId, addDays(today, -SCORE_DAYS - 1)]),
       lq<PredRow>(`SELECT model, target_day, target_hour::int, horizon::int, predicted, made_at::float8 made_at, inputs FROM predictions
          WHERE site_id = $1 AND ((target_day >= $2 AND target_day < $3) OR (model LIKE 'ac.%' AND target_day >= $4))`, [siteId, addDays(today, -SCORE_DAYS), today, from]),
     ]);
@@ -123,7 +126,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     for (const r of nestHourly) (nest.get(r.day) ?? nest.set(r.day, {}).get(r.day)!)[r.hour] = { coolMin: r.cool_min, coolF: r.cool_f, indoorF: r.indoor_f, n: r.n };
     learnStats.queries++; // learnAcKw: one kv read (it recomputes at most hourly)
     const coolKw = (await learnAcKw(siteId)).coolKw;
-    return { kvs, energyDaily, energyHourly, soeHourly, nest, pool, preds, coolKw, wx: await wxGti(now) };
+    return { kvs, energyDaily, energyHourly, soeHourly, nest, pool, poolExtraDays: extraRows.map(r => r.day), preds, coolKw, wx: await wxGti(now) };
   }, null);
   if (!d) return finish();
   const prevLast = d.kvs[keys.last] as LearnRun | undefined, prevAc = d.kvs[keys.ac] as LearnAc | undefined;
@@ -200,6 +203,11 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
       for (const [rpm, w] of byRpm) if (w.length >= 3) { put(day, `pool.w@${rpm}`, median(w)); put(day, `pool.w@${rpm}.n`, w.length); }
     }
 
+    // mockup ah: days the pool ran beyond the plan (a Clear-up, your runs, runs seen outside the schedule) are not scored
+    const cu = d.kvs[keys.clearup] as { startedAt: number; until: number } | null | undefined;
+    const poolExtra = new Set<string>([...((d.kvs[keys.youRuns] ?? []) as Array<{ day: string }>), ...((d.kvs[keys.outsideRuns] ?? []) as Array<{ day: string }>)].map(r => r.day));
+    if (cu?.startedAt) for (let x = localDay(new Date(cu.startedAt)); x <= localDay(new Date(Math.min(cu.until, now))); x = addDays(x, 1)) poolExtra.add(x);
+    for (const day of d.poolExtraDays) poolExtra.add(day);
     // scores for the prediction days that are complete: the last SCORE_DAYS days (idempotent, so a missed night catches up)
     const pairs = new Map<string, Pair[]>(); // 'model|day'
     const add = (model: string, day: string, p: Pair) => (pairs.get(`${model}|${day}`) ?? pairs.set(`${model}|${day}`, []).get(`${model}|${day}`)!).push(p);
@@ -212,6 +220,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
         else { const e = eHour.get(`${day}|${p.target_hour}`); if (e && e.n >= 11) add(p.model, day, { predicted: p.predicted, actual: p.model === 'fc48.solar' ? e.solar : e.home, band: band(p.horizon) }); }
       } else if (p.model === 'pool.kwhDay') {
         if (p.made_at > hourStart(day, 0)) continue;
+        if (poolExtra.has(day)) { put(day, 'pool.extra', 1); continue; }   // mockup ah: the pump ran beyond the plan, so the plan wasn't wrong
         const a = poolActual((poolDays.get(day) ?? []), (p.inputs?.sched ?? []) as Array<[number, number, number]>, Number(p.inputs?.uvKwh ?? 0));
         if (a) put(day, 'pool.coverage', a.coverage);
         if (a?.kwh != null && a.coverage >= .8) add(p.model, day, { predicted: p.predicted, actual: a.kwh });
@@ -231,6 +240,8 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
       const [model, day] = key.split('|') as [ModelId, string], s = scoreDay(MODELS[model], ps);
       if (s) { for (const [metric, v] of scoreMetrics(model, s)) put(day, metric, v); scored.add(model); }
     }
+    const skipped = [...poolExtra].filter(x => x >= addDays(today, -SCORE_DAYS) && x < today);   // a score from before the extra run was known goes
+    if (skipped.length) await lq(`DELETE FROM daily_metrics WHERE site_id = $1 AND day = ANY($2::text[]) AND metric LIKE 'score:pool.kwhDay:%'`, [siteId, skipped]);
     if (!metricRows.size) return;
     const rows = [...metricRows.values()];
     await lq(`INSERT INTO daily_metrics (site_id, day, metric, value) SELECT $1, * FROM unnest($2::text[], $3::text[], $4::float8[])
@@ -310,8 +321,8 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
       const info = (await lq<{ info: any }>(`SELECT info FROM sites WHERE id = $1`, [siteId]))[0]?.info ?? {};
       const capKwh = modelKwh(await capacityOf(siteId), (info.nameplate_energy ?? 0) / 1000), maxKw = (info.nameplate_power ?? 0) / 1000 || 10, reservePct = info.backup_reserve_percent ?? 20;
       const startHour = +rfc3339(new Date(now)).slice(11, 13);
-      const f = forecast48({ w: fc.w, startDate: today, startHour, soc0: fc.soc0, yieldK: fc.yieldK, profile: fc.profile, capKwh, maxKw, reservePct });
-      const first = { yieldK: round(fc.yieldK, 3), soc0: fc.soc0, capKwh, maxKw, reservePct, startHour };
+      const f = forecast48({ w: fc.w, startDate: today, startHour, soc0: fc.soc0, yieldK: fc.yieldK, profile: fc.profile, capKwh, maxKw, reservePct, dayScale: fc.dayScale });
+      const first = { yieldK: round(fc.yieldK, 3), soc0: fc.soc0, capKwh, maxKw, reservePct, startHour, ...(Object.keys(fc.dayScale).length ? { dayScale: fc.dayScale } : {}) };   // mockup ah: logged only when the home model applies
       for (const p of f.points) {
         if (p.k < 1) continue; // the hour already under way is not a forecast
         const at = { day: p.t.slice(0, 10), hour: +p.t.slice(11, 13), horizon: p.k }, inputs = p.k === 1 ? { k: p.k, ...first } : { k: p.k };
@@ -319,10 +330,12 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
           { model: 'fc48.soc', ...at, value: round(p.soc * 100, 1), inputs });
       }
     }
-    // always-on load for tonight (hours 1–4 of tomorrow): the median of the last 30 nights, AC taken out
-    const nights = Array.from({ length: 30 }, (_, i) => metrics.get(addDays(today, -1 - i))?.['home.alwaysOn_kw']).filter((v): v is number => v != null);
-    if (nights.length >= 7) preds.push({ model: 'home.alwaysOn', day: addDays(today, 1), value: round(median(nights), 3), inputs: { nights: nights.length, acKw: round(kw, 2) } });
-    else waiting.push(`home.alwaysOn: ${nights.length} of 7 nights`);
+    // always-on load for tonight (hours 1–4 of tomorrow): the median of the last 7 nights that have thermostat readings, AC taken out
+    // (mockup ah: nights without Nest data kept the AC, and before 9/25 the midnight Waterfall, so the median sat at 3.75 kW)
+    const nights = Array.from({ length: 30 }, (_, i) => metrics.get(addDays(today, -1 - i))).filter(m => m?.['home.alwaysOn_kw'] != null && m['nest.n'] != null)
+      .slice(0, ALWAYS_ON_NIGHTS).map(m => m!['home.alwaysOn_kw']);
+    if (nights.length >= ALWAYS_ON_MIN) preds.push({ model: 'home.alwaysOn', day: addDays(today, 1), value: round(median(nights), 3), inputs: { nights: nights.length, acKw: round(kw, 2) } });
+    else waiting.push(`home.alwaysOn: ${nights.length} of ${ALWAYS_ON_MIN} nights with thermostat readings`);
     // the billing cycle since the newest bill: what History › Bills projects (kWh bought × 31 ÷ days elapsed), in kWh only
     learnStats.queries++; // listBills: one query
     const bills = await listBills(siteId), last = bills.reduce<typeof bills[number] | null>((a, b) => !a || b.period.to > a.period.to ? b : a, null);
@@ -358,7 +371,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
 /** The 48-hour forecast's inputs as the browser builds them: yield from the last 30 days, the 14-day hourly home profile, battery % now. */
 export function fc48Inputs(w: Wx | null, daily: Array<{ day: string; solar: number }>, hourly: Array<{ day: string; hour: number; home: number }>,
   soe: Array<{ day: string; hour: number; last: number; at: number }>, today: string):
-  { ready: true; w: Wx; yieldK: number; profile: number[]; soc0: number } | { ready: false; why: string } {
+  { ready: true; w: Wx; yieldK: number; profile: number[]; soc0: number; dayScale: Record<string, number> } | { ready: false; why: string } {
   if (!w) return { ready: false, why: 'no weather (SITE_LAT/SITE_LON unset or Open-Meteo down)' };
   const yieldK = learnYield(daily.filter(r => r.day >= addDays(today, -30) && r.day < today).map(r => ({ date: r.day, solar: Math.round(r.solar * 100) / 100 })), gtiByDay(w));
   if (!yieldK) return { ready: false, why: 'no solar yield learned yet' };
@@ -367,5 +380,7 @@ export function fc48Inputs(w: Wx | null, daily: Array<{ day: string; solar: numb
   const profile = Array.from({ length: 24 }, (_, h) => sums.has(h) ? sums.get(h)! / 14 : 2);
   const latest = soe.reduce<{ last: number; at: number } | null>((a, r) => !a || r.at > a.at ? r : a, null);
   if (!latest) return { ready: false, why: 'no battery % yet' };
-  return { ready: true, w, yieldK, profile, soc0: latest.last };
+  // mockup ah: each day's total from the forecast high (homeModel.ts); the hours keep this profile's shape
+  const highs = highsOf(w), dayScale = dayScales(fitHome(homePoints(hourly, highs, today)), profile, highs, forecastDays(today));
+  return { ready: true, w, yieldK, profile, soc0: latest.last, dayScale };
 }
