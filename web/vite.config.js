@@ -7,5 +7,7 @@ export default defineConfig({
     port: 5173,
     proxy: { '/api': 'http://localhost:8787', '/auth': 'http://localhost:8787' },
   },
-  build: { outDir: 'dist', emptyOutDir: true, chunkSizeWarningLimit: 900 },
+  // three.js in its own chunk (October audit): app updates no longer re-download it, and the app code parses separately
+  build: { outDir: 'dist', emptyOutDir: true, chunkSizeWarningLimit: 900,
+    rollupOptions: { output: { manualChunks: id => id.includes('node_modules/three/') ? 'three' : undefined } } },
 });
