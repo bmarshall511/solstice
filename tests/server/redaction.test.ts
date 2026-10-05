@@ -261,7 +261,8 @@ describe('every guest-readable route', () => {
     expect(pool.spaSession).not.toHaveProperty('propaneUsd');
     expect(pool.snapshot).toEqual({ at: expect.any(Number), airTemp: 85, freezeMode: false, bodies: [{ temp: 88, setPoint: 0, heating: false }, { temp: 95, setPoint: 102, heating: false }] });
     expect(pool.applied).toEqual({ at: expect.any(Number) });
-    expect(pool.settings).toEqual({ gallons: 14995, spaGallons: 1000, designGpm: 120, filterRpm: 1500, boostRpm: 2400, uv: true, autopilot: 'suggest' });
+    expect(pool.settings).toEqual({ gallons: 14995, spaGallons: 1000, designGpm: 120, filterRpm: 1500, boostRpm: 2400, uv: true, autopilot: 'suggest', turnoverGoal: 3, skimHours: 1, boostCircuit: 8 });
+    expect(Object.keys(pool.water).sort()).toEqual(['gallons', 'goal', 'movedTurnovers', 'projectedTurnovers', 'skimHours']);   // mockup w frame 5: the ring, no money
     for (const k of ['rate', 'todayCost']) expect(pool).not.toHaveProperty(k);
     const ownerPool = await getJson('/api/appliances/pool', owner);
     expect(ownerPool.rate).toBeGreaterThan(0);                               // the seed's bill gives the owner a rate
