@@ -127,9 +127,11 @@ function computeModel() {
 }
 
 async function loadExternal() {
-  const [ercot, nws] = await Promise.allSettled([api.ercot(), nwsAlerts()]);
+  const [ercot, nws, feed] = await Promise.allSettled([api.ercot(), nwsAlerts(), S.guest ? Promise.resolve(null) : api.alerts(30)]);
   if (ercot.status === 'fulfilled') S.ercot = ercot.value;
   if (nws.status === 'fulfilled') S.nws = nws.value;
+  // mockup ab: the last week's grid alerts (down, Powerwalls low, back) show in the Insights list as well as on the phone
+  if (feed.status === 'fulfilled' && feed.value) S.gridFeed = feed.value.alerts.filter(a => (a.kind === 'grid' || a.kind === 'gridLow') && Date.now() - Date.parse(a.createdAt) < 7 * 864e5);
   safe(renderStatic)(S); safe(drawAlerts)(S);
 }
 

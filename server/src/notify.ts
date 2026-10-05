@@ -12,18 +12,19 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import { q, one, kv } from './db.js';
 import { sendPush, subscriptionProblem, vapidPublicKey, type PushSubscriptionJson } from './push.js';
 
-export const ALERT_KINDS = ['approval', 'billDue', 'anomaly', 'storm', 'ercot', 'panel', 'digest'] as const;
+export const ALERT_KINDS = ['approval', 'billDue', 'anomaly', 'storm', 'ercot', 'panel', 'digest', 'grid', 'gridLow'] as const;
 export type AlertKind = typeof ALERT_KINDS[number];
 
 /** The Settings → Alerts switches that silence each kind (`alerts[key] === false`). The existing keys are reused where they
  *  already mean the same thing ('nws' → storm); an anomaly can name its own switch (solar, baseline) through `opts.toggle`. */
 export const TOGGLES: Record<AlertKind, string[]> = {
   approval: ['approval'], billDue: ['billDue'], anomaly: ['anomaly'], storm: ['storm', 'nws'], ercot: ['ercot'], panel: ['panel'], digest: ['digest'],
+  grid: ['outage'], gridLow: ['lowBatt'],   // mockup ab: the two switches that were already in Settings › Alerts
 };
 /** Pushes per kind per window (the feed always keeps the alert; only the phone buzz is limited). */
 export const PUSH_LIMITS: Record<AlertKind, { max: number; hours: number }> = {
   approval: { max: 3, hours: 24 }, billDue: { max: 1, hours: 24 * 7 }, anomaly: { max: 3, hours: 24 }, storm: { max: 6, hours: 24 },
-  ercot: { max: 3, hours: 24 }, panel: { max: 2, hours: 24 }, digest: { max: 1, hours: 24 * 6 },
+  ercot: { max: 3, hours: 24 }, panel: { max: 2, hours: 24 }, digest: { max: 1, hours: 24 * 6 }, grid: { max: 6, hours: 24 }, gridLow: { max: 2, hours: 24 },
 };
 /** How long the same `key` stays a duplicate when the caller doesn't say. */
 export const DEDUPE_HOURS = 24;

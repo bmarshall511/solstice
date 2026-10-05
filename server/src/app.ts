@@ -32,6 +32,7 @@ import { outageDetail } from './outage.js';
 
 import { alertRoutes, notify } from './notify.js';
 import { ercotNow, fiveMinuteWatch, nightlyWatch, cronSites, fiveMinuteSteps, nightlySteps } from './watch.js';
+import { gridWatch } from './gridwatch.js';
 import { digestRoutes, maybeWeeklyDigest } from './digest.js';
 import { presenceRoutes, setPresence } from './appliances/presence.js';
 import { powerwallRoutes, powerwallTick, powerwallNightly } from './powerwall.js';
@@ -626,6 +627,7 @@ powerwallRoutes(app);
 fiveMinuteSteps.powerwall = powerwallTick; nightlySteps.powerwall = powerwallNightly;
 fiveMinuteSteps.digest = maybeWeeklyDigest; nightlySteps.digest = maybeWeeklyDigest;
 fiveMinuteSteps.panels = panelWatch;
+fiveMinuteSteps.grid = gridWatch;   // mockup ab: grid down / Powerwalls low / grid back (after the storm step's live read)
 nightlySteps.alwaysOn = alwaysOnWatch;   // breakdown.ts: one push when the always-on base stays up three nights
 /* Watchdog: Vercel never retries a cron, so a nightly run that died (timeout, deploy, outage) would be silent. The 5-minute tick
  * pushes one alert a day while the last finished nightly run is more than 26 hours old. */
