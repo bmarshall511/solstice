@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Solstice · Freshness</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* page scaffolding for the mockup only (same as v-ac-control) */
+html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+body{background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.col{width:100%;max-width:393px;margin:0 auto;padding:28px 0 60px}
+.intro{padding:0 20px}
+.intro .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.intro h2{font-size:30px;line-height:1.1;font-weight:300;letter-spacing:-.02em;margin-bottom:12px}
+.intro p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.frame{margin-top:34px}
+.frame>.sect{margin:0 20px 10px}
+.pagepad{padding:0 20px}
+.cap{margin:12px 20px 0;padding:12px 14px;border-radius:16px;background:rgba(0,0,0,.25);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.55}
+.cap b{color:var(--text);font-weight:600}
+.cap p+p{margin-top:6px}
+.cap .new{color:var(--batt)}.cap .same{color:var(--mute)}
+.wrules{margin:34px 20px 0}
+.wrules h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:10px}
+.wrules ul{list-style:none;display:grid;gap:8px}
+.wrules li{font-size:12.5px;color:var(--dim);line-height:1.55;padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b)}
+.wrules li b{color:var(--text);font-weight:600}
+.nowstub{position:relative}
+.nowstub .hello{display:flex;justify-content:space-between;align-items:flex-start}
+.orbstub{height:150px;margin:6px auto 0;width:150px;border-radius:50%;background:radial-gradient(circle at 50% 45%,rgba(78,240,166,.28),rgba(78,240,166,.05) 60%,transparent 70%);display:grid;place-items:center}
+.orbstub b{font-size:44px;font-weight:300}.orbstub small{font-size:18px;color:var(--dim)}
+.flowstub{height:110px;margin:10px -16px 0;border-radius:20px;background:radial-gradient(60% 70% at 50% 100%,rgba(255,193,94,.16),transparent 70%),rgba(0,0,0,.2)}
+.twinstub{height:110px;margin:10px -16px 0;border-radius:20px;background:radial-gradient(70% 80% at 50% 100%,rgba(108,196,255,.16),transparent 70%),rgba(0,0,0,.2)}
+
+/* ---------- NEW: freshness ---------- */
+.chipx.stale{border-color:rgba(255,193,94,.45);background:rgba(255,193,94,.1);color:var(--text)}
+.chipx.stale i{--c:var(--solar)}
+.asof{color:var(--solar)!important}
+.dimmed{opacity:.55;transition:opacity .4s}
+.badge.a{background:rgba(255,193,94,.12);color:var(--solar);border-color:rgba(255,193,94,.35)}
+.badge.g small,.badge.a small{font:500 10px "JetBrains Mono";opacity:.85;margin-left:2px}
+</style></head><body>
+<div class="col">
+
+  <div class="intro">
+    <div class="k">Mockup x · Freshness</div>
+    <h2>Every live number says how old it is, and turns amber when it's stale.</h2>
+    <p>Today the Now screen says "live" and "Powerwalls online" even when nothing new has arrived for an hour. The pool and AC cards say "Linked" whatever the age of their last read. These frames add an age to the places that already show status, and turn them amber past a set age. Every number is illustrative.</p>
+  </div>
+
+  <!-- ================= Frame 1 · fresh ================= -->
+  <div class="frame">
+    <div class="sect">Frame 1 · Now · fresh (as today)</div>
+    <div class="pagepad nowstub">
+      <div class="hello"><div><h3>Good evening</h3><p><span class="sync"></span><span>Home</span> · <span>7:42 PM</span></p></div><div class="wx"><b>79°</b>clear</div></div>
+      <div class="chips"><div class="chipx"><i></i>Powerwalls online</div><div class="chipx"><i style="--c:var(--batt)"></i>No weather alerts</div><div class="chipx"><i style="--c:var(--batt)"></i>ERCOT normal</div></div>
+      <div class="orbstub"><div><b>64</b><small>%</small></div></div>
+      <div class="card twin"><div class="h"><b>Energy flow</b><span>live · 7:42 PM</span></div><div class="flowstub"></div></div>
+    </div>
+    <div class="cap"><p><b class="same">Unchanged</b> while the newest reading is under 3 minutes old. The app asks every 30 seconds, and Tesla answers at most every ~25 seconds.</p></div>
+  </div>
+
+  <!-- ================= Frame 2 · stale ================= -->
+  <div class="frame">
+    <div class="sect">Frame 2 · Now · no new reading for 12 minutes</div>
+    <div class="pagepad nowstub">
+      <div class="hello"><div><h3>Good evening</h3><p><span class="sync" style="background:var(--solar)"></span><span>Home</span> · <span class="asof">as of 7:30 PM</span></p></div><div class="wx"><b>79°</b>clear</div></div>
+      <div class="chips"><div class="chipx stale"><i></i>Last reading 12 min ago</div><div class="chipx"><i style="--c:var(--batt)"></i>No weather alerts</div><div class="chipx"><i style="--c:var(--batt)"></i>ERCOT normal</div></div>
+      <div class="orbstub dimmed"><div><b>64</b><small>%</small></div></div>
+      <div class="card twin"><div class="h"><b>Energy flow</b><span class="asof">as of 7:30 PM</span></div><div class="flowstub dimmed"></div></div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> once the newest reading is 3 minutes old or more, three things change:</p>
+      <ul style="margin:6px 0 0 16px">
+        <li>The Powerwalls chip turns amber and says how old the reading is.</li>
+        <li>The line under the greeting and the flow card read "as of 7:30 PM".</li>
+        <li>The battery orb and the flow scene dim, so a still screen doesn't look current.</li>
+      </ul>
+      <p>The age comes from the reading's own timestamp, not from when the app last asked. The server's "Tesla not reporting" check moves to that timestamp too; today it looks at the fetch time (audit server #21).</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 3 · offline ================= -->
+  <div class="frame">
+    <div class="sect">Frame 3 · Now · the app can't reach Solstice</div>
+    <div class="pagepad nowstub">
+      <div class="hello"><div><h3>Good evening</h3><p><span class="sync" style="background:var(--solar)"></span><span>Home</span> · <span class="asof">offline · as of 7:30 PM</span></p></div><div class="wx"><b>79°</b>clear</div></div>
+      <div class="chips"><div class="chipx stale"><i></i>Can't reach Solstice · retrying</div><div class="chipx"><i style="--c:var(--mute)"></i>No weather alerts</div><div class="chipx"><i style="--c:var(--mute)"></i>ERCOT normal</div></div>
+      <div class="orbstub dimmed"><div><b>64</b><small>%</small></div></div>
+    </div>
+    <div class="cap"><p><b class="new">New:</b> when the phone has no connection, or the server doesn't answer, the chip says so instead of an age, and keeps retrying every 30 seconds. The other chips grey out, because their data is just as old.</p></div>
+  </div>
+
+  <!-- ================= Frame 4 · pool card ================= -->
+  <div class="frame">
+    <div class="sect">Frame 4 · Insights › Appliances · Pool card badge</div>
+    <div class="pagepad">
+      <div class="card"><div class="h"><b>Pool &amp; spa · live</b><span class="badge g">Linked · <small>2 min ago</small></span></div><div class="twinstub"></div></div>
+      <div class="card"><div class="h"><b>Pool &amp; spa · live</b><span class="badge a">Read 34 min ago</span></div><div class="twinstub dimmed"></div>
+        <p class="fine" style="margin-top:8px">IntelliFlo VSF on a Quad D.E. 80 filter… <span style="color:var(--warn)">Last read failed: ScreenLogic didn't answer</span></p></div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> the badge carries the age of the last controller read: "Linked · 2 min ago".</p>
+      <p>It turns amber ("Read 34 min ago") when the read is more than 20 minutes old while the pump is scheduled to run. Outside the schedule Solstice reads only twice a night, so there it just shows the age, in grey.</p>
+      <p>The "Last read failed" line is the one shipped last batch.</p>
+    </div>
+  </div>
+
+  <!-- ================= Frame 5 · AC card ================= -->
+  <div class="frame">
+    <div class="sect">Frame 5 · Insights › Appliances · AC cards</div>
+    <div class="pagepad">
+      <div class="card"><div class="h"><b>Thermostat</b><span class="badge g">Hallway · <small>4 min ago</small></span></div></div>
+      <div class="card"><div class="h"><b>Thermostat</b><span class="badge a">Nest · 26 min ago</span></div></div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> the Thermostat card badge shows the age of the last Nest sample, and turns amber past 20 minutes. Nest is sampled every 5 minutes in the daytime and every 15 at night, so 20 minutes means a sample was missed.</p>
+      <p>The thermal-twin card's "Linked · Nest" badge stays as it is.</p>
+    </div>
+  </div>
+
+  <div class="wrules">
+    <h3>The rules</h3>
+    <ul>
+      <li><b>Live reading</b> (Now): amber at 3 minutes old. Grey "offline" when the app can't reach the server.</li>
+      <li><b>Pool</b>: amber at 20 minutes while the pump is scheduled; age only otherwise.</li>
+      <li><b>Nest</b>: amber at 20 minutes.</li>
+      <li><b>Ages</b> count up on screen every second, from each reading's own timestamp, so they stay right even while a request is pending.</li>
+      <li><b>Unchanged:</b> the layout of every screen, all numbers and charts, Settings › Connections (it already shows "read 8 min ago"), and guests' views (they get the same ages, no extra detail).</li>
+    </ul>
+  </div>
+</div>
+</body></html>
