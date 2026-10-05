@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Solstice · Breakdown subtitle</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* page scaffolding for the mockup only (same as v–z) */
+html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+body{background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.col{width:100%;max-width:393px;margin:0 auto;padding:28px 0 60px}
+.intro{padding:0 20px}
+.intro .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.intro h2{font-size:30px;line-height:1.1;font-weight:300;letter-spacing:-.02em;margin-bottom:12px}
+.intro p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.frame{margin-top:34px}
+.frame>.sect{margin:0 20px 10px}
+.pagepad{padding:0 20px}
+.cap{margin:12px 20px 0;padding:12px 14px;border-radius:16px;background:rgba(0,0,0,.25);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.55}
+.cap b{color:var(--text);font-weight:600}
+.cap p+p{margin-top:6px}
+.cap .new{color:var(--batt)}.cap .same{color:var(--mute)}
+.stub{display:flex;height:16px;border-radius:8px;overflow:hidden;margin-top:10px;gap:2px}
+.stub i{display:block;height:100%}
+</style></head><body>
+<div class="col">
+  <div class="intro">
+    <div class="k">Mockup aa · Breakdown subtitle</div>
+    <h2>The 30-day line under the total fits on one line.</h2>
+    <p>Only the grey line next to the big number changes. The card, its parts and every other range stay as they are. Numbers are illustrative.</p>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 1 · as today</div>
+    <div class="pagepad"><div class="card eg">
+      <div class="h"><b>Where your energy goes</b><span class="seg2"><button>7 days</button><button>Today</button><button class="on">30 days</button></span></div>
+      <div class="total"><b>72</b><span>kWh a day · 9 of the last 30 days (the ones with thermostat readings)</span></div>
+      <div class="stub"><i style="background:#f4a46e;width:37%"></i><i style="background:#c4a2ff;width:29%"></i><i style="background:#ffc75e;width:5%"></i><i style="background:#7cc4ff;width:3%"></i><i style="background:rgba(255,255,255,.22);width:26%"></i></div>
+    </div></div>
+    <div class="cap"><p><b class="same">Today:</b> wraps to two lines whenever fewer than all 30 days count.</p></div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 2 · proposed</div>
+    <div class="pagepad"><div class="card eg">
+      <div class="h"><b>Where your energy goes</b><span class="seg2"><button>7 days</button><button>Today</button><button class="on">30 days</button></span></div>
+      <div class="total"><b>72</b><span>kWh a day · 9 days with Nest data</span></div>
+      <div class="stub"><i style="background:#f4a46e;width:37%"></i><i style="background:#c4a2ff;width:29%"></i><i style="background:#ffc75e;width:5%"></i><i style="background:#7cc4ff;width:3%"></i><i style="background:rgba(255,255,255,.22);width:26%"></i></div>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> "kWh a day · 9 days with Nest data" when only some days count. It is one line at 393 px.</p>
+      <p>When all the days count, it stays "kWh a day · last 30 days" (and "last 7 days"). Today stays "kWh so far today".</p>
+    </div>
+  </div>
+</div>
+</body></html>
