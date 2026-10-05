@@ -25,7 +25,7 @@ export async function recordNest(siteId: string, st: NestState) {
   await q(`INSERT INTO nest_readings (site_id, ts, day, hour, indoor_f, humidity, mode, hvac, cool_f, heat_f, eco) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING`,
     [siteId, st.at, localDay(d), Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }).format(d)) % 24, st.indoorF, st.humidity, st.mode, st.hvac, st.coolF, st.heatF, st.eco]);
 }
-type AcLearned = { coolKw: number | null; heatKw: number | null; samples: number; heatSamples: number };
+type AcLearned = { coolKw: number | null; heatKw: number | null; samples: number; heatSamples: number; diag?: { lateKw: number | null; lateSamples: number; regressionKw: number | null; regressionHours: number } };
 const LEARN_TTL_MS = 3600e3;
 /** v2: the clean-switch method; a new key so the old cached figure is never reused. */
 export const acLearnedKey = (siteId: string) => `${siteId}:ac:learned:v2`;
@@ -37,7 +37,7 @@ export const acLearnedKey = (siteId: string) => `${siteId}:ac:learned:v2`;
  */
 export async function learnAcKw(siteId: string): Promise<AcLearned> {
   const key = acLearnedKey(siteId), hit = await kv.get<{ at: number; learned: AcLearned }>(key), age = hit ? Date.now() - hit.at : -1;
-  if (hit && age >= 0 && age < LEARN_TTL_MS) return hit.learned;
+  if (hit && age >= 0 && age < LEARN_TTL_MS && hit.learned.diag) return hit.learned;   // an entry without the checks is from before them
   const learned = await computeAcKw(siteId);
   await kv.set(key, { at: Date.now(), learned });
   return learned;
@@ -70,7 +70,29 @@ async function computeAcKw(siteId: string): Promise<AcLearned> {
   const buckets = await q<{ epoch: string; kw: number | null }>(`SELECT epoch::text, (home_wh * 12 / 1000.0)::float8 kw FROM energy WHERE site_id = $1 AND epoch BETWEEN $2 AND $3`,
     [siteId, rows[0].ts - 600_000, rows[rows.length - 1].ts + 600_000]);
   const byStart = new Map(buckets.map(b => [Number(b.epoch), b.kw]));
-  return acStepsFrom(rows, start => byStart.get(start) ?? null);
+  return { ...acStepsFrom(rows, start => byStart.get(start) ?? null), diag: acDiagnostics(rows, byStart) };
+}
+/** Two independent checks of the step (for verifying v2 on real data): the step 10–15 min after a start once a variable-speed unit has
+ *  ramped, and an hourly fixed-effects regression of home kWh on AC-on hours (each clock hour compared only with the same hour on other days). */
+export function acDiagnostics(rows: Array<{ ts: number; hvac: string }>, byStart: Map<number, number | null>) {
+  const B = 300_000, late: number[] = [];
+  for (let i = 2; i < rows.length - 3; i++) {
+    const p2 = rows[i - 2], p1 = rows[i - 1], n0 = rows[i], n3 = rows[i + 3];
+    if (p1.hvac !== 'OFF' || n0.hvac !== 'COOLING' || p2.hvac !== 'OFF' || rows[i + 1].hvac !== 'COOLING' || rows[i + 2].hvac !== 'COOLING' || n3.hvac !== 'COOLING' || n3.ts - n0.ts > 20 * 60_000) continue;
+    const before = byStart.get(Math.floor(p1.ts / B) * B - B), after = byStart.get(Math.ceil(n0.ts / B) * B + 2 * B);
+    if (before != null && after != null && after - before > .5 && after - before < 15) late.push(after - before);
+  }
+  const hours = new Map<number, { on: number; hod: number }>();
+  for (let i = 1; i < rows.length; i++) { const a = rows[i - 1], dt = Math.min(20 * 60_000, rows[i].ts - a.ts); if (a.hvac !== 'COOLING') continue;
+    for (let t = a.ts; t < a.ts + dt; t += 60_000) { const h = Math.floor(t / 3600_000) * 3600_000, e = hours.get(h) ?? { on: 0, hod: Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }).format(new Date(h))) % 24 }; e.on += 1 / 60; hours.set(h, e); } }
+  const pts: Array<{ hod: number; x: number; y: number }> = [];
+  const first = Math.floor(rows[0].ts / 3600_000) * 3600_000, last = rows[rows.length - 1].ts;
+  for (let h = first; h < last - 3600_000; h += 3600_000) { let kwh = 0, n = 0; for (let k = 0; k < 12; k++) { const v = byStart.get(h + k * B); if (v != null) { kwh += v / 12; n++; } }
+    if (n === 12) pts.push({ hod: Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }).format(new Date(h))) % 24, x: hours.get(h)?.on ?? 0, y: kwh }); }
+  const byHod = new Map<number, typeof pts>(); pts.forEach(p => { const a = byHod.get(p.hod); if (a) a.push(p); else byHod.set(p.hod, [p]); });
+  let sxy = 0, sxx = 0; for (const g of byHod.values()) { const mx = g.reduce((s, p) => s + p.x, 0) / g.length, my = g.reduce((s, p) => s + p.y, 0) / g.length; g.forEach(p => { sxy += (p.x - mx) * (p.y - my); sxx += (p.x - mx) ** 2; }); }
+  const med = (a: number[]) => a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : null;
+  return { lateKw: med(late), lateSamples: late.length, regressionKw: sxx ? Math.round(sxy / sxx * 100) / 100 : null, regressionHours: pts.length };
 }
 /** Today's run time and duty from readings. Each reading holds until the next, at most 20 min: the cron samples every 5 minutes
  *  in cooling-season daytime and every 15 minutes otherwise (sampling.ts), so a 15-minute gap counts in full. */
