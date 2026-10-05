@@ -16,7 +16,7 @@ import { SOLAR, warrantedDcPct, systemYear } from './system.js';
 import { siteLocation, exactLocation } from './site.js';
 import { currentTariff, netEnergyCost, NO_TARIFF } from './tariff.js';
 import { appliances, comingSoon } from './appliances/index.js';
-import { poolDetail, applyPlan, restorePrevious, poolCommand, PoolUnavailable, goalPatchError, activeClearUp, startClearUp, extendClearUp, endClearUp, finishClearUpIfDue, clearUpError, CLEARUP_DAYS_MAX } from './appliances/pool.js';
+import { poolDetail, applyPlan, restorePrevious, poolCommand, PoolUnavailable, goalPatchError, scheduleError, saveSchedule, rebaseline, POOL_DEFAULTS, activeClearUp, startClearUp, extendClearUp, endClearUp, finishClearUpIfDue, clearUpError, CLEARUP_DAYS_MAX } from './appliances/pool.js';
 import { readPool } from './appliances/screenlogic.js';
 import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, bandFor, dismissSuggestion, recordNest, observeHold } from './appliances/ac.js';
 import { oidcError, eventOf, seenEvent, applyTraits, isSettingEvent } from './appliances/nestEvents.js';
@@ -486,6 +486,15 @@ app.post('/api/appliances/pool/command', express.json({ limit: '1kb' }), wrap(as
   catch (e) { if (e instanceof GuardRefusal) return res.status(400).json({ error: e.reason }); if (e instanceof PoolUnavailable) return res.status(503).json({ error: e.message }); throw e; }
   res.json(await poolDetail(sid, await settingsFor(req), await rateFor(sid)));
 }));
+/** Frame 7: save the Pool and High Speed runs ({schedules:[{circuitId,start,stop}], speeds?:[{circuitId,rpm}]}); answers the fresh Pool card. */
+app.post('/api/appliances/pool/schedule', express.json({ limit: '4kb' }), wrap(async (req, res) => {
+  const sid = site(req), settings = await settingsFor(req), rate = await rateFor(sid), bad = scheduleError(req.body, { ...POOL_DEFAULTS, ...(settings.pool ?? {}) });
+  if (bad) return res.status(400).json({ error: bad });
+  if (await activeClearUp(sid)) return res.status(409).json({ error: 'A Clear-up is running; end it first' });
+  try { await saveSchedule(sid, req.body, settings); }
+  catch (e) { if (e instanceof GuardRefusal) return res.status(400).json({ error: e.reason }); throw e; }
+  res.json(await poolDetail(sid, await settingsFor(req), rate));
+}));
 /** Frame 6: Clear-up. {action:'start', days, rpm}, {action:'extend'} or {action:'end'}; answers the fresh Pool card. */
 app.post('/api/appliances/pool/clearup', express.json({ limit: '1kb' }), wrap(async (req, res) => {
   const b = req.body ?? {}, sid = site(req), settings = await settingsFor(req), rate = await rateFor(sid);
@@ -512,6 +521,9 @@ app.post('/api/appliances/pool/autopilot', express.json(), wrap(async (req, res)
   const cur = (await settingsFor(req)).pool ?? {};
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ pool: { ...cur, autopilot: mode } })]);
   else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), pool: { ...cur, autopilot: mode } });
+  // choosing Auto means "plan over what runs now": the controller's programs become the baseline, so they are not taken for an outside edit
+  const snap = mode === 'auto' ? await kv.get<any>(`${site(req)}:pool:last`) : null;
+  if (snap?.schedules) await rebaseline(site(req), snap, { ...POOL_DEFAULTS, ...cur }, 'auto');
   res.json({ ok: true, mode });
 }));
 /** Nightly (8:15 PM Central): Autopilot re-plans tomorrow for every site; Auto mode writes it, Suggest stores it. */

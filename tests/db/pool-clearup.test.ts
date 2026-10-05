@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import { kv, migrate } from '../../server/src/db.js';
 import { autopilot } from '../../server/src/appliances/autopilot.js';
-import { startClearUp, extendClearUp, endClearUp, finishClearUpIfDue, activeClearUp, clearUpError, poolRunAfter, powerModel, POOL_DEFAULTS } from '../../server/src/appliances/pool.js';
+import { startClearUp, extendClearUp, endClearUp, finishClearUpIfDue, activeClearUp, clearUpError, poolRunAfter, powerModel, POOL_DEFAULTS, scheduleError, saveSchedule, rebaseline } from '../../server/src/appliances/pool.js';
 import { readPool, writePoolPlan } from '../../server/src/appliances/screenlogic.js';
 import { forecastDays } from '../fixtures/forecast.js';
 import { poolSnapshot, CIRCUITS } from '../fixtures/screenlogic.js';
@@ -66,5 +66,49 @@ describe('Clear-up', () => {
     expect(writePoolPlan).toHaveBeenCalledTimes(1);
     expect(await activeClearUp('cu2')).toBeNull();
     expect((await kv.get<any[]>('cu2:pool:autolog'))![0]).toMatchObject({ text: 'You ended the Clear-up: back to the planner, 12 h at 1,750 RPM', delta: 'you' });
+  });
+});
+
+describe('schedule editor (frame 7)', () => {
+  const S = { poolCircuit: 6, boostCircuit: 8 };
+  it('SE-1 a save: up to six Pool or High Speed runs on the quarter hour, each with a length', () => {
+    expect(scheduleError({ schedules: [{ circuitId: 6, start: 600, stop: 1260 }, { circuitId: 8, start: 780, stop: 840 }], speeds: [{ circuitId: 6, rpm: 1800 }] }, S)).toBeNull();
+    expect(scheduleError({ schedules: [{ circuitId: 6, start: 0, stop: 1439 }] }, S)).toBeNull();                       // all day
+    for (const b of [{ schedules: [{ circuitId: 5, start: 600, stop: 700 }] }, { schedules: [{ circuitId: 6, start: 610, stop: 700 }] }, { schedules: [{ circuitId: 6, start: 600, stop: 600 }] },
+      { schedules: Array(7).fill({ circuitId: 6, start: 0, stop: 60 }) }, { schedules: [], speeds: [{ circuitId: 1, rpm: 2000 }] }, {}]) expect(scheduleError(b, S), JSON.stringify(b)).not.toBeNull();
+  });
+  it('SE-2 saving writes the runs through the guarded write, keeps them as the baseline and moves Auto to Suggest', async () => {
+    await kv.set('settings:owner', { pool: { autopilot: 'auto' } }); vi.mocked(writePoolPlan).mockClear();
+    await saveSchedule('se', { schedules: [{ circuitId: 6, start: 600, stop: 1260 }], speeds: [{ circuitId: 6, rpm: 1800 }] }, { pool: { autopilot: 'auto' } });
+    expect(writePoolPlan).toHaveBeenCalledWith(expect.objectContaining({ speeds: [{ circuitId: 6, rpm: 1800 }], replaceCircuits: [6, 8], schedules: [{ circuitId: 6, start: 600, stop: 1260 }] }));
+    expect((await kv.get<any>('settings:owner')).pool.autopilot).toBe('suggest');
+    expect((await kv.get<any>('se:pool:applied')).plan.schedules).toEqual([{ circuitId: 6, start: 600, stop: 1260, rpm: 1800 }]);
+    expect((await kv.get<any[]>('se:pool:autolog'))![0].text).toBe('You saved the pump schedule (1 run); Autopilot moved to Suggest');
+  });
+  it('SE-3 in Auto, programs changed outside Solstice (the Pentair app) stay: Autopilot moves to Suggest and writes nothing', async () => {
+    await kv.set('settings:owner', { pool: { autopilot: 'auto' } });
+    await kv.set('pe:pool:applied', { at: 0, plan: { schedules: [{ circuitId: 6, start: 420, stop: 1140, rpm: 1750 }] }, removed: [], added: [] });
+    vi.mocked(writePoolPlan).mockClear();
+    const a = await autopilot('pe', { settings: { ...POOL_DEFAULTS, autopilot: 'auto' }, mode: 'auto', W: powerModel([]), rate: null, names: NAMES, snap: poolSnapshot(Date.now()), waterTemp: 80, currentHours: 9, act: true });
+    expect(writePoolPlan).not.toHaveBeenCalled();
+    expect(a.mode).toBe('suggest');
+    expect(a.pending).toBe(true);                                                                  // it offers its plan instead
+    expect((await kv.get<any>('settings:owner')).pool.autopilot).toBe('suggest');
+    expect(a.log.some(l => l.text.startsWith('The pump schedule was changed outside Solstice'))).toBe(true);
+  });
+  it('SE-4 a speed change alone (a boost, a circuit sheet) is not an outside edit', async () => {
+    const snap = poolSnapshot(Date.now()), managed = [6, 8];
+    await kv.set('ps:pool:applied', { at: 0, plan: { schedules: snap.schedules.filter(x => managed.includes(x.circuitId)).map(x => ({ ...x, rpm: 9999 })) }, removed: [], added: [] });
+    const a = await autopilot('ps', { settings: { ...POOL_DEFAULTS, autopilot: 'auto' }, mode: 'auto', W: powerModel([]), rate: null, names: NAMES, snap, waterTemp: 80, currentHours: 9, act: true });
+    expect(a.mode).toBe('auto');
+  });
+  it('SE-5 choosing Auto again makes the current programs the baseline, so the next evening run plans instead of flipping back', async () => {
+    const snap = poolSnapshot(Date.now());
+    await kv.set('pa:pool:applied', { at: 0, plan: { schedules: [{ circuitId: 6, start: 0, stop: 1439, rpm: 2000 }] }, removed: [], added: [] });
+    await rebaseline('pa', snap, POOL_DEFAULTS, 'auto');
+    vi.mocked(writePoolPlan).mockClear();
+    const a = await autopilot('pa', { settings: { ...POOL_DEFAULTS, autopilot: 'auto' }, mode: 'auto', W: powerModel([]), rate: null, names: NAMES, snap, waterTemp: 80, currentHours: 9, act: true });
+    expect(a.mode).toBe('auto');
+    expect(writePoolPlan).toHaveBeenCalledTimes(1);                                              // the planner's plan goes on
   });
 });

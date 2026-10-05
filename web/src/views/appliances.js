@@ -134,6 +134,54 @@ function openBoost(S) {
   $('pcGo').onclick = () => { $('phone').classList.remove('open'); poolSend(S, ...(rpm0 != null && rpm !== rpm0 ? [{ kind: 'speed', id, rpm }] : []), { kind: 'circuit', id, on: true, minutes: pick }); };
   draw(); $('phone').classList.add('open');
 }
+/* frame 7: the schedule editor — Pool and High Speed runs; saving writes them and moves Autopilot from Auto to Suggest */
+const toTime = m => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+const fromTime = v => { const [h, m] = String(v).split(':').map(Number); return h * 60 + m; };
+function openEditor(S) {
+  const d = S.pool, sp = d.settings, P = sp.poolCircuit ?? 6, B = sp.boostCircuit ?? 8, snap = d.snapshot;
+  if (d.clearUp) { pc.err = 'A Clear-up is running; end it first to edit the schedule.'; drawControls(S); return; }
+  const names = { [P]: snap?.circuits.find(c => c.id === P)?.name ?? 'Pool', [B]: snap?.circuits.find(c => c.id === B)?.name ?? 'High Speed' };
+  const speeds0 = speedsOf(snap), speeds = { [P]: speeds0.get(P) ?? 1800, [B]: speeds0.get(B) ?? 2400 }, lim = { min: snap?.pump?.minRpm ?? 450, max: snap?.pump?.maxRpm ?? 3450 };
+  const runs = d.current.schedules.filter(x => x.circuitId === P || x.circuitId === B).map(x => ({ circuitId: x.circuitId, start: x.start, stop: x.stop }));
+  let sel = runs.length ? 0 : -1;
+  const color = c => c === B ? PL_COLOR.skim : PL_COLOR.pool;
+  const draw = () => {
+    const r = runs[sel];
+    $('sheetBody').innerHTML = `<div class="shead"><h4>Pump schedule</h4><button class="x" id="seX" aria-label="Close">\u2715</button></div>
+      <p class="sub">What the controller runs every day</p>
+      <div class="se-list">${runs.map((x, i) => `<button class="se-row${i === sel ? ' on' : ''}" data-i="${i}"><i style="background:${color(x.circuitId)}"></i><b>${esc(names[x.circuitId])}</b><em>\u203a</em><small>${hm(x.start)} \u2013 ${hm(x.stop)} \u00b7 ${speeds[x.circuitId].toLocaleString()}</small></button>`).join('')}</div>
+      ${runs.length < 6 ? '<button class="se-add" id="seAdd">+ Add a run</button>' : ''}
+      ${r ? `<div class="pc-lbl">Editing ${esc(names[r.circuitId])}</div>
+        <div class="seg2 wide" id="seCirc" style="display:flex;margin-top:10px">${[P, B].map(c => `<button data-c="${c}" style="flex:1;text-align:center" class="${c === r.circuitId ? 'on' : ''}">${esc(names[c])}</button>`).join('')}</div>
+        <div class="se-time"><label><small>Start</small><input type="time" step="900" id="seStart" value="${toTime(r.start)}"></label><label><small>Stop</small><input type="time" step="900" id="seStop" value="${toTime(r.stop === 1439 ? 1440 : r.stop)}"></label></div>
+        <div class="pc-rpm"><div class="bt">Speed<small>${esc(names[r.circuitId])}'s saved speed</small></div><div class="stp"><button id="seDn" aria-label="Slower">\u2212</button><b>${speeds[r.circuitId].toLocaleString()}</b><button id="seUp" aria-label="Faster">+</button></div></div>` : ''}
+      <button class="primary" id="seGo" style="width:100%;box-sizing:border-box;margin-top:14px;background:var(--batt);color:#04140c">Save to the controller</button>
+      ${r ? '<button class="link" id="seDel">Delete this run</button>' : ''}
+      <p class="fine" id="seNote" style="margin-top:10px">Saving keeps your schedule: Autopilot switches to Suggest and offers its plan instead of writing over yours. ${esc(names[P])} and ${esc(names[B])} only (Waterfall is a switch only). New runs are added before old ones are removed.</p>`;
+    document.querySelectorAll('.se-row').forEach(b => b.onclick = () => { sel = +b.dataset.i; draw(); });
+    $('seX').onclick = () => $('phone').classList.remove('open');
+    if ($('seAdd')) $('seAdd').onclick = () => { runs.push({ circuitId: P, start: 600, stop: 900 }); sel = runs.length - 1; draw(); };
+    if (r) {
+      $('seCirc').onclick = e => { const b = e.target.closest('button'); if (!b) return; r.circuitId = +b.dataset.c; draw(); };
+      const q15 = v => Math.round(v / 15) * 15;
+      $('seStart').onchange = e => { r.start = q15(fromTime(e.target.value)) % 1440; draw(); };
+      $('seStop').onchange = e => { const m = q15(fromTime(e.target.value)); r.stop = m === 0 || m >= 1440 ? 1439 : m; draw(); };
+      const step = dv => { speeds[r.circuitId] = Math.max(lim.min, Math.min(lim.max, Math.round((speeds[r.circuitId] + dv) / 50) * 50)); draw(); };
+      $('seDn').onclick = () => step(-50); $('seUp').onclick = () => step(50);
+      $('seDel').onclick = () => { runs.splice(sel, 1); sel = Math.min(sel, runs.length - 1); save(); };
+    }
+    $('seGo').onclick = save;
+  };
+  const save = async () => {
+    const bad = runs.find(x => x.start === x.stop); if (bad) { $('seNote').textContent = 'A run needs a stop after its start.'; return; }
+    const used = [...new Set(runs.map(x => x.circuitId))], body = { schedules: runs, speeds: used.filter(c => speeds[c] !== speeds0.get(c)).map(c => ({ circuitId: c, rpm: speeds[c] })) };
+    $('seGo').textContent = 'Saving\u2026';
+    try { S.pool = await api.poolSchedule(body); $('phone').classList.remove('open'); drawPool(S); }
+    catch (e) { $('seGo').textContent = 'Save to the controller'; $('seNote').textContent = `Couldn\u2019t save: ${e.message}`; }
+  };
+  draw(); $('phone').classList.add('open');
+}
+
 /* frame 6: Clear-up — the Pool circuit all day for 1–3 days, then back to the planner by itself; only End now ends it early */
 const endsLabel = ms => `${new Date(ms).toLocaleDateString('en-US', { weekday: 'short' })} ${clockAt(ms)}`;
 const poolRunAfter = t => { const d = new Date(t); d.setUTCHours(1, 15, 0, 0); if (d.getTime() < t) d.setUTCDate(d.getUTCDate() + 1); return d.getTime(); };   // as the server
@@ -260,6 +308,7 @@ function drawPlanner(S) {
   $('plList').innerHTML = C.schedules.map(s => `<div class="pl-row"><i style="background:${colorOf(s)}"></i><b>${esc(s.name)}${s.circuitId === boostId ? ' skim' : ''} · ${span(s)}</b><span>${s.rpm.toLocaleString()} RPM</span></div>`).join('')
     + (bUntil ? `<div class="pl-row"><i style="background:${PL_COLOR.boost}"></i><b>Your boost · until ${clockAt(bUntil)}</b><span>${(speedsOf(d.snapshot).get(boostId) ?? 0).toLocaleString()} RPM</span></div>` : '')
     || '<p class="fine">No pump programs on the controller.</p>';
+  $('plEdit').onclick = () => openEditor(S);
   // the goal (owner only) and what the goal's plan costs a day
   $('plGoal').textContent = w.goal.toFixed(1); $('plSkim').textContent = `${w.skimHours} h`;
   $('ruleGoal').textContent = `goal: ${w.goal} turnover${w.goal === 1 ? '' : 's'}`;   // the Autopilot card's rule chip follows the goal

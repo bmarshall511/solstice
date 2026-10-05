@@ -106,7 +106,9 @@ describe('pool Autopilot', () => {
     const applied = await kv.get<any>('p-auto:pool:applied');
     expect(applied.plan).toMatchObject({ start: 6, stop: 19, boostAt: 12, rpm: 1750 });
     expect(applied.added).toEqual([11, 12]);
-    const again = await run('p-auto', 'auto');
+    // the controller now runs what was written (so the evening run sees no outside edit, frame 7)
+    const written = applied.plan.schedules.map((x: any, i: number) => ({ id: 11 + i, circuitId: x.circuitId, start: x.start, stop: x.stop, dayMask: 127, flags: 0, heatCmd: 4, heatSetPoint: 70 }));
+    const again = await autopilot('p-auto', { settings: { ...POOL_DEFAULTS, autopilot: 'auto' }, mode: 'auto', W: W0, rate: RATE, names: NAMES, snap: poolSnapshot(Date.now(), { schedules: written }), waterTemp: 88, currentHours: 9, act: true });
     expect(writePoolPlan).toHaveBeenCalledTimes(1);
     expect(again.log[0].text).toBe('Tomorrow: 13 h at 1,750 RPM + 1 h skim, 3.26× turnover. +1 h: water at 88°F');   // (12 h × 60.87 + 1 h × 83.48 GPM) × 60 / 14,995
     expect(again.log[0].delta).toMatch(/^\d+(\.\d)? kWh$/);

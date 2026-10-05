@@ -353,6 +353,55 @@ export async function finishClearUpIfDue(siteId: string, settingsAll: Record<str
   return c && c.until - 10 * 60_000 <= now ? endClearUp(siteId, settingsAll, rate, 'done') : null;
 }
 
+/* ---------- mockup w frame 7: the schedule editor ---------- */
+export const EDIT_RUNS_MAX = 6;
+/** The owner's Pool Autopilot mode, written where the routes keep it (single-owner kv settings). */
+export async function setPoolAutopilot(mode: 'off' | 'suggest' | 'auto') {
+  const cur = await kv.get<Record<string, any>>('settings:owner') ?? {};
+  await kv.set('settings:owner', { ...cur, pool: { ...(cur.pool ?? {}), autopilot: mode } });
+}
+/** Programs compared by what they run when: circuit, start and stop (speeds can change from the circuit sheets or a boost). */
+export const programKey = (xs: Array<{ circuitId: number; start: number; stop: number }>, circuits: number[]) =>
+  JSON.stringify(xs.filter(x => circuits.includes(x.circuitId)).map(x => [x.circuitId, x.start, x.stop]).sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]));
+type EditRun = { circuitId: number; start: number; stop: number };
+/** Make what the controller runs now the baseline Autopilot compares against (an outside edit kept, or the owner choosing Auto again). */
+export async function rebaseline(siteId: string, snap: PoolSnapshot, settings: Pick<PoolSettings, 'poolCircuit' | 'boostCircuit'>, by: 'controller' | 'auto') {
+  const managed = [settings.poolCircuit, settings.boostCircuit], speeds = new Map((snap.pump?.circuits ?? []).map(c => [c.circuitId, c.speed]));
+  const prev = await kv.get<any>(`${siteId}:pool:applied`) ?? { removed: [], added: [], previousSpeeds: [] };
+  await kv.set(`${siteId}:pool:applied`, { ...prev, at: Date.now(), by, plan: { schedules: snap.schedules.filter(x => managed.includes(x.circuitId)).map(x => ({ circuitId: x.circuitId, start: x.start, stop: x.stop, rpm: speeds.get(x.circuitId) ?? 0 })) } });
+}
+/** Why an editor save is unusable, or null: up to six Pool or High Speed runs on 15-minute times (23:59 allowed as a stop), each with a length. */
+export function scheduleError(b: any, s: Pick<PoolSettings, 'poolCircuit' | 'boostCircuit'>): string | null {
+  const ok = [s.poolCircuit, s.boostCircuit], t = (m: unknown) => Number.isInteger(m) && (m as number) >= 0 && (m as number) <= 1439;
+  if (!Array.isArray(b?.schedules) || b.schedules.length > EDIT_RUNS_MAX) return `send up to ${EDIT_RUNS_MAX} runs`;
+  for (const r of b.schedules) {
+    if (!ok.includes(r?.circuitId)) return 'only the Pool and High Speed runs can be edited here';
+    if (!t(r.start) || !t(r.stop) || r.start % 15 || (r.stop % 15 && r.stop !== 1439)) return 'run times are on the quarter hour';
+    if (r.start === r.stop) return 'a run needs a start and a different stop';
+  }
+  if (b.speeds != null && (!Array.isArray(b.speeds) || b.speeds.some((x: any) => !ok.includes(x?.circuitId) || !Number.isInteger(x.rpm)))) return 'speeds are whole RPM for Pool or High Speed';
+  return null;
+}
+/**
+ * Save the owner's schedule (frame 7): Pool and High Speed programs replaced by `runs` (added before the old ones are removed, through
+ * the guarded write), their speeds set, the result kept as the baseline Autopilot compares against, and Autopilot moved from Auto to
+ * Suggest so the evening run offers its plan instead of writing over this one.
+ */
+export async function saveSchedule(siteId: string, b: { schedules: EditRun[]; speeds?: Array<{ circuitId: number; rpm: number }> }, settingsAll: Record<string, any>) {
+  const settings: PoolSettings = { ...DEFAULTS, ...(settingsAll.pool ?? {}) }, snap = await readPool();
+  if (!snap.pump) throw new Error('No pump found on the controller');
+  const speeds = new Map(snap.pump.circuits.map(c => [c.circuitId, c.speed])); for (const x of b.speeds ?? []) speeds.set(x.circuitId, x.rpm);
+  const managed = [settings.poolCircuit, settings.boostCircuit];
+  const r = await guardedWrite(siteId, 'your schedule', { pumpId: snap.pump.id, speeds: (b.speeds ?? []).map(x => ({ circuitId: x.circuitId, rpm: x.rpm })), replaceCircuits: managed,
+    schedules: b.schedules.map(x => ({ circuitId: x.circuitId, start: x.start, stop: x.stop })), guard: guardContext(snap) });
+  const schedules = b.schedules.map(x => ({ ...x, rpm: speeds.get(x.circuitId) ?? 0 }));
+  await kv.set(`${siteId}:pool:applied`, { at: Date.now(), by: 'you', plan: { schedules }, removed: r.removed, added: r.added, previousSpeeds: snap.pump.circuits.filter(c => managed.includes(c.circuitId)) });
+  await kv.set(`${siteId}:pool:last`, null as any); await kv.set(`${siteId}:pool:pending`, null as any);
+  const toSuggest = settings.autopilot === 'auto'; if (toSuggest) await setPoolAutopilot('suggest');
+  await logPool(siteId, `You saved the pump schedule (${b.schedules.length} run${b.schedules.length === 1 ? '' : 's'})${toSuggest ? '; Autopilot moved to Suggest' : ''}`, 'you');
+  return schedules;
+}
+
 /** Why a turnover goal patch (frame 5's steppers) is unusable, or null: 1–4 turnovers a day in half steps, 0–3 whole skim hours. */
 export function goalPatchError(b: any): string | null {
   if (!b || typeof b !== 'object') return 'send turnoverGoal and/or skimHours';
