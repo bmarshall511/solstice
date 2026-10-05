@@ -216,6 +216,7 @@ function drawPlanner(S) {
     || '<p class="fine">No pump programs on the controller.</p>';
   // the goal (owner only) and what the goal's plan costs a day
   $('plGoal').textContent = w.goal.toFixed(1); $('plSkim').textContent = `${w.skimHours} h`;
+  $('ruleGoal').textContent = `goal: ${w.goal} turnover${w.goal === 1 ? '' : 's'}`;   // the Autopilot card's rule chip follows the goal
   $('plGal').textContent = `${w.gallons.toLocaleString()} gal · ${w.goal} = about ${(Math.round(w.gallons * w.goal / 1000) * 1000).toLocaleString()} gal`;
   const save = patch => { clearTimeout(goalTimer); goalTimer = setTimeout(async () => { try { S.pool = await api.poolGoal(patch()); drawPool(S); } catch (e) { drawPlanner(S); $('plNote').textContent = `Couldn’t save the goal: ${e.message}`; } }, 700); };   // back to the saved goal
   let goal = w.goal, skim = w.skimHours;
