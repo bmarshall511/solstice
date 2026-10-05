@@ -1,4 +1,4 @@
-import { $, niceDate, localDate, addDays, svgText, path, ago, money } from '../lib/util.js';
+import { $, niceDate, localDate, addDays, svgText, path, ago, money, localHour } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { mountOutageCard } from './outage.js';
 import { veil, esc } from '../lib/frost.js';
@@ -99,6 +99,22 @@ const EG = { ac: ['AC', '#ff9e66'], alwaysOn: ['Always-on', '#c4a2ff'], big: ['B
 const eg = { range: 'week', open: new Set(), data: null, timer: null };
 const clk = ms => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 /** Owner only (main.js boot): loads the card now and every 15 minutes while visible; the range switch reloads it. */
+/* ---------- mockup ad: Spare solar (owner only) ---------- */
+let spTimer = null;
+export function initSpare(S, every) {
+  $('spCard').hidden = !!S.guest; if (S.guest) return;
+  spTimer ??= every(15 * 60_000, async () => { try { drawSpare(await api.spare()); } catch { /* keep the last */ } });
+}
+const MON = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'], MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function drawSpare(d) {
+  const top = Math.max(1, ...d.months.map(m => m.days));
+  $('spDays').textContent = d.days; $('spSub').textContent = `days with spare solar · ${d.exportKwh.toLocaleString()} kWh sent to PEC`;
+  $('spBars').innerHTML = d.months.map(m => `<div><em>${m.days || ''}</em><i class="${m.days ? '' : 'z'}" style="height:${m.days / top * 60}px"></i><small>${MON[+m.month.slice(5) - 1]}</small></div>`).join('');
+  const best = [...d.months].filter(m => m.days).sort((a, b) => b.days - a.days).slice(0, 2).map(m => MONTH[+m.month.slice(5) - 1]);
+  const n = d.now, h = localHour(), day = h >= 8 && h < 18;
+  $('spNow').innerHTML = n?.spare ? `<i class="on"></i><span><b>Spare now.</b> Powerwalls ${n.soc}%, ${(n.exportW / 1000).toFixed(1)} kW going to PEC.</span>`
+    : `<i></i><span><b>None now.</b>${n ? ` Powerwalls ${n.soc}%${day && n.surplusW <= 0 ? ', and the house is using all the solar' : ''}.` : ''}${best.length ? ` Spare solar shows up on mild sunny days, mostly ${best.join(' and ')}.` : ''}</span>`;
+}
 export function initBreakdown(S, every) {
   $('egCard').hidden = !!S.guest; if (S.guest) return;
   $('egRange').onclick = e => { const b = e.target.closest('button'); if (!b || b.dataset.r === eg.range) return; eg.range = b.dataset.r; loadBreakdown(); };

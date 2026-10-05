@@ -81,6 +81,7 @@ export const api = {
   poolClearUp: body => send('POST', 'appliances/pool/clearup', body),
   poolSchedule: body => send('POST', 'appliances/pool/schedule', body),
   acHold: action => send('POST', 'appliances/ac/hold', { action }),
+  spare: () => get('spare'),
   breakdown: range => get(`breakdown?range=${encodeURIComponent(range)}`),   // mockup y
   acSuggestion: (action, key) => send('POST', 'appliances/ac/suggestion', { action, key }),
   models: () => get('models'),

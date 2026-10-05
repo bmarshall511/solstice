@@ -52,7 +52,7 @@ vi.mock('@electric-sql/pglite', async importOriginal => {
 const NOW = Date.parse('2026-09-25T18:00:00Z'); // Friday 13:00 CDT
 const RATE = .1064, SLOPE = 2.5;
 /** Live readings with `w` W of spare solar over the 15 minutes before `at` (ac.ts pre-cools only on measured spare solar, Q7). */
-const spare = async (site: string, w = 5000, at = Date.now()) => { for (const m of [1, 5, 10]) await q(`INSERT INTO readings (site_id, ts, solar_w, load_w) VALUES ($1, $2, $3, 1000) ON CONFLICT DO NOTHING`, [site, at - m * 60_000, 1000 + w]); };
+const spare = async (site: string, w = 5000, at = Date.now()) => { for (const m of [1, 5, 10]) await q(`INSERT INTO readings (site_id, ts, solar_w, load_w, soc) VALUES ($1, $2, $3, 1000, 98) ON CONFLICT DO NOTHING`, [site, at - m * 60_000, 1000 + w]); };
 const W0 = powerModel([]);
 const NAMES = new Map(CIRCUITS.map(c => [c.id, c.name]));
 const seedForecast = (over?: Record<number, Partial<Daily>>) => kv.set('pool:forecast', { at: Date.now(), days: forecastDays(localDay(), over) });
