@@ -121,7 +121,7 @@ const noPresence = (v: unknown) => (typeof v === 'string' ? !/\b(away|home)\b/i.
 const AC: Rule = {
   id: true, name: true, configured: true, linked: true, error: fixed(UNAVAILABLE),
   settings: { band: { homeLo: true, homeHi: true, nightLo: true, nightHi: true }, awayF: true, nightFrom: true, nightTo: true, precoolDepth: true,
-    coastF: true, maxStepF: true, humidityCap: true, autopilot: true, presence: 'veil' },
+    coastF: true, maxStepF: true, humidityCap: true, autopilot: true, presence: 'veil', dayF: true, nightF: true, driftF: true },   // mockup ag: the targets
   state: { at: true, name: fixed('Thermostat'), online: true, indoorF: true, humidity: true, mode: true, hvac: true, coolF: true, heatF: true },
   learned: { coolKw: true, heatKw: true, samples: true, heatSamples: true, acKw: true },
   runtime: { minutes: true, duty: true }, todayKwh: true, shareOfHomePct: true,

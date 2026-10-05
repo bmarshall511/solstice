@@ -1026,6 +1026,39 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .ae-chg em{font:500 10.5px "JetBrains Mono";font-style:normal;color:var(--mute)}
 .ae-chg b{color:var(--text);font-weight:600}
 .ae-chg span{font:500 11px "JetBrains Mono";color:var(--text)}
+/* mockup ag: the Comfort card and sheets */
+.ag-edit{all:unset;cursor:pointer;font-size:12px;font-weight:600;color:var(--text);padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b)}
+.ag-two{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.ag-two div{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
+.ag-two small{display:block;font:600 10px Manrope;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+.ag-two b{display:block;font-size:30px;font-weight:300;letter-spacing:-.02em;margin-top:2px}
+.ag-two span{font-size:11.5px;color:var(--dim)}
+.ag-line{font-size:12.5px;color:var(--dim);margin-top:10px;line-height:1.5}
+.ag-line b{color:var(--text);font-weight:600}
+.ag-nudge{display:flex;gap:8px;margin-top:12px}
+.ag-nudge button{all:unset;cursor:pointer;flex:1;text-align:center;padding:9px 10px;border-radius:12px;font-weight:600;font-size:12.5px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);color:var(--text)}
+.ag-nudge i{font-style:normal}.ag-nudge .cold i{color:#7cc4ff}.ag-nudge .warm i{color:#ff9e66}
+.ag-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;padding:12px 0;border-top:1px solid rgba(255,255,255,.06)}
+.ag-row:first-child{border-top:0}
+.ag-row .tl{font-size:13.5px;font-weight:600}
+.ag-row .tl small{display:block;font-size:11.5px;color:var(--dim);font-weight:400;margin-top:2px;line-height:1.4}
+.ag-step{display:flex;align-items:center;gap:8px}
+.ag-step button{all:unset;cursor:pointer;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);font-size:16px}
+.ag-step b{min-width:42px;text-align:center;font:500 17px "JetBrains Mono"}
+.ag-hours{font:500 13px "JetBrains Mono"}
+.ag-hours button{all:unset;cursor:pointer;border-bottom:1px dashed rgba(255,255,255,.3)}
+.ag-chips{display:flex;gap:6px}
+.ag-chips button{all:unset;cursor:pointer;padding:6px 10px;border-radius:999px;font:500 12px "JetBrains Mono";background:rgba(255,255,255,.06);border:1px solid var(--glass-b);color:var(--dim)}
+.ag-chips button.on{background:rgba(255,255,255,.18);color:var(--text)}
+.ag-day{height:34px;margin-top:6px;border-radius:10px;overflow:hidden;display:flex}
+.ag-day i{display:grid;place-items:center;height:100%;font:500 10px "JetBrains Mono";font-style:normal;color:#0b0f18}
+.ag-dlab{position:relative;height:14px;font:500 9.5px "JetBrains Mono";color:var(--mute);margin-top:4px}
+.ag-dlab span{position:absolute;transform:translateX(-50%)}.ag-dlab span:first-child{transform:none}.ag-dlab span:last-child{transform:translateX(-100%)}
+#cmGo,#ngGo{display:block;width:100%;box-sizing:border-box;text-align:center;margin-top:14px}
+.ag-opt{all:unset;box-sizing:border-box;cursor:pointer;display:block;width:100%;padding:12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b);margin-top:10px}
+.ag-opt.pick{border-color:rgba(255,255,255,.4);background:rgba(255,255,255,.08)}
+.ag-opt b{font-size:13.5px}
+.ag-opt p{font-size:12px;color:var(--dim);margin-top:3px;line-height:1.45}
 /* mockup af: the Powerwall capacity card */
 .bc-big{display:flex;align-items:baseline;gap:8px;margin-top:10px}
 .bc-big b{font-size:30px;font-weight:300;letter-spacing:-.02em}

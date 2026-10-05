@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Solstice · Comfort targets</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* page scaffolding for the mockup only (same as v–af) */
+html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+body{background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.col{width:100%;max-width:393px;margin:0 auto;padding:28px 0 60px}
+.intro{padding:0 20px}
+.intro .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.intro h2{font-size:30px;line-height:1.1;font-weight:300;letter-spacing:-.02em;margin-bottom:12px}
+.intro p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.frame{margin-top:34px}
+.frame>.sect{margin:0 20px 10px}
+.pagepad{padding:0 20px}
+.cap{margin:12px 20px 0;padding:12px 14px;border-radius:16px;background:rgba(0,0,0,.25);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.55}
+.cap b{color:var(--text);font-weight:600}
+.cap p+p{margin-top:6px}
+.cap .new{color:var(--batt)}.cap .same{color:var(--mute)}.cap .gone{color:#ff9e66}
+.wrules{margin:34px 20px 0}
+.wrules h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:10px}
+.wrules ul{list-style:none;display:grid;gap:8px}
+.wrules li{font-size:12.5px;color:var(--dim);line-height:1.55;padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b)}
+.wrules li b{color:var(--text);font-weight:600}
+.m-sheet{border-radius:24px 24px 18px 18px;padding:8px 16px 16px;background:rgba(20,24,36,.92);border:1px solid var(--glass-b)}
+.m-grab{width:38px;height:4px;border-radius:2px;background:rgba(255,255,255,.2);margin:4px auto 12px}
+.m-sheet h4{font-size:17px;font-weight:600}
+.m-sub{font-size:12px;color:var(--dim);margin-top:2px;line-height:1.5}
+.m-stub{height:54px;margin-top:10px;border-radius:12px;background:rgba(255,255,255,.04)}
+/* NEW: the Comfort card */
+.ct-two{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.ct-two div{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
+.ct-two small{display:block;font:600 10px Manrope;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+.ct-two b{display:block;font-size:30px;font-weight:300;letter-spacing:-.02em;margin-top:2px}
+.ct-two span{font-size:11.5px;color:var(--dim)}
+.ct-line{font-size:12.5px;color:var(--dim);margin-top:10px;line-height:1.5}
+.ct-line b{color:var(--text);font-weight:600}
+.ct-nudge{display:flex;gap:8px;margin-top:12px}
+.ct-nudge button{all:unset;cursor:pointer;flex:1;text-align:center;padding:9px 10px;border-radius:12px;font-weight:600;font-size:12.5px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);color:var(--text)}
+.ct-nudge .cold i{color:#7cc4ff;font-style:normal}.ct-nudge .warm i{color:#ff9e66;font-style:normal}
+.ct-edit{all:unset;cursor:pointer;font-size:12px;font-weight:600;color:var(--text);padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b)}
+/* NEW: the sheet */
+.trow{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;padding:12px 0;border-top:1px solid rgba(255,255,255,.06)}
+.trow:first-of-type{border-top:0}
+.trow .tl{font-size:13.5px;font-weight:600}
+.trow .tl small{display:block;font-size:11.5px;color:var(--dim);font-weight:400;margin-top:2px;line-height:1.4}
+.stepr{display:flex;align-items:center;gap:8px}
+.stepr button{all:unset;cursor:pointer;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);font-size:16px}
+.stepr b{min-width:42px;text-align:center;font:500 17px "JetBrains Mono"}
+.chips3{display:flex;gap:6px}
+.chips3 button{all:unset;cursor:pointer;padding:6px 10px;border-radius:999px;font:500 12px "JetBrains Mono";background:rgba(255,255,255,.06);border:1px solid var(--glass-b);color:var(--dim)}
+.chips3 button.on{background:rgba(255,255,255,.18);color:var(--text)}
+.dayline{position:relative;height:34px;margin-top:6px;border-radius:10px;overflow:hidden;display:flex}
+.dayline i{display:block;height:100%;font:500 10px "JetBrains Mono";font-style:normal;color:#0b0f18;display:grid;place-items:center}
+.dlab{position:relative;height:14px;font:500 9.5px "JetBrains Mono";color:var(--mute);margin-top:4px}
+.dlab span{position:absolute;transform:translateX(-50%)}.dlab span:first-child{transform:none}.dlab span:last-child{transform:translateX(-100%)}
+.go2{all:unset;box-sizing:border-box;width:100%;cursor:pointer;display:block;text-align:center;margin-top:14px;padding:12px;border-radius:14px;background:var(--solar);color:#1a1204;font-weight:700;font-size:14px}
+/* NEW: the nudge sheet */
+.opt{display:block;padding:12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b);margin-top:10px}
+.opt.pick{border-color:rgba(255,255,255,.4);background:rgba(255,255,255,.08)}
+.opt b{font-size:13.5px}
+.opt p{font-size:12px;color:var(--dim);margin-top:3px;line-height:1.45}
+/* learning (as ae) */
+.pat{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b);margin-top:10px}
+.pat .t{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:600}
+.pat .t span{font:500 11px "JetBrains Mono";color:var(--dim)}
+.pat p{font-size:12px;color:var(--dim);margin-top:3px;line-height:1.45}
+.w-dots{display:flex;gap:5px;margin-top:8px}
+.w-dots i{width:22px;height:6px;border-radius:3px;background:rgba(255,255,255,.1)}
+.w-dots i.on{background:#c4a2ff}
+.w-dots i.need{outline:1px dashed rgba(196,162,255,.6);outline-offset:1px}
+.chg{display:grid;gap:6px;margin-top:12px}
+.chg div{display:grid;grid-template-columns:auto 1fr auto;gap:8px;font-size:12px;color:var(--dim);align-items:baseline}
+.chg em{font:500 10.5px "JetBrains Mono";font-style:normal;color:var(--mute)}
+.chg b{color:var(--text);font-weight:600}
+.chg span{font:500 11px "JetBrains Mono";color:var(--text)}
+</style></head><body>
+<div class="col">
+  <div class="intro">
+    <div class="k">Mockup ag · Comfort targets</div>
+    <h2>Say the temperature you want, not a range it aims for the middle of.</h2>
+    <p>Today you set a band (it was 74–78°) and Autopilot quietly aims for its middle (76°), pre-cools to its bottom (74°) and coasts to its top. The house ran cool and nothing on screen said why. Here you set the temperatures themselves. The values shown are what you chose on 10/5: 78° by day, 77° at night.</p>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 1 · AC tab · new Comfort card</div>
+    <div class="pagepad"><div class="card">
+      <div class="h"><b>Comfort</b><button class="ct-edit">Edit</button></div>
+      <div class="ct-two">
+        <div><small>Day</small><b>78°</b><span>7 AM – 10 PM</span></div>
+        <div><small>Night</small><b>77°</b><span>10 PM – 7 AM</span></div>
+      </div>
+      <p class="ct-line">Hot, sunny days: <b>pre-cool to 76°</b> on solar, then <b>let it drift to 79°</b> in the early evening on the Powerwalls. Away: <b>80°</b>.</p>
+      <div class="ct-nudge"><button class="cold"><i>❄</i> Too cold</button><button class="warm"><i>☀</i> Too warm</button></div>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> a Comfort card at the top of the AC tab (owner only): the two temperatures Autopilot aims for, in plain words what it does on hot, sunny days, and two nudge buttons (frame 3).</p>
+      <p><b class="gone">Replaced:</b> the small "Band 74–78°" chip on "Today: Nest vs Solstice" becomes "Comfort 78° · 77°" and opens the same sheet. Nothing else on that card changes.</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 2 · Edit comfort (sheet)</div>
+    <div class="pagepad"><div class="m-sheet"><div class="m-grab"></div>
+      <h4>Comfort</h4><div class="m-sub">What Autopilot aims for. Your changes at the thermostat or in the app still go anywhere from 65° to 85°.</div>
+      <div style="margin-top:6px">
+        <div class="trow"><span class="tl">Day<small>7 AM – 10 PM</small></span><span class="stepr"><button>−</button><b>78°</b><button>+</button></span></div>
+        <div class="trow"><span class="tl">Night<small>10 PM – 7 AM</small></span><span class="stepr"><button>−</button><b>77°</b><button>+</button></span></div>
+        <div class="trow"><span class="tl">Night hours<small>when night starts and ends</small></span><span class="stepr"><b style="min-width:0;font-size:13px">10 PM – 7 AM</b></span></div>
+        <div class="trow"><span class="tl">Pre-cool<small>on hot, sunny days, while solar covers it</small></span><span class="chips3"><button>Off</button><button>1°</button><button class="on">2°</button><button>3°</button></span></div>
+        <div class="trow"><span class="tl">Evening drift<small>after pre-cooling, on the Powerwalls</small></span><span class="chips3"><button>Off</button><button class="on">1°</button><button>2°</button></span></div>
+        <div class="trow"><span class="tl">Away<small>while marked away</small></span><span class="stepr"><button>−</button><b>80°</b><button>+</button></span></div>
+      </div>
+      <div class="m-sub" style="margin-top:8px">A hot, sunny day with these settings:</div>
+      <div class="dayline"><i style="flex:7;background:#b8a6ff">77</i><i style="flex:4;background:#ffd27a">78</i><i style="flex:5;background:#7cc4ff">76</i><i style="flex:4;background:#ffb08a">79</i><i style="flex:2;background:#ffd27a">78</i><i style="flex:2;background:#b8a6ff">77</i></div>
+      <div class="dlab"><span style="left:0">12a</span><span style="left:25%">6a</span><span style="left:50%">12p</span><span style="left:75%">6p</span><span style="left:100%">12a</span></div>
+      <button class="go2">Save</button>
+      <p class="fine" style="text-align:center;margin-top:10px">Takes effect at the next plan step. A hold in force is left alone.</p>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> day and night are single temperatures. Pre-cool and the evening drift are how far Autopilot may go below and above the day target, and the strip shows the hot-day result before you save.</p>
+      <p><b class="same">Same limits:</b> 65–85°, 2° per step, one change per 30 minutes (guards.ts).</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 3 · tapping "Too cold"</div>
+    <div class="pagepad"><div class="m-sheet"><div class="m-grab"></div>
+      <h4>Warmer by 1°</h4><div class="m-sub">It's 2:40 PM. Autopilot is aiming for 78°.</div>
+      <div class="opt pick"><b>Make 79° the day target</b><p>From now on, every day. Nest goes to 79° now (one step).</p></div>
+      <div class="opt"><b>Just for now</b><p>79° until the next plan step at 10 PM, then back to the plan. Same as changing it at the thermostat.</p></div>
+      <button class="go2">Make it 79°</button>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> one tap when it feels wrong. "Too warm" is the same, 1° cooler. During the night it offers the night target instead. Both choices write to Nest through the same guards as every other change.</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 4 · Your changes · learning fix</div>
+    <div class="pagepad"><div class="m-sheet"><div class="m-grab"></div>
+      <h4>Your changes</h4><div class="m-sub">Thermostat · last 7 days</div>
+      <div class="pat"><div class="t">Days: warmer than the plan<span>1 of 4</span></div>
+        <p>You set 78° and 77° when it planned 76°. Both count: the same direction in the same part of the day.</p>
+        <div class="w-dots"><i class="on"></i><i class="need"></i><i class="need"></i><i class="need"></i></div></div>
+      <div class="chg">
+        <div><em>Mon 8:08 AM</em><b>Set 77° at the thermostat</b><span>plan 76°</span></div>
+        <div><em>Mon 7:00 AM</em><b>Set 78° at the thermostat</b><span>plan 76°</span></div>
+      </div>
+      <p class="fine" style="margin-top:12px">After warmer (or cooler) changes on 4 of 7 days, Solstice suggests moving that target 1°. It never changes it by itself.</p>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">Fix:</b> changes group by day or night and by direction (warmer or cooler), not "within an hour and 1° of each other". Monday's 7:00 and 8:08 changes were left out today. A day counts once however many changes it has.</p>
+      <p><b class="new">Changed:</b> the suggestion moves the target 1° in that direction ("Make 79° the day target?") instead of rebuilding a band.</p>
+    </div>
+  </div>
+
+  <div class="wrules">
+    <h3>The rules</h3>
+    <ul>
+      <li><b>Your settings carry over:</b> day = the middle of today's home band (78°), night = today's night setpoint (77°), pre-cool 2°, drift 1°. Nothing about the house changes on the day this ships.</li>
+      <li><b>Autopilot</b> aims for the day target 7 AM – 10 PM and the night target overnight, pre-cools only on hot, sunny days while solar covers it, and never goes past target − pre-cool or target + drift.</li>
+      <li><b>Holds</b> work as now: a change at the thermostat or in the app is kept for 2–8 hours.</li>
+      <li><b>Unchanged:</b> Autopilot stays on Auto; control days, trims, the guards, presence and every other card.</li>
+    </ul>
+  </div>
+</div>
+</body></html>

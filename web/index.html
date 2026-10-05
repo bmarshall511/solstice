@@ -314,6 +314,12 @@
           <p class="fine" id="poolSeasonNote" hidden>kWh per day by season, the baseline Autopilot adjusts from each day’s data.</p>
           </div>
           <div id="applAc" hidden>
+            <div class="card" id="acComfortCard" data-owner hidden>
+              <div class="h"><b>Comfort</b><button class="ag-edit" id="ctEdit">Edit</button></div>
+              <div class="ag-two"><div><small>Day</small><b id="ctDay">—</b><span id="ctDaySub"></span></div><div><small>Night</small><b id="ctNight">—</b><span id="ctNightSub"></span></div></div>
+              <p class="ag-line" id="ctLine"></p>
+              <div class="ag-nudge"><button class="cold" id="ctCold"><i>❄</i> Too cold</button><button class="warm" id="ctWarm"><i>☀</i> Too warm</button></div>
+            </div>
             <div class="card tstat" id="acTstat" data-owner hidden>
               <div class="h"><b>Thermostat</b><span class="badge g" id="tsBadge">—</span></div>
               <div class="dial"><button class="step" id="tsDown" aria-label="One degree cooler">−</button><div class="sp"><small id="tsLabel">Cool to</small><b id="tsVal">—</b><span id="tsLine">—</span></div><button class="step" id="tsUp" aria-label="One degree warmer">+</button></div>

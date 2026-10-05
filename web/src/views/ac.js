@@ -25,6 +25,7 @@ export function drawAc(S) {
   const linked = d.linked, st = d.state;
   $('acBadge').textContent = !d.configured ? 'Not set up' : linked ? 'Linked · Nest' : 'Not linked'; $('acBadge').className = 'badge' + (linked ? ' g' : '');
   $('acLink').hidden = linked; $('acPlan').hidden = !linked; $('acAuto').hidden = !linked;
+  drawComfort(S);   // mockup ag
   if (!twin && $('acTwin').offsetParent) twin = createThermalTwin($('acTwin'));   // only while it can be seen
   const wx = S.wx, today = localDate(), outdoor = Array(24).fill(d.outdoorF ?? 90);
   if (wx) wx.hourly.time.forEach((t, i) => { if (t.startsWith(today)) outdoor[+t.slice(11, 13)] = wx.hourly.temperature_2m[i]; });
@@ -66,10 +67,10 @@ function drawPlan(S, sim, outdoor, sunH) {
   [['12a', 0], ['6a', 6], ['12p', 12], ['6p', 18], ['12a', 24]].forEach(([l, h]) => o += `<text x="${X(h)}" y="164" text-anchor="middle" fill="rgba(242,244,248,.45)" font-size="9.5" font-family="JetBrains Mono">${l}</text>`);
   const nx = X(localHour()); o += `<line x1="${nx}" y1="14" x2="${nx}" y2="150" stroke="#fff" stroke-opacity=".5"/><circle cx="${nx}" cy="14" r="3" fill="#fff"/>`;
   svg.innerHTML = o;
-  const b = d.settings.band;
-  $('acBand').textContent = `Band ${b.homeLo}–${b.homeHi}°`;
-  $('acBand').title = `${b.homeLo}°–${b.homeHi}° home · ${b.nightLo}°–${b.nightHi}° night · away ${d.settings.awayF}°`;
-  $('acBand').onclick = () => { if (!S.guest) openBand(S); };
+  const cs = d.settings;   // mockup ag: the chip shows the targets and opens the Comfort sheet
+  $('acBand').textContent = `Comfort ${cs.dayF}° · ${cs.nightF}°`;
+  $('acBand').title = `${cs.dayF}° day · ${cs.nightF}° night · away ${cs.awayF}°`;
+  $('acBand').onclick = () => { if (!S.guest) openComfort(S); };
   // r-learning savings row: the plan's two kWh figures (learn/ac.ts), each with its confidence tier from plan.conf
   const sv = (label, v, tier) => `<div><small>${label}</small><b>${v == null ? '—' : `${Number(v).toFixed(1)} kWh`}</b><span>today's plan</span>${confChip(tier) && `<span style="margin-top:5px">${confChip(tier)}</span>`}</div>`;
   $('acDeltas').innerHTML = sv('kWh shifted onto solar', P.shiftedKwh, P.conf?.shiftedKwh) + sv('Evening kWh avoided', P.eveningAvoidedKwh, P.conf?.eveningAvoidedKwh) + `
@@ -142,10 +143,10 @@ function drawThermostat(S) {
   $('tsFan').classList.toggle('on', !!st.fanTimer); $('tsFan').setAttribute('aria-pressed', !!st.fanTimer);
   $('tsFanT').textContent = st.fanTimer ? (fanLeft != null ? (fanLeft >= 60 ? `${Math.floor(fanLeft / 60)} h ${fanLeft % 60} m left` : `${fanLeft} m left`) : 'on') : 'off';
   $('tsHold').innerHTML = holdHtml(d, mode);
-  // frame 7: the same manual change on 4 of the last 7 days becomes a band suggestion (nothing changes unless tapped)
-  const sg = d.suggestion, hr = sg ? `${Math.round(sg.hour) % 12 || 12} ${sg.hour < 12 ? 'AM' : 'PM'}` : '';
-  $('tsSuggest').innerHTML = sg ? `<div class="rec learn"><b>You keep setting ${sg.f}° around ${hr}</b><br>${sg.days} of the last ${sg.of} ${sg.window === 'night' ? 'nights' : 'days'}. Make ${sg.f}° your ${sg.window === 'night' ? 'night' : 'daytime'} setpoint? Autopilot would plan ${sg.f}° ${sg.window === 'night' ? `from ${d.settings.nightFrom % 12 || 12} ${d.settings.nightFrom < 12 ? 'AM' : 'PM'}` : 'through the day'} instead of ${sg.from}°, and you wouldn’t need to change it.
-    <div class="row2"><button class="y" data-sg="accept">Make ${sg.f}° the ${sg.window === 'night' ? 'night' : 'daytime'} setpoint</button><button class="n" data-sg="dismiss">Not now</button></div></div>` : '';
+  // frame 7 (mockup ag): changes the same way in the same part of the day on 4 of the last 7 days suggest moving that target 1° (nothing changes unless tapped)
+  const sg = d.suggestion, nightSg = sg?.window === 'night';
+  $('tsSuggest').innerHTML = sg ? `<div class="rec learn"><b>You keep setting it ${sg.f > sg.from ? 'warmer' : 'cooler'} ${nightSg ? 'at night' : 'during the day'}</b><br>${sg.days} of the last ${sg.of} ${nightSg ? 'nights' : 'days'}. Make ${sg.f}° the ${nightSg ? 'night' : 'day'} target? Autopilot would aim for ${sg.f}° instead of ${sg.from}°, and you wouldn’t need to change it.
+    <div class="row2"><button class="y" data-sg="accept">Make ${sg.f}° the ${nightSg ? 'night' : 'day'} target</button><button class="n" data-sg="dismiss">Not now</button></div></div>` : '';
   $('tsSuggest').onclick = async e => { const b = e.target.closest('[data-sg]'); if (!b) return; b.disabled = true; b.textContent = '…';
     try { S.ac = await api.acSuggestion(b.dataset.sg, sg.key); } catch (err) { alert(err.message); } drawAc(S); };
   // mockup ae: what Solstice is learning from your changes (owner only)
@@ -187,15 +188,15 @@ export function freshAc(S) {
 /** The banner under the controls: a hold, Autopilot paused by the mode, or what Autopilot is doing. */
 /* mockup ae: the "Your changes" sheet: the patterns building toward a suggestion and the changes they come from */
 const dayTime = ms => new Date(ms).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' }).replace(',', '');
-const hourName = h => { const r = Math.round(h) % 24; return `${r % 12 || 12} ${r < 12 ? 'AM' : 'PM'}`; };
 export const dotsHtml = (n, need) => `<div class="ae-dots">${Array.from({ length: need }, (_, i) => `<i class="${i < n ? 'on' : 'need'}"></i>`).join('')}</div>`;
 function openChanges(ch) {
-  const pats = ch.patterns.map(p => `<div class="ae-pat"><div class="t">${p.window === 'night' ? 'Nights' : Math.round(p.hour) < 12 ? 'Mornings' : 'Afternoons'} around ${hourName(p.hour)}<span>${Math.min(p.days, p.need)} of ${p.need}</span></div>
-    <p>${p.dir > 0 ? 'Warmer' : 'Cooler'} than the plan: you set ${p.f}° when it planned ${p.planF}°.</p>${dotsHtml(p.days, p.need)}</div>`).join('');
+  const list = xs => xs.length < 2 ? `${xs[0]}°` : `${xs.slice(0, -1).map(x => `${x}°`).join(', ')} and ${xs.at(-1)}°`;   // mockup ag: one pattern per part of the day and direction
+  const pats = ch.patterns.map(p => { const set = p.set ?? [p.f]; return `<div class="ae-pat"><div class="t">${p.window === 'night' ? 'Nights' : 'Days'}: ${p.dir > 0 ? 'warmer' : 'cooler'} than the plan<span>${Math.min(p.days, p.need)} of ${p.need}</span></div>
+    <p>You set ${list(set)} when it planned ${p.planF}°.${set.length > 1 ? ` ${set.length === 2 ? 'Both' : 'All'} count: the same direction in the same part of the day.` : ''}</p>${dotsHtml(p.days, p.need)}</div>`; }).join('');
   $('sheetBody').innerHTML = `<div class="shead"><h4>Your changes</h4><button class="x" id="chX" aria-label="Close">✕</button></div>
-    <p class="sub">Thermostat · last 7 days</p>${pats || '<p class="fine" style="margin-top:10px">No pattern yet: a pattern needs the same kind of change on two days.</p>'}
+    <p class="sub">Thermostat · last 7 days</p>${pats || '<p class="fine" style="margin-top:10px">No pattern yet: a change warmer or cooler than both the plan and your target starts one.</p>'}
     <div class="ae-chg">${ch.recent.map(r => `<div><em>${dayTime(r.at)}</em><b>Set ${r.coolF}° ${r.by === 'app' ? 'in the app' : 'at the thermostat'}</b><span>plan ${r.planF}°</span></div>`).join('')}</div>
-    <p class="fine" style="margin-top:12px">After the same kind of change on 4 of 7 days, Solstice suggests making it your band. It never changes the band by itself.</p>`;
+    <p class="fine" style="margin-top:12px">After warmer (or cooler) changes on 4 of 7 days, Solstice suggests moving that target 1°. It never changes it by itself.</p>`;
   $('chX').onclick = () => $('phone').classList.remove('open');
   $('phone').classList.add('open');
 }
@@ -229,34 +230,83 @@ async function send(S, cmd) {
   drawAc(S);
   setTimeout(() => { ts.line = null; if (!ts.timer) drawThermostat(S); }, 6000);
 }
-/* frame 5: the comfort band sheet. Saving writes only Solstice's settings; the plan uses them from its next step. */
-function openBand(S) {
-  const s = S.ac.settings, v = { homeLo: s.band.homeLo, homeHi: s.band.homeHi, nightLo: s.band.nightLo, nightHi: s.band.nightHi, awayF: s.awayF, nightFrom: s.nightFrom, nightTo: s.nightTo };
-  const hr = h => `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`, LIM = { t: [65, 85], nightFrom: [18, 23], nightTo: [4, 11] };
-  const row = (label, sub, a, b) => `<div class="brow"><span class="bt">${label}<small>${sub}</small></span><span class="stp"><button data-k="${a}" data-d="-1" aria-label="Lower">−</button><b id="bv_${a}"></b></span>${b ? `<span class="stp"><span class="to">to</span><b id="bv_${b}"></b><button data-k="${b}" data-d="1" aria-label="Higher">+</button></span>` : `<button class="stp-plus" data-k="${a}" data-d="1" aria-label="Higher" style="all:unset;cursor:pointer;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);font-size:16px">+</button>`}</div>`;
-  $('sheetBody').innerHTML = `<div class="shead"><h4>Comfort band</h4><button class="x" id="bandX" aria-label="Close">✕</button></div>
-    <p class="sub">Autopilot plans only inside these. Manual changes can go anywhere from 65° to 85°. Tap a number to choose which end −/+ moves.</p>
-    <div class="bands" id="bands">${row('Home', `daytime, <span id="bsub_day"></span>`, 'homeLo', 'homeHi')}${row('Night', '<span id="bsub_night"></span>', 'nightLo', 'nightHi')}${row('Away', 'Nest Eco or Away until…', 'awayF')}${row('Night hours', 'when the night band starts and ends', 'nightFrom', 'nightTo')}</div>
-    <button class="primary" id="bandGo">Save band</button>
+/* ---------- mockup ag: Comfort targets (owner only) ---------- */
+const hr12 = h => `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`;
+const isNightAt = (h, s) => h >= s.nightFrom || h < s.nightTo;
+function drawComfort(S) {
+  const d = S.ac, s = d.settings, card = $('acComfortCard'); card.hidden = !!S.guest || !d.linked; if (card.hidden) return;
+  $('ctDay').textContent = `${s.dayF}°`; $('ctNight').textContent = `${s.nightF}°`;
+  $('ctDaySub').textContent = `${hr12(s.nightTo)} – ${hr12(s.nightFrom)}`; $('ctNightSub').textContent = `${hr12(s.nightFrom)} – ${hr12(s.nightTo)}`;
+  $('ctLine').innerHTML = (s.precoolDepth ? `Hot, sunny days: <b>pre-cool to ${s.dayF - s.precoolDepth}°</b> on solar${s.driftF ? `, then <b>let it drift to ${s.dayF + s.driftF}°</b> in the early evening on the Powerwalls` : ''}. ` : 'No pre-cooling on hot days. ') + `Away: <b>${s.awayF}°</b>.`;
+  $('ctEdit').onclick = () => openComfort(S);
+  $('ctCold').onclick = () => openNudge(S, 1); $('ctWarm').onclick = () => openNudge(S, -1);
+}
+/** The hours of a hot, sunny day under `v`, as [from, to, °F, kind] runs (the plan's own pre-cool window when today has one). */
+function hotDay(v, P) {
+  const pf = P?.precool ? P.precoolFrom : 11, pt = P?.precool ? P.precoolTo : 16, ct = Math.min(21, pt + 4), out = [];
+  for (let h = 0; h < 24; h++) {
+    const [f, k] = isNightAt(h, v) ? [v.nightF, 'n'] : v.precoolDepth && h >= pf && h < pt ? [v.dayF - v.precoolDepth, 'p'] : v.precoolDepth && v.driftF && h >= pt && h < ct ? [v.dayF + v.driftF, 'c'] : [v.dayF, 'd'];
+    const last = out.at(-1); if (last && last[2] === f && last[3] === k) last[1] = h + 1; else out.push([h, h + 1, f, k]);
+  }
+  return out;
+}
+const DAYC = { n: '#b8a6ff', d: '#ffd27a', p: '#7cc4ff', c: '#ffb08a' };
+/* the Comfort sheet. Saving writes only Solstice's settings; the plan uses them from its next step. */
+function openComfort(S) {
+  const s = S.ac.settings, v = { dayF: s.dayF, nightF: s.nightF, precoolDepth: s.precoolDepth, driftF: s.driftF, awayF: s.awayF, nightFrom: s.nightFrom, nightTo: s.nightTo };
+  const HOURS = { nightFrom: [18, 23], nightTo: [4, 11] };
+  const row = (label, sub, ctl) => `<div class="ag-row"><span class="tl">${label}<small>${sub}</small></span>${ctl}</div>`;
+  const stepr = k => `<span class="ag-step"><button data-k="${k}" data-d="-1" aria-label="Lower">−</button><b id="cv_${k}"></b><button data-k="${k}" data-d="1" aria-label="Higher">+</button></span>`;
+  const chips = (k, opts) => `<span class="ag-chips" data-c="${k}">${opts.map(o => `<button data-v="${o}">${o ? `${o}°` : 'Off'}</button>`).join('')}</span>`;
+  $('sheetBody').innerHTML = `<div class="shead"><h4>Comfort</h4><button class="x" id="cmX" aria-label="Close">✕</button></div>
+    <p class="sub">What Autopilot aims for. Your changes at the thermostat or in the app still go anywhere from 65° to 85°.</p>
+    <div id="cmRows" style="margin-top:6px">${row('Day', '<span id="cs_day"></span>', stepr('dayF'))}${row('Night', '<span id="cs_night"></span>', stepr('nightF'))}
+      ${row('Night hours', 'when night starts and ends', '<span class="ag-hours"><button data-h="nightFrom" id="cv_nightFrom" aria-label="Night starts"></button> – <button data-h="nightTo" id="cv_nightTo" aria-label="Night ends"></button></span>')}
+      ${row('Pre-cool', 'on hot, sunny days, while solar covers it', chips('precoolDepth', [0, 1, 2, 3]))}${row('Evening drift', 'after pre-cooling, on the Powerwalls', chips('driftF', [0, 1, 2]))}
+      ${row('Away', 'while marked away', stepr('awayF'))}</div>
+    <p class="sub" style="margin-top:8px">A hot, sunny day with these settings:</p>
+    <div class="ag-day" id="cmDay"></div><div class="ag-dlab"><span style="left:0">12a</span><span style="left:25%">6a</span><span style="left:50%">12p</span><span style="left:75%">6p</span><span style="left:100%">12a</span></div>
+    <button class="primary" id="cmGo">Save</button>
     <p class="fine" style="text-align:center;margin-top:10px">Takes effect at the next plan step. A hold in force is left alone.</p>`;
-  const draw = () => { Object.entries(v).forEach(([k, x]) => { $(`bv_${k}`).textContent = k === 'nightFrom' || k === 'nightTo' ? hr(x) : `${x}°`; });
-    $('bsub_day').textContent = `${hr(v.nightTo)} – ${hr(v.nightFrom)}`; $('bsub_night').textContent = `${hr(v.nightFrom)} – ${hr(v.nightTo)}`; };
-  // −/+ move the end of a pair you tapped last (default: − the low end, + the high end), so a band can widen and narrow
-  const PAIRS = { homeLo: 'homeHi', homeHi: 'homeLo', nightLo: 'nightHi', nightHi: 'nightLo', nightFrom: 'nightTo', nightTo: 'nightFrom' }, picked = {};
-  const pairOf = k => ['homeLo', 'homeHi'].includes(k) ? 'home' : ['nightLo', 'nightHi'].includes(k) ? 'night' : ['nightFrom', 'nightTo'].includes(k) ? 'hours' : k;
-  $('bands').onclick = e => {
-    const num = e.target.closest('b[id^="bv_"]');
-    if (num) { const k = num.id.slice(3); if (PAIRS[k]) { picked[pairOf(k)] = k; document.querySelectorAll('#bands b').forEach(x => x.style.borderBottom = Object.values(picked).includes(x.id.slice(3)) ? '2px solid rgba(255,255,255,.4)' : ''); } return; }
-    const b = e.target.closest('[data-k]'); if (!b) return;
-    const k = picked[pairOf(b.dataset.k)] ?? b.dataset.k, d = +b.dataset.d, lim = LIM[k] ?? LIM.t;
-    v[k] = Math.max(lim[0], Math.min(lim[1], v[k] + d));
-    if (k === 'homeLo' && v.homeLo > v.homeHi) v.homeHi = v.homeLo; if (k === 'homeHi' && v.homeHi < v.homeLo) v.homeLo = v.homeHi;
-    if (k === 'nightLo' && v.nightLo > v.nightHi) v.nightHi = v.nightLo; if (k === 'nightHi' && v.nightHi < v.nightLo) v.nightLo = v.nightHi;
+  const draw = () => {
+    ['dayF', 'nightF', 'awayF'].forEach(k => $(`cv_${k}`).textContent = `${v[k]}°`);
+    $('cv_nightFrom').textContent = hr12(v.nightFrom); $('cv_nightTo').textContent = hr12(v.nightTo);
+    $('cs_day').textContent = `${hr12(v.nightTo)} – ${hr12(v.nightFrom)}`; $('cs_night').textContent = `${hr12(v.nightFrom)} – ${hr12(v.nightTo)}`;
+    document.querySelectorAll('#cmRows [data-c] button').forEach(b => b.classList.toggle('on', v[b.parentElement.dataset.c] === +b.dataset.v));
+    $('cmDay').innerHTML = hotDay(v, S.ac.plan).map(([a, b, f, k]) => `<i style="flex:${b - a};background:${DAYC[k]}">${b - a >= 2 ? f : ''}</i>`).join('');
+  };
+  $('cmRows').onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.k) { const k = b.dataset.k; v[k] = Math.max(65, Math.min(85, v[k] + +b.dataset.d)); }
+    else if (b.dataset.h) { const k = b.dataset.h, [lo, hi] = HOURS[k]; v[k] = v[k] >= hi ? lo : v[k] + 1; }   // each tap moves an hour later, wrapping
+    else if (b.dataset.v != null) v[b.parentElement.dataset.c] = +b.dataset.v;
+    // pre-cool and drift may not leave 65–85° (the server checks the same)
+    v.precoolDepth = Math.min(v.precoolDepth, v.dayF - 65); v.driftF = Math.min(v.driftF, 85 - v.dayF);
     draw(); };
-  $('bandX').onclick = () => $('phone').classList.remove('open');
-  $('bandGo').onclick = async () => { const go = $('bandGo'); go.textContent = 'Saving…';
-    try { await api.acSettings({ band: { homeLo: v.homeLo, homeHi: v.homeHi, nightLo: v.nightLo, nightHi: v.nightHi }, awayF: v.awayF, nightFrom: v.nightFrom, nightTo: v.nightTo }); $('phone').classList.remove('open'); await loadAc(S); }
-    catch (e) { alert(e.message); go.textContent = 'Save band'; } };
+  $('cmX').onclick = () => $('phone').classList.remove('open');
+  $('cmGo').onclick = async () => { const go = $('cmGo'); go.textContent = 'Saving…';
+    try { await api.acSettings(v); $('phone').classList.remove('open'); await loadAc(S); }
+    catch (e) { alert(e.message); go.textContent = 'Save'; } };
+  draw(); $('phone').classList.add('open');
+}
+/* "Too cold" (dir +1) / "Too warm" (dir −1): the target for this part of the day, or just for now */
+function openNudge(S, dir) {
+  const d = S.ac, s = d.settings, st = d.state;
+  if (!st || st.mode !== 'COOL' || st.coolF == null) return alert('The thermostat isn’t cooling right now, so there is nothing to nudge.');
+  const h = localHour(), night = isNightAt(h, s), t = night ? s.nightF : s.dayF, aim = [...d.plan.steps].reverse().find(x => x.hour <= h)?.coolF ?? t;
+  const set = Math.round(st.coolF) + dir, next = d.plan.steps.find(x => x.hour > h), word = night ? 'night' : 'day';
+  let keep = true;
+  $('sheetBody').innerHTML = `<div class="shead"><h4>${dir > 0 ? 'Warmer' : 'Cooler'} by 1°</h4><button class="x" id="ngX" aria-label="Close">✕</button></div>
+    <p class="sub">It's ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}. Autopilot is aiming for ${aim}°.</p>
+    <button class="ag-opt" data-keep="1"><b>Make ${t + dir}° the ${word} target</b><p>From now on, every ${word === 'night' ? 'night' : 'day'}. Nest goes to ${aim + dir}° now (one step).</p></button>
+    <button class="ag-opt" data-keep="0"><b>Just for now</b><p>${set}° until ${next ? `the next plan step at ${hr12(Math.floor(next.hour))}` : 'the morning step'}, then back to the plan. Same as changing it at the thermostat.</p></button>
+    <button class="primary" id="ngGo"></button>`;
+  const draw = () => { document.querySelectorAll('.ag-opt').forEach(b => b.classList.toggle('pick', (b.dataset.keep === '1') === keep)); $('ngGo').textContent = keep ? `Make it ${t + dir}°` : `Set ${set}° for now`; };
+  document.querySelectorAll('.ag-opt').forEach(b => b.onclick = () => { keep = b.dataset.keep === '1'; draw(); });
+  $('ngX').onclick = () => $('phone').classList.remove('open');
+  $('ngGo').onclick = async () => { const go = $('ngGo'); go.textContent = 'Sending…';
+    try { S.ac = await api.acNudge(dir, keep); $('phone').classList.remove('open'); drawAc(S); }
+    catch (e) { alert(e.message); draw(); } };
   draw(); $('phone').classList.add('open');
 }
 const FAN = [[900, '15 m'], [1800, '30 m'], [3600, '1 h'], [7200, '2 h'], [14400, '4 h'], [28800, '8 h'], [43200, '12 h'], [0, 'Stop']];

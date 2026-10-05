@@ -18,7 +18,7 @@ import { currentTariff, netEnergyCost, NO_TARIFF } from './tariff.js';
 import { appliances, comingSoon } from './appliances/index.js';
 import { poolDetail, applyPlan, restorePrevious, poolCommand, PoolUnavailable, goalPatchError, scheduleError, saveSchedule, rebaseline, POOL_DEFAULTS, activeClearUp, startClearUp, extendClearUp, endClearUp, finishClearUpIfDue, clearUpError, CLEARUP_DAYS_MAX } from './appliances/pool.js';
 import { readPool } from './appliances/screenlogic.js';
-import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, bandFor, dismissSuggestion, recordNest, observeHold } from './appliances/ac.js';
+import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, patchedAc, suggestionPatch, dismissSuggestion, recordNest, observeHold } from './appliances/ac.js';
 import { oidcError, eventOf, seenEvent, applyTraits, isSettingEvent } from './appliances/nestEvents.js';
 import { applianceDay } from './appliances/day.js';
 import { cronTick } from './appliances/sampling.js';
@@ -593,7 +593,7 @@ app.post('/api/appliances/ac/settings', express.json(), wrap(async (req, res) =>
   const cur = (await settingsFor(req)).ac ?? {}, patch = req.body ?? {};
   if (typeof patch !== 'object' || Array.isArray(patch)) return res.status(400).json({ error: 'settings must be an object' });
   const bad = acPatchError(patch, cur); if (bad) return res.status(400).json({ error: bad });   // ac.ts: known keys, 65–85°, lows ≤ highs
-  const next = { ...cur, ...patch, band: { ...(cur.band ?? {}), ...(patch.band ?? {}) } };
+  const next = patchedAc(cur, patch);   // mockup ag: a target change stores all four targets and the band they stand for
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ ac: next })]);
   else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ac: next });
   if (patch.presence) await setPresence(site(req), { state: patch.presence, until: null });   // presence.ts: the switch is the manual mark
@@ -624,15 +624,41 @@ app.post('/api/appliances/ac/hold', express.json({ limit: '1kb' }), wrap(async (
   else return res.status(400).json({ error: 'action must be resume or morning' });
   res.json(await acDetail(id, settings, rate, slope));
 }));
-/** Frame 7: {action:'accept', key} sets the band the suggestion describes (Autopilot plans it from the next step); {action:'dismiss', key} hides it 14 days. */
+/**
+ * Mockup ag: "Too cold" / "Too warm". {dir: 1 | -1, keep: true} moves the target for this part of the day (day or night) 1° and puts the
+ * thermostat on the plan's new step now (Auto: any hold ends and the step applies through Autopilot's guard; Suggest/Off: one owner
+ * command); {keep: false} is "just for now": 1° from the current setpoint as an owner command, held until the next step like any app change.
+ */
+app.post('/api/appliances/ac/nudge', express.json({ limit: '1kb' }), wrap(async (req, res) => {
+  const dir = Number(req.body?.dir), keep = req.body?.keep === true;
+  if (dir !== 1 && dir !== -1) return res.status(400).json({ error: 'dir must be 1 or -1' });
+  const id = site(req), settings = await settingsFor(req), rate = await rateFor(id), slope = await acSlope(id);
+  const d = await acDetail(id, settings, rate, slope);
+  if (!d.state || d.state.mode !== 'COOL' || d.state.coolF == null) return res.status(400).json({ error: 'The thermostat isn\u2019t cooling, so there is nothing to nudge' });
+  const cmd = async (f: number) => {
+    try { await ownerCommand({ kind: 'cool', f } as ManualCommand); } catch (e) { if (e instanceof GuardRefusal) return explainRefusal(e.reason); throw e; }
+    const after = await acDetail(id, await settingsFor(req), rate, slope); if (after.state) await startHold(id, 'app', after.state, after.plan, after.settings); return null;
+  };
+  if (!keep) { const bad = await cmd(Math.round(d.state.coolF) + dir); if (bad) return res.status(400).json({ error: bad }); return res.json(await acDetail(id, settings, rate, slope)); }
+  const h = new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hourCycle: 'h23' }), night = +h >= d.settings.nightFrom || +h < d.settings.nightTo;
+  const cur = settings.ac ?? {}, patch = night ? { nightF: d.settings.nightF + dir } : { dayF: d.settings.dayF + dir }, bad = acPatchError(patch, cur);
+  if (bad) return res.status(400).json({ error: bad });
+  await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ac: patchedAc(cur, patch) });
+  const now = await settingsFor(req);
+  if (d.settings.autopilot === 'auto') { await resumeHold(id); const rec = await kv.get<any>(`${id}:ac:plan`); if (rec) { rec.lastStepHour = null; await kv.set(`${id}:ac:plan`, rec); }
+    await acTick(id, now, rate, slope).catch(e => console.warn(`[solstice] tick after nudge: ${e?.message ?? e}`)); }
+  else { const nd = await acDetail(id, now, rate, slope), step = [...nd.plan.steps].reverse().find(x => x.hour <= +h) ?? nd.plan.steps.at(-1)!; const err = await cmd(step.coolF); if (err) return res.status(400).json({ error: err }); }
+  res.json(await acDetail(id, now, rate, slope));
+}));
+/** Frame 7: {action:'accept', key} sets the target the suggestion describes (Autopilot plans it from the next step); {action:'dismiss', key} hides it 14 days. */
 app.post('/api/appliances/ac/suggestion', express.json({ limit: '1kb' }), wrap(async (req, res) => {
   const id = site(req), action = String(req.body?.action ?? ''), key = String(req.body?.key ?? ''), settings = await settingsFor(req), rate = await rateFor(id), slope = await acSlope(id);
   const d = await acDetail(id, settings, rate, slope), sg = d.suggestion;
   if (!sg || sg.key !== key) return res.status(409).json({ error: 'That suggestion is no longer current' });
   if (action === 'dismiss') await dismissSuggestion(id, key);
   else if (action === 'accept') {
-    const cur = settings.ac ?? {}, band = bandFor(sg, d.settings.band), bad = acPatchError({ band }, cur); if (bad) return res.status(400).json({ error: bad });
-    await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ac: { ...cur, band } });
+    const cur = settings.ac ?? {}, patch = suggestionPatch(sg), bad = acPatchError(patch, cur); if (bad) return res.status(400).json({ error: bad });
+    await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ac: patchedAc(cur, patch) });
     await dismissSuggestion(id, key);   // accepted: don't offer it again
   } else return res.status(400).json({ error: 'action must be accept or dismiss' });
   res.json(await acDetail(id, await settingsFor(req), rate, slope));
