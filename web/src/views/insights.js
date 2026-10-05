@@ -115,6 +115,31 @@ function drawSpare(d) {
   $('spNow').innerHTML = n?.spare ? `<i class="on"></i><span><b>Spare now.</b> Powerwalls ${n.soc}%, ${(n.exportW / 1000).toFixed(1)} kW going to PEC.</span>`
     : `<i></i><span><b>None now.</b>${n ? ` Powerwalls ${n.soc}%${day && n.surplusW <= 0 ? ', and the house is using all the solar' : ''}.` : ''}${best.length ? ` Spare solar shows up on mild sunny days, mostly ${best.join(' and ')}.` : ''}</span>`;
 }
+/* ---------- mockup af: Powerwall capacity (owner only; recomputed nightly) ---------- */
+let bcTimer = null;
+export function initCapacity(S, every) {
+  $('bcCard').hidden = !!S.guest; if (S.guest) return;
+  bcTimer ??= every(60 * 60_000, async () => { try { drawCapacity(S, await api.capacity()); } catch { /* keep the last */ } });
+}
+function drawCapacity(S, c) {
+  const site = S.now?.site ?? {}, name = c?.nameplateKwh || site.capacityKwh || 27;
+  $('bcName').textContent = `${name} kWh`;
+  if (!c?.measuredKwh) {
+    $('bcTag').textContent = 'learning'; $('bcKwh').textContent = '—'; $('bcFill').style.width = '0';
+    $('bcSub').textContent = `${c?.count ?? 0} of 5 discharges measured in the last 90 days`;
+    $('bcTxt').textContent = 'Measured from evening discharges of 2 h or more that use 25% of the charge or more. Until there are 5 in 90 days, the estimates use the nameplate × 95%.';
+  } else {
+    const pct = Math.round(c.measuredKwh / name * 100);
+    $('bcTag').textContent = 'measured'; $('bcKwh').textContent = c.measuredKwh.toFixed(1); $('bcFill').style.width = `${Math.min(100, c.measuredKwh / name * 100)}%`;
+    $('bcSub').textContent = `kWh a full charge delivers \u00b7 ${pct}% of the ${name} kWh nameplate`;
+    const since = c.since ? new Date(`${c.since}T12:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '', [lo, hi] = c.range ?? [];
+    const inst = site.installed ? new Date(site.installed).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : null, n = site.batteries?.length;
+    $('bcTxt').textContent = `From ${c.countAll} evening discharges since ${since} (each 2 h or longer, 25% of charge or more); the figure uses the last 90 days (${c.count}). `
+      + (c.fade ? `${MONTH[+c.fade.month.slice(5) - 1]} measured ${c.fade.pct}% below the year: worth watching.` : lo != null ? `Steady: the monthly figures range ${lo.toFixed(1)}\u2013${hi.toFixed(1)} kWh.` : '')
+      + (inst && n ? ` ${n === 2 ? 'Two' : n} ${esc(site.batteries[0].name)}${n > 1 ? 's' : ''} installed ${inst}.` : '');
+  }
+  $('bcMonths').innerHTML = (c?.months ?? []).map(m => `<div><i class="${m.n < 3 ? 'few' : ''}" style="height:${Math.min(60, Math.max(3, (m.kwh - 20) / 7 * 50))}px" title="${MONTH[+m.month.slice(5) - 1]}: ${m.kwh} kWh from ${m.n}"></i><small>${MON[+m.month.slice(5) - 1]}</small></div>`).join('');
+}
 export function initBreakdown(S, every) {
   $('egCard').hidden = !!S.guest; if (S.guest) return;
   $('egRange').onclick = e => { const b = e.target.closest('button'); if (!b || b.dataset.r === eg.range) return; eg.range = b.dataset.r; loadBreakdown(); };

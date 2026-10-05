@@ -21,9 +21,10 @@ export function renderLive(S) {
   const h = localHour();
   $('greet').textContent = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
   $('soc').textContent = Math.round(r.soc);
-  const cap = site.capacityKwh || 27, reserve = site.reservePct ?? 20, net = r.homeKw - r.solarKw;
-  const toFull = r.batteryKw < -.05 ? (100 - r.soc) / 100 * cap / (-r.batteryKw * .95) : null;
-  const toEmpty = r.batteryKw > .05 ? Math.max(0, r.soc - (out ? 0 : reserve)) / 100 * cap * .95 / r.batteryKw : null;
+  // mockup af: the estimates use the measured capacity (modelKwh, so cap × 95% is what a full charge delivers); "stored" stays on the nameplate
+  const cap = site.capacityKwh || 27, mcap = site.modelKwh || cap, reserve = site.reservePct ?? 20, net = r.homeKw - r.solarKw;
+  const toFull = r.batteryKw < -.05 ? (100 - r.soc) / 100 * mcap / (-r.batteryKw * .95) : null;
+  const toEmpty = r.batteryKw > .05 ? Math.max(0, r.soc - (out ? 0 : reserve)) / 100 * mcap * .95 / r.batteryKw : null;
   $('battline').innerHTML = r.batteryKw < -.05 ? `<b>Charging ${(-r.batteryKw).toFixed(1)} kW</b> · full in ${fmtDur(toFull)}`
     : r.batteryKw > .05 ? `<b>Powering home · ${r.batteryKw.toFixed(1)} kW</b> · ${fmtDur(toEmpty)} to ${out ? 'empty' : 'reserve'}`
     : r.soc <= reserve + 1 ? `<b style="color:var(--mute)">At the ${reserve}% backup reserve</b>` : r.soc > 99 ? '<b>Full</b> · standing by' : '<b>Standing by</b>';
@@ -37,7 +38,7 @@ export function renderLive(S) {
   if (out) {
     $('story').innerHTML = net <= .05
       ? `<b>The grid is down. Your home isn't.</b> The sun is covering everything${r.batteryKw < -.05 ? ` and still charging the Powerwalls at ${(-r.batteryKw).toFixed(1)} kW` : ''}.`
-      : `<b>The grid is down. Your home isn't.</b> Solar covers ${Math.round(share * 100)}% and the Powerwalls the rest, which is about <b>${fmtDur(r.soc / 100 * cap * .95 / net)}</b> at this rate.`;
+      : `<b>The grid is down. Your home isn't.</b> Solar covers ${Math.round(share * 100)}% and the Powerwalls the rest, which is about <b>${fmtDur(r.soc / 100 * mcap * .95 / net)}</b> at this rate.`;
   } else if (r.solarKw > .3) {
     $('story').innerHTML = share >= .99
       ? `<b>The sun is running your home.</b> ${r.batteryKw < -.05 ? `The extra ${(-r.batteryKw).toFixed(1)} kW is filling the Powerwalls.` : r.gridKw < -.05 ? `You're sending ${(-r.gridKw).toFixed(1)} kW to PEC.` : ''}`
@@ -55,7 +56,7 @@ export function renderLive(S) {
   $('pwStored').textContent = `≈ ${(r.soc / 100 * cap).toFixed(1)} of ${cap} kWh stored`;
   $('pwTTl').textContent = r.batteryKw > .05 ? (out ? 'Time to empty' : `Time to reserve (${reserve}%)`) : 'Time to full';
   $('pwTT').textContent = r.batteryKw < -.05 ? fmtDur(toFull) : r.batteryKw > .05 ? fmtDur(toEmpty) : r.soc > 99 ? 'Full' : 'Standing by';
-  $('pwBackup').textContent = net <= .05 ? 'Solar covering it' : fmtDur(Math.max(0, r.soc) / 100 * cap * .95 / net);
+  $('pwBackup').textContent = net <= .05 ? 'Solar covering it' : fmtDur(Math.max(0, r.soc) / 100 * mcap * .95 / net);
   $('pwMode').textContent = out ? 'Backup (islanded)' : ({ autonomous: 'Time-Based Control', self_consumption: 'Self-Powered', backup: 'Backup-only' }[site.mode] ?? site.mode ?? '—');
   document.querySelectorAll('.pwu').forEach(el => { el.style.setProperty('--v', r.soc / 100); el.classList.toggle('chg', r.batteryKw < -.05); el.classList.toggle('dis', r.batteryKw > .05); });
 
@@ -136,7 +137,7 @@ export function renderWeather(S) {
 
   if (!S.live || !S.yieldK || !S.profile) return;
   const site = S.now.site, fc = forecast48({ w, startDate: now, startHour: h, soc0: S.live.soc, yieldK: S.yieldK, profile: S.profile,
-    capKwh: site.capacityKwh || 27, maxKw: site.maxPowerKw || 10, reservePct: site.reservePct ?? 20 });
+    capKwh: site.modelKwh || site.capacityKwh || 27, maxKw: site.maxPowerKw || 10, reservePct: site.reservePct ?? 20 });
   const P = fc.points; if (!P.length) return;
   const maxKw = Math.max(4, ...P.map(p => Math.max(p.s, p.h))), X = k => 8 + k / 48 * 294, Yk = v => 118 - v / maxKw * 100, Ys = v => 118 - v * 100;
   let o = '';
@@ -157,7 +158,7 @@ export function renderWeather(S) {
   const fh = fc48Header(S.fcConf, S.models); if (fh) $('road48').closest('.card').querySelector('.h span').textContent = fh;   // r-learning: forecast confidence
   // the 3D road (scenes/road48.js, mockup l-forecast48) replaces the chart; the SVG above stays as the fallback without WebGL2
   const gl = webgl2(); $('fc48').style.display = gl ? '' : 'block'; $('road48').hidden = $('road48Tip').hidden = !gl;
-  roadArgs = { fc, w, when, soc0: S.live.soc / 100, capKwh: site.capacityKwh || 27, maxKw: site.maxPowerKw || 10, reservePct: site.reservePct ?? 20 };
+  roadArgs = { fc, w, when, soc0: S.live.soc / 100, capKwh: site.modelKwh || site.capacityKwh || 27, maxKw: site.maxPowerKw || 10, reservePct: site.reservePct ?? 20 };
   if (gl) (road ??= createRoad48($('road48'), $('road48Tip'), { model: () => roadModel({ ...roadArgs, pool: S.pool, ac: S.ac }), calm: () => S.calm })).refresh();
   const rainy = w.daily.precipitation_probability_max.slice(w.daily.time.indexOf(now), w.daily.time.indexOf(now) + 3).reduce((a, b) => Math.max(a, b ?? 0), 0);
   $('wxSum').innerHTML = rainy > 40 ? `There's a ${rainy}% chance of rain in the next few days. Storm Watch will top up the Powerwalls if a storm is forecast.` : 'No storms expected, so Storm Watch stays on standby.';

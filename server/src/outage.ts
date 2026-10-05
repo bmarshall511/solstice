@@ -9,8 +9,8 @@ import { powerModel, measuredPoints, hourlyRpm, POOL_DEFAULTS, FREEZE_CIRCUIT, t
 import { learnAcKw, runtimeToday } from './appliances/ac.js';
 import type { PoolSnapshot } from './appliances/screenlogic.js';
 import { siteLocation } from './site.js';
+import { capacityOf, modelKwh, EFF } from './capacity.js';
 
-const EFF = .95;                 // the battery model's one-way efficiency (forecast48, /api/whatif)
 const HOURS = 48;                // the island simulation's horizon
 const CLOUDY_KWH = 25;           // tomorrow's forecast solar below this reads "clouds" (mockup n-outage)
 const r1 = (v: number) => Math.round(v * 10) / 10, r2 = (v: number) => Math.round(v * 100) / 100, r3 = (v: number) => Math.round(v * 1000) / 1000;
@@ -18,7 +18,7 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
 /* ======================= pure pieces (tests/server/outage.test.ts) ======================= */
 
-/** kWh the Powerwalls can deliver from `socPct` with no grid: charge × capacity × 95%. */
+/** kWh the Powerwalls can deliver from `socPct` with no grid: charge × capacity × 95% (with the model capacity, charge × the measured kWh). */
 export const usableKwh = (socPct: number, capKwh: number) => Math.max(0, socPct) / 100 * capKwh * EFF;
 
 export type RungId = 'on' | 'pool' | 'ac' | 'else';
@@ -133,7 +133,7 @@ export async function outageDetail(siteId: string, settingsAll: Record<string, a
     q<{ ts: string; duration_s: number }>('SELECT ts, duration_s FROM backup_events WHERE site_id = $1 ORDER BY epoch DESC', [siteId]),
   ]);
   const info = site?.info ?? {};
-  const capKwh = (info.nameplate_energy ?? 0) / 1000 || 27, maxKw = (info.nameplate_power ?? 0) / 1000 || 10, batteries = info.battery_count ?? 2;
+  const cap = await capacityOf(siteId), capKwh = modelKwh(cap, (info.nameplate_energy ?? 0) / 1000), maxKw = (info.nameplate_power ?? 0) / 1000 || 10, batteries = info.battery_count ?? 2;
   const soc = reading?.soc ?? (await one<{ soe: number }>('SELECT soe FROM soe WHERE site_id = $1 ORDER BY epoch DESC LIMIT 1', [siteId]))?.soe ?? 0;
   const profile = Array.from({ length: 24 }, (_, h) => profileRows.find(r => r.hour === h)?.kw ?? null);
   const typical = profile.filter((v): v is number => v != null);
@@ -187,7 +187,7 @@ export async function outageDetail(siteId: string, settingsAll: Record<string, a
 
   return {
     at: now.getTime(), date: today, startHour: r3(startHour), readingAt: reading ? Number(reading.ts) : null,
-    soc: r1(soc), capacityKwh: capKwh, usableKwh: r2(usable), reservePct: info.backup_reserve_percent ?? null, maxKw, batteries, drawKw: r3(drawKw),
+    soc: r1(soc), capacityKwh: capKwh, measuredKwh: cap?.measuredKwh ?? null, usableKwh: r2(usable), reservePct: info.backup_reserve_percent ?? null, maxKw, batteries, drawKw: r3(drawKw),
     loads: { alwaysOnKw: r3(alwaysOnKw), poolKw: r3(poolKw), poolRpm, acKw: r2(acKw), acSource: learned.coolKw ? 'measured' : 'estimated', acDuty: r2(duty), dutySource },
     ladder: ladder({ usableKwh: usable, alwaysOnKw, poolKw, acKw, duty, drawKw }),
     scenarios,

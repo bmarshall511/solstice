@@ -29,7 +29,7 @@ const MARKUP = `<div class="card outage">
   <div class="wkhead"><span>Outages</span><b>12 months</b></div>
   <p data-last style="margin-top:6px">—</p>
   <svg class="mini" data-strip viewBox="0 0 310 64"></svg>
-  <p class="fine">The ladder divides what the Powerwalls hold now (charge × 27 kWh × 95%) by a steady draw. The HUD runs tonight's hourly load through the Next 48 hours battery model instead, so it lasts longer as the house draws less overnight. "Sun tomorrow adds" counts the hours tomorrow's sun keeps the house fully powered after the first empty.</p>
+  <p class="fine">The ladder divides what the Powerwalls hold now (<span data-capnote>charge × 27 kWh × 95%</span>) by a steady draw. The HUD runs tonight's hourly load through the Next 48 hours battery model instead, so it lasts longer as the house draws less overnight. "Sun tomorrow adds" counts the hours tomorrow's sun keeps the house fully powered after the first empty.</p>
 </div>`;
 
 /** Mounts the card as the first child of `parent` (#ip-home). Returns { frame(dt, now) } for main.js's loop. */
@@ -83,6 +83,7 @@ export function mountOutageCard(S, parent) {
     $q('[data-ladder]').innerHTML = d.ladder.map(r => { const [c, small] = RUNGS[r.id], h = r.kw > 0 ? d.usableKwh / r.kw : null, o = off(r.id) ? ' off' : '';
       return `<span class="rung${o}" style="--c:${c}">${esc(r.label)}<small>${small(r, d)}</small><i style="width:${h == null ? 100 : Math.min(100, h / 48 * 100).toFixed(1)}%"></i></span><b class="${o.trim()}">${fmtHM(h)}</b>`; }).join('');
     $q('[data-usable]').textContent = `${d.usableKwh.toFixed(1)} kWh usable`;
+    $q('[data-capnote]').textContent = d.measuredKwh ? `charge × ${d.measuredKwh.toFixed(1)} kWh measured` : `charge × ${Math.round(d.capacityKwh)} kWh × 95%`;   // mockup af
     $q('[data-limit]').textContent = `Up to ${d.maxKw} kW at once (${d.batteries} × PW2 at ${+(d.maxKw / d.batteries).toFixed(1)} kW continuous). The AC and pool pump starting together stay well inside that.`;
   }
 

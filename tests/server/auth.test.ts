@@ -174,8 +174,8 @@ describe('crons keep their bearer check and need no cookie', () => {
     const sync = await call('/api/cron/sync', { headers: auth });
     expect(sync.status).toBe(200);
     // the nightly sync, then the learning layer's nightly job for the site (server/src/learn/nightly.ts)
-    // then the alert watch's nightly steps (server/src/watch.ts: bill due, new anomalies)
-    expect(await sync.json()).toEqual({ s: { mocked: true }, 'learn:s': expect.objectContaining({ errors: [] }), 'watch:s': expect.objectContaining({ billDue: { due: false, reason: 'no bill yet' } }), pvsPrune: { deleted: 0, since: null }, pruned: expect.any(Object), ms: expect.any(Number) });
+    // then the alert watch's nightly steps (server/src/watch.ts: bill due, new anomalies); capacity: the Powerwall capacity measurement (capacity.ts, no data here)
+    expect(await sync.json()).toEqual({ s: { mocked: true }, 'learn:s': expect.objectContaining({ errors: [] }), 'watch:s': expect.objectContaining({ billDue: { due: false, reason: 'no bill yet' } }), pvsPrune: { deleted: 0, since: null }, pruned: expect.any(Object), 'capacity:s': { measuredKwh: null, count: 0, countAll: 0 }, ms: expect.any(Number) });
     // the 5-minute cron decides by the clock what is due (sampling.ts): pin it to a due tick, 10:00 CDT in cooling season
     vi.useFakeTimers({ toFake: ['Date'], now: Date.parse('2026-07-15T15:00:00Z') });
     await db.kv.set('ercot', { at: Date.now(), data: { condition: 'normal', title: 'Normal', note: null, eea: 0, demandMw: 1, capacityMw: 2, at: 'x' } }); // the watch reads the cache, never ercot.com

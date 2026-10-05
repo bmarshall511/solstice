@@ -1026,6 +1026,20 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .ae-chg em{font:500 10.5px "JetBrains Mono";font-style:normal;color:var(--mute)}
 .ae-chg b{color:var(--text);font-weight:600}
 .ae-chg span{font:500 11px "JetBrains Mono";color:var(--text)}
+/* mockup af: the Powerwall capacity card */
+.bc-big{display:flex;align-items:baseline;gap:8px;margin-top:10px}
+.bc-big b{font-size:30px;font-weight:300;letter-spacing:-.02em}
+.bc-big span{font-size:12px;color:var(--dim)}
+.bc-meter{position:relative;height:12px;border-radius:6px;background:rgba(255,255,255,.06);margin-top:12px;overflow:hidden}
+.bc-meter i{position:absolute;left:0;top:0;bottom:0;border-radius:6px;background:var(--batt);opacity:.85}
+.bc-meter s{position:absolute;top:-2px;bottom:-2px;width:2px;background:rgba(255,255,255,.55)}
+.bc-lab{position:relative;display:flex;justify-content:space-between;font:500 9.5px "JetBrains Mono";color:var(--mute);margin-top:4px}
+.bc-lab em{position:absolute;left:70%;transform:translateX(-50%);font-style:normal;white-space:nowrap}
+.bc-months{display:flex;align-items:flex-end;gap:4px;height:64px;margin-top:14px}
+.bc-months div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:3px;height:100%}
+.bc-months i{display:block;width:100%;border-radius:3px 3px 0 0;background:var(--batt);opacity:.75}
+.bc-months i.few{opacity:.3}
+.bc-months small{font:500 9px "JetBrains Mono";color:var(--mute)}
 /* mockup ad: the Spare solar card */
 .sp-big{display:flex;align-items:baseline;gap:8px;margin-top:10px}
 .sp-big b{font-size:30px;font-weight:300;letter-spacing:-.02em}

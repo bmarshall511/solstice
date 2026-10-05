@@ -35,6 +35,7 @@ import { ercotNow, fiveMinuteWatch, nightlyWatch, cronSites, fiveMinuteSteps, ni
 import { gridWatch } from './gridwatch.js';
 import { poolChanges, dismissPoolSuggestion } from './appliances/poolLearn.js';
 import { pruneOld } from './retention.js';
+import { refreshCapacity, capacityOf, modelKwh, type Capacity } from './capacity.js';
 import { spareWatch, spareHistory } from './spare.js';
 import { digestRoutes, maybeWeeklyDigest } from './digest.js';
 import { presenceRoutes, setPresence } from './appliances/presence.js';
@@ -214,6 +215,7 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
   for (const s of sites) out[s.id] = await syncSite(s.id, Math.floor(30_000 / sites.length), { nightly: true }).catch(e => ({ error: e.message }));
   await q(`DELETE FROM readings WHERE ts < $1`, [Date.now() - 3 * 864e5]); // live snapshots are short-lived; history lives in `energy`
   await pruneShares().catch(e => console.error('[solstice] pruning share links', e)); // revoked/expired links leave the owner's list after 30 days
+  for (const s of sites) out[`capacity:${s.id}`] = await refreshCapacity(s.id).catch(e => ({ error: e.message }));   // capacity.ts: before the learning layer's forecast reads it
   out.pruned = await pruneOld().catch(e => { console.error('[solstice] pruning old rows', e); return { error: e.message }; });   // retention.ts: the tables that grew forever
 
   // learning layer (server/src/learn/nightly.ts): score yesterday's predictions, trims, anomalies, today's predictions; skips what won't fit by 55 s
@@ -270,12 +272,15 @@ app.put('/api/settings', express.json({ limit: '8kb' }), wrap(async (req, res) =
 
 app.use('/api', requireSite);
 
-function summary(info: any) {
+function summary(info: any, cap: Capacity | null = null) {
   info ??= {};
+  const nameplate = (info.nameplate_energy ?? 0) / 1000;
   return {
     name: info.site_name, installed: info.installation_date, utility: info.utility, firmware: info.version,
     batteryCount: info.battery_count, batteries: (info.components?.batteries ?? []).map((b: any) => ({ name: b.part_name, kwh: b.nameplate_energy / 1000, kw: b.nameplate_max_discharge_power / 1000 })),
-    capacityKwh: (info.nameplate_energy ?? 0) / 1000, maxPowerKw: (info.nameplate_power ?? 0) / 1000,
+    capacityKwh: nameplate, maxPowerKw: (info.nameplate_power ?? 0) / 1000,
+    // mockup af: the kWh a full charge delivers, measured nightly (capacity.ts), and the capacity the battery models use (they take 95% on the way out)
+    measuredKwh: cap?.measuredKwh ?? null, modelKwh: modelKwh(cap, nameplate),
     reservePct: info.backup_reserve_percent, mode: info.default_real_mode, stormWatch: info.user_settings?.storm_mode_enabled ?? null,
     solar: { ...SOLAR, year: systemYear(), warrantedDcPct: warrantedDcPct(systemYear()) },
   };
@@ -300,7 +305,7 @@ app.get('/api/now', wrap(async (req, res) => {
     reading: r && { ts: Number(r.ts), solarKw: r.solar_w / 1000, homeKw: r.load_w / 1000, batteryKw: r.battery_w / 1000, gridKw: r.grid_w / 1000, soc: r.soc,
       gridStatus: r.grid_status, islandStatus: r.island_status, stormActive: !!r.storm_mode_active },
     today: await one(`SELECT ${kwhCols} FROM energy WHERE site_id = $1 AND day = $2`, [id, localDay()]),
-    site: summary(await siteInfo(id)), outage,
+    site: summary(await siteInfo(id), await capacityOf(id)), outage,
     health: { lastLive: lastLive ?? null, lastHistory: lastHistory ?? null, stale: !r || Date.now() - Number(r.ts) > 3 * 60_000, liveError, errors },   // by the reading's own time (mockup x), not the fetch's
   });
 }));
@@ -386,7 +391,8 @@ app.get('/api/records', wrap(async (req, res) => {
 app.get('/api/outages', wrap(async (req, res) => res.json(await q('SELECT ts, duration_s FROM backup_events WHERE site_id = $1 ORDER BY epoch DESC', [site(req)]))));
 /** Outage readiness (Insights → Home): backup hours, the load ladder, the island simulation, 12 months of outages, storm state. Read-only. */
 app.get('/api/outage', wrap(async (req, res) => res.json(await outageDetail(site(req), await settingsFor(req)))));
-app.get('/api/site', wrap(async (req, res) => { const info = await siteInfo(site(req)); res.json({ summary: summary(info), raw: info ?? null }); }));
+app.get('/api/site', wrap(async (req, res) => { const info = await siteInfo(site(req)); res.json({ summary: summary(info, await capacityOf(site(req))), raw: info ?? null }); }));
+app.get('/api/capacity', wrap(async (req, res) => res.json(await capacityOf(site(req)))));   // mockup af: the Powerwall capacity card (owner only)
 
 /* ---------- bills ---------- */
 app.get('/api/bills', wrap(async (req, res) => res.json(await listBills(site(req)))));
