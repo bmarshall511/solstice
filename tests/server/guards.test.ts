@@ -105,7 +105,7 @@ const SNAP: PoolSnapshot = {
 const CTX: PoolGuardContext = { circuits: SNAP.circuits, pumpCircuits: SNAP.pump!.circuits.map(c => c.circuitId), minRpm: 450, maxRpm: 3450, managed: [6, 8, 5] };
 // POOL_DEFAULTS, copied until tests-T4 (X2) exports them
 const POOL: PoolSettings = { gallons: 14995, spaGallons: 1000, designGpm: 120, filterRpm: 1500, boostRpm: 2400, poolCircuit: 6, boostCircuit: 8, featureCircuits: [5], autopilot: 'auto', uv: true,
-  heaterBtu: 400_000, propaneUsdPerGal: 3.0, loads: { '2': 1100, '3': 500, '4': 100 }, turnoverGoal: 3, skimHours: 1 };
+  heaterBtu: 400_000, propaneUsdPerGal: 3.0, loads: { '2': 1100, '3': 500, '4': 100 }, turnoverGoal: 3, skimHours: 1, skimAt: null };
 const BELL = [0, 0, 0, 0, 0, 0, 0, .5, 1.5, 3, 4.5, 5.5, 6, 6, 5.5, 4.5, 3, 1.5, .5, 0, 0, 0, 0, 0];
 const W0 = powerModel([]);
 const poolPlan = (settings: PoolSettings) => planFor({ waterTemp: 88, solarKw: BELL, settings, W: W0, rate: .1064, month: 6, names: new Map() });

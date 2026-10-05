@@ -79,6 +79,7 @@ export const api = {
   poolCommand: cmd => send('POST', 'appliances/pool/command', cmd),
   poolGoal: patch => send('POST', 'appliances/pool/goal', patch),
   poolClearUp: body => send('POST', 'appliances/pool/clearup', body),
+  poolSuggestion: (action, key) => send('POST', 'appliances/pool/suggestion', { action, key }),
   poolSchedule: body => send('POST', 'appliances/pool/schedule', body),
   acHold: action => send('POST', 'appliances/ac/hold', { action }),
   spare: () => get('spare'),

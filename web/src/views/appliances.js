@@ -136,6 +136,38 @@ function openBoost(S) {
   $('pcGo').onclick = () => { $('phone').classList.remove('open'); poolSend(S, ...(rpm0 != null && rpm !== rpm0 ? [{ kind: 'speed', id, rpm }] : []), { kind: 'circuit', id, on: true, minutes: pick }); };
   draw(); $('phone').classList.add('open');
 }
+/* mockup ae: the pool learns from your changes — two suggestions (skim hour, goal) and the "Your changes" sheet */
+const hr12 = h => `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`;
+function drawPoolLearning(S) {
+  const box = $('plLearn'), c = S.pool.changes, sp = S.pool.settings; if (!box) return;
+  if (S.guest || !c) { box.innerHTML = ''; return; }
+  const skimNow = sp.skimAt != null ? hr12(sp.skimAt) : (S.pool.plan?.boostAt != null ? hr12(S.pool.plan.boostAt) : 'the sunniest hour');
+  box.innerHTML = c.suggestions.map(g => g.kind === 'skim'
+    ? `<div class="rec learn"><b>You boost around ${hr12(g.hour)}</b><br>On ${g.days} of the last ${g.of} days, an hour or more. Move the daily skim hour from ${skimNow} to ${hr12(g.hour)}?
+       <div class="row2"><button class="y" data-ps="accept" data-k="${g.key}">Move the skim to ${hr12(g.hour)}</button><button class="n" data-ps="dismiss" data-k="${g.key}">Not now</button></div></div>`
+    : `<div class="rec learn"><b>You keep adding pump time</b><br>About ${Math.round(g.extraMin / 30) / 2} h extra on ${g.days} of the last ${g.of} days (boosts and runs from the app or the Pentair app). Raise the goal from ${sp.turnoverGoal} to ${g.to} turnovers a day?
+       <div class="row2"><button class="y" data-ps="accept" data-k="${g.key}">Raise to ${g.to}</button><button class="n" data-ps="dismiss" data-k="${g.key}">Not now</button></div></div>`).join('')
+    + (c.recent.length ? `<button class="ae-line" id="plLearnBtn"><i></i><span><b>Learning from ${c.recent.length} change${c.recent.length === 1 ? '' : 's'}</b> this week</span><em>›</em></button>` : '');
+  box.onclick = async e => {
+    if (e.target.closest('#plLearnBtn')) return openPoolChanges(S);
+    const b = e.target.closest('[data-ps]'); if (!b) return; b.disabled = true; b.textContent = '…';
+    try { S.pool = await api.poolSuggestion(b.dataset.ps, b.dataset.k); } catch (err) { alert(err.message); } drawPool(S);
+  };
+}
+function openPoolChanges(S) {
+  const c = S.pool.changes, p = c.patterns, dt = ms => new Date(ms).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' }).replace(',', '');
+  const dots = (n, need) => `<div class="ae-dots">${Array.from({ length: need }, (_, i) => `<i class="${i < n ? 'on' : 'need'}"></i>`).join('')}</div>`;
+  const what = r => r.kind === 'boost' ? `Boost for ${r.minutes >= 60 ? `${Math.round(r.minutes / 30) / 2} h` : `${r.minutes} min`}` : r.kind === 'run' ? `Pool on for ${r.minutes >= 60 ? `${Math.round(r.minutes / 30) / 2} h` : `${r.minutes} min`}` : 'Pump running outside the schedule';
+  $('sheetBody').innerHTML = `<div class="shead"><h4>Your changes</h4><button class="x" id="pchX" aria-label="Close">✕</button></div>
+    <p class="sub">Pool · last 7 days</p>
+    ${p.skim && p.skim.days >= 2 ? `<div class="ae-pat"><div class="t">Boosts around ${hr12(p.skim.hour)}<span>${Math.min(p.skim.days, p.skim.need)} of ${p.skim.need}</span></div><p>Toward moving the daily skim hour there.</p>${dots(p.skim.days, p.skim.need)}</div>` : ''}
+    ${p.goal.days >= 2 ? `<div class="ae-pat"><div class="t">Extra pump time<span>${Math.min(p.goal.days, p.goal.need)} of ${p.goal.need}</span></div><p>Days with an hour or more beyond the plan (about ${Math.round(p.goal.extraMin / 30) / 2} h). Toward raising the goal.</p>${dots(p.goal.days, p.goal.need)}</div>` : ''}
+    <div class="ae-chg">${c.recent.map(r => `<div><em>${dt(r.at)}</em><b>${what(r)}</b><span>${r.kind === 'outside' ? 'seen' : 'app'}</span></div>`).join('')}</div>
+    <p class="fine" style="margin-top:12px">After the same kind of change on 4 of 7 days, Solstice suggests a change to the planner. It never changes it by itself.</p>`;
+  $('pchX').onclick = () => $('phone').classList.remove('open');
+  $('phone').classList.add('open');
+}
+
 /* frame 7: the schedule editor — Pool and High Speed runs; saving writes them and moves Autopilot from Auto to Suggest */
 const toTime = m => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 const fromTime = v => { const [h, m] = String(v).split(':').map(Number); return h * 60 + m; };
@@ -321,6 +353,7 @@ function drawPlanner(S) {
   $('plGdn').onclick = () => { goal = Math.max(1, goal - .5); show(); }; $('plGup').onclick = () => { goal = Math.min(4, goal + .5); show(); };
   $('plSdn').onclick = () => { skim = Math.max(0, skim - 1); show(); }; $('plSup').onclick = () => { skim = Math.min(3, skim + 1); show(); };
   $('plNums').innerHTML = `<div><b>${P.hours} h</b><span>pump a day</span></div><div><b>${P.kwhPerDay}</b><span>kWh a day</span></div><div><b>${S.guest ? veil('$•') : P.costPerMonth == null ? '—' : money(P.costPerMonth)}</b><span>a month</span></div>`;
+  drawPoolLearning(S);
   $('plNote').textContent = `The planner picks hours and speed to reach the goal for the least energy (${P.hours} h at ${P.rpm.toLocaleString()} RPM${P.boostHours ? ` with ${P.boostHours} h at ${sp.boostRpm.toLocaleString()}` : ''}), keeps the skim hour at the sunniest hour, and adds time on hot days (+1 h at 85°) and after rain. Water moved uses the flow model (no flow sensor on this pump), so turnovers are an estimate.`;
 }
 

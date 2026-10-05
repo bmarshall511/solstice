@@ -201,27 +201,35 @@ export function acPatchError(patch: Record<string, unknown>, cur: Partial<AcSett
 const AC_MIN = 65, AC_MAX = 85;   // guards.ts AC_MIN_F / AC_MAX_F; the band can never ask Autopilot for a refused target
 
 /* ---------- learning from holds (mockup v frame 7) ---------- */
-export type HoldRecord = { at: number; day: string; hour: number; coolF: number; planF: number };
+export type HoldRecord = { at: number; day: string; hour: number; coolF: number; planF: number; by?: HoldBy };
 export const holdHistoryKey = (siteId: string) => `${siteId}:ac:holdHistory`, suggestDismissKey = (siteId: string) => `${siteId}:ac:suggestDismissed`;
 export type BandSuggestion = { key: string; window: 'night' | 'day'; f: number; hour: number; days: number; of: number; from: number };
 const isNight = (h: number, s: Pick<AcSettings, 'nightFrom' | 'nightTo'>) => h >= s.nightFrom || h < s.nightTo;
 const hourGap = (a: number, b: number) => { const d = Math.abs(a - b) % 24; return Math.min(d, 24 - d); };
+/** A pattern of manual changes (mockup ae): the same direction against the plan, within ±1 h of the same time, within 1° of each other. */
+export type ChangePattern = BandSuggestion & { dir: 1 | -1; planF: number };
+/** Every such group in the last 7 days, the most days first (one per time of day and direction). */
+export function changePatterns(holds: HoldRecord[], s: AcSettings, today = localDay()): ChangePattern[] {
+  const since = addDays(today, -6), recent = holds.filter(h => h.day >= since && h.day <= today && Math.round(h.coolF) !== Math.round(h.planF));
+  const out: ChangePattern[] = [];
+  for (const a of recent) {
+    const dir = Math.sign(a.coolF - a.planF) as 1 | -1, g = recent.filter(h => hourGap(h.hour, a.hour) <= 1 && Math.sign(h.coolF - h.planF) === dir && Math.abs(h.coolF - a.coolF) <= 1);
+    const days = new Set(g.map(h => h.day)).size, f = Math.round(median(g.map(h => h.coolF))), hour = Math.round(median(g.map(h => h.hour))) % 24;
+    const window = isNight(hour, s) ? 'night' as const : 'day' as const, from = window === 'night' ? Math.max(s.band.nightLo, Math.min(s.band.nightHi, bandMid(s))) : bandMid(s);
+    if (f === from || f < AC_MIN || f > AC_MAX) continue;
+    const p: ChangePattern = { key: `${window}:${f}`, window, f, hour, days, of: 7, from, dir, planF: Math.round(median(g.map(h => h.planF))) };
+    const same = out.findIndex(o => o.dir === dir && hourGap(o.hour, hour) <= 1);
+    if (same < 0) out.push(p); else if (days > out[same].days) out[same] = p;
+  }
+  return out.sort((x, y) => y.days - x.days);
+}
 /**
  * The same kind of manual change on 4 of the last 7 days: a cooling hold within ±1 h of the same time of day, in the same direction
  * against the plan, within 1° of each other. Returns the largest such group as a band suggestion, or null.
  */
 export function bandSuggestion(holds: HoldRecord[], s: AcSettings, today = localDay()): BandSuggestion | null {
-  const since = addDays(today, -6), recent = holds.filter(h => h.day >= since && h.day <= today && h.coolF !== h.planF);
-  let best: BandSuggestion | null = null;
-  for (const a of recent) {
-    const dir = Math.sign(a.coolF - a.planF), g = recent.filter(h => hourGap(h.hour, a.hour) <= 1 && Math.sign(h.coolF - h.planF) === dir && Math.abs(h.coolF - a.coolF) <= 1);
-    const days = new Set(g.map(h => h.day)).size; if (days < 4 || (best && days <= best.days)) continue;
-    const f = Math.round(median(g.map(h => h.coolF))), hour = Math.round(median(g.map(h => h.hour))) % 24, window = isNight(hour, s) ? 'night' as const : 'day' as const;
-    const from = window === 'night' ? Math.max(s.band.nightLo, Math.min(s.band.nightHi, bandMid(s))) : bandMid(s);
-    if (f === from || f < AC_MIN || f > AC_MAX) continue;
-    best = { key: `${window}:${f}`, window, f, hour, days, of: 7, from };
-  }
-  return best;
+  const p = changePatterns(holds, s, today).find(x => x.days >= 4); if (!p) return null;
+  const { dir: _d, planF: _p, ...sg } = p; return sg;
 }
 /** The band that makes `f` the night (or daytime) setpoint the plan uses: night = clamp(mid, nightLo, nightHi); daytime = mid of home. */
 export function bandFor(sg: Pick<BandSuggestion, 'window' | 'f'>, b: AcSettings['band']): AcSettings['band'] {
@@ -277,7 +285,9 @@ export async function dayInputs(siteId: string, date: string, live: DayInputs, h
 }
 const clockAt = (ms: number) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }).format(new Date(ms)).replace(/\s/g, ' ');
 /** The thermostat's setting in words for the log and the banner: "72°", "heat 68°", "68–76°", "Off". */
-export const setting = (h: Pick<Hold, 'mode' | 'coolF' | 'heatF'>) => h.mode === 'OFF' ? 'Off' : h.mode === 'HEAT' ? `heat ${h.heatF}°` : h.mode === 'HEATCOOL' ? `${h.heatF}–${h.coolF}°` : `${h.coolF}°`;
+/** A setpoint as the thermostat shows it: whole degrees (Nest keeps Celsius, so 78 °F reads back as 77.9). */
+export const wholeF = (f: number | null | undefined) => f == null ? f : Math.round(f);
+export const setting = (h: Pick<Hold, 'mode' | 'coolF' | 'heatF'>) => h.mode === 'OFF' ? 'Off' : h.mode === 'HEAT' ? `heat ${wholeF(h.heatF)}°` : h.mode === 'HEATCOOL' ? `${wholeF(h.heatF)}–${wholeF(h.coolF)}°` : `${wholeF(h.coolF)}°`;
 type Log = Array<{ at: number; day: string; text: string; delta?: string }>;
 async function logAc(siteId: string, text: string, delta?: string) {
   const log = await kv.get<Log>(`${siteId}:ac:log`) ?? [];
@@ -291,7 +301,7 @@ export async function startHold(siteId: string, by: HoldBy, st: Pick<NestState, 
   await setHold(siteId, h);
   if (st.mode === 'COOL' && st.coolF != null) {   // frame 7: what was set, against what the plan wanted then
     const t = rfc3339(new Date(now)), hour = Number(t.slice(11, 13)) + Number(t.slice(14, 16)) / 60;
-    await rememberHold(siteId, { at: now, day: t.slice(0, 10), hour, coolF: st.coolF, planF: stepAt(plan as AcPlan, hour).coolF });
+    await rememberHold(siteId, { at: now, day: t.slice(0, 10), hour, coolF: st.coolF, planF: stepAt(plan as AcPlan, hour).coolF, by });
   }
   await logAc(siteId, `${by === 'app' ? 'You set' : 'Someone set'} ${setting(h)} ${by === 'app' ? 'in Solstice' : 'at the thermostat'} (${clockAt(now)}). Holding until ${clockAt(h.until)}`, 'hold');
   return h;
@@ -349,7 +359,11 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
   const todayKwh = Math.round(rt.minutes / 60 * acKw * 10) / 10;
   const home = await q<{ kwh: number }>(`SELECT (SUM(home_wh) / 1000.0)::float8 kwh FROM energy WHERE site_id = $1 AND day = $2`, [siteId, today]);
   const suggestion = await currentSuggestion(siteId, settings);
-  return { id: 'ac', name: 'AC', configured, linked, error, settings, state: st, hold, suggestion, learned: { ...learned, acKw, source: learned.coolKw ? 'measured' : 'estimated' }, runtime: rt, todayKwh, shareOfHomePct: home[0]?.kwh ? Math.round(todayKwh / home[0].kwh * 100) : null,
+  // mockup ae: the manual changes of the last 7 days and the patterns building toward a suggestion (2+ days; 4 makes one)
+  const holds = await kv.get<HoldRecord[]>(holdHistoryKey(siteId)) ?? [], since = addDays(today, -6);
+  const changes = { recent: holds.filter(h => h.day >= since).map(h => ({ at: h.at, by: h.by ?? null, coolF: Math.round(h.coolF), planF: Math.round(h.planF) })),
+    patterns: changePatterns(holds, settings, today).filter(p => p.days >= 2).slice(0, 3).map(p => ({ hour: p.hour, f: p.f, planF: p.planF, dir: p.dir, days: p.days, need: 4, window: p.window })) };
+  return { id: 'ac', name: 'AC', configured, linked, error, settings, state: st, hold, suggestion, changes, learned: { ...learned, acKw, source: learned.coolKw ? 'measured' : 'estimated' }, runtime: rt, todayKwh, shareOfHomePct: home[0]?.kwh ? Math.round(todayKwh / home[0].kwh * 100) : null,
     plan, currentStep: stepAt(plan, hourNow()), week, presence, applied: applied?.date === today ? applied : null, log, outdoorF: days[ti] ? Math.round(days[ti].high) : null, hourlyOutdoor: null,
     equipment: { airHandler: 'Trane TEM4A0C42 · 3.5 ton variable-speed (2018)', heat: 'electric strips (staged)',
       outdoor: learned.heatKw != null ? (learned.heatKw < 5 ? `heat pump (measured ${learned.heatKw.toFixed(1)} kW when heating)` : `straight AC, heating on the strips (measured ${learned.heatKw.toFixed(1)} kW)`) : 'outdoor unit type: Solstice will measure it from the first heating steps this winter' } };

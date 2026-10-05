@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Solstice · Learning from your changes</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* page scaffolding for the mockup only (same as v–ad) */
+html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+body{background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.col{width:100%;max-width:393px;margin:0 auto;padding:28px 0 60px}
+.intro{padding:0 20px}
+.intro .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.intro h2{font-size:30px;line-height:1.1;font-weight:300;letter-spacing:-.02em;margin-bottom:12px}
+.intro p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.frame{margin-top:34px}
+.frame>.sect{margin:0 20px 10px}
+.pagepad{padding:0 20px}
+.cap{margin:12px 20px 0;padding:12px 14px;border-radius:16px;background:rgba(0,0,0,.25);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.55}
+.cap b{color:var(--text);font-weight:600}
+.cap p+p{margin-top:6px}
+.cap .new{color:var(--batt)}.cap .same{color:var(--mute)}
+.wrules{margin:34px 20px 0}
+.wrules h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:10px}
+.wrules ul{list-style:none;display:grid;gap:8px}
+.wrules li{font-size:12.5px;color:var(--dim);line-height:1.55;padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b)}
+.wrules li b{color:var(--text);font-weight:600}
+.m-sheet{border-radius:24px 24px 18px 18px;padding:8px 16px 16px;background:rgba(20,24,36,.92);border:1px solid var(--glass-b)}
+.m-grab{width:38px;height:4px;border-radius:2px;background:rgba(255,255,255,.2);margin:4px auto 12px}
+.m-sheet h4{font-size:17px;font-weight:600}
+.m-sub{font-size:12px;color:var(--dim);margin-top:2px}
+.m-stub{height:60px;margin-top:10px;border-radius:12px;background:rgba(255,255,255,.04)}
+/* NEW: the "learning" line and the patterns */
+.lr-line{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;gap:8px;width:100%;margin-top:12px;font-size:12.5px;color:var(--dim)}
+.lr-line i{flex:none;width:8px;height:8px;border-radius:50%;background:#c4a2ff;box-shadow:0 0 8px #c4a2ff}
+.lr-line b{color:var(--text);font-weight:600}
+.lr-line em{margin-left:auto;font-style:normal;color:var(--mute)}
+.pat{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b);margin-top:10px}
+.pat .t{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:600}
+.pat .t span{font:500 11px "JetBrains Mono";color:var(--dim)}
+.pat p{font-size:12px;color:var(--dim);margin-top:3px;line-height:1.45}
+.dots{display:flex;gap:5px;margin-top:8px}
+.dots i{width:22px;height:6px;border-radius:3px;background:rgba(255,255,255,.1)}
+.dots i.on{background:#c4a2ff}
+.dots i.need{outline:1px dashed rgba(196,162,255,.6);outline-offset:1px}
+.chg{display:grid;gap:6px;margin-top:12px}
+.chg div{display:grid;grid-template-columns:auto 1fr auto;gap:8px;font-size:12px;color:var(--dim);align-items:baseline}
+.chg em{font:500 10.5px "JetBrains Mono";font-style:normal;color:var(--mute)}
+.chg b{color:var(--text);font-weight:600}
+.chg span{font:500 11px "JetBrains Mono";color:var(--text)}
+.learn{margin-top:12px}
+.learn .row2{display:flex;gap:8px;margin-top:10px}
+.learn .row2 button{all:unset;cursor:pointer;flex:1;text-align:center;padding:9px 10px;border-radius:12px;font-weight:700;font-size:12.5px}
+.learn .row2 .y{background:var(--solar);color:#1a1204}
+.learn .row2 .n{background:rgba(255,255,255,.08);border:1px solid var(--glass-b);color:var(--text);font-weight:600}
+.tline2{display:grid;gap:6px}
+.tline2 div{display:grid;grid-template-columns:auto 1fr;gap:8px;font-size:12.5px;color:var(--dim)}
+.tline2 em{font:500 10.5px "JetBrains Mono";font-style:normal;color:var(--mute);padding-top:2px}
+.strike{text-decoration:line-through;color:var(--mute)}
+</style></head><body>
+<div class="col">
+  <div class="intro">
+    <div class="k">Mockup ae · Learning from your changes</div>
+    <h2>See what Solstice is learning from your changes, and let the pool learn too.</h2>
+    <p>The AC already holds your thermostat changes and, after 4 of 7 days, suggests a new band; today it caught you at 7:00 and 8:08 AM. But you can't see it learning until a suggestion appears, and the pool learns nothing from your boosts. Times and figures here are illustrative.</p>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 1 · Thermostat card · the learning line</div>
+    <div class="pagepad"><div class="card">
+      <div class="h"><b>Thermostat</b><span class="badge g">Hallway · <small>2 min ago</small></span></div>
+      <div class="m-stub"></div>
+      <button class="lr-line"><i></i><span><b>Learning from 2 changes</b> this week</span><em>›</em></button>
+    </div></div>
+    <div class="cap"><p><b class="new">New:</b> one line under the thermostat (owner only) whenever you have changed it this week. It opens frame 2.</p></div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 2 · Your changes (AC)</div>
+    <div class="pagepad"><div class="m-sheet"><div class="m-grab"></div>
+      <h4>Your changes</h4><div class="m-sub">Thermostat · last 7 days</div>
+      <div class="pat"><div class="t">Mornings around 7 AM<span>2 of 4</span></div>
+        <p>Warmer than the plan: you set 78° when it planned 76°.</p>
+        <div class="dots"><i class="on"></i><i class="on"></i><i class="need"></i><i class="need"></i></div></div>
+      <div class="chg">
+        <div><em>Mon 8:08 AM</em><b>Set 77° at the thermostat</b><span>plan 76°</span></div>
+        <div><em>Mon 7:00 AM</em><b>Set 78° at the thermostat</b><span>plan 76°</span></div>
+        <div><em>Sat 9:14 PM</em><b>Set 74° in the app</b><span>plan 76°</span></div>
+      </div>
+      <p class="fine" style="margin-top:12px">After the same kind of change on 4 of 7 days, Solstice suggests making it your band. It never changes the band by itself.</p>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> each pattern Solstice is tracking, with how many of the 4 days it has, and the changes it learned from. When a pattern reaches 4, the suggestion you already have on the card appears (frame 3).</p>
+      <p><b class="new">Small fix:</b> changes show whole degrees, as the thermostat does (today's log said 77.9°, a Celsius round-trip).</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 3 · the AC suggestion (as today)</div>
+    <div class="pagepad"><div class="rec learn"><b>You keep setting 78° around 7 AM</b><br>4 of the last 7 days. Make 78° your daytime setpoint? Autopilot would plan 78° from the morning on.
+      <div class="row2"><button class="y">Make 78° the daytime setpoint</button><button class="n">Not now</button></div></div></div>
+    <div class="cap"><p><b class="same">Unchanged:</b> the suggestion and its buttons work as they do now.</p></div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 4 · Turnover planner · the pool learns too</div>
+    <div class="pagepad"><div class="card">
+      <div class="h"><b>Turnover planner</b><span class="badge g">Autopilot · Auto</span></div>
+      <div class="m-stub"></div>
+      <div class="rec learn"><b>You boost around 4 PM</b><br>On 4 of the last 7 days, an hour or more. Move the daily skim hour from 1 PM to 4 PM?
+        <div class="row2"><button class="y">Move the skim to 4 PM</button><button class="n">Not now</button></div></div>
+      <div class="rec learn"><b>You keep adding pump time</b><br>About 2 h extra on 4 of the last 7 days (boosts and runs from the app or the Pentair app). Raise the goal from 3 to 3.5 turnovers a day?
+        <div class="row2"><button class="y">Raise to 3.5</button><button class="n">Not now</button></div></div>
+      <button class="lr-line"><i></i><span><b>Learning from 5 changes</b> this week</span><em>›</em></button>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> two pool suggestions, each after 4 of 7 days:</p>
+      <p><b>Skim hour:</b> boosts you start within an hour of the same time of day. Accepting moves the planner's skim hour there (it also replaces most of those boosts).</p>
+      <p><b>Goal:</b> extra pump time you add (boosts, circuits you turn on, runs seen from the Pentair app) averaging an hour or more. Accepting raises the turnover goal by a half step.</p>
+      <p>The learning line opens the same "Your changes" sheet, for the pool.</p>
+    </div>
+  </div>
+
+  <div class="wrules">
+    <h3>The rules</h3>
+    <ul>
+      <li><b>Suggest only.</b> Nothing is changed until you tap the yellow button; "Not now" hides that suggestion for 14 days.</li>
+      <li><b>4 of the last 7 days,</b> the same direction, within an hour of the same time (as the AC already does).</li>
+      <li><b>What counts</b> for the pool: boosts and circuit runs from the app, and runs the hourly reads see outside the schedule. Speeds and the spa, lights, jets and blower never feed a suggestion.</li>
+      <li><b>Clear-up days</b> and Autopilot's own speed-ups on spare solar are not your changes and never count.</li>
+      <li><b>Unchanged:</b> holds, the hold banner, the planner, both Autopilots' modes, and every other card.</li>
+    </ul>
+  </div>
+</div>
+</body></html>

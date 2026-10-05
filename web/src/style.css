@@ -1008,6 +1008,24 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .modes-row button{all:unset;cursor:pointer;flex:1;text-align:center;padding:10px 6px;border-radius:11px;font-size:13px;font-weight:600;color:var(--dim)}
 .modes-row button.on{background:rgba(78,240,166,.16);color:var(--text)}
 .modes-row button:focus-visible{outline:2px solid var(--home);outline-offset:1px}
+/* mockup ae: learning from your changes (the line, the "Your changes" sheet, the pool suggestions) */
+.ae-line{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;gap:8px;width:100%;margin-top:12px;font-size:12.5px;color:var(--dim)}
+.ae-line i{flex:none;width:8px;height:8px;border-radius:50%;background:#c4a2ff;box-shadow:0 0 8px #c4a2ff}
+.ae-line b{color:var(--text);font-weight:600}
+.ae-line em{margin-left:auto;font-style:normal;color:var(--mute)}
+.ae-pat{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b);margin-top:10px}
+.ae-pat .t{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:600}
+.ae-pat .t span{font:500 11px "JetBrains Mono";color:var(--dim)}
+.ae-pat p{font-size:12px;color:var(--dim);margin-top:3px;line-height:1.45}
+.ae-dots{display:flex;gap:5px;margin-top:8px}
+.ae-dots i{width:22px;height:6px;border-radius:3px;background:rgba(255,255,255,.1)}
+.ae-dots i.on{background:#c4a2ff}
+.ae-dots i.need{outline:1px dashed rgba(196,162,255,.6);outline-offset:1px;background:none}
+.ae-chg{display:grid;gap:6px;margin-top:12px}
+.ae-chg div{display:grid;grid-template-columns:auto 1fr auto;gap:8px;font-size:12px;color:var(--dim);align-items:baseline}
+.ae-chg em{font:500 10.5px "JetBrains Mono";font-style:normal;color:var(--mute)}
+.ae-chg b{color:var(--text);font-weight:600}
+.ae-chg span{font:500 11px "JetBrains Mono";color:var(--text)}
 /* mockup ad: the Spare solar card */
 .sp-big{display:flex;align-items:baseline;gap:8px;margin-top:10px}
 .sp-big b{font-size:30px;font-weight:300;letter-spacing:-.02em}

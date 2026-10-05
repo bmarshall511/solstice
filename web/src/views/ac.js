@@ -148,6 +148,10 @@ function drawThermostat(S) {
     <div class="row2"><button class="y" data-sg="accept">Make ${sg.f}° the ${sg.window === 'night' ? 'night' : 'daytime'} setpoint</button><button class="n" data-sg="dismiss">Not now</button></div></div>` : '';
   $('tsSuggest').onclick = async e => { const b = e.target.closest('[data-sg]'); if (!b) return; b.disabled = true; b.textContent = '…';
     try { S.ac = await api.acSuggestion(b.dataset.sg, sg.key); } catch (err) { alert(err.message); } drawAc(S); };
+  // mockup ae: what Solstice is learning from your changes (owner only)
+  const ch = d.changes;
+  $('tsLearn').innerHTML = !S.guest && ch?.recent?.length ? `<button class="ae-line" id="tsLearnBtn"><i></i><span><b>Learning from ${ch.recent.length} change${ch.recent.length === 1 ? '' : 's'}</b> this week</span><em>\u203a</em></button>` : '';
+  if ($('tsLearnBtn')) $('tsLearnBtn').onclick = () => openChanges(ch);
   // −/+ : one degree, sent once 1.5 s after the last tap
   const bump = dir => {
     const cur = ts.pending ?? { mode: st.mode, coolF: st.coolF, heatF: st.heatF }, n = { ...cur };
@@ -181,6 +185,20 @@ export function freshAc(S) {
   else { b.className = 'badge g'; b.innerHTML = `${esc(st.name ?? 'Thermostat')} \u00b7 <small>${t}</small>`; }
 }
 /** The banner under the controls: a hold, Autopilot paused by the mode, or what Autopilot is doing. */
+/* mockup ae: the "Your changes" sheet: the patterns building toward a suggestion and the changes they come from */
+const dayTime = ms => new Date(ms).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' }).replace(',', '');
+const hourName = h => { const r = Math.round(h) % 24; return `${r % 12 || 12} ${r < 12 ? 'AM' : 'PM'}`; };
+export const dotsHtml = (n, need) => `<div class="ae-dots">${Array.from({ length: need }, (_, i) => `<i class="${i < n ? 'on' : 'need'}"></i>`).join('')}</div>`;
+function openChanges(ch) {
+  const pats = ch.patterns.map(p => `<div class="ae-pat"><div class="t">${p.window === 'night' ? 'Nights' : Math.round(p.hour) < 12 ? 'Mornings' : 'Afternoons'} around ${hourName(p.hour)}<span>${Math.min(p.days, p.need)} of ${p.need}</span></div>
+    <p>${p.dir > 0 ? 'Warmer' : 'Cooler'} than the plan: you set ${p.f}° when it planned ${p.planF}°.</p>${dotsHtml(p.days, p.need)}</div>`).join('');
+  $('sheetBody').innerHTML = `<div class="shead"><h4>Your changes</h4><button class="x" id="chX" aria-label="Close">✕</button></div>
+    <p class="sub">Thermostat · last 7 days</p>${pats || '<p class="fine" style="margin-top:10px">No pattern yet: a pattern needs the same kind of change on two days.</p>'}
+    <div class="ae-chg">${ch.recent.map(r => `<div><em>${dayTime(r.at)}</em><b>Set ${r.coolF}° ${r.by === 'app' ? 'in the app' : 'at the thermostat'}</b><span>plan ${r.planF}°</span></div>`).join('')}</div>
+    <p class="fine" style="margin-top:12px">After the same kind of change on 4 of 7 days, Solstice suggests making it your band. It never changes the band by itself.</p>`;
+  $('chX').onclick = () => $('phone').classList.remove('open');
+  $('phone').classList.add('open');
+}
 function holdHtml(d, mode) {
   const s = d.settings, h = d.hold;
   if (mode !== 'COOL') {
@@ -191,7 +209,7 @@ function holdHtml(d, mode) {
     return `<div class="hold paused"><div class="hh"><i></i><b>${mode === 'ECO' ? 'Away · Eco' : 'AC Autopilot paused'}</b><em>${{ HEAT: 'Heat', HEATCOOL: 'Heat · Cool', OFF: 'Off', ECO: 'Eco' }[mode] ?? ''}</em></div><p>${why}</p></div>`;
   }
   if (h) {
-    const pct = Math.max(2, Math.min(100, (Date.now() - h.at) / (h.until - h.at) * 100)), what = h.mode === 'OFF' ? 'Off' : h.mode === 'HEAT' ? `heat ${h.heatF}°` : h.mode === 'HEATCOOL' ? `${h.heatF}–${h.coolF}°` : `${h.coolF}°`;
+    const pct = Math.max(2, Math.min(100, (Date.now() - h.at) / (h.until - h.at) * 100)), R = v => v == null ? v : Math.round(v), what = h.mode === 'OFF' ? 'Off' : h.mode === 'HEAT' ? `heat ${R(h.heatF)}°` : h.mode === 'HEATCOOL' ? `${R(h.heatF)}–${R(h.coolF)}°` : `${R(h.coolF)}°`;
     return `<div class="hold"><div class="hh"><i></i><b>${h.by === 'app' ? `Holding your ${what}` : `Holding ${what} set at the thermostat`}</b><em>until ${clk(h.until)}</em></div>
       <p>${h.by === 'app' ? 'You set it here' : 'Changed at the thermostat'} at ${clk(h.at)}. Autopilot skips its steps until <b>${clk(h.until)}</b>: ${esc(h.why)}.</p>
       <div class="bar"><i style="width:${pct}%"></i></div>

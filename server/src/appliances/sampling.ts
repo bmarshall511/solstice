@@ -13,6 +13,7 @@ import { q, kv } from '../db.js';
 import { rfc3339 } from '../tesla/client.js';
 import { configured as poolConfigured, readPool, type PoolSnapshot } from './screenlogic.js';
 import { recordReading, pumpSchedules, scheduledQuarters } from './pool.js';
+import { noteOutsideRun } from './poolLearn.js';
 import { nestConfigured, nestLinked } from './nest.js';
 
 const MIN = 60_000;
@@ -112,6 +113,8 @@ export async function poolTick(siteId: string, now: number) {
   try {
     const snap = await readPool();
     await recordReading(siteId, snap);
+    // mockup ae: the pump running in a quarter-hour the schedule doesn't cover was started outside Solstice (the hourly reads see it)
+    if (snap.pump?.running && sched && !scheduledQuarters(sched)[Math.floor(chicago(now).minute / POOL_READ_MIN)]) await noteOutsideRun(siteId, now);
     return { read: true, at: snap.at, running: snap.pump?.running ?? null, rpm: snap.pump?.rpm ?? null, watts: snap.pump?.watts ?? null };
   } catch (e: any) {
     console.warn(`[solstice] cron pool read failed for ${siteId}, skipped until the next due quarter-hour: ${e?.message ?? e}`);

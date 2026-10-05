@@ -59,7 +59,7 @@ describe('costs are null without a tariff, kWh unchanged', () => {
 
   // POOL_DEFAULTS is module-private until design X2 exports it; these are the same values.
   const POOL: PoolSettings = { gallons: 14995, spaGallons: 1000, designGpm: 120, filterRpm: 1500, boostRpm: 2400, poolCircuit: 6, boostCircuit: 8, featureCircuits: [5],
-    autopilot: 'suggest', uv: true, heaterBtu: 400_000, propaneUsdPerGal: 3, loads: { '2': 1100, '3': 500, '4': 100 }, turnoverGoal: 3, skimHours: 1 };
+    autopilot: 'suggest', uv: true, heaterBtu: 400_000, propaneUsdPerGal: 3, loads: { '2': 1100, '3': 500, '4': 100 }, turnoverGoal: 3, skimHours: 1, skimAt: null };
   const BELL = [0, 0, 0, 0, 0, 0, 0, .5, 1.5, 3, 4.5, 5.5, 6, 6, 5.5, 4.5, 3, 1.5, .5, 0, 0, 0, 0, 0];
 
   it('pool plan: costPerMonth is null, every kWh figure is what it is with a rate', () => {
