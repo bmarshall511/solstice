@@ -115,7 +115,7 @@ function drawBreakdown() {
   $('egBar').innerHTML = d.parts.map(p => `<i style="background:${EG[p.id][1]};width:${p.kwh / sum * 100}%"></i>`).join('');
   const note = p => p.id === 'ac' ? (p.hours != null ? `Cooling ${p.hours} h${d.range === 'today' ? ' today' : ' a day'} \u00d7 ${p.kw.toFixed(1)} kW` : 'From the heat model')
     : p.id === 'alwaysOn' ? (p.kw != null ? `${p.kw.toFixed(2)} kW every hour, from the quietest stretch of each night` : 'Not enough night data yet')
-    : p.id === 'big' ? `${d.range === 'today' ? `${d.bursts.length} bursts today` : `${p.perDay} bursts a day`}, 20\u201345 min at about 7 kW: looks like the water heater, dryer, oven or range`
+    : p.id === 'big' ? `${d.range === 'today' ? `${d.bursts.length} bursts today` : `${p.perDay} bursts a day`}${p.minutes ? `, ${p.minutes[0] === p.minutes[1] ? p.minutes[0] : `${p.minutes[0]}\u2013${p.minutes[1]}`} min at about ${p.burstKw} kW` : ''}: looks like the water heater, dryer, oven or range`
     : p.id === 'pool' ? 'Pump, UV and extras' : 'Lights, stovetop, TVs, small appliances';
   $('egParts').innerHTML = d.parts.map(p => `<div class="part${eg.open.has(p.id) ? ' open' : ''}" data-id="${p.id}" role="button" tabindex="0" aria-expanded="${eg.open.has(p.id)}">
     <i class="dot" style="background:${EG[p.id][1]}"></i><b>${EG[p.id][0]}</b><span class="v">${p.kwh.toFixed(1)} kWh<em>${p.share}%</em></span>

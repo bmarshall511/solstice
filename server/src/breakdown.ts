@@ -66,7 +66,7 @@ export async function breakdownFor(siteId: string, range: Range, settings: Recor
   const nr = nest.map(r => ({ ts: Number(r.ts), day: r.day, hvac: r.hvac })), acOn = acMask(nr), covered = nestCoverage(nr), pumpKw = new Map(pumpNight.map(p => [p.day, Number(p.kw) || 0]));
   const byDay = new Map<string, Bucket[]>();
   for (const r of rows) { const b = { epoch: Number(r.epoch), day: r.day, hour: r.hour, kw: Number(r.wh) * 12 / 1000 }; const a = byDay.get(r.day); if (a) a.push(b); else byDay.set(r.day, [b]); }
-  let home = 0, alwaysOn = 0, big = 0, baseSum = 0, baseDays = 0, burstCount = 0, days = 0, acSum = 0, acDays = 0; const todayBursts: Burst[] = [];
+  let home = 0, alwaysOn = 0, big = 0, baseSum = 0, baseDays = 0, burstCount = 0, days = 0, acSum = 0, acDays = 0; const todayBursts: Burst[] = [], allBursts: Burst[] = [];
   const acKwNow = ac.acKw ?? 2.7;
   for (const s of spans) {
     const bs = byDay.get(s.day) ?? []; if (range !== 'today' && bs.length < 0.9 * (s.lengthMs / 300_000)) continue;   // a full day needs ~all its buckets
@@ -79,7 +79,7 @@ export async function breakdownFor(siteId: string, range: Range, settings: Recor
     const base = Math.max(0, raw - (pumpKw.get(s.day) ?? 0));
     baseSum += base; baseDays++;
     alwaysOn += base * Math.min(s.elapsedMs, bs.length * 300_000) / 3600e3;
-    const bursts = burstsOf(bs, base, acOn, acKwNow); burstCount += bursts.length; big += bursts.reduce((a, b) => a + b.kwh, 0);
+    const bursts = burstsOf(bs, base, acOn, acKwNow); burstCount += bursts.length; allBursts.push(...bursts); big += bursts.reduce((a, b) => a + b.kwh, 0);
     if (s.day === today) todayBursts.push(...bursts);
   }
   const per = (v: number) => days ? Math.round(v / days * 10) / 10 : 0;
@@ -92,7 +92,9 @@ export async function breakdownFor(siteId: string, range: Range, settings: Recor
     parts: [
       { id: 'ac', kwh: acKwh, share: share(acKwh), conf: 'measured', hours: acHours, kw: acKwNow },
       { id: 'alwaysOn', kwh: onKwh, share: share(onKwh), conf: 'measured', kw: baseDays ? Math.round(baseSum / baseDays * 100) / 100 : null },
-      { id: 'big', kwh: bigKwh, share: share(bigKwh), conf: 'estimated', perDay: days ? Math.round(burstCount / days * 10) / 10 : 0 },
+      { id: 'big', kwh: bigKwh, share: share(bigKwh), conf: 'estimated', perDay: days ? Math.round(burstCount / days * 10) / 10 : 0,
+        minutes: allBursts.length ? [Math.min(...allBursts.map(b => b.minutes)), Math.max(...allBursts.map(b => b.minutes))] : null,
+        burstKw: allBursts.length ? Math.round(allBursts.reduce((a, b) => a + b.kw * b.minutes, 0) / allBursts.reduce((a, b) => a + b.minutes, 0) * 10) / 10 : null },
       { id: 'pool', kwh: poolKwh, share: share(poolKwh), conf: pool.source === 'readings' ? 'measured' : 'estimated' },
       { id: 'other', kwh: rest, share: share(rest), conf: 'estimated' },
     ],
