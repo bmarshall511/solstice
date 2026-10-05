@@ -86,6 +86,10 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS pool_readings (site_id text NOT NULL, ts bigint NOT NULL, day text NOT NULL, hour smallint NOT NULL, running boolean NOT NULL,
      watts real NOT NULL, rpm real NOT NULL, water_temp real, air_temp real, circuits jsonb NOT NULL DEFAULT '[]', PRIMARY KEY (site_id, ts))`,
   `CREATE INDEX IF NOT EXISTS pool_readings_site_day ON pool_readings(site_id, day)`,
+  // The pool water log (mockup aj; appliances/poolTests.ts): the owner's tests, ppm except pH; water_f from the controller at logging time.
+  `CREATE TABLE IF NOT EXISTS pool_tests (id serial PRIMARY KEY, site_id text NOT NULL, at bigint NOT NULL, day text NOT NULL, fc real NOT NULL, ph real NOT NULL,
+     cc real, ta real, cya real, ch real, clarity text NOT NULL, added jsonb NOT NULL DEFAULT '[]', source text NOT NULL DEFAULT 'kit', water_f real)`,
+  `CREATE INDEX IF NOT EXISTS pool_tests_site_day ON pool_tests(site_id, day)`,
   `CREATE TABLE IF NOT EXISTS nest_readings (site_id text NOT NULL, ts bigint NOT NULL, day text NOT NULL, hour smallint NOT NULL, indoor_f real, humidity real, mode text, hvac text, cool_f real, heat_f real, eco boolean, PRIMARY KEY (site_id, ts))`,
   `CREATE INDEX IF NOT EXISTS nest_readings_site_day ON nest_readings(site_id, day)`,
   // Per-inverter readings from the SunPower PVS6, pushed by scripts/pvs-relay.mjs (one row per inverter per 5-minute poll; server/src/pvs.ts). kw is AC power (p3phsumKw).

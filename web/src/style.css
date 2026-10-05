@@ -1026,6 +1026,35 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .ae-chg em{font:500 10.5px "JetBrains Mono";font-style:normal;color:var(--mute)}
 .ae-chg b{color:var(--text);font-weight:600}
 .ae-chg span{font:500 11px "JetBrains Mono";color:var(--text)}
+/* mockup aj: the pool water log */
+.pw-vals{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px;cursor:pointer}
+.pw-vals div{padding:8px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b);min-width:0}
+.pw-vals small{display:block;font:600 9.5px Manrope;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+.pw-vals b{display:block;font:500 17px "JetBrains Mono";margin-top:2px}
+.pw-vals span{font-size:10.5px;color:var(--dim)}
+.pw-vals .ok b{color:var(--batt)}.pw-vals .lo b,.pw-vals .hi b{color:#ffc15e}
+.pw-line{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--dim)}
+.pw-line b{color:var(--text);font-weight:600}
+.pw-btn{all:unset;cursor:pointer;font-size:12.5px;font-weight:600;padding:8px 12px;border-radius:12px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);color:var(--text);white-space:nowrap}
+.pw-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;padding:11px 0;border-top:1px solid rgba(255,255,255,.06)}
+.pw-row:first-child{border-top:0}
+.pw-row .tl{font-size:13.5px;font-weight:600}
+.pw-row .tl small{display:block;font-size:11.5px;color:var(--dim);font-weight:400;margin-top:2px}
+.pw-step{display:flex;align-items:center;gap:8px}
+.pw-step button{all:unset;cursor:pointer;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);font-size:16px}
+.pw-step b{min-width:46px;text-align:center;font:500 16px "JetBrains Mono"}
+.pw-step b.off{color:var(--mute)}
+.pw-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.pw-chips button{all:unset;cursor:pointer;padding:6px 10px;border-radius:999px;font-size:12px;background:rgba(255,255,255,.06);border:1px solid var(--glass-b);color:var(--dim)}
+.pw-chips button.on{background:rgba(255,255,255,.18);color:var(--text)}
+.pw-lab{font:600 10.5px Manrope;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin-top:14px}
+#plGo{display:block;width:100%;box-sizing:border-box;text-align:center;margin-top:14px}
+.pw-tl{display:grid;gap:6px;margin-top:10px}
+.pw-tl div{display:grid;grid-template-columns:auto 1fr auto;gap:8px;font-size:12px;color:var(--dim);align-items:baseline}
+.pw-tl em{font:500 10.5px "JetBrains Mono";font-style:normal;color:var(--mute)}
+.pw-tl b{color:var(--text);font-weight:600}
+.pw-tl .link{margin:0;padding:0 4px;font-size:11px}
+#pwOffer .rec{margin-top:12px}
 /* mockup ai: the Cleaning check chart's key */
 .sl-key{display:flex;gap:12px;flex-wrap:wrap;font-size:10.5px;color:var(--mute);margin-top:4px}
 .sl-key i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:-1px}

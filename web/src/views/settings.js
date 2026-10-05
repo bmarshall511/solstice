@@ -11,7 +11,7 @@ const PREFS = [['outage', 'var(--out)', '⚡', 'Grid outage started or ended'], 
 const NEW_PREFS = [['approval', 'var(--batt)', '✓', 'Waiting for your approval', 'Pool plan, AC pre-cool, Powerwall rule'], ['billDue', 'var(--solar)', '$', 'PEC bill due', '3 days before'],
   ['anomaly', 'var(--warn)', '!', 'Unusual usage', 'A day well above what its weather explains'], ['storm', 'var(--home)', '⛨', 'Storm preparation', 'Watch or Warning ahead, with the Powerwall step'],
   ['ercot', 'var(--grid)', '⌁', 'Grid stress (ERCOT)', 'Conservation call or EEA'], ['panel', 'var(--out)', '▦', 'Panel fault', 'From the PVS relay · a panel well below its neighbours'],
-  ['digest', 'var(--batt)', '◷', 'Weekly digest', 'Monday 7 AM']];
+  ['digest', 'var(--batt)', '◷', 'Weekly digest', 'Monday 7 AM'], ['poolTest', '#6cc4ff', '💧', 'Time to test the pool', '4 days in warm water, 7 when cooler']];   // mockup aj
 let prefs = {};
 /** The alert switches from the settings boot() already read (this module used to fetch them itself at load, before sign-in). */
 export function applyAlertPrefs(alerts) { prefs = alerts ?? {}; document.querySelectorAll('[data-pref]').forEach(el => el.classList.toggle('on', prefs[el.dataset.pref] !== false)); }

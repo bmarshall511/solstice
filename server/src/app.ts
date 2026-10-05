@@ -38,6 +38,7 @@ import { pruneOld } from './retention.js';
 import { refreshCapacity, capacityOf, modelKwh, type Capacity } from './capacity.js';
 import { homeForecast } from './learn/homeModel.js';
 import { soilingFor, soilingNightly } from './soiling.js';
+import { poolWater, addTest, deleteTest, testError, poolTestReminder } from './appliances/poolTests.js';
 import { spareWatch, spareHistory } from './spare.js';
 import { digestRoutes, maybeWeeklyDigest } from './digest.js';
 import { presenceRoutes, setPresence } from './appliances/presence.js';
@@ -426,7 +427,15 @@ app.post('/api/events', express.json(), wrap(async (req, res) => {
 }));
 app.delete('/api/events/:id', wrap(async (req, res) => { await q('DELETE FROM events WHERE site_id = $1 AND id = $2', [site(req), Number(req.params.id)]); res.json({ ok: true }); }));
 
-app.get('/api/soiling', wrap(async (req, res) => res.json(await soilingFor(site(req)))));   // mockup ai: the Cleaning check card (owner only; the cached weather)
+app.get('/api/soiling', wrap(async (req, res) => res.json(await soilingFor(site(req)))));
+/* ---------- the pool water log (mockup aj; appliances/poolTests.ts): owner only, nothing written to the controller ---------- */
+app.get('/api/pool/water', wrap(async (req, res) => res.json(await poolWater(site(req)))));
+app.post('/api/pool/tests', express.json({ limit: '2kb' }), wrap(async (req, res) => {
+  const b = req.body ?? {}, bad = typeof b === 'object' && !Array.isArray(b) ? testError(b) : 'a test must be an object';
+  if (bad) return res.status(400).json({ error: bad });
+  await addTest(site(req), b); res.json(await poolWater(site(req)));
+}));
+app.delete('/api/pool/tests/:id', wrap(async (req, res) => { await deleteTest(site(req), Number(req.params.id)); res.json(await poolWater(site(req))); }));   // mockup ai: the Cleaning check card (owner only; the cached weather)
 
 /* ---------- ERCOT grid conditions (their CORS blocks browsers) ---------- */
 app.get('/api/ercot', wrap(async (_req, res) => res.json(await ercotNow())));   // watch.ts: the same 5-minute kv cache the alert watch reads
@@ -689,7 +698,8 @@ fiveMinuteSteps.digest = maybeWeeklyDigest; nightlySteps.digest = maybeWeeklyDig
 fiveMinuteSteps.panels = panelWatch;
 fiveMinuteSteps.grid = gridWatch;
 fiveMinuteSteps.spare = spareWatch;   // mockup ad: the pool speeds up on real spare solar (Auto only)   // mockup ab: grid down / Powerwalls low / grid back (after the storm step's live read)
-nightlySteps.soiling = soilingNightly;   // soiling.ts (mockup ai): the weather for the Cleaning check card, and one push per dusty spell
+nightlySteps.soiling = soilingNightly;
+nightlySteps.poolTest = poolTestReminder;   // poolTests.ts (mockup aj): one "time to test" push per test, 4 days warm / 7 cool   // soiling.ts (mockup ai): the weather for the Cleaning check card, and one push per dusty spell
 nightlySteps.alwaysOn = alwaysOnWatch;   // breakdown.ts: one push when the always-on base stays up three nights
 /* Watchdog: Vercel never retries a cron, so a nightly run that died (timeout, deploy, outage) would be silent. The 5-minute tick
  * pushes one alert a day while the last finished nightly run is more than 26 hours old. */

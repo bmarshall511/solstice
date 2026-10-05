@@ -11,6 +11,7 @@ import { renderLive, renderStatic, renderWeather, freshness } from './views/now.
 import { initHistory, drawHistoryChart, landscapeData, drawSocHeat, drawRecords, drawOutages, drawBills, openBillSheet } from './views/history.js';
 import { initPanels, drawPerformance, roofHud } from './views/panels.js';
 import { drawAlerts, initPlanner, drawAC, drawOvernight, drawHealth, initOutage, initBreakdown, initSpare, initCapacity } from './views/insights.js';
+import { initWater } from './views/water.js';
 import { drawSettings, drawConnections, openRawData, applyAlertPrefs } from './views/settings.js';
 import { every } from './lib/poll.js';
 import { initAppliances, poolTwin, drawPool, freshPool, tickBoost, releasePoolTwin } from './views/appliances.js';
@@ -400,7 +401,7 @@ async function boot() {
   started = true;
   const prefs = await api.settings().catch(() => ({}));
   if (!S.guest) applyAlertPrefs(prefs.alerts);
-  initAppliances(S); initAc(S); initBreakdown(S, every); initSpare(S, every); initCapacity(S, every);   // after the role is known: a locked device no longer sends a 401 every 3 minutes
+  initAppliances(S); initAc(S); initBreakdown(S, every); initSpare(S, every); initCapacity(S, every); initWater(S, every);   // mockup aj   // after the role is known: a locked device no longer sends a 401 every 3 minutes
   S.location = setSiteLocation(prefs.location);  // exact coordinates + ZIP from the server env; weather, NWS and the sun wait for them
   if (typeof prefs.calm === 'boolean') S.calm = prefs.calm;
   else if (S.guest && !S.asGuest) { const c = guestCalm(); if (c != null) S.calm = c; }   // a guest keeps Calm mode on this device
