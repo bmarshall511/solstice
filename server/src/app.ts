@@ -1,6 +1,6 @@
 // The Solstice HTTP API. Runs as a single Vercel function in production (api/index.ts) and via server/src/index.ts locally.
 import express, { type Request, type Response, type NextFunction } from 'express';
-import { q, one, kv, migrate } from './db.js';
+import { q, one, kv, migrate, hourWh } from './db.js';
 import { config } from './config.js';
 import { hashPassword, verifyPassword, startSession, endSession, currentUser, requireUser, requireSite, tooManyAttempts, recordAttempt, signState, verifyState, multiUser,
   ownerKey, checkOwnerKey, startOwnerSession, endOwnerSession, endOtherOwnerSessions, endOwnerSessionById, listOwnerSessions, ownerAttemptLimited, guestAttempts, clientIp,
@@ -345,8 +345,8 @@ app.get('/api/monthly', wrap(async (req, res) => {
 
 app.get('/api/profile', wrap(async (req, res) => {
   const days = Number(req.query.days ?? 14), to = localDay(), from = addDays(to, -days);
-  res.json({ days, hours: await q(`SELECT hour::int, (SUM(home_wh) / 1000.0 / $4)::float8 home, (SUM(solar_wh) / 1000.0 / $4)::float8 solar
-    FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY hour ORDER BY hour`, [site(req), from, to, days]),
+  res.json({ days, hours: await q(`SELECT hour::int, (SUM(h) / 1000.0 / $4)::float8 home, (SUM(s) / 1000.0 / $4)::float8 solar
+    FROM (SELECT day, hour, ${hourWh('home_wh')} h, ${hourWh('solar_wh')} s FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day, hour) x GROUP BY hour ORDER BY hour`, [site(req), from, to, days]),
     conf: await confidenceMap(site(req), ['fc48.solar', 'fc48.home', 'fc48.soc']) }); // learning layer: trust in the 48-hour forecast built on this profile
 }));
 
@@ -526,7 +526,7 @@ app.post('/api/appliances/pool/autopilot', express.json(), wrap(async (req, res)
   if (snap?.schedules) await rebaseline(site(req), snap, { ...POOL_DEFAULTS, ...cur }, 'auto');
   res.json({ ok: true, mode });
 }));
-/** Nightly (8:15 PM Central): Autopilot re-plans tomorrow for every site; Auto mode writes it, Suggest stores it. */
+/** Nightly at 01:15 UTC (8:15 PM CDT, 7:15 PM CST): Autopilot re-plans tomorrow for every site; Auto mode writes it, Suggest stores it. */
 app.get('/api/cron/pool', wrap(async (req, res) => {
   if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
   const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL'), out: Record<string, unknown> = {};

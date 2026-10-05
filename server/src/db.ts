@@ -24,6 +24,11 @@ export async function q<T extends Row = Row>(text: string, params: unknown[] = [
   query ??= await connect();
   return (await query(text, params)) as T[];
 }
+/**
+ * One local hour's Wh of a 5-minute energy column for a GROUP BY day, hour: the sum, scaled back to one hour when the hour holds more
+ * than 12 buckets. The fall-back day (first Sunday in November) repeats 01:00, so that hour holds 24 buckets, two real hours.
+ */
+export const hourWh = (col: string) => `(SUM(${col}) * 12.0 / GREATEST(COUNT(*), 12))`;
 export const one = async <T extends Row = Row>(text: string, params: unknown[] = []) => (await q<T>(text, params))[0] as T | undefined;
 
 /** Small key/value store (per-site sync timestamps, poll errors, etc.). */
@@ -127,10 +132,14 @@ const SCHEMA = [
   `DO $$ BEGIN CREATE INDEX IF NOT EXISTS powerwall_log_site_at ON powerwall_log(site_id, at); EXCEPTION WHEN duplicate_table OR unique_violation THEN NULL; END $$`,
 ];
 
-let migrated: Promise<void> | null = null;
-export function migrate() {
-  return (migrated ??= (async () => { for (const s of SCHEMA) await q(s); await oneTimeMigrations(); })());
+/** Run `fn` once and keep its result; a failure is forgotten, so the next call tries again. */
+export function onceUntilOk<T>(fn: () => Promise<T>) {
+  let p: Promise<T> | null = null;
+  return () => (p ??= fn().catch(e => { p = null; throw e; }));
 }
+// a failed setup is not kept: the next request tries again instead of failing for the rest of the instance's life (October audit)
+const migrateOnce = onceUntilOk(async () => { for (const s of SCHEMA) await q(s); await oneTimeMigrations(); });
+export function migrate() { return migrateOnce(); }
 
 /** One-time data fixes, each guarded by a kv flag so it runs once per database. Row updates only: no table is dropped,
  *  renamed or rewritten (rule 6). A failure is logged and retried on the next cold start rather than taking the API down. */

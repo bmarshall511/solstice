@@ -300,13 +300,13 @@ describe('write paths call the guard (fake ScreenLogic session, fake SDM, in-mem
     it('86 applyPlan with the default circuits writes once', async () => {
       await applyPlan(SITE, poolPlan(POOL), SNAP, POOL);
       expect(writePoolPlan).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(writePoolPlan).mock.calls[0][0].replaceCircuits).toEqual([6, 8, 5]);
+      expect(vi.mocked(writePoolPlan).mock.calls[0][0].replaceCircuits).toEqual([6, 8]);   // never the Waterfall (5), a switch only
       expect(H.run).toHaveBeenCalledTimes(1);
     });
     // [#, case, settings override, reason contains]
     it.each([
       [87, 'settings point the filter at the spa', { poolCircuit: 1 } as Partial<PoolSettings>, 'circuit 1 (Spa) is the spa'],
-      [88, 'settings replace the freeze circuit', { featureCircuits: [132] } as Partial<PoolSettings>, 'freeze protection'],
+      [88, 'settings point the pool circuit at freeze protection', { poolCircuit: 132 } as Partial<PoolSettings>, 'freeze protection'],
       [89, 'settings ask for 3,451 RPM (the skim speed)', { boostRpm: 3451 } as Partial<PoolSettings>, '3451 RPM is outside'],
       [90, 'settings point the boost at the pool light', { boostCircuit: 3 } as Partial<PoolSettings>, 'a light'],
     ] as const)('%i applyPlan refuses and logs when %s', async (_n, _case, over, why) => {

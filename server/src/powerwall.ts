@@ -10,7 +10,7 @@
 // the crons (storm every 5 minutes, reserve once after 17:00 Chicago, export nightly). Every command goes through tesla/commands.ts
 // (scope check, guards, hourly slot) and every outcome is in `powerwall_log`.
 import express, { type Express, type Request, type Response, type NextFunction } from 'express';
-import { q, one, kv } from './db.js';
+import { q, one, kv, hourWh } from './db.js';
 import { localDay, addDays, rfc3339 } from './tesla/client.js';
 import { currentTariff } from './tariff.js';
 import type { Tariff } from './bills.js';
@@ -97,7 +97,7 @@ async function reservePoints(siteId: string, info: any, now: number): Promise<Fc
   const today = localDay(new Date(now)), w = await wxGti(now); if (!w) return null;
   const [daily, hourly, soe] = await Promise.all([
     q<{ day: string; solar: number }>(`SELECT day, (SUM(solar_wh) / 1000.0)::float8 solar FROM energy WHERE site_id = $1 AND day >= $2 AND day <= $3 GROUP BY day`, [siteId, addDays(today, -31), today]),
-    q<{ day: string; hour: number; home: number }>(`SELECT day, hour::int, (SUM(home_wh) / 1000.0)::float8 home FROM energy WHERE site_id = $1 AND day >= $2 GROUP BY day, hour`, [siteId, addDays(today, -15)]),
+    q<{ day: string; hour: number; home: number }>(`SELECT day, hour::int, (${hourWh('home_wh')} / 1000.0)::float8 home FROM energy WHERE site_id = $1 AND day >= $2 GROUP BY day, hour`, [siteId, addDays(today, -15)]),
     q<{ day: string; hour: number; last: number; at: number }>(`SELECT day, hour::int, ((ARRAY_AGG(soe ORDER BY epoch DESC))[1])::float8 last, MAX(epoch)::float8 at FROM soe WHERE site_id = $1 AND day >= $2 GROUP BY day, hour`, [siteId, addDays(today, -9)]),
   ]);
   const fc = fc48Inputs(w, daily, hourly, soe, today); if (!fc.ready) return null;
