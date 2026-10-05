@@ -27,7 +27,7 @@ import { GuardRefusal, explainRefusal, type ManualCommand } from './appliances/g
 import { pvsRouter, prunePvs } from './pvs.js';
 import { panelsDay, panelAlerts, panelWatch } from './panels.js';
 import { flowsFor, FlowsInputError } from './flows.js';
-import { breakdownFor, alwaysOnWatch } from './breakdown.js';
+import { overnightSplit, breakdownFor, alwaysOnWatch } from './breakdown.js';
 import { outageDetail } from './outage.js';
 
 import { alertRoutes, notify } from './notify.js';
@@ -361,7 +361,7 @@ app.get('/api/grid-days', wrap(async (req, res) => {
 
 app.get('/api/overnight', wrap(async (req, res) => {
   const from = addDays(localDay(), -Number(req.query.days ?? 60));
-  res.json(await q(`SELECT day date, ROUND((SUM(home_wh) / 1000.0 / 4)::numeric, 3)::float8 kw FROM energy WHERE site_id = $1 AND day >= $2 AND hour BETWEEN 1 AND 4 GROUP BY day ORDER BY day`, [site(req), from]));
+  res.json(await overnightSplit(site(req), from));   // breakdown.ts (mockup z): the 1–5 AM average with always-on, AC and pump
 }));
 
 app.get('/api/records', wrap(async (req, res) => {

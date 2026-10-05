@@ -8,7 +8,7 @@ import { q, kv } from './db.js';
 import { localDay, addDays } from './tesla/client.js';
 import { daySpans } from './flows.js';
 import { poolKwhBetween } from './appliances/pool.js';
-import { acKwhBetween } from './appliances/ac.js';
+import { acKwhBetween, learnAcKw, acKwFor } from './appliances/ac.js';
 import { notify } from './notify.js';
 
 export const BURST_OVER_KW = 3, BURST_MIN_BUCKETS = 3, BASE_QUANTILE = .1, NEST_COVERAGE = .8;   // 3 kW over the base for 15 min; the quietest tenth
@@ -100,6 +100,32 @@ export async function breakdownFor(siteId: string, range: Range, settings: Recor
     ],
     bursts: range === 'today' ? todayBursts : [],
     trend: await alwaysOnTrend(siteId, now) };
+}
+
+/**
+ * GET /api/overnight (mockup z): each night's 01:00–05:00 average split into always-on (the same rule as the breakdown), AC (the share of
+ * buckets the Nest reported cooling or heating x the learned draw) and the pool pump (ScreenLogic readings). `split` is false on nights the
+ * Nest readings cover less than NEST_COVERAGE of the window; those carry only `kw` and `base` (unmasked), and the UI shows the rest as "not split".
+ */
+export async function overnightSplit(siteId: string, from: string) {
+  const [rows, nest, pumpNight] = await Promise.all([
+    q<{ epoch: string; day: string; hour: number; wh: number }>(`SELECT epoch::text, day, hour::int, home_wh::float8 wh FROM energy WHERE site_id = $1 AND day >= $2 AND hour BETWEEN 1 AND 4 AND home_wh IS NOT NULL ORDER BY epoch`, [siteId, from]),
+    q<{ ts: string; day: string; hour: number; hvac: string }>(`SELECT ts::text, day, hour::int, hvac FROM nest_readings WHERE site_id = $1 AND day >= $2 AND hour BETWEEN 0 AND 4 ORDER BY ts`, [siteId, addDays(from, -1)]),
+    q<{ day: string; kw: number }>(`SELECT day, (AVG(CASE WHEN running THEN watts ELSE 0 END) / 1000.0)::float8 kw FROM pool_readings WHERE site_id = $1 AND day >= $2 AND hour BETWEEN 1 AND 4 GROUP BY day`, [siteId, from]),
+  ]);
+  const slope = (await kv.get<{ slope: number }>(`${siteId}:ac:slope`))?.slope ?? 2.5, acKw = acKwFor((await learnAcKw(siteId)).coolKw, slope);
+  const nr = nest.map(r => ({ ts: Number(r.ts), day: r.day, hour: r.hour, hvac: r.hvac })), acOn = acMask(nr);
+  const covered = nestCoverage(nr.filter(r => r.hour >= 1 && r.hour <= 4)), pumpKw = new Map(pumpNight.map(p => [p.day, Number(p.kw) || 0]));
+  const byDay = new Map<string, Bucket[]>();
+  for (const r of rows) { const b = { epoch: Number(r.epoch), day: r.day, hour: r.hour, kw: Number(r.wh) * 12 / 1000 }; const a = byDay.get(r.day); if (a) a.push(b); else byDay.set(r.day, [b]); }
+  const r3 = (v: number) => Math.round(v * 1000) / 1000;
+  return [...byDay.entries()].map(([date, bs]) => {
+    const kw = bs.reduce((a, b) => a + b.kw, 0) / bs.length, split = (covered.get(date) ?? 0) >= NEST_COVERAGE * 240;
+    if (!split) { const raw = baseOf(bs); return { date, kw: r3(kw), base: raw == null ? null : r3(Math.min(kw, raw)), ac: null, pump: null, split }; }
+    const pump = Math.min(kw, pumpKw.get(date) ?? 0), raw = baseOf(bs, acOn), ac = Math.min(kw - pump, bs.filter(b => acOn(b.epoch)).length / bs.length * acKw);
+    const base = raw == null ? null : Math.max(0, Math.min(kw - pump - ac, raw - pump));
+    return { date, kw: r3(kw), base: base == null ? null : r3(base), ac: r3(ac), pump: r3(pump), split };
+  });
 }
 
 /* ---------- the always-on base by month and by night (the trend and the push) ---------- */

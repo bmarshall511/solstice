@@ -177,7 +177,7 @@ export const GUEST_GET: ReadonlyMap<string, View> = new Map<string, View>([
   ['/api/monthly', view([{ month: true, days: true, ...kwh }])],
   ['/api/profile', view({ days: true, hours: [{ hour: true, home: true, solar: true }], conf: { 'fc48.solar': true, 'fc48.home': true, 'fc48.soc': true } })],
   ['/api/grid-days', view({ dates: true, solar: true, soc: true })],
-  ['/api/overnight', view([{ date: true, kw: true }])],
+  ['/api/overnight', view([{ date: true, kw: true, base: true, ac: true, pump: true, split: true }])],
   ['/api/records', view({ bestSolarDay: { date: true, kwh: true }, biggestUsageDay: { date: true, kwh: true }, lowestImportDay: { date: true, kwh: true },
     totals: { since: true, ...kwh }, batteryFullDays: { days: true, of: true }, longestOutage: { ts: true, duration_s: true }, outages: true })],
   ['/api/outages', view([{ ts: true, duration_s: true }])],

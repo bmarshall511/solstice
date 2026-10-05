@@ -2,8 +2,9 @@
 // the always-on push, on in-memory PGlite with synthetic 5-minute energy. All data synthetic.
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { q, kv, migrate } from '../../server/src/db.js';
-import { baseOf, burstsOf, acMask, nightBases, alwaysOnWatch, breakdownFor } from '../../server/src/breakdown.js';
+import { baseOf, burstsOf, acMask, nightBases, alwaysOnWatch, breakdownFor, overnightSplit } from '../../server/src/breakdown.js';
 import { localMidnight, addDays, rfc3339 } from '../../server/src/tesla/client.js';
+import { learnAcKw, acKwFor } from '../../server/src/appliances/ac.js';
 
 vi.mock(import('../../server/src/appliances/screenlogic.js'), () => ({ configured: () => false, readPool: vi.fn(), writePoolPlan: vi.fn(), withUnit: vi.fn() }));
 const NOW = Date.parse('2026-10-05T18:00:00Z');   // 13:00 CDT
@@ -84,5 +85,22 @@ describe('on PGlite', () => {
     const d = await breakdownFor('bd', 'month', {});
     expect(d.spanDays).toBe(30);
     expect(d.days).toBe(10);
+  });
+  it('BD-7 overnight split (mockup z): Nest nights split into always-on, AC and pump; older nights carry only the base', async () => {
+    // one hot Nest night: the AC (2.7 kW) on 10 of every 30 minutes from 1 to 5 AM, read every 5 minutes
+    const d = '2026-10-02', t0 = localMidnight(d).getTime();
+    for (let t = t0 + 3600e3; t < t0 + 5 * 3600e3; t += B) {
+      const on = (t / B) % 6 < 2;
+      await q(`UPDATE energy SET home_wh = home_wh + $1 WHERE site_id = 'bd' AND epoch = $2`, [on ? Math.round(2.7 * 1000 / 12) : 0, t]);
+      await q(`INSERT INTO nest_readings (site_id, ts, day, hour, hvac) VALUES ('bd', $1, $2, $3, $4) ON CONFLICT (site_id, ts) DO UPDATE SET hvac = EXCLUDED.hvac`, [t, d, Math.floor((t - t0) / 3600e3), on ? 'COOLING' : 'OFF']);
+    }
+    const n = await overnightSplit('bd', '2026-09-20'), hot = n.find(x => x.date === d)!, old = n.find(x => x.date === '2026-09-21')!;
+    expect(hot.split).toBe(true);
+    const acKw = acKwFor((await learnAcKw('bd')).coolKw, 2.5);            // whatever draw the site has learned from the synthetic days
+    expect(hot.ac!).toBeCloseTo(acKw / 3, 2);                              // a third of the window x the learned draw
+    expect(hot.base).toBeCloseTo(Math.min(1.7, hot.kw - hot.ac!), 2);    // the quiet buckets read 1.7 kW, never more than what's left after the AC
+    expect(hot.base! + hot.ac! + hot.pump!).toBeLessThanOrEqual(hot.kw + 1e-6);
+    expect(old).toMatchObject({ split: false, ac: null, pump: null });
+    expect(old.base).toBeCloseTo(1.1, 2);
   });
 });
