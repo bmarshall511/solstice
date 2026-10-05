@@ -9,6 +9,8 @@ import { presets, pickedEpoch, localInput, untilLabel, awayButton, awayLines, wh
 /* AC (Insights → Appliances): thermal twin with a day scrubber, today's plan vs Nest, Autopilot, Home/Away, and the Nest link. */
 let twin = null, scrubT = null;
 export const thermalTwin = () => twin;
+/** Leaving the AC card: free its WebGL context (main.js); the next draw while it is visible builds a new one. */
+export function releaseThermalTwin() { twin?.dispose(); twin = null; }
 const hm = h => `${Math.floor(h) % 12 || 12}${h % 1 ? ':' + String(Math.round((h % 1) * 60)).padStart(2, '0') : ''}${h < 12 ? 'a' : 'p'}`;
 
 /** A simple indoor model for the scrubber: the house drifts toward outdoor at ~0.6°F/h per 10°F difference, the AC pulls it to the setpoint. */
@@ -23,14 +25,14 @@ export function drawAc(S) {
   const linked = d.linked, st = d.state;
   $('acBadge').textContent = !d.configured ? 'Not set up' : linked ? 'Linked · Nest' : 'Not linked'; $('acBadge').className = 'badge' + (linked ? ' g' : '');
   $('acLink').hidden = linked; $('acPlan').hidden = !linked; $('acAuto').hidden = !linked;
-  if (!twin) twin = createThermalTwin($('acTwin'));
+  if (!twin && $('acTwin').offsetParent) twin = createThermalTwin($('acTwin'));   // only while it can be seen
   const wx = S.wx, today = localDate(), outdoor = Array(24).fill(d.outdoorF ?? 90);
   if (wx) wx.hourly.time.forEach((t, i) => { if (t.startsWith(today)) outdoor[+t.slice(11, 13)] = wx.hourly.temperature_2m[i]; });
   const sunH = Array(24).fill(0); if (wx) { const pk = Math.max(1, ...wx.hourly.global_tilted_irradiance); wx.hourly.time.forEach((t, i) => { if (t.startsWith(today)) sunH[+t.slice(11, 13)] = (wx.hourly.global_tilted_irradiance[i] ?? 0) / pk; }); }
   const sim = simulateDay(d, outdoor), now = localHour();
   const show = h => { const live = h == null; const hh = live ? now : h; const p = sim.reduce((a, x) => Math.abs(x.h - hh) < Math.abs(a.h - hh) ? x : a);
     const cooling = live && st ? st.hvac === 'COOLING' : p.cooling, heating = live && st ? st.hvac === 'HEATING' : false;
-    twin.set({ indoorF: live && st?.indoorF != null ? st.indoorF : p.T, sun: sunH[Math.min(23, Math.floor(hh))], cooling, heating });
+    twin?.set({ indoorF: live && st?.indoorF != null ? st.indoorF : p.T, sun: sunH[Math.min(23, Math.floor(hh))], cooling, heating });
     const phase = d.plan.precool && hh >= d.plan.precoolFrom && hh < d.plan.precoolTo ? ' · pre-cool' : d.plan.precool && hh >= d.plan.coastFrom && hh < d.plan.coastTo ? ' · coast' : '';
     $('acHud').textContent = `${cooling ? `Cooling · ${d.learned.acKw.toFixed(1)} kW` : heating ? 'Heating' : 'Idle'} · set ${live && st?.coolF != null ? st.coolF : p.set}°${phase}`;
     $('acLab').innerHTML = `indoor ${(live && st?.indoorF != null ? st.indoorF : p.T).toFixed(1)}°<br>outdoor ${Math.round(p.o)}°<br>sun ${Math.round(sunH[Math.min(23, Math.floor(hh))] * 100)}%`;
@@ -45,6 +47,7 @@ export function drawAc(S) {
   $('acPresence').onclick = async e => { const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.p === 'away' && !S.guest) return openAway(S);
     if (b.dataset.p === lit) return;
+    if (b.dataset.p === 'home' && !confirm('Mark the house Home?\n\nThe AC plan goes back to your home band, so the thermostat may change now.')) return;   // mockup ac
     await api.acSettings({ presence: b.dataset.p }).catch(err => alert(err.message)); await loadAc(S); };
   const src = presenceLine(pr); $('acPsrc').hidden = !src; $('acPsrc').innerHTML = src ? `<i></i><span>${src}</span>` : '';
   $('acNote').innerHTML = `${esc(d.equipment.airHandler)} · ${esc(d.equipment.heat)} · ${esc(d.equipment.outdoor)}. AC power is ${source === 'measured' ? 'measured from the step in Tesla’s home load when Nest starts and stops cooling' : 'estimated from your heat model until Nest has been sampled for a few days'}.${d.error ? ` <span style="color:var(--warn)">Last read failed: ${esc(d.error)}</span>` : ''}`;
@@ -86,7 +89,7 @@ function drawAuto(S) {
   const d = S.ac, s = d.settings;
   document.querySelectorAll('#acMode button').forEach(b => b.classList.toggle('on', b.dataset.m === s.autopilot));
   $('acAutoBadge').textContent = `Autopilot · ${{ off: 'Off', suggest: 'Suggest', auto: 'Auto' }[s.autopilot] ?? s.autopilot}`; $('acAutoBadge').className = `badge${s.autopilot === 'off' ? '' : ' g'}`;   // a guest's static badge
-  $('acMode').onclick = async e => { const b = e.target.closest('button'); if (!b || b.dataset.m === s.autopilot) return; if (b.dataset.m === 'auto' && !confirm('Auto mode sets the cooling setpoint through each day without asking, always inside your comfort band. Turn it on?')) return; await api.acSettings({ autopilot: b.dataset.m }).catch(err => alert(err.message)); await loadAc(S); };
+  $('acMode').onclick = async e => { const b = e.target.closest('button'); if (!b || b.dataset.m === s.autopilot) return; if (b.dataset.m === 'auto' && !confirm('Auto mode sets the cooling setpoint through each day without asking, always inside your comfort band. Turn it on?')) return; if (b.dataset.m === 'off' && !confirm('Turn AC Autopilot off?\n\nSolstice stops changing the thermostat. Nest keeps the setpoint it has now.')) return; await api.acSettings({ autopilot: b.dataset.m }).catch(err => alert(err.message)); await loadAc(S); };
   // v-ac-control frame 3: a hold in force says so here too
   if (d.hold && s.autopilot !== 'off') $('acStatus').innerHTML = `<i class="hold-dot"></i><span><b>Holding your change until ${clk(d.hold.until)}.</b> Plan steps in that time are skipped, not stacked up.</span>`;
   else $('acStatus').innerHTML = `<i class="${s.autopilot === 'off' ? 'off' : ''}"></i><span>${s.autopilot === 'off' ? 'Off. Suggest plans each day and waits for you; Auto applies the steps itself.' : `${s.autopilot === 'auto' ? 'Applies' : 'Suggests'} each day's plan from the 6 AM forecast, samples Nest every 5 minutes, never leaves your comfort band, never touches heating mode`}</span></div>`;

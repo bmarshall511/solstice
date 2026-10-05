@@ -13,8 +13,8 @@ import { initPanels, drawPerformance, roofHud } from './views/panels.js';
 import { drawAlerts, initPlanner, drawAC, drawOvernight, drawHealth, initOutage, initBreakdown } from './views/insights.js';
 import { drawSettings, drawConnections, openRawData, applyAlertPrefs } from './views/settings.js';
 import { every } from './lib/poll.js';
-import { initAppliances, poolTwin, drawPool, freshPool, tickBoost } from './views/appliances.js';
-import { initAc, thermalTwin, drawAc, freshAc } from './views/ac.js';
+import { initAppliances, poolTwin, drawPool, freshPool, tickBoost, releasePoolTwin } from './views/appliances.js';
+import { initAc, thermalTwin, drawAc, freshAc, releaseThermalTwin } from './views/ac.js';
 import { initLearn } from './views/learn.js';
 import { createDayRing } from './scenes/dayring.js';
 import { explainOnTap } from './lib/frost.js';
@@ -150,6 +150,13 @@ function updateOutage() {
 /** Outage preview: the house gets the islanded reading (nothing from PEC, the Powerwalls cover home − solar) so its four labels add up. */
 const flowReading = r => S.preview && !S.realOutage ? { ...r, gridKw: 0, batteryKw: r.homeKw - r.solarKw } : r;
 
+/* ---------------- the appliance twins: a WebGL context only while their card is on screen (like the Now twin) ---------------- */
+function syncTwins() {
+  const ins = $('v-ins').classList.contains('on') && insPanel === 'appl';
+  if (ins && applSel === 'pool') { if (!poolTwin() && S.pool) safe(drawPool)(S); } else releasePoolTwin();
+  if (ins && applSel === 'ac') { if (!thermalTwin() && S.ac) safe(drawAc)(S); } else releaseThermalTwin();
+}
+
 /* ---------------- navigation ---------------- */
 function go(v, anchor) {
   document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x.dataset.v === v));
@@ -157,12 +164,27 @@ function go(v, anchor) {
   // the Now twin keeps a WebGL context only while Now is open: disposed on leaving, rebuilt (live framing) on return
   if (v === 'v-now') { house ??= createHomeView($('house'), 'flow', { onLink: openAppliance }); loadApplDay().catch(() => {}); } else if (house) { house.dispose(); house = null; S.twinReplay = false; }
   if (v === 'v-hist') { land.replay(); drawHistoryChart(S); }
+  setTimeout(syncTwins);   // next tick: the view is shown, and the sub-tab state below is initialised
   const sc = $('screen');
   if (anchor) setTimeout(() => sc.scrollTo({ top: $(anchor).getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 50, behavior: 'smooth' }), 60); else sc.scrollTo({ top: 0 });
 }
 document.querySelectorAll('.tab[data-v]').forEach(t => t.onclick = () => go(t.dataset.v));
 document.addEventListener('click', e => { const el = e.target.closest('[data-go]'); if (el) go(el.dataset.go, el.dataset.land ? 'landSect' : el.dataset.bills ? 'billSect' : null); });
 const closeSheet = () => $('phone').classList.remove('open');
+/* accessibility (October audit): every .sw toggle is a keyboard-reachable switch with its state announced, and the bottom sheet is a
+   labelled dialog that takes focus when it opens. One observer keeps both right as views redraw. */
+function a11y() {
+  document.querySelectorAll('.sw').forEach(el => {
+    if (!el.hasAttribute('role')) { el.setAttribute('role', 'switch'); el.tabIndex = 0; const t = el.closest('.row')?.querySelector('.rt'); if (t) el.setAttribute('aria-label', t.firstChild?.textContent?.trim() || t.textContent.trim()); }
+    const on = String(el.classList.contains('on')); if (el.getAttribute('aria-checked') !== on) el.setAttribute('aria-checked', on);
+  });
+  const h = $('sheetBody').querySelector('h4'); if (h && $('sheet').getAttribute('aria-label') !== h.textContent) $('sheet').setAttribute('aria-label', h.textContent);
+}
+new MutationObserver(a11y).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('.sw[role=switch]')) { e.preventDefault(); e.target.click(); } });
+new MutationObserver(() => { if ($('phone').classList.contains('open')) setTimeout(() => $('sheetBody').querySelector('button,input,[tabindex]')?.focus({ preventScroll: true }), 50); })
+  .observe($('phone'), { attributes: true, attributeFilter: ['class'] });
+a11y();
 $('scrim').onclick = closeSheet;
 document.addEventListener('click', e => { if (e.target.closest('[data-addbill]')) openBillSheet(S, () => loadHistory()); });
 $('openData').onclick = openRawData;
@@ -194,11 +216,11 @@ initHistory(S); initPanels(S, roof); initPlanner(S);   // initAppliances / initA
 const outage = initOutage(S);
 mountPowerwallRules();   // t-enhancements: the Powerwall rules card, directly below Outage readiness
 let applSel = 'pool';
-$('applStrip').onclick = e => { const a = e.target.closest('.app'); if (!a || !a.dataset.id || a.classList.contains('dim')) return; applSel = a.dataset.id; document.querySelectorAll('#applStrip .app').forEach(x => x.classList.toggle('on', x === a)); $('applPool').hidden = applSel !== 'pool'; $('applAc').hidden = applSel !== 'ac'; poolTwin()?.resize(); thermalTwin()?.resize(); if (applSel === 'ac') safe(drawAc)(S); };
+$('applStrip').onclick = e => { const a = e.target.closest('.app'); if (!a || !a.dataset.id || a.classList.contains('dim')) return; applSel = a.dataset.id; setTimeout(syncTwins); document.querySelectorAll('#applStrip .app').forEach(x => x.classList.toggle('on', x === a)); $('applPool').hidden = applSel !== 'pool'; $('applAc').hidden = applSel !== 'ac'; poolTwin()?.resize(); thermalTwin()?.resize(); if (applSel === 'ac') safe(drawAc)(S); };
 
 /* ---------------- Insights: four panels + the Day Ring ---------------- */
 let insPanel = 'today';
-$('insSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; insPanel = b.dataset.p; document.querySelectorAll('#insSeg button').forEach(x => x.classList.toggle('on', x === b)); document.querySelectorAll('#v-ins .panel').forEach(p => p.classList.toggle('on', p.id === 'ip-' + insPanel)); poolTwin()?.resize(); dayRing.resize(); };
+$('insSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; insPanel = b.dataset.p; setTimeout(syncTwins); document.querySelectorAll('#insSeg button').forEach(x => x.classList.toggle('on', x === b)); document.querySelectorAll('#v-ins .panel').forEach(p => p.classList.toggle('on', p.id === 'ip-' + insPanel)); poolTwin()?.resize(); dayRing.resize(); };
 const dayRing = createDayRing($('dayRing'), (h, d) => {
   const ro = $('drRead'); if (!d) return;
   const sum = a => a.reduce((x, y) => x + y, 0), bd = (p, a, r) => `<div class="bd"><span><i style="background:#6cc4ff"></i>${p}</span><span><i style="background:#ff9e66"></i>${a}</span><span><i style="background:#8d93a8"></i>${r}</span></div>`;

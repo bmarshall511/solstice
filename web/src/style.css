@@ -1,5 +1,5 @@
 :root{
-  --bg:#05060a; --text:#f2f4f8; --dim:rgba(242,244,248,.62); --mute:rgba(242,244,248,.5);
+  --bg:#05060a; --text:#f2f4f8; --dim:rgba(242,244,248,.62); --mute:rgba(242,244,248,.6);
   --glass:rgba(255,255,255,.055); --glass-b:rgba(255,255,255,.11);
   --solar:#ffc15e; --batt:#4ef0a6; --home:#6cc4ff; --grid:#c4a2ff; --warn:#ff7a66; --out:#ff5a4e;
   --r-lg:26px; --r-md:20px; --ease:cubic-bezier(.2,.8,.2,1);
@@ -1003,6 +1003,11 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .pc-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}
 .pc-nums div{padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
 .pc-nums b{display:block;font:500 15px "JetBrains Mono"}.pc-nums span{font-size:11px;color:var(--dim)}
+/* mockup ac (option B): the Off / Suggest / Auto switch on both Autopilot cards, a full-width row under the title */
+.modes-row{display:flex;gap:2px;padding:3px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid var(--glass-b);margin-top:12px}
+.modes-row button{all:unset;cursor:pointer;flex:1;text-align:center;padding:10px 6px;border-radius:11px;font-size:13px;font-weight:600;color:var(--dim)}
+.modes-row button.on{background:rgba(78,240,166,.16);color:var(--text)}
+.modes-row button:focus-visible{outline:2px solid var(--home);outline-offset:1px}
 /* frame 7: the schedule editor sheet */
 .se-list{display:grid;gap:8px;margin-top:12px}
 .se-row{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:10px 1fr auto;gap:2px 10px;align-items:center;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}

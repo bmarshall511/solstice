@@ -117,5 +117,11 @@ export function createPoolTwin(el) {
         if (cx !== x) g.d.style.transform = `translate(-50%, -50%) translate(${cx}px, ${y}px) rotate(0rad)`;
         const edge = cx + Math.sign(x - cx) * ws[i] / 2; Object.assign(g.lead.style, { left: Math.min(x, edge) + 'px', top: y + 'px', width: Math.abs(x - edge) + 'px' }); }); },
     resize() { const w = el.clientWidth, h = el.clientHeight; if (!w || !h) return; renderer.setSize(w, h); labels.setSize(w, h); cam.aspect = w / h; cam.updateProjectionMatrix(); },
+    /** Free the GPU memory and the WebGL context (iOS allows only a few); the view builds a new twin when it is shown again. */
+    dispose() {
+      ctl.dispose();
+      scene.traverse(o => { o.geometry?.dispose(); for (const m of [o.material].flat().filter(Boolean)) { for (const x of Object.values(m)) if (x?.isTexture) x.dispose(); m.dispose(); } });
+      renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); labels.domElement.remove(); tags.forEach(g => g.lead.remove());
+    },
   };
 }

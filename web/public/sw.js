@@ -8,8 +8,23 @@ self.addEventListener('activate', e => e.waitUntil(caches.keys().then(keys => Pr
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.pathname.startsWith('/api') || url.pathname.startsWith('/auth') || url.origin !== location.origin) return;
-  e.respondWith(fetch(e.request).then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r; }).catch(() => caches.match(e.request).then(r => r ?? caches.match('/'))));
+  e.respondWith(fetch(e.request).then(r => {
+    const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy));
+    if (r.ok && (r.headers.get('content-type') ?? '').includes('text/html')) prune(r.clone());
+    return r;
+  }).catch(() => caches.match(e.request).then(r => r ?? caches.match('/'))));
 });
+/** A fresh app page names the build's assets; a cached /assets/ file it has a newer build of is from an older deploy (October audit:
+ *  the cache grew with every deploy). Best effort: a failure leaves the cache as it was. */
+async function prune(page) {
+  try {
+    // only a file the page has a newer build of (same name, new hash): chunks loaded on demand (the outage scene) stay for offline use
+    const keep = new Set([...(await page.text()).matchAll(/\/assets\/[\w.-]+/g)].map(m => m[0])); if (!keep.size) return;
+    const base = p => p.replace(/-[\w-]{8}(\.\w+)$/, '$1'), current = new Set([...keep].map(base));
+    const c = await caches.open(CACHE);
+    for (const req of await c.keys()) { const p = new URL(req.url).pathname; if (p.startsWith('/assets/') && !keep.has(p) && current.has(base(p))) await c.delete(req); }
+  } catch { /* leave the cache */ }
+}
 
 // Web push (mockup t-enhancements frame 2). The server (server/src/push.ts) sends {title, body, kind, id, url}. Each push is shown
 // with Solstice's icon, and the time it arrived is kept so Settings › Alerts can say "last push Mon 7:02 AM" on this device.

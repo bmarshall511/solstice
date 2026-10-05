@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Solstice · Small fixes</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* page scaffolding for the mockup only (same as v–ab) */
+html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+body{background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.col{width:100%;max-width:393px;margin:0 auto;padding:28px 0 60px}
+.intro{padding:0 20px}
+.intro .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.intro h2{font-size:30px;line-height:1.1;font-weight:300;letter-spacing:-.02em;margin-bottom:12px}
+.intro p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.frame{margin-top:34px}
+.frame>.sect{margin:0 20px 10px}
+.pagepad{padding:0 20px}
+.cap{margin:12px 20px 0;padding:12px 14px;border-radius:16px;background:rgba(0,0,0,.25);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.55}
+.cap b{color:var(--text);font-weight:600}
+.cap p+p{margin-top:6px}
+.cap .new{color:var(--batt)}.cap .same{color:var(--mute)}
+.stub{height:46px;margin-top:10px;border-radius:12px;background:rgba(255,255,255,.04)}
+.ab{font:600 10px Manrope;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);margin:14px 0 6px}
+/* NEW (frame 1, option B): the mode switch as a full-width row under the title, about 38 px tall */
+.modes-row{display:flex;gap:2px;padding:3px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid var(--glass-b);margin-top:12px}
+.modes-row button{all:unset;cursor:pointer;flex:1;text-align:center;padding:10px 6px;border-radius:11px;font-size:13px;font-weight:600;color:var(--dim)}
+.modes-row button.on{background:rgba(78,240,166,.16);color:var(--text)}
+/* NEW (frame 1, option A): the same switch in the header, about 37 px tall */
+.seg2.big button{padding:10px 13px;font-size:12px}
+/* frame 2: an iOS-style confirm, as the app's other confirms look */
+.alert{margin:0 auto;width:270px;border-radius:14px;background:rgba(40,42,50,.96);text-align:center;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.alert .t{padding:18px 16px 14px}
+.alert b{display:block;font-size:15px;font-weight:700}
+.alert p{font-size:12.5px;line-height:1.4;color:rgba(255,255,255,.85);margin-top:4px}
+.alert .bt{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid rgba(255,255,255,.12)}
+.alert .bt span{padding:11px;font-size:15px;color:#4ea6ff}
+.alert .bt span+span{border-left:1px solid rgba(255,255,255,.12);font-weight:600}
+.dim-a{color:rgba(242,244,248,.5)}.dim-b{color:rgba(242,244,248,.6)}
+.swatch{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.swatch div{padding:12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b);font-size:12px;line-height:1.5}
+.swatch small{display:block;font:500 10.5px "JetBrains Mono";color:var(--text);margin-bottom:4px}
+</style></head><body>
+<div class="col">
+  <div class="intro">
+    <div class="k">Mockup ac · Small fixes</div>
+    <h2>Bigger Autopilot switches, a confirm before Off or Home, and easier-to-read grey text.</h2>
+    <p>Three leftovers from the October audit that change how something looks. Everything else in that batch (table pruning, freeing the 3D views off-screen, switch roles for screen readers, splitting three.js, the cache clean-up) changes nothing you see.</p>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 1 · Autopilot cards (pool and AC)</div>
+    <div class="pagepad">
+      <div class="ab">Today · about 24 px tall</div>
+      <div class="card auto"><div class="h"><b>Autopilot</b><span class="seg2"><button>Off</button><button class="on">Suggest</button><button>Auto</button></span></div><div class="stub"></div></div>
+      <div class="ab">Option A · same place, about 37 px tall</div>
+      <div class="card auto"><div class="h"><b>Autopilot</b><span class="seg2 big"><button>Off</button><button class="on">Suggest</button><button>Auto</button></span></div><div class="stub"></div></div>
+      <div class="ab">Option B · a full-width row under the title, about 38 px tall</div>
+      <div class="card auto"><div class="h"><b>Autopilot</b></div><div class="modes-row"><button>Off</button><button class="on">Suggest</button><button>Auto</button></div><div class="stub"></div></div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> the Off / Suggest / Auto switch on both Autopilot cards gets a tap target you can hit with a thumb. <b>A</b> keeps it in the header, a bit bigger. <b>B</b> moves it under the title as a full-width row, like the thermostat's mode switch. The rest of each card stays as it is.</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 2 · confirm before Off and Home</div>
+    <div class="pagepad" style="display:grid;gap:14px">
+      <div class="alert"><div class="t"><b>Turn Pool Autopilot off?</b><p>Solstice stops planning and writing the pump schedule. The controller keeps running what it has now.</p></div><div class="bt"><span>Cancel</span><span>Turn off</span></div></div>
+      <div class="alert"><div class="t"><b>Turn AC Autopilot off?</b><p>Solstice stops changing the thermostat. Nest keeps the setpoint it has now.</p></div><div class="bt"><span>Cancel</span><span>Turn off</span></div></div>
+      <div class="alert"><div class="t"><b>Mark the house Home?</b><p>The AC plan goes back to your home band, so the thermostat may change now.</p></div><div class="bt"><span>Cancel</span><span>Home</span></div></div>
+    </div>
+    <div class="cap"><p><b class="new">New:</b> the same kind of confirm the app already shows before Auto. Off on either Autopilot, and Home on the AC card, now ask first. Suggest and Away don't (Away already opens its own sheet).</p></div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 3 · the grey "muted" text</div>
+    <div class="pagepad"><div class="swatch">
+      <div><small>Today · 50%</small><span class="dim-a">Suggests tomorrow's plan tonight at 8:15 PM · never touches spa, heater, lights</span></div>
+      <div><small>Proposed · 60%</small><span class="dim-b">Suggests tomorrow's plan tonight at 8:15 PM · never touches spa, heater, lights</span></div>
+    </div></div>
+    <div class="cap"><p><b class="new">New:</b> the muted grey used for small labels and footnotes goes from 50% to 60% white. Today it reads at 4.9:1 on the darkest cards but drops to 3.7:1 over the lighter aurora, under the 4.5:1 small text needs; at 60% that becomes 4.6:1 (6.6:1 on the darkest). It is one colour token, so every muted label in the app gets a touch brighter; nothing else changes.</p></div>
+  </div>
+</div>
+</body></html>

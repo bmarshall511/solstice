@@ -47,5 +47,11 @@ export function createThermalTwin(el) {
       { const a = exhaust.geometry.attributes.position; exhaust.material.opacity = lerp(exhaust.material.opacity, on ? exhaust.userData.op : 0, .08); for (let i = 0; i < exhaust.userData.n; i++) { const u = ((t * .7) + i * .43) % 1; a.setXYZ(i, -Wd / 2 - .75 + Math.cos(i * 2.1) * .3 * (1 + u), .9 + u * 1.8, 2.4 + Math.sin(i * 1.7) * .3 * (1 + u)); } a.needsUpdate = true; }
       ctl.update(); renderer.render(scene, cam); },
     resize() { const w2 = el.clientWidth, h2 = el.clientHeight; if (!w2 || !h2) return; renderer.setSize(w2, h2); cam.aspect = w2 / h2; cam.updateProjectionMatrix(); },
+    /** Free the GPU memory and the WebGL context; the AC card builds a new twin when it is shown again. */
+    dispose() {
+      ctl.dispose();
+      scene.traverse(o => { o.geometry?.dispose(); for (const m of [o.material].flat().filter(Boolean)) m.dispose(); });
+      renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
+    },
   };
 }

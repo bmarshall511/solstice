@@ -298,7 +298,8 @@
             <p class="fine" id="plNote" style="margin-top:10px"></p>
           </div>
           <div class="card auto" id="poolAuto" hidden>
-            <div class="h"><b>Autopilot</b><span class="seg2" id="autoMode"><button data-m="off">Off</button><button data-m="suggest">Suggest</button><button data-m="auto">Auto</button></span><span class="badge g" id="autoBadge" data-guest>Autopilot</span></div>
+            <div class="h"><b>Autopilot</b><span class="badge g" id="autoBadge" data-guest>Autopilot</span></div>
+            <div class="modes-row" id="autoMode" role="group" aria-label="Pool Autopilot"><button data-m="off">Off</button><button data-m="suggest">Suggest</button><button data-m="auto">Auto</button></div>
             <div class="status" id="autoStatus"></div>
             <div class="signals" id="autoSignals"></div>
             <div class="wkhead"><span>Next 7 days</span><b id="autoTomorrow"></b></div>
@@ -339,7 +340,8 @@
               <div id="acActions"></div>
             </div>
             <div class="card auto" id="acAuto" hidden>
-              <div class="h"><b>Autopilot</b><span class="seg2" id="acMode"><button data-m="off">Off</button><button data-m="suggest">Suggest</button><button data-m="auto">Auto</button></span><span class="badge g" id="acAutoBadge" data-guest>Autopilot</span></div>
+              <div class="h"><b>Autopilot</b><span class="badge g" id="acAutoBadge" data-guest>Autopilot</span></div>
+              <div class="modes-row" id="acMode" role="group" aria-label="AC Autopilot"><button data-m="off">Off</button><button data-m="suggest">Suggest</button><button data-m="auto">Auto</button></div>
               <div class="status" id="acStatus"></div>
               <div class="signals" id="acSignals"></div>
               <div class="wkhead"><span>Next 7 days</span><b id="acTomorrow"></b></div>
@@ -450,7 +452,7 @@
     </nav>
 
     <div class="scrim" id="scrim"></div>
-    <div class="sheet" id="sheet">
+    <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Details">
       <div class="grab"></div>
       <div id="sheetBody"></div>
     </div>

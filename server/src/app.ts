@@ -33,6 +33,7 @@ import { outageDetail } from './outage.js';
 import { alertRoutes, notify } from './notify.js';
 import { ercotNow, fiveMinuteWatch, nightlyWatch, cronSites, fiveMinuteSteps, nightlySteps } from './watch.js';
 import { gridWatch } from './gridwatch.js';
+import { pruneOld } from './retention.js';
 import { digestRoutes, maybeWeeklyDigest } from './digest.js';
 import { presenceRoutes, setPresence } from './appliances/presence.js';
 import { powerwallRoutes, powerwallTick, powerwallNightly } from './powerwall.js';
@@ -211,6 +212,7 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
   for (const s of sites) out[s.id] = await syncSite(s.id, Math.floor(30_000 / sites.length), { nightly: true }).catch(e => ({ error: e.message }));
   await q(`DELETE FROM readings WHERE ts < $1`, [Date.now() - 3 * 864e5]); // live snapshots are short-lived; history lives in `energy`
   await pruneShares().catch(e => console.error('[solstice] pruning share links', e)); // revoked/expired links leave the owner's list after 30 days
+  out.pruned = await pruneOld().catch(e => { console.error('[solstice] pruning old rows', e); return { error: e.message }; });   // retention.ts: the tables that grew forever
 
   // learning layer (server/src/learn/nightly.ts): score yesterday's predictions, trims, anomalies, today's predictions; skips what won't fit by 55 s
   for (const s of sites) out[`learn:${s.id}`] = await runLearn(s.id, { deadline: t0 + 55_000 }).catch(e => ({ error: e.message }));

@@ -17,6 +17,8 @@ let twin = null, timer;
 /** Started by main.js once the role is known (and again when it changes); every 3 minutes while the tab is visible. */
 export function initAppliances(S) { stop(timer); timer = every(3 * 60_000, () => load(S)); }
 export const poolTwin = () => twin;
+/** Leaving the Pool card: free its WebGL context (main.js); the next draw while it is visible builds a new one. */
+export function releasePoolTwin() { twin?.dispose(); twin = null; }
 
 async function load(S) {
   const list = await api.appliances().catch(() => null);
@@ -57,8 +59,8 @@ export function drawPool(S) {
   ['poolSched', 'poolAuto', 'poolSeason', 'poolSeasonNote'].forEach(id => $(id).hidden = !linked);
   if (!linked) { $('poolBadge').textContent = 'Not linked'; $('poolBadge').className = 'badge'; } else freshPool(S);
   if (!linked) { $('poolHud').textContent = d.error ?? 'Add the ScreenLogic system name and password to link the pool.'; return; }
-  if (!twin) twin = createPoolTwin($('poolTwin'));
-  const st = twinState(d); twin.set(st);
+  if (!twin && $('poolTwin').offsetParent) twin = createPoolTwin($('poolTwin'));   // only while it can be seen (WebGL contexts are scarce on iOS)
+  const st = twinState(d); twin?.set(st);
   const running = L?.running, names = (L?.on ?? []).filter(n => !/light/i.test(n));
   const ex = d.extras ?? { nowW: 0, todayKwh: 0 };
   $('poolHud').innerHTML = `${running ? (names.map(esc).join(' + ') || 'Running') + ` · ${L.rpm.toLocaleString()} RPM · ${Math.round(L.watts)} W` : 'Pump off'}${ex.nowW ? ` · +${ex.nowW} W ${[st.blower ? 'blower' : '', st.lights ? 'lights' : '', running && d.settings.uv ? 'UV' : ''].filter(Boolean).join('/')}` : ''}${st.heater ? ' · heater' : ''}${L?.freezeMode ? ' · freeze mode' : ''}`;
@@ -329,6 +331,7 @@ function drawAutopilot(S) {
   $('autoBadge').textContent = `Autopilot · ${{ off: 'Off', suggest: 'Suggest', auto: 'Auto' }[a.mode] ?? a.mode}`; $('autoBadge').className = `badge${a.mode === 'off' ? '' : ' g'}`;   // a guest's static badge
   $('autoMode').onclick = async e => { const b = e.target.closest('button'); if (!b || b.dataset.m === a.mode) return;
     if (b.dataset.m === 'auto' && !confirm('Auto mode writes tomorrow’s schedule to ScreenLogic every evening without asking. Spa, heater, lights and freeze protection are never touched. Turn it on?')) return;
+    if (b.dataset.m === 'off' && !confirm('Turn Pool Autopilot off?\n\nSolstice stops planning and writing the pump schedule. The controller keeps running what it has now.')) return;   // mockup ac
     await api.poolAutopilot(b.dataset.m).catch(err => alert(err.message)); await load(S); };
   const next = new Date(a.nextRunAt), last = a.log[0];
   $('autoStatus').innerHTML = `<i class="${a.mode === 'off' ? 'off' : ''}"></i><span>${a.mode === 'off' ? 'Off. Turn on Suggest to get a plan for tomorrow each evening, or Auto to have it applied.' : `${a.mode === 'auto' ? 'Writes' : 'Suggests'} tomorrow's plan tonight at <b>${next.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</b>${last ? ` · last ${niceDate(last.day, { month: 'short', day: 'numeric' })}` : ''} · never touches spa, heater, lights or freeze protection`}</span>`;

@@ -214,7 +214,7 @@ describe('revoking and expiry', () => {
     // the cron's sync output is unchanged by the share cleanup; the learning layer adds its own `learn:<site>` report after the sync
     const out = await sync.json();
     expect(out.s).toEqual({ mocked: true });
-    expect(Object.keys(out).sort()).toEqual(['learn:s', 'ms', 'pvsPrune', 's', 'watch:s']);   // ms: the run's duration   // watch: the nightly alert checks (server/src/watch.ts); pvsPrune: the 90-day readings prune (pvs.ts)
+    expect(Object.keys(out).sort()).toEqual(['learn:s', 'ms', 'pruned', 'pvsPrune', 's', 'watch:s']);   // pruned: retention.ts   // ms: the run's duration   // watch: the nightly alert checks (server/src/watch.ts); pvsPrune: the 90-day readings prune (pvs.ts)
     expect(out['learn:s']).not.toHaveProperty('error');
     expect(await row(cron.id)).toBeUndefined();
   });
