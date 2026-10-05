@@ -59,6 +59,7 @@ export const api = {
   setup: (token, email, password, name) => send('POST', 'auth/setup', { token, email, password, name }),
   logout: () => send('POST', 'auth/logout'),
   events: () => get('events'),
+  soiling: () => get('soiling'),
   addEvent: (type, day, note) => send('POST', 'events', { type, day, note }),
   deleteEvent: id => call(`events/${id}`, { method: 'DELETE' }),
   settings: () => get('settings'),
