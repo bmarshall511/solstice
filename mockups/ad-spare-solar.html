@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Solstice · Spare solar</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* page scaffolding for the mockup only (same as v–ac) */
+html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+body{background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.col{width:100%;max-width:393px;margin:0 auto;padding:28px 0 60px}
+.intro{padding:0 20px}
+.intro .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.intro h2{font-size:30px;line-height:1.1;font-weight:300;letter-spacing:-.02em;margin-bottom:12px}
+.intro p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.frame{margin-top:34px}
+.frame>.sect{margin:0 20px 10px}
+.pagepad{padding:0 20px}
+.cap{margin:12px 20px 0;padding:12px 14px;border-radius:16px;background:rgba(0,0,0,.25);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.55}
+.cap b{color:var(--text);font-weight:600}
+.cap p+p{margin-top:6px}
+.cap .new{color:var(--batt)}.cap .same{color:var(--mute)}
+.wrules{margin:34px 20px 0}
+.wrules h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:10px}
+.wrules ul{list-style:none;display:grid;gap:8px}
+.wrules li{font-size:12.5px;color:var(--dim);line-height:1.55;padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b)}
+.wrules li b{color:var(--text);font-weight:600}
+/* NEW: the spare-solar card */
+.sp-big{display:flex;align-items:baseline;gap:8px;margin-top:10px}
+.sp-big b{font-size:30px;font-weight:300;letter-spacing:-.02em}
+.sp-big span{font-size:12px;color:var(--dim)}
+.sp-bars{display:flex;align-items:flex-end;gap:4px;height:84px;margin-top:12px}
+.sp-bars div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:3px;height:100%}
+.sp-bars i{display:block;width:100%;border-radius:4px 4px 0 0;background:var(--batt);opacity:.8}
+.sp-bars i.z{background:rgba(255,255,255,.12);height:2px!important}
+.sp-bars small{font:500 9px "JetBrains Mono";color:var(--mute)}
+.sp-bars em{font:500 9px "JetBrains Mono";font-style:normal;color:var(--dim)}
+.sp-now{display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:12.5px;color:var(--dim);line-height:1.45}
+.sp-now i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--mute);margin-top:5px}
+.sp-now i.on{background:var(--batt);box-shadow:0 0 10px var(--batt)}
+.sp-now b{color:var(--text);font-weight:600}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cmp div{padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b);font-size:12px;line-height:1.5;color:var(--dim)}
+.cmp small{display:block;font:600 10px Manrope;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin-bottom:4px}
+.cmp b{color:var(--text);font:inherit;font-weight:600}
+.tl{display:grid;gap:6px;margin-top:10px}
+.tl div{display:grid;grid-template-columns:auto 1fr;gap:8px;font-size:12.5px;color:var(--dim);line-height:1.45}
+.tl em{font:500 10.5px "JetBrains Mono";font-style:normal;color:var(--mute);padding-top:2px}
+.tl b{color:var(--text);font-weight:600}
+</style></head><body>
+<div class="col">
+  <div class="intro">
+    <div class="k">Mockup ad · Spare solar</div>
+    <h2>Use solar only when it really is spare: Powerwalls full and power going out to PEC.</h2>
+    <p>Your last 12 months: spare solar on 2–12 days a month in spring, fall and winter, none June to September, and 295 kWh sent to PEC in the whole year. So this is small, honest housekeeping, not a money-maker: it stops the AC "pre-cooling on solar" with energy the Powerwalls were saving for the evening, and puts the little real surplus into the pool. Monthly figures are your real ones; times are illustrative.</p>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 1 · Insights › Home · new card</div>
+    <div class="pagepad"><div class="card">
+      <div class="h"><b>Spare solar</b><span>last 12 months</span></div>
+      <div class="sp-big"><b>50</b><span>days with spare solar · 295 kWh sent to PEC</span></div>
+      <div class="sp-bars" id="bars"></div>
+      <div class="sp-now"><i></i><span><b>None now.</b> Powerwalls 41%, and the house is using all the solar. Spare solar shows up on mild sunny days, mostly March and May.</span></div>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> a day counts when the Powerwalls reached 95% or more than 2 kWh went to PEC. Bars are those days per month, with the count above each. The dot is live: green while spare solar is happening, with how much.</p>
+      <p>Summer is blank because the AC uses everything the roof makes, which is also why pre-cooling "on solar" mostly ran on battery or grid.</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 2 · what counts as spare (AC pre-cool)</div>
+    <div class="pagepad"><div class="cmp">
+      <div><small>Today</small>Solar minus home use over 15 minutes. That counts power <b>charging the Powerwalls</b>, which they would have given back in the evening.</div>
+      <div><small>Proposed</small>Powerwalls at <b>95% or more</b> and power <b>going out to PEC</b> over 15 minutes. Only that is truly spare.</div>
+    </div></div>
+    <div class="cap"><p><b class="new">New:</b> AC pre-cool switches to the proposed rule. In practice it will pre-cool less often (it needs full batteries on a hot day, which your data shows is rare). Nothing else about the AC plan changes.</p></div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 3 · the pool soaks up what is spare</div>
+    <div class="pagepad"><div class="card">
+      <div class="h"><b>Autopilot</b><span class="badge g">Auto</span></div>
+      <div class="tl">
+        <div><em>1:40 PM</em><span><b>Spare solar: Pool up to 2,400 RPM</b> while the Powerwalls are full and 2.3 kW goes to PEC. Counts toward today's turnovers.</span></div>
+        <div><em>3:10 PM</em><span><b>Spare solar ended:</b> back to 1,750 RPM after 1 h 30 m (about 0.8 kWh used here instead of sent out).</span></div>
+      </div>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> when there is spare solar and the pool is running its daytime program, Autopilot in Auto speeds it up to the High Speed speed (2,400) instead of sending the power out, and drops back when the spare stops. More water moved, nearly free. In Suggest it only notes it.</p>
+      <p>The pool's run already sits in the day, so it never needs extra hours for this, only speed.</p>
+    </div>
+  </div>
+
+  <div class="wrules">
+    <h3>The rules</h3>
+    <ul>
+      <li><b>Spare</b> = Powerwalls at 95% or more and exporting at least 1 kW, averaged over 15 minutes, from the live readings the 5-minute check already takes. No extra Tesla calls.</li>
+      <li><b>Pool speed-up</b> only in Auto, only while the Pool program is running, never during a Clear-up or a boost you started, at most once an hour, through the same safety guard as every pool write. It ends when the export drops under 0.3 kW for 15 minutes or the program ends.</li>
+      <li><b>AC pre-cool</b> uses the same "spare" test; its depth, timing and limits stay as they are.</li>
+      <li><b>Unchanged:</b> the turnover planner and its daytime window, the AC comfort band, the Powerwall rules, and every other card.</li>
+    </ul>
+  </div>
+</div>
+<script>
+// the owner's real days with spare solar and kWh sent to PEC, Oct 2025 – Sep 2026
+const M = [['O', 6, 27], ['N', 5, 62], ['D', 0, 2], ['J', 7, 25], ['F', 7, 19], ['M', 12, 82], ['A', 2, 11], ['M', 8, 56], ['J', 3, 2], ['J', 0, 2], ['A', 0, 4], ['S', 0, 3]];
+document.getElementById('bars').innerHTML = M.map(([m, d, k]) => `<div><em>${d || ''}</em><i class="${d ? '' : 'z'}" style="height:${d / 12 * 60}px"></i><small>${m}</small></div>`).join('');
+</script>
+</body></html>
