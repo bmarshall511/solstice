@@ -49,6 +49,7 @@ function drawWarranty(S) {
 
 /* mockup ai: the Cleaning check from the server's clear-day comparison (server/src/soiling.ts): clean level after the last 5 mm rain or
    logged cleaning, the latest 3 clear days against it, hot panels allowed for. Reloaded when a cleaning is logged or undone. */
+const span = (a, b) => a.slice(0, 7) === b.slice(0, 7) ? `${MON3(a)}–${+b.slice(8)}` : `${MON3(a)}–${MON3(b)}`;   // Jul 20–26 · Jul 30–Aug 2
 const md = d => `${+d.slice(5, 7)}/${+d.slice(8)}`, MON3 = d => new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 async function loadSoiling(S) { try { S.soiling = await api.soiling(); } catch { /* keep the last */ } drawCleaning(S); }
 function drawCleaning(S) {
@@ -62,7 +63,7 @@ function drawCleaning(S) {
   $('cleanBadge').textContent = !s ? 'waiting' : st === 'dusty' ? 'Dusty' : st === 'getting' ? 'Getting dusty' : st === 'clean' ? 'Clean' : s.resetOn ? 'Clean' : 'measuring';
   $('cleanBadge').className = 'badge' + (st === 'dusty' || st === 'getting' ? '' : ' g');
   $('clLoss').textContent = loss == null ? '—' : loss < .5 ? 'on par' : `−${loss}%`;
-  $('clRef').textContent = !s ? '—' : s.ref ? `${MON3(s.ref.from)}–${md(s.ref.to)}, after the ${s.ref.after === 'cleaning' ? 'cleaning' : s.ref.after === 'rain' ? 'rain' : 'first clear days'}` : `after ${3 - Math.min(2, s.clearSince)} more clear day${3 - s.clearSince === 1 ? '' : 's'}`;
+  $('clRef').textContent = !s ? '—' : s.ref ? `${span(s.ref.from, s.ref.to)}, after the ${s.ref.after === 'cleaning' ? 'cleaning' : s.ref.after === 'rain' ? 'rain' : 'first clear days'}` : `after ${3 - Math.min(2, s.clearSince)} more clear day${3 - s.clearSince === 1 ? '' : 's'}`;
   $('clRain').textContent = !s ? '—' : s.lastRain ? `${s.lastRain.daysAgo === 0 ? 'today' : `${s.lastRain.daysAgo} day${s.lastRain.daysAgo === 1 ? '' : 's'} ago`} · ${Math.round(s.lastRain.mm)} mm` : 'none in 3 months';
   $('clNext').textContent = !s ? '—' : s.nextRain ? `${new Date(`${s.nextRain.day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · ${Math.round(s.nextRain.mm)} mm` : 'none in the forecast';
   $('clCost').innerHTML = s?.kwhPerDay ? `≈ ${s.kwhPerDay.toFixed(1)} kWh/day · ${S.guest ? veil('$••/mo') : `${s.dollarsPerMonth != null ? `$${s.dollarsPerMonth}` : '—'}/mo`}` : '—';
