@@ -14,7 +14,7 @@ import { q, kv, migrate } from '../../server/src/db.js';
 import { saveEnergyRows } from '../../server/src/sync.js';
 import { saveBill } from '../../server/src/bills.js';
 import { localMidnight, rfc3339, addDays } from '../../server/src/tesla/client.js';
-import { powerModel } from '../../server/src/appliances/pool.js';
+import { powerModel, filledQuarters } from '../../server/src/appliances/pool.js';
 import { flowsFor, daySpans, FLOWS_SQL, FlowsInputError } from '../../server/src/flows.js';
 import { poolSnapshot } from '../fixtures/screenlogic.js';
 
@@ -147,6 +147,29 @@ describe('unaccounted: Tesla\'s home and export totals beyond the ribbons into t
     expect(f.home.pool).toMatchObject({ source: 'readings', coverage: 1 });
     expect(f.home.pool.kwh).toBeCloseTo((36 * 150 / 4 + 36 * 60 / 4) / 1000, 2);
     await q(`DELETE FROM pool_readings WHERE site_id = 'u'`);
+  });
+
+  it('a past day follows its own readings, not a schedule stored since (an all-day Clear-up written later); a missed read inside a run is filled', async () => {
+    await kv.set('u:pool:last', poolSnapshot(NOW, { schedules: [{ id: 8, circuitId: 6, start: 0, stop: 1439, dayMask: 127, flags: 0, heatCmd: 4, heatSetPoint: 70 }] }));
+    // that day ran 08:00–17:00 (36 quarters) with the reads at 10:00 and 10:15 missed, plus the 02:05 and 05:05 checks reading off
+    const run = Array.from({ length: 36 }, (_, k) => k).filter(k => k !== 8 && k !== 9).map(k => Date.parse(`${DAY}T08:00:00-05:00`) + k * 900_000 + 60_000);
+    await q(`INSERT INTO pool_readings (site_id, ts, day, hour, running, watts, rpm) SELECT 'u', t, $1, 0, true, 150, 1500 FROM unnest($2::bigint[]) t`, [DAY, run]);
+    await q(`INSERT INTO pool_readings (site_id, ts, day, hour, running, watts, rpm) SELECT 'u', t, $1, 0, false, 0, 0 FROM unnest($2::bigint[]) t`,
+      [DAY, [Date.parse(`${DAY}T02:05:00-05:00`), Date.parse(`${DAY}T05:05:00-05:00`)]]);
+    const f = await flowsFor('u', 'day', DAY, {}, NOW);
+    expect(f.home.pool).toMatchObject({ source: 'readings', coverage: 1 });
+    expect(f.home.pool.kwh).toBeCloseTo((36 * 150 / 4 + 36 * 60 / 4) / 1000, 2);   // not 96 quarter-hours of the all-day schedule
+    await q(`DELETE FROM pool_readings WHERE site_id = 'u'`);
+    await kv.set('u:pool:last', poolSnapshot(NOW, { schedules: [{ id: 1, circuitId: 6, start: 480, stop: 1020, dayMask: 127, flags: 0, heatCmd: 4, heatSetPoint: 70 }] }));
+  });
+
+  it('filledQuarters: a gap over an hour is off; today\'s last two elapsed quarters wait for the schedule', () => {
+    const m: Array<number | null> = Array(96).fill(null); m[10] = 100; m[16] = 100; m[20] = 100; m[22] = 100;
+    const out = filledQuarters(m, 30, true);
+    expect(out.slice(11, 16)).toEqual([0, 0, 0, 0, 0]);                   // 10 → 16 is 1.5 h: the pump was off between
+    expect(out[21]).toBe(100);                                            // one missed read inside a run
+    expect(out.slice(23, 28)).toEqual([0, 0, 0, 0, 0]);
+    expect(out.slice(28, 30)).toEqual([null, null]);                       // may not have been read yet
   });
 
   it('days without Nest coverage use the heat model (pro rata today); the rest never goes below zero', async () => {
