@@ -22,9 +22,9 @@ export function initWater(S, every) {
 }
 function draw(S) {
   const d = W.data; if (!d) return;
-  const t = d.last, st = d.status ?? {}, hint = (k, v) => k === 'fc' ? `ppm FC${d.fcMin > 1 ? ` · ${d.fcMin}+` : ''}` : k === 'ph' ? '7.2–7.8' : k === 'ta' ? 'ppm' : st.cya === 'hi' ? 'high · 30–50' : st.cya === 'lo' ? 'low · 30–50' : 'ppm';
+  const t = d.last, st = d.status ?? {}, hint = k => k === 'fc' ? (d.fcMin > 1 ? `${d.fcMin}+ ppm` : 'ppm FC') : k === 'ph' ? '7.2–7.8' : k === 'ta' ? '80–120' : '30–50';   // short: one line at 393 px
   const off = t ? ['fc', 'ph', 'ta', 'cya'].filter(k => st[k] && st[k] !== 'ok').length : 0;
-  $('pwBadge').textContent = !t ? 'no tests yet' : off ? `${off} to watch` : 'in range'; $('pwBadge').className = 'badge' + (t && !off ? ' g' : '');
+  $('pwBadge').textContent = !t ? 'no tests yet' : off ? `${off} to watch` : 'in range'; $('pwBadge').className = 'badge ' + (!t ? 'n' : off ? 'a' : 'g');
   $('pwVals').innerHTML = [['fc', 'Chlorine'], ['ph', 'pH'], ['ta', 'Alkalinity'], ['cya', 'CYA']].map(([k, l]) =>
     `<div class="${t && t[k] != null ? st[k] ?? '' : ''}"><small>${l}</small><b>${t ? fmt(k, t[k]) : '—'}</b><span>${hint(k)}</span></div>`).join('');
   const water = d.waterF != null ? ` · water ${Math.round(d.waterF)}°` : '';
@@ -89,7 +89,7 @@ function openHistory(S) {
   [[0, 'start'], [15, 'middle'], [30, 'end']].forEach(([i, a]) => o += `<text x="${X(t0 + i * 864e5)}" y="140" text-anchor="${a}" fill="rgba(242,244,248,.45)" font-size="9" font-family="JetBrains Mono">${new Date(t0 + i * 864e5).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</text>`);
   [0, 2, 4, 6].forEach(v => o += `<text x="2" y="${Yc(v) + 3}" fill="rgba(242,244,248,.45)" font-size="9" font-family="JetBrains Mono">${v}</text>`);
   const find = !f ? `Findings appear after ${6} tests over two weeks (${d.tests.length} so far).`
-    : [f.use ? `Between tests, chlorine fell about <b style="color:var(--text)">${f.use.ppmPerDay} ppm a day</b>${f.use.waterF ? ` at ${f.use.waterF[0]}–${f.use.waterF[1]}°` : ''} (${f.use.n} stretches).` : '',
+    : [f.use ? `Between tests, chlorine fell about <b style="color:var(--text)">${f.use.ppmPerDay} ppm a day</b>${f.use.waterF ? ` at ${f.use.waterF[0] === f.use.waterF[1] ? f.use.waterF[0] : `${f.use.waterF[0]}–${f.use.waterF[1]}`}°` : ''} (${f.use.n} stretches).` : '',
        f.hazy ? `Hazy tests followed weeks averaging <b style="color:var(--text)">${f.hazy.hazyHours} h</b> of pump a day; clear ones ${f.hazy.clearHours} h.` : ''].filter(Boolean).join(' ') || 'Not enough comparable tests yet.';
   $('sheetBody').innerHTML = `<div class="shead"><h4>Water · last 30 days</h4><button class="x" id="phX" aria-label="Close">✕</button></div>
     <p class="sub">Your tests against the pump's hours</p>
