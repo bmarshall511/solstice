@@ -2,7 +2,7 @@
 // with guardrails. In "suggest" mode it stores the plan for the owner to approve; in "auto" it writes it to ScreenLogic itself.
 import { q, kv } from '../db.js';
 import { localDay, addDays } from '../tesla/client.js';
-import { planFor, applyPlan, planWrite, type Plan, type PoolSettings } from './pool.js';
+import { planFor, applyPlan, planWrite, setPoolAutopilot, programKey, rebaseline, PUMP_HOURS_MAX, PUMP_HOURS_MIN, type Plan, type PoolSettings } from './pool.js';
 import type { PoolSnapshot } from './screenlogic.js';
 import { siteLocation } from '../site.js';
 import { guardPoolWrite } from './guards.js';
@@ -42,13 +42,14 @@ export function planDay(o: { day: Daily; prev?: Daily; heatDays: number; useYest
   let hours = base.hours, boost = base.boostHours;
   const rainy = (o.prev?.rainMm ?? 0) >= 5 || (o.day.rainMm >= 5 && o.day.rainPct >= 60);
   if (rainy) { hours += 1; boost = 1; why.push(`+1 h and a skim boost: ${(o.prev?.rainMm ?? 0) >= 5 ? 'rain yesterday' : 'rain likely'} brings debris`); }
+  if (o.waterTemp >= 85) { hours += 1; why.push(`+1 h: water at ${Math.round(o.waterTemp)}°F`); }
   if (o.heatDays >= 3) { hours += 2; why.push(`+2 h: day ${o.heatDays} of a heat wave (highs ≥ 95°F)`); }
   else if (o.day.high >= 95) { hours += 1; why.push('+1 h: high of ' + Math.round(o.day.high) + '°F'); }
   if (o.useYesterday) { hours += 1; why.push('+1 h: the pool was used yesterday'); }
   if (o.pollen === 'high') { boost = 1; why.push('skim boost: oak pollen season'); }
   if (o.waterTemp < 70 && hours > 4) { hours -= 1; why.push('−1 h: water below 70°F'); }
   if (o.day.sunKwhM2 < 3 && o.day.hourlySun.some(v => v > 0)) why.push('cloudy: the run follows the brightest hours');
-  hours = Math.min(12, Math.max(4, hours));
+  hours = Math.min(PUMP_HOURS_MAX + 4, Math.max(PUMP_HOURS_MIN, hours));   // the goal fills up to 12 h; heat, rain and use may add up to 4 more
   const plan = hours === base.hours && boost === base.boostHours ? base : planFor({ waterTemp: o.waterTemp, solarKw: o.day.hourlySun.map(v => v * 9.45 * .8), settings: o.settings, W: o.W, rate: o.rate, month: Number(o.day.date.slice(5, 7)) - 1, names: o.names, force: { hours, boost } });
   return { plan, why };
 }
@@ -72,18 +73,33 @@ export async function autopilot(siteId: string, o: { settings: PoolSettings; mod
   const cleaned = await q<{ day: string }>(`SELECT day FROM events WHERE site_id = $1 AND type = 'filter_cleaned' ORDER BY day DESC LIMIT 1`, [siteId]);
   const since = cleaned[0]?.day ?? (log.at(-1)?.day ?? today), daysSince = Math.max(0, Math.round((Date.parse(today) - Date.parse(since)) / 864e5));
   let pending = false;
-  if (o.act && o.mode !== 'off' && o.snap) {
+  // a Clear-up holds the controller's programs until it ends (frame 6): no write and no suggestion while it runs, whatever the mode
+  const clearUp = await kv.get<{ until: number } | null>(`${siteId}:pool:clearup`), held = !!clearUp && clearUp.until > Date.now();
+  // frame 7: an edit made outside Solstice (the Pentair app) is kept. In Auto, programs on the controller that differ in time from the
+  // last write mean someone changed them: Autopilot moves to Suggest, makes that schedule the baseline, and offers its plan instead
+  let mode = o.mode;
+  if (o.act && mode === 'auto' && o.snap && !held) {
+    const applied = await kv.get<any>(`${siteId}:pool:applied`), managed = [o.settings.poolCircuit, o.settings.boostCircuit];
+    if (applied?.plan?.schedules && programKey(o.snap.schedules, managed) !== programKey(applied.plan.schedules, managed)) {
+      mode = 'suggest'; await setPoolAutopilot('suggest'); await rebaseline(siteId, o.snap, o.settings, 'controller');
+      log.unshift({ at: Date.now(), day: today, text: 'The pump schedule was changed outside Solstice, so it stays; Autopilot moved to Suggest', delta: 'kept' });
+      await kv.set(`${siteId}:pool:autolog`, log.slice(0, 30));
+    }
+  }
+  if (o.act && mode !== 'off' && o.snap && !held) {
     const applied = await kv.get<any>(`${siteId}:pool:applied`);
-    const same = applied && applied.plan.start === tomorrow.plan.start && applied.plan.stop === tomorrow.plan.stop && applied.plan.boostAt === tomorrow.plan.boostAt;
+    // the same programs (circuit, start, stop and speed) as the last write: nothing to send (records from before the planner carry them too)
+    const key = (xs: Array<{ circuitId: number; start: number; stop: number; rpm: number }> = []) => JSON.stringify(xs.map(x => [x.circuitId, x.start, x.stop, x.rpm]));
+    const same = !!applied && key(applied.plan.schedules) === key(tomorrow.plan.schedules);
     if (!same) {
       // the safety guard checks the exact write first (managed pump circuits only, never freeze/spa/lights/heater, RPM in range)
-      const write = o.mode === 'auto' && o.snap.pump ? planWrite(tomorrow.plan, o.snap, o.settings) : null, g = write ? guardPoolWrite(write, write.guard) : null;
+      const write = mode === 'auto' && o.snap.pump ? planWrite(tomorrow.plan, o.snap, o.settings) : null, g = write ? guardPoolWrite(write, write.guard) : null;
       if (g && !g.ok) log.unshift({ at: Date.now(), day: today, text: `Refused tomorrow's plan: ${g.reason}`, delta: 'refused' });
-      else if (o.mode === 'auto') { await applyPlan(siteId, tomorrow.plan, o.snap, o.settings); log.unshift({ at: Date.now(), day: today, text: `Tomorrow: ${tomorrow.plan.hours} h at ${o.settings.filterRpm.toLocaleString()} RPM${tomorrow.plan.boostHours ? ' + skim boost' : ''}. ${tomorrow.why.join('; ') || 'season plan'}`, delta: `${tomorrow.plan.kwhPerDay} kWh` }); }
+      else if (mode === 'auto') { await applyPlan(siteId, tomorrow.plan, o.snap, o.settings); log.unshift({ at: Date.now(), day: today, text: `Tomorrow: ${tomorrow.plan.hours} h at ${tomorrow.plan.rpm.toLocaleString()} RPM${tomorrow.plan.boostHours ? ` + ${tomorrow.plan.boostHours} h skim` : ''}, ${tomorrow.plan.turnovers}× turnover. ${tomorrow.why.join('; ') || 'season plan'}`, delta: `${tomorrow.plan.kwhPerDay} kWh` }); }
       else { pending = true; await kv.set(`${siteId}:pool:pending`, { date: tomorrow.date, plan: tomorrow.plan, why: tomorrow.why }); log.unshift({ at: Date.now(), day: today, text: `Suggested for tomorrow: ${tomorrow.plan.hours} h${tomorrow.plan.boostHours ? ' + boost' : ''}. ${tomorrow.why.join('; ') || 'season plan'}`, delta: 'waiting for you' }); }
       await kv.set(`${siteId}:pool:autolog`, log.slice(0, 30));
     }
   } else pending = !!(await kv.get(`${siteId}:pool:pending`));
   const next = new Date(); next.setUTCHours(1, 15, 0, 0); if (next.getTime() < Date.now()) next.setUTCDate(next.getUTCDate() + 1);
-  return { mode: o.mode, nextRunAt: next.toISOString(), signals, tomorrow, week, pending, log, filterHours: Math.round(daysSince * o.currentHours), filterCleanedOn: cleaned[0]?.day ?? null };
+  return { mode, nextRunAt: next.toISOString(), signals, tomorrow, week, pending, log, filterHours: Math.round(daysSince * o.currentHours), filterCleanedOn: cleaned[0]?.day ?? null };
 }

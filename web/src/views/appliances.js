@@ -13,7 +13,7 @@ const hm = m => { const h = Math.floor(m / 60) % 24, mm = m % 60; return `${h % 
 const colorFor = n => /high|boost/i.test(n) ? '#ff7a66' : /water|fall|feature/i.test(n) ? '#c4a2ff' : '#6cc4ff';
 const CIRCUITS = [['Pool', 'pool'], ['Spa', 'spa'], ['Waterfall', 'waterfall'], ['Jets', 'jets'], ['Air Blower', 'blower'], ['Pool Light', 'lights'], ['Spa Light', 'lights']];
 
-let twin = null, timer, schMode = 'rec';
+let twin = null, timer;
 /** Started by main.js once the role is known (and again when it changes); every 3 minutes while the tab is visible. */
 export function initAppliances(S) { stop(timer); timer = every(3 * 60_000, () => load(S)); }
 export const poolTwin = () => twin;
@@ -63,71 +63,263 @@ export function drawPool(S) {
   const ex = d.extras ?? { nowW: 0, todayKwh: 0 };
   $('poolHud').innerHTML = `${running ? (names.map(esc).join(' + ') || 'Running') + ` · ${L.rpm.toLocaleString()} RPM · ${Math.round(L.watts)} W` : 'Pump off'}${ex.nowW ? ` · +${ex.nowW} W ${[st.blower ? 'blower' : '', st.lights ? 'lights' : '', running && d.settings.uv ? 'UV' : ''].filter(Boolean).join('/')}` : ''}${st.heater ? ' · heater' : ''}${L?.freezeMode ? ' · freeze mode' : ''}`;
   $('poolCirc').innerHTML = [['Pool', st.pool], ['Spa', st.spa], ['Sheer descent', st.waterfall], ['Jets', st.jets], ['Air blower', st.blower], ['Heater', st.heater], ['Lights', st.lights]].map(([n, on]) => `<span class="${on ? 'on' : ''}">${n}</span>`).join('');
+  drawControls(S);
   const ss = d.spaSession;
   $('poolStats').innerHTML = `<div class="stat"><small>Pump</small><b>${running ? `${Math.round(L.watts)} W · ${L.rpm.toLocaleString()} rpm` : 'off'}</b></div><div class="stat"><small>Today</small><b>${d.todayKwh} kWh${d.shareOfHomePct != null ? ` · ${d.shareOfHomePct}%` : ''}</b></div>
     <div class="stat"><small>Pool · spa · air</small><b>${st.poolTemp ?? '—'}° · ${st.spaTemp ?? '—'}° · ${L?.airTemp ?? '—'}°</b></div><div class="stat"><small>Turnover</small><b>${d.current.turnoverPerDay}× a day</b></div>`
     + (ss && ss.riseF != null ? `<div class="stat" style="grid-column:1/-1"><small>Spa session · ${ss.spaTemp}° → ${ss.spaSet}°</small><b>${ss.riseF ? `${ss.heatMinutes} min of propane · ${ss.propaneGal} gal ≈ ${S.guest ? veil('$•.••') : money2(ss.propaneUsd)}` : 'already at temperature'} · then ${S.guest ? veil('$•.••/h') : `${money2(ss.electricUsdPerHour)}/h`} pump + blower</b></div>` : '');
   $('poolNote').innerHTML = `IntelliFlo VSF on a Quad D.E. 80 filter, ${sp.gallons.toLocaleString()} gal. Streams follow the water: skimmer → pump → filter → heater → returns; green is the spa loop, purple the sheer-descent feed. Speed follows the pump's RPM. Lights are 500 W + 100 W incandescent, the blower 1.1 kW, the UV lamp ~60 W while the pump runs.${d.model.measured.length ? ` Measured: ${d.model.measured.map(m => `${m.rpm}→${Math.round(m.watts)} W`).join(', ')}.` : ''}${d.error ? ` <span style="color:var(--warn)">Last read failed: ${esc(d.error)}</span>` : ''}`;
-  drawDial(S); drawAutopilot(S);
+  drawPlanner(S); drawAutopilot(S);
   $('poolSeason').innerHTML = d.seasons.map(s => `<div class="${s.current ? 'cur' : ''}"><b>${esc(s.kwhPerDay)}</b>${esc(s.label)}</div>`).join('');
 }
 
-/* ---------- 24-hour dial: now vs recommended ---------- */
-function drawDial(S) {
-  const d = S.pool, C = d.current, P = d.plan, sp = d.settings, svg = $('dial24'), cx = 160, cy = 160;
-  const A = h => h / 24 * Math.PI * 2 + Math.PI / 2, pt = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
-  const arc = (r, m0, m1) => { const h0 = m0 / 60, h1 = m1 / 60; const [x0, y0] = pt(r, A(h0)), [x1, y1] = pt(r, A(h1)); return `M${x0} ${y0} A${r} ${r} 0 ${h1 - h0 > 12 ? 1 : 0} 1 ${x1} ${y1}`; };
-  const sunH = d.solarKw.map((v, i) => [v, i]).filter(([v]) => v > .3).map(([, i]) => i), sun0 = sunH[0] ?? 7, sun1 = (sunH.at(-1) ?? 18) + 1;
-  let o = `<defs><filter id="dgl"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter><linearGradient id="dsun" x1="0" x2="1"><stop offset="0" stop-color="#ffc15e" stop-opacity=".1"/><stop offset=".5" stop-color="#ffc15e" stop-opacity=".9"/><stop offset="1" stop-color="#ffc15e" stop-opacity=".1"/></linearGradient></defs>`;
-  for (let h = 0; h < 24; h++) { const [x0, y0] = pt(140, A(h)), [x1, y1] = pt(h % 6 ? 144 : 150, A(h)); o += `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="rgba(255,255,255,${h % 6 ? .12 : .35})"/>`; }
-  [['12a', 0], ['6a', 6], ['12p', 12], ['6p', 18]].forEach(([l, h]) => { const [x, y] = pt(128, A(h)); o += `<text x="${x}" y="${y + 3.5}" text-anchor="middle" fill="rgba(242,244,248,.5)" font-size="10" font-family="JetBrains Mono">${l}</text>`; });
-  o += `<path d="${arc(150, sun0 * 60, sun1 * 60)}" fill="none" stroke="url(#dsun)" stroke-width="5" stroke-linecap="round"/>`;
-  o += `<circle cx="${cx}" cy="${cy}" r="112" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="18"/><circle cx="${cx}" cy="${cy}" r="88" fill="none" stroke="rgba(255,255,255,.05)" stroke-width="18"/>`;
-  const seg = (r, s, cls) => `<path class="${cls}" d="${arc(r, s.start, s.stop)}" fill="none" stroke="${colorFor(s.name)}" stroke-width="${8 + s.rpm / 3450 * 12}" stroke-linecap="round" filter="url(#dgl)" style="transition:opacity .5s"><title>${esc(s.name)} · ${s.rpm.toLocaleString()} RPM · ${hm(s.start)}–${hm(s.stop)}</title></path>`;
-  C.schedules.forEach(s => o += seg(112, s, 'dn')); P.schedules.forEach(s => o += seg(88, s, 'dr'));
-  const nowH = new Date().getHours() + new Date().getMinutes() / 60, [mx, my] = pt(104, A(nowH)), [mx2, my2] = pt(158, A(nowH)); o += `<line x1="${mx}" y1="${my}" x2="${mx2}" y2="${my2}" stroke="#fff" stroke-opacity=".6" stroke-width="1.5"/><circle cx="${mx2}" cy="${my2}" r="3" fill="#fff"/>`;
-  svg.innerHTML = o;
-  const set = m => { schMode = m; svg.querySelectorAll('.dn').forEach(p => p.style.opacity = m === 'rec' ? 0 : m === 'both' ? .55 : .95); svg.querySelectorAll('.dr').forEach(p => p.style.opacity = m === 'now' ? 0 : .95);
-    $('dcLbl').textContent = m === 'now' ? 'Now' : m === 'rec' ? 'Recommended' : 'Now → Recommended';
-    $('dcKwh').innerHTML = m === 'now' ? `${C.kwhPerDay} <i>kWh/day</i>` : m === 'rec' ? `${P.kwhPerDay} <i>kWh/day</i>` : `${C.kwhPerDay} → ${P.kwhPerDay} <i>kWh/day</i>`;
-    const mo = v => (S.guest ? veil('$•••/mo') : `${money(v)}/mo`);
-    $('dcSub').innerHTML = m === 'now' ? `${C.hours} h · ${mo(C.costPerMonth)} · ${C.onSolarPct}% on solar` : m === 'rec' ? `${P.hours + P.boostHours} h · ${mo(P.costPerMonth)} · ${P.onSolarPct}% on solar` : 'outer: now · inner: recommended';
-    { const c = confChip(d.conf?.kwhPerDay, modelOf(S.models, 'pool.kwhDay')); if (c) $('dcSub').insertAdjacentHTML('beforeend', '<br>' + c); }   // r-learning: trust in the kWh/day figure
-    $('schNow').hidden = m !== 'now'; $('schRec').hidden = m === 'now'; document.querySelectorAll('#schMode button').forEach(b => b.classList.toggle('on', b.dataset.m === m)); };
-  $('schMode').onclick = e => { const b = e.target.closest('button'); if (b) set(b.dataset.m); };
-  // Now: what each program costs
-  $('schNow').innerHTML = `<div class="kv" style="margin-top:10px">${C.byProgram.map(p => `<span>${esc(p.name)} · ${p.rpm.toLocaleString()} RPM · ${hm(p.start)}–${hm(p.stop)}</span><b${p.kwhPerDay > 5 ? ' style="color:var(--warn)"' : ''}>${p.kwhPerDay} kWh</b>`).join('')}<span>Total per day</span><b>${C.kwhPerDay} kWh · ${S.guest ? veil('$•.••') : money2(d.rate == null ? null : C.kwhPerDay * d.rate)}</b></div>
-    <p>${C.schedules.length ? 'When two pump programs overlap, the controller runs the faster one. Switch to <b style="color:var(--text)">Recommended</b> to see the fix.' : 'No pump schedules on the controller.'}</p>`;
-  // Recommended: deltas, reasons, apply
-  const dk = C.kwhPerDay - P.kwhPerDay, dc = C.costPerMonth == null || P.costPerMonth == null ? null : C.costPerMonth - P.costPerMonth, topNow = Math.max(0, ...C.schedules.map(s => s.rpm)), topRec = Math.max(0, ...P.schedules.map(s => s.rpm));
-  const applied = d.applied, appliedAt = applied && new Date(applied.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  // the recommended plan is already on the controller: one status tile instead of deltas against itself
-  const onPlan = !!applied?.plan?.schedules && applied.plan.schedules.length === P.schedules.length
-    && P.schedules.every(s => applied.plan.schedules.some(a => a.circuitId === s.circuitId && a.start === s.start && a.stop === s.stop && a.rpm === s.rpm));
-  $('schDeltas').innerHTML = onPlan ? `<div style="grid-column:1/-1"><small>You're on the recommended schedule</small><b>${P.hours} h at ${sp.filterRpm.toLocaleString()} RPM${P.boostHours ? ` + ${P.boostHours} h boost` : ''}</b><span>applied ${appliedAt} · ${P.kwhPerDay} kWh a day</span></div>`
-    : `<div><small>Electricity</small><b>${dk >= 0 ? '−' : '+'}${Math.abs(dk).toFixed(dk % 1 ? 1 : 0)} kWh</b><span>per day</span></div><div><small>Cost</small><b>${S.guest ? veil() : dc == null ? '—' : `${dc >= 0 ? '−' : '+'}$${Math.abs(dc)}`}</b><span>per month</span></div>
-    <div><small>Turnover</small><b>${C.turnoverPerDay}× → ${P.turnoverPerDay}×</b><span>${P.turnoverPerDay >= 1 ? 'still one a day' : 'partial in winter'}</span></div><div><small>Top speed</small><b>${topNow.toLocaleString()} → ${topRec.toLocaleString()}</b><span>RPM</span></div>`;
-  const Wc = d.model.curve, wAt = r => Wc.reduce((a, c) => Math.abs(c.rpm - r) < Math.abs(a.rpm - r) ? c : a).watts;
-  const why = [['⚡', 'Speed³', `Power rises with the cube of RPM. ${topNow ? `${topNow.toLocaleString()} RPM draws ${(wAt(topNow) / 1000).toFixed(1)} kW, ` : ''}${sp.filterRpm.toLocaleString()} RPM draws ${(wAt(sp.filterRpm) / 1000).toFixed(2)} kW.`],
-    ['↻', P.turnovers >= 1 ? 'One turnover' : 'A partial turnover', `${sp.gallons.toLocaleString()} gal at ~${Math.round(sp.designGpm * sp.filterRpm / 3450)} GPM is ${(sp.gallons / (sp.designGpm * sp.filterRpm / 3450 * 60)).toFixed(1)} h. At ${P.waterTemp}°F you get ${P.hours} h.${C.turnoverPerDay > 2 ? ` Today's schedule does it ${C.turnoverPerDay} times.` : ''}`],
-    ['☀', 'Under the sun', `${hm(P.start * 60)}–${hm(P.stop * 60)} sits inside your solar curve, so the pump runs on free power and the Powerwalls reach evening fuller. Nothing overnight.`],
-    ['✦', 'Still clean', `${P.boostHours ? `A 1 h skim boost at ${hm(P.boostAt * 60)} for surface debris; ` : 'No boost needed; '}the robot handles the floor; the D.E. filter runs at lower pressure.`],
-    ['💧', 'UV works on flow', `Your Ultra UV unit only sanitizes water passing through it, so hours of steady flow do more than short fast runs, and chlorine demand stays lower. It draws about 60 W while the pump runs (${P.uvKwh ?? 0} kWh a day).`],
-    ['🔒', 'Untouched', 'Freeze protection, spa, heater and lights. The waterfall stays a manual feature with its timer.']];
-  $('schWhy').innerHTML = why.map(([i, b, p]) => `<div><i>${i}</i><b>${b}</b><p>${p}</p></div>`).join('');
-  $('schDots').innerHTML = why.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('');
-  const rs = $('schWhy'); rs.onscroll = () => { const i = Math.round(rs.scrollLeft / (rs.children[0].offsetWidth + 10)); [...$('schDots').children].forEach((x, k) => x.classList.toggle('on', k === i)); };
-  $('schSteps').innerHTML = P.schedules.map(s => `<span>${esc(s.name)} · speed</span><b>${s.rpm.toLocaleString()} RPM</b><span>${esc(s.name)} · schedule</span><b>${hm(s.start)}–${hm(s.stop)} every day</b>`).join('') + `<span>Other pump schedules</span><b>remove</b>`;
-  $('schActions').innerHTML = S.guest ? `<p class="fine" style="margin-top:12px;text-align:center">${nameStart(S.ownerName)} approves changes from their own devices.</p>`
-    : onPlan ? `<p class="fine" style="margin-top:10px"><button class="link" id="poolRestore" style="margin:0;padding:4px 10px">Restore the previous schedule</button></p>`
-    : applied ? `<p class="fine" style="margin-top:10px">Applied to ScreenLogic ${appliedAt}. <button class="link" id="poolRestore" style="margin:0 0 0 6px;padding:4px 10px">Restore the previous schedule</button></p>`
-    : `<button class="primary" id="poolApply">Apply to ScreenLogic</button><button class="link" id="poolShow">Show the settings instead</button>`;
-  const show = $('poolShow'); if (show) show.onclick = () => { const el = $('schSteps'); el.style.display = el.style.display === 'none' ? 'grid' : 'none'; };
-  const apply = $('poolApply'); if (apply) apply.onclick = async () => {
-    if (!confirm(`Rewrite the pump schedules on ScreenLogic?\n\n${P.schedules.map(s => `• ${s.name}: ${s.rpm} RPM, ${hm(s.start)}–${hm(s.stop)} daily`).join('\n')}\n• Remove the other pump schedules\n\nLights, spa, heater and freeze protection are untouched. You can restore the previous schedule afterwards.`)) return;
-    apply.textContent = 'Applying…'; try { await api.poolApply(); await load(S); } catch (e) { alert(`Couldn’t apply: ${e.message}`); apply.textContent = 'Apply to ScreenLogic'; } };
-  const restore = $('poolRestore'); if (restore) restore.onclick = async () => { if (!confirm('Put back the schedules and speeds that were there before Solstice changed them?')) return; restore.textContent = 'Restoring…'; try { await api.poolRestore(); await load(S); } catch (e) { alert(`Couldn’t restore: ${e.message}`); } };
-  set(schMode);
+/* ---------- mockup w frames 1–2: the switches (owner only; guests keep the chips above) and each circuit's sheet ---------- */
+const ORDER = ['Pool', 'High Speed', 'Waterfall', 'Jets', 'Air Blower', 'Spa', 'Pool Light', 'Spa Light'];
+const RUNS = [[30, '30 min'], [60, '1 h'], [120, '2 h'], [240, '4 h']], LONG_RUN = [720, '12 h'];
+const runLabel = m => m % 60 ? `${m} min` : `${m / 60} h`;
+const clockAt = ms => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+const pc = { sending: new Set(), err: null };
+const speedsOf = snap => new Map((snap?.pump?.circuits ?? []).map(c => [c.circuitId, c.speed]));
+const isSpa = c => c.function === 1 || /^spa$/i.test(c.name);
+function drawControls(S) {
+  const d = S.pool, snap = d.snapshot, box = $('poolCtl'); if (!box) return;
+  if (S.guest || !snap?.circuits?.length) { box.innerHTML = ''; return; }
+  const speeds = speedsOf(snap), rank = c => { const i = ORDER.indexOf(c.name); return i < 0 ? 99 + c.id : i; };
+  box.innerHTML = [...snap.circuits].sort((a, b) => rank(a) - rank(b)).map(c => {
+    const busy = pc.sending.has(c.id), rpm = speeds.get(c.id), spaT = snap.bodies?.[1]?.temp;
+    const sub = busy ? 'sending…' : `${c.on ? 'on' : 'off'}${isSpa(c) ? (spaT != null ? ` · ${spaT}°` : '') : rpm ? ` · ${rpm.toLocaleString()} RPM` : ''}`;
+    return `<button class="pc${c.on ? ' on' : ''}${busy ? ' send' : ''}" data-id="${c.id}" aria-pressed="${c.on}"><i></i><b>${esc(c.name)}</b><em data-more aria-label="${esc(c.name)} settings">›</em><small>${sub}</small></button>`;
+  }).join('') + (pc.err ? `<p class="fine pc-err">${esc(pc.err)}</p>` : '');
+  drawBoost(S);
+  let press = null;
+  box.onpointerdown = e => { const b = e.target.closest('.pc'); if (!b) return; press = setTimeout(() => { press = 'long'; openCircuit(S, +b.dataset.id); }, 550); };
+  box.onpointerup = box.onpointerleave = () => { if (press && press !== 'long') clearTimeout(press); };
+  box.onclick = e => {
+    const b = e.target.closest('.pc'); if (!b) return;
+    if (press === 'long') { press = null; return; }
+    const id = +b.dataset.id; if (e.target.closest('[data-more]')) return openCircuit(S, id);
+    const c = snap.circuits.find(x => x.id === id); if (!c || pc.sending.has(id)) return;   // one command per circuit at a time
+    poolSend(S, c.on ? { kind: 'circuit', id, on: false } : { kind: 'circuit', id, on: true, minutes: d.runFor?.[id] ?? 60 });
+  };
+}
+/* frame 3: Boost runs the boost circuit (High Speed) for 1–4 h on its timer; while it runs the button shows the time left and ends it */
+const boostId = S => S.pool?.settings?.boostCircuit ?? 8;
+const leftText = ms => { const m = Math.max(1, Math.round(ms / 60_000)); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} m` : `${m} m`; };
+function drawBoost(S) {
+  const d = S.pool, row = $('poolBoost'), id = boostId(S), c = d.snapshot?.circuits.find(x => x.id === id); if (!row) return;
+  if (S.guest || !c) { row.innerHTML = ''; return; }
+  const busy = pc.sending.has(id), until = d.until?.[id], cu = d.clearUp;
+  row.innerHTML = (busy ? `<button class="send" disabled>Sending\u2026</button>`
+    : c.on ? `<button class="on" id="pcBoost">Boosting <small id="pcBoostLeft">${until ? `${leftText(until - Date.now())} left \u00b7 ` : ''}End</small></button>`
+    : `<button id="pcBoost">Boost <small>1\u20134 h</small></button>`)
+    + (pc.clearBusy ? `<button class="send" disabled>Sending\u2026</button>` : cu ? `<button class="cu" id="pcClear">Clear-up <small>day ${cu.day} of ${cu.days}</small></button>` : `<button id="pcClear">Clear-up <small>1\u20133 days</small></button>`);
+  if ($('pcBoost')) $('pcBoost').onclick = () => c.on ? poolSend(S, { kind: 'circuit', id, on: false }) : openBoost(S);
+  if ($('pcClear')) $('pcClear').onclick = () => cu ? $('poolSched').scrollIntoView({ behavior: 'smooth', block: 'start' }) : openClearUp(S);
+}
+/** The Boost button's time left, on the 1 s tick. */
+export function tickBoost(S) { const u = S.pool?.until?.[boostId(S)], el = $('pcBoostLeft'); if (el && u) el.textContent = `${leftText(u - Date.now())} left \u00b7 End`; }
+function openBoost(S) {
+  const d = S.pool, id = boostId(S), snap = d.snapshot, c = snap.circuits.find(x => x.id === id), rpm0 = speedsOf(snap).get(id);
+  const lim = { min: snap.pump?.minRpm ?? 450, max: snap.pump?.maxRpm ?? 3450 }, hours = [60, 120, 180, 240];
+  let pick = hours.includes(d.runFor?.[id]) ? d.runFor[id] : 60, rpm = rpm0;
+  $('sheetBody').innerHTML = `<div class="shead"><h4>Boost</h4><button class="x" id="pcX" aria-label="Close">\u2715</button></div>
+    <p class="sub">${esc(c.name)} on top of the schedule, for skimming and mixing chemicals</p>
+    <div class="pc-lbl">For</div><div class="pc-runs" id="pcRuns">${hours.map(m => `<button data-m="${m}">${m / 60} h</button>`).join('')}</div>
+    ${rpm0 != null ? `<div class="pc-rpm"><div class="bt">Speed<small>${esc(c.name)}'s saved speed</small></div><div class="stp"><button id="pcDn" aria-label="Slower">\u2212</button><b id="pcRpm"></b><button id="pcUp" aria-label="Faster">+</button></div></div>` : ''}
+    <button class="primary" id="pcGo"></button>`;
+  const draw = () => { document.querySelectorAll('#pcRuns button').forEach(b => b.classList.toggle('on', +b.dataset.m === pick)); if ($('pcRpm')) $('pcRpm').textContent = rpm.toLocaleString(); $('pcGo').textContent = `Boost until ${clockAt(Date.now() + pick * 60_000)}`; };
+  $('pcRuns').onclick = e => { const b = e.target.closest('button'); if (!b) return; pick = +b.dataset.m; draw(); };
+  if ($('pcDn')) { const step = dv => { rpm = Math.max(lim.min, Math.min(lim.max, Math.round((rpm + dv) / 50) * 50)); draw(); }; $('pcDn').onclick = () => step(-50); $('pcUp').onclick = () => step(50); }
+  $('pcX').onclick = () => $('phone').classList.remove('open');
+  $('pcGo').onclick = () => { $('phone').classList.remove('open'); poolSend(S, ...(rpm0 != null && rpm !== rpm0 ? [{ kind: 'speed', id, rpm }] : []), { kind: 'circuit', id, on: true, minutes: pick }); };
+  draw(); $('phone').classList.add('open');
+}
+/* frame 7: the schedule editor — Pool and High Speed runs; saving writes them and moves Autopilot from Auto to Suggest */
+const toTime = m => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+const fromTime = v => { const [h, m] = String(v).split(':').map(Number); return h * 60 + m; };
+function openEditor(S) {
+  const d = S.pool, sp = d.settings, P = sp.poolCircuit ?? 6, B = sp.boostCircuit ?? 8, snap = d.snapshot;
+  if (d.clearUp) { pc.err = 'A Clear-up is running; end it first to edit the schedule.'; drawControls(S); return; }
+  const names = { [P]: snap?.circuits.find(c => c.id === P)?.name ?? 'Pool', [B]: snap?.circuits.find(c => c.id === B)?.name ?? 'High Speed' };
+  const speeds0 = speedsOf(snap), speeds = { [P]: speeds0.get(P) ?? 1800, [B]: speeds0.get(B) ?? 2400 }, lim = { min: snap?.pump?.minRpm ?? 450, max: snap?.pump?.maxRpm ?? 3450 };
+  const runs = d.current.schedules.filter(x => x.circuitId === P || x.circuitId === B).map(x => ({ circuitId: x.circuitId, start: x.start, stop: x.stop }));
+  let sel = runs.length ? 0 : -1;
+  const color = c => c === B ? PL_COLOR.skim : PL_COLOR.pool;
+  const draw = () => {
+    const r = runs[sel];
+    $('sheetBody').innerHTML = `<div class="shead"><h4>Pump schedule</h4><button class="x" id="seX" aria-label="Close">\u2715</button></div>
+      <p class="sub">What the controller runs every day</p>
+      <div class="se-list">${runs.map((x, i) => `<button class="se-row${i === sel ? ' on' : ''}" data-i="${i}"><i style="background:${color(x.circuitId)}"></i><b>${esc(names[x.circuitId])}</b><em>\u203a</em><small>${hm(x.start)} \u2013 ${hm(x.stop)} \u00b7 ${speeds[x.circuitId].toLocaleString()}</small></button>`).join('')}</div>
+      ${runs.length < 6 ? '<button class="se-add" id="seAdd">+ Add a run</button>' : ''}
+      ${r ? `<div class="pc-lbl">Editing ${esc(names[r.circuitId])}</div>
+        <div class="seg2 wide" id="seCirc" style="display:flex;margin-top:10px">${[P, B].map(c => `<button data-c="${c}" style="flex:1;text-align:center" class="${c === r.circuitId ? 'on' : ''}">${esc(names[c])}</button>`).join('')}</div>
+        <div class="se-time"><label><small>Start</small><input type="time" step="900" id="seStart" value="${toTime(r.start)}"></label><label><small>Stop</small><input type="time" step="900" id="seStop" value="${toTime(r.stop === 1439 ? 1440 : r.stop)}"></label></div>
+        <div class="pc-rpm"><div class="bt">Speed<small>${esc(names[r.circuitId])}'s saved speed</small></div><div class="stp"><button id="seDn" aria-label="Slower">\u2212</button><b>${speeds[r.circuitId].toLocaleString()}</b><button id="seUp" aria-label="Faster">+</button></div></div>` : ''}
+      <button class="primary" id="seGo" style="width:100%;box-sizing:border-box;margin-top:14px;background:var(--batt);color:#04140c">Save to the controller</button>
+      ${r ? '<button class="link" id="seDel">Delete this run</button>' : ''}
+      <p class="fine" id="seNote" style="margin-top:10px">Saving keeps your schedule: Autopilot switches to Suggest and offers its plan instead of writing over yours. ${esc(names[P])} and ${esc(names[B])} only (Waterfall is a switch only). New runs are added before old ones are removed.</p>`;
+    document.querySelectorAll('.se-row').forEach(b => b.onclick = () => { sel = +b.dataset.i; draw(); });
+    $('seX').onclick = () => $('phone').classList.remove('open');
+    if ($('seAdd')) $('seAdd').onclick = () => { runs.push({ circuitId: P, start: 600, stop: 900 }); sel = runs.length - 1; draw(); };
+    if (r) {
+      $('seCirc').onclick = e => { const b = e.target.closest('button'); if (!b) return; r.circuitId = +b.dataset.c; draw(); };
+      const q15 = v => Math.round(v / 15) * 15;
+      $('seStart').onchange = e => { r.start = q15(fromTime(e.target.value)) % 1440; draw(); };
+      $('seStop').onchange = e => { const m = q15(fromTime(e.target.value)); r.stop = m === 0 || m >= 1440 ? 1439 : m; draw(); };
+      const step = dv => { speeds[r.circuitId] = Math.max(lim.min, Math.min(lim.max, Math.round((speeds[r.circuitId] + dv) / 50) * 50)); draw(); };
+      $('seDn').onclick = () => step(-50); $('seUp').onclick = () => step(50);
+      $('seDel').onclick = () => { runs.splice(sel, 1); sel = Math.min(sel, runs.length - 1); save(); };
+    }
+    $('seGo').onclick = save;
+  };
+  const save = async () => {
+    const bad = runs.find(x => x.start === x.stop); if (bad) { $('seNote').textContent = 'A run needs a stop after its start.'; return; }
+    const used = [...new Set(runs.map(x => x.circuitId))], body = { schedules: runs, speeds: used.filter(c => speeds[c] !== speeds0.get(c)).map(c => ({ circuitId: c, rpm: speeds[c] })) };
+    $('seGo').textContent = 'Saving\u2026';
+    try { S.pool = await api.poolSchedule(body); $('phone').classList.remove('open'); drawPool(S); }
+    catch (e) { $('seGo').textContent = 'Save to the controller'; $('seNote').textContent = `Couldn\u2019t save: ${e.message}`; }
+  };
+  draw(); $('phone').classList.add('open');
+}
+
+/* frame 6: Clear-up — the Pool circuit all day for 1–3 days, then back to the planner by itself; only End now ends it early */
+const endsLabel = ms => `${new Date(ms).toLocaleDateString('en-US', { weekday: 'short' })} ${clockAt(ms)}`;
+const poolRunAfter = t => { const d = new Date(t); d.setUTCHours(1, 15, 0, 0); if (d.getTime() < t) d.setUTCDate(d.getUTCDate() + 1); return d.getTime(); };   // as the server
+async function clearUpSend(S, body) {
+  pc.clearBusy = true; pc.err = null; drawControls(S);
+  try { S.pool = await api.poolClearUp(body); } catch (e) { pc.err = `Clear-up: ${e.message}`; }
+  pc.clearBusy = false; drawPool(S);
+}
+function openClearUp(S) {
+  const d = S.pool, rates = d.clearUpRates ?? []; if (!rates.length) return;
+  let days = 2, rpm = 2000;
+  $('sheetBody').innerHTML = `<div class="shead"><h4>Clear-up</h4><button class="x" id="pcX" aria-label="Close">\u2715</button></div>
+    <p class="sub">Pool runs around the clock to clear cloudy water, then goes back to the planner by itself</p>
+    <div class="pc-lbl">For</div><div class="pc-runs" id="pcDays" style="grid-template-columns:repeat(3,1fr)">${[1, 2, 3].map(n => `<button data-n="${n}">${n} day${n > 1 ? 's' : ''}</button>`).join('')}</div>
+    <div class="pc-rpm"><div class="bt">Speed<small id="pcTurn"></small></div><div class="stp"><button id="pcDn" aria-label="Slower">\u2212</button><b id="pcRpm"></b><button id="pcUp" aria-label="Faster">+</button></div></div>
+    <div class="pc-nums" id="pcNums"></div>
+    <button class="primary" id="pcGo">Start Clear-up</button>`;
+  const draw = () => {
+    const r = rates.find(x => x.rpm === rpm) ?? rates[0], end = poolRunAfter(Date.now() + days * 864e5);
+    document.querySelectorAll('#pcDays button').forEach(b => b.classList.toggle('on', +b.dataset.n === days));
+    $('pcRpm').textContent = rpm.toLocaleString(); $('pcTurn').textContent = `about ${r.turnovers} turnovers a day`;
+    $('pcNums').innerHTML = `<div><b>24 h</b><span>pump a day</span></div><div><b>${r.kwhPerDay}</b><span>kWh a day</span></div><div><b>${new Date(end).toLocaleDateString('en-US', { weekday: 'short' })}</b><span>ends ${clockAt(end)}</span></div>`;
+  };
+  $('pcDays').onclick = e => { const b = e.target.closest('button'); if (!b) return; days = +b.dataset.n; draw(); };
+  const lo = rates[0].rpm, hi = rates.at(-1).rpm;
+  $('pcDn').onclick = () => { rpm = Math.max(lo, rpm - 50); draw(); }; $('pcUp').onclick = () => { rpm = Math.min(hi, rpm + 50); draw(); };
+  $('pcX').onclick = () => $('phone').classList.remove('open');
+  $('pcGo').onclick = () => { $('phone').classList.remove('open'); clearUpSend(S, { action: 'start', days, rpm }); };
+  draw(); $('phone').classList.add('open');
+}
+/** The banner on the planner while a Clear-up runs (and its badge). */
+function drawClearBanner(S) {
+  const cu = S.pool.clearUp, box = $('plClear'); if (!box) return;
+  $('plMode').className = cu ? 'badge cu' : 'badge g';
+  if (cu) $('plMode').textContent = 'Clear-up';
+  if (!cu) { box.innerHTML = ''; return; }
+  const f = Math.min(1, Math.max(0, (Date.now() - cu.startedAt) / (cu.until - cu.startedAt)));
+  box.innerHTML = `<div class="pl-clear"><div class="hh"><i></i><b>Clear-up \u00b7 day ${cu.day} of ${cu.days}</b><em>ends ${endsLabel(cu.until)}</em></div>
+    <p>Pool on all day at ${cu.rpm.toLocaleString()} RPM. The planner and Autopilot leave the schedule alone until it ends, then the next evening plan takes over. Brush the walls and backwash the DE filter when the pressure climbs.</p>
+    <div class="bar"><i style="width:${Math.round(f * 100)}%"></i></div>
+    ${S.guest ? '' : `<div class="row2" data-owner><button id="cuMore">Add a day</button><button id="cuEnd">End now</button></div>`}</div>`;
+  if ($('cuMore')) { $('cuMore').onclick = () => clearUpSend(S, { action: 'extend' }); $('cuEnd').onclick = () => { if (confirm('End the Clear-up now? The planner\u2019s schedule goes back on the controller.')) clearUpSend(S, { action: 'end' }); }; }
+}
+/** Send one or more commands for a circuit in order; the tile says "sending…" until the controller's read-back answers. */
+async function poolSend(S, ...cmds) {
+  const id = cmds.find(c => c.id != null)?.id ?? 1, name = S.pool.snapshot?.circuits.find(c => c.id === id)?.name ?? 'Pool';
+  pc.sending.add(id); pc.err = null; drawControls(S);
+  try { for (const c of cmds) S.pool = await api.poolCommand(c); }
+  catch (e) { pc.err = `${name}: ${e.message}`; }
+  pc.sending.delete(id); drawPool(S);
+}
+function openCircuit(S, id) {
+  const d = S.pool, snap = d.snapshot, c = snap?.circuits.find(x => x.id === id); if (!c || S.guest) return;
+  const rpm0 = speedsOf(snap).get(id), lim = { min: snap.pump?.minRpm ?? 450, max: snap.pump?.maxRpm ?? 3450 };
+  const runs = /light/i.test(c.name) || isSpa(c) ? [...RUNS, LONG_RUN] : RUNS, sched = (d.current?.schedules ?? []).filter(x => x.circuitId === id);
+  let pick = d.runFor?.[id] ?? 60, rpm = rpm0;
+  if (!runs.some(r => r[0] === pick)) pick = 60;
+  // frame 4: the spa's heat (heater mode 3 = on, 0 = off) and setpoint 80–104°; the heater only runs while the Spa circuit is on
+  const body = isSpa(c) ? snap.bodies?.[1] : null, heat0 = body?.heatMode === 3, set0 = Math.min(104, Math.max(80, body?.setPoint || 100));
+  let heat = heat0, setF = set0;
+  $('sheetBody').innerHTML = `<div class="shead"><h4>${esc(c.name)}</h4><button class="x" id="pcX" aria-label="Close">✕</button></div>
+    <p class="sub">${c.on ? 'On' : 'Off'} · ${sched.length ? `on schedule ${sched.map(x => `${hm(x.start)}–${hm(x.stop)}`).join(', ')}` : 'not on any schedule'}</p>
+    ${body ? `<div class="pc-heat"><div class="pc-lbl">Spa heat</div><div class="seg2 wide" id="pcHeat"><button data-h="0">Off</button><button data-h="1">On</button></div>
+      <div class="tstat" id="pcDial"><div class="dial"><button class="step" id="pcHdn" aria-label="Cooler">\u2212</button><div class="sp"><small>Heat to</small><b class="heat" id="pcSet"></b><span>${body.heating ? 'heating now' : 'heater off now'}</span></div><button class="step" id="pcHup" aria-label="Warmer">+</button></div></div></div>` : ''}
+    <div id="pcRun"${c.on ? ' hidden' : ''}><div class="pc-lbl">Run for</div><div class="pc-runs${runs.length > 4 ? ' five' : ''}" id="pcRuns">${runs.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
+    ${!body && rpm0 != null ? `<div class="pc-rpm"><div class="bt">Speed<small>whenever ${esc(c.name)} runs · ${lim.min.toLocaleString()}–${lim.max.toLocaleString()}</small></div><div class="stp"><button id="pcDn" aria-label="Slower">−</button><b id="pcRpm"></b><button id="pcUp" aria-label="Faster">+</button></div></div>` : ''}
+    <button class="primary" id="pcGo"></button>${c.on ? '<button class="link" id="pcOff" hidden>Turn off</button>' : ''}
+    <p class="fine" id="pcNote" style="margin-top:10px"></p>`;
+  const draw = () => {
+    document.querySelectorAll('#pcRuns button').forEach(b => b.classList.toggle('on', +b.dataset.m === pick));
+    if ($('pcRpm')) $('pcRpm').textContent = rpm.toLocaleString();
+    const sped = rpm0 != null && rpm !== rpm0, heated = !!body && (heat !== heat0 || (heat && setF !== set0));
+    if (body) { document.querySelectorAll('#pcHeat button').forEach(b => b.classList.toggle('on', +b.dataset.h === +heat)); $('pcDial').hidden = !heat; $('pcSet').innerHTML = `${setF}<sup>\u00b0</sup>`; }
+    $('pcGo').textContent = c.on ? (heated ? (heat ? `Save heat \u00b7 ${setF}\u00b0` : 'Turn spa heat off') : sped ? `Save ${rpm.toLocaleString()} RPM` : 'Turn off')
+      : body ? `Spa on${heat ? ` \u00b7 heat to ${setF}\u00b0` : ''} for ${runLabel(pick)}` : `Turn on for ${runLabel(pick)}`;
+    if ($('pcOff')) $('pcOff').hidden = !(sped || heated);
+    $('pcNote').textContent = body ? `The heater only runs while the Spa circuit is on. Setpoint 80\u2013104\u00b0. Autopilot never touches the spa, its heat, the lights or the heater; only you do.`
+      : c.on ? (sped ? `The new speed applies now and whenever ${c.name} runs, schedules included.` : '')
+      : `Turns itself off at ${clockAt(Date.now() + pick * 60_000)} (the controller's own timer, so it stops even if Solstice is offline).`;
+  };
+  const step = dv => { rpm = Math.max(lim.min, Math.min(lim.max, Math.round((rpm + dv) / 50) * 50)); draw(); };
+  if ($('pcRuns')) $('pcRuns').onclick = e => { const b = e.target.closest('button'); if (!b) return; pick = +b.dataset.m; draw(); };
+  if ($('pcDn')) { $('pcDn').onclick = () => step(-50); $('pcUp').onclick = () => step(50); }
+  if (body) {
+    $('pcHeat').onclick = e => { const b = e.target.closest('button'); if (!b) return; heat = b.dataset.h === '1'; draw(); };
+    $('pcHdn').onclick = () => { setF = Math.max(80, setF - 1); draw(); }; $('pcHup').onclick = () => { setF = Math.min(104, setF + 1); draw(); };
+  }
+  $('pcX').onclick = () => $('phone').classList.remove('open');
+  const close = () => $('phone').classList.remove('open');
+  $('pcGo').onclick = () => {
+    const sped = rpm0 != null && rpm !== rpm0, heated = !!body && (heat !== heat0 || (heat && setF !== set0));
+    const cmds = [...(heated ? [heat ? { kind: 'spaHeat', on: true, setF } : { kind: 'spaHeat', on: false }] : []), ...(sped ? [{ kind: 'speed', id, rpm }] : [])];
+    if (!c.on) cmds.push({ kind: 'circuit', id, on: true, minutes: pick }); else if (!sped && !heated) cmds.push({ kind: 'circuit', id, on: false });
+    close(); poolSend(S, ...cmds);
+  };
+  if ($('pcOff')) $('pcOff').onclick = () => { close(); poolSend(S, { kind: 'circuit', id, on: false }); };
+  draw(); $('phone').classList.add('open');
+}
+
+/* ---------- mockup w frame 5: the turnover planner (in place of the Pump schedule card) ---------- */
+const PL_COLOR = { pool: '#6cc4ff', skim: '#ff7a66', boost: 'rgba(255,122,102,.55)' };
+const pct = m => `${m / 1440 * 100}%`;
+let goalTimer = null;
+function drawPlanner(S) {
+  const d = S.pool, w = d.water, P = d.plan, C = d.current, sp = d.settings; if (!w || !P) return;
+  const mode = d.autopilot?.mode ?? sp.autopilot;
+  $('plMode').textContent = `Autopilot · ${mode === 'auto' ? 'Auto' : mode === 'off' ? 'Off' : 'Suggest'}`;
+  drawClearBanner(S);
+  // the ring: water moved so far today (readings) against the goal
+  const f = Math.min(1, w.movedTurnovers / w.goal), circ = 2 * Math.PI * 42;
+  $('plArc').setAttribute('stroke-dasharray', `${circ * f} ${circ}`);
+  $('plMoved').textContent = w.movedTurnovers.toFixed(1); $('plOf').textContent = `of ${w.goal.toFixed(1)} today`;
+  const boostId = sp.boostCircuit ?? 8, bUntil = d.until?.[boostId];
+  $('plTxt').innerHTML = `Water moved today: <b>${w.movedTurnovers.toFixed(1)} turnover${w.movedTurnovers === 1 ? '' : 's'}</b> of the <b>${w.goal.toFixed(1)}</b> goal${bUntil ? ', including your boost' : ''}. `
+    + (w.projectedTurnovers > w.movedTurnovers + .05 ? `The rest of today’s schedule brings it to <b>${w.projectedTurnovers.toFixed(1)}</b>.` : 'Nothing more is scheduled today.');
+  // today's programs on a 24 h bar (wrapping runs split at midnight), your running boost, and now
+  const segs = [], put = (a, b, c) => { if (b > a) segs.push(`<i style="left:${pct(a)};width:${pct(b - a)};background:${c}"></i>`); };
+  const colorOf = s => s.circuitId === boostId ? PL_COLOR.skim : PL_COLOR.pool;
+  for (const s of [...C.schedules].sort((a, b) => (a.circuitId === boostId) - (b.circuitId === boostId))) { if (s.stop > s.start) put(s.start, s.stop, colorOf(s)); else { put(s.start, 1440, colorOf(s)); put(0, s.stop || 1440, colorOf(s)); } }
+  const nowM = Math.floor(localHour() * 60);
+  if (bUntil) put(nowM, Math.min(1440, nowM + Math.round((bUntil - Date.now()) / 60_000)), PL_COLOR.boost);
+  $('plDay').innerHTML = segs.join('') + `<i class="now" style="left:${pct(nowM)}"></i>`;
+  const span = s => s.stop === s.start || (s.start === 0 && s.stop >= 1439) ? 'all day' : `${hm(s.start).replace(/([ap])$/, ' $1')}–${hm(s.stop).replace(/([ap])$/, ' $1')}`;
+  $('plList').innerHTML = C.schedules.map(s => `<div class="pl-row"><i style="background:${colorOf(s)}"></i><b>${esc(s.name)}${s.circuitId === boostId ? ' skim' : ''} · ${span(s)}</b><span>${s.rpm.toLocaleString()} RPM</span></div>`).join('')
+    + (bUntil ? `<div class="pl-row"><i style="background:${PL_COLOR.boost}"></i><b>Your boost · until ${clockAt(bUntil)}</b><span>${(speedsOf(d.snapshot).get(boostId) ?? 0).toLocaleString()} RPM</span></div>` : '')
+    || '<p class="fine">No pump programs on the controller.</p>';
+  $('plEdit').onclick = () => openEditor(S);
+  // the goal (owner only) and what the goal's plan costs a day
+  $('plGoal').textContent = w.goal.toFixed(1); $('plSkim').textContent = `${w.skimHours} h`;
+  $('ruleGoal').textContent = `goal: ${w.goal} turnover${w.goal === 1 ? '' : 's'}`;   // the Autopilot card's rule chip follows the goal
+  $('plGal').textContent = `${w.gallons.toLocaleString()} gal · ${w.goal} = about ${(Math.round(w.gallons * w.goal / 1000) * 1000).toLocaleString()} gal`;
+  const save = patch => { clearTimeout(goalTimer); goalTimer = setTimeout(async () => { try { S.pool = await api.poolGoal(patch()); drawPool(S); } catch (e) { drawPlanner(S); $('plNote').textContent = `Couldn’t save the goal: ${e.message}`; } }, 700); };   // back to the saved goal
+  let goal = w.goal, skim = w.skimHours;
+  const show = () => { $('plGoal').textContent = goal.toFixed(1); $('plSkim').textContent = `${skim} h`; save(() => ({ turnoverGoal: goal, skimHours: skim })); };
+  $('plGdn').onclick = () => { goal = Math.max(1, goal - .5); show(); }; $('plGup').onclick = () => { goal = Math.min(4, goal + .5); show(); };
+  $('plSdn').onclick = () => { skim = Math.max(0, skim - 1); show(); }; $('plSup').onclick = () => { skim = Math.min(3, skim + 1); show(); };
+  $('plNums').innerHTML = `<div><b>${P.hours} h</b><span>pump a day</span></div><div><b>${P.kwhPerDay}</b><span>kWh a day</span></div><div><b>${S.guest ? veil('$•') : P.costPerMonth == null ? '—' : money(P.costPerMonth)}</b><span>a month</span></div>`;
+  $('plNote').textContent = `The planner picks hours and speed to reach the goal for the least energy (${P.hours} h at ${P.rpm.toLocaleString()} RPM${P.boostHours ? ` with ${P.boostHours} h at ${sp.boostRpm.toLocaleString()}` : ''}), keeps the skim hour at the sunniest hour, and adds time on hot days (+1 h at 85°) and after rain. Water moved uses the flow model (no flow sensor on this pump), so turnovers are an estimate.`;
 }
 
 /* ---------- Autopilot ---------- */

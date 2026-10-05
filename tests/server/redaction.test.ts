@@ -261,7 +261,8 @@ describe('every guest-readable route', () => {
     expect(pool.spaSession).not.toHaveProperty('propaneUsd');
     expect(pool.snapshot).toEqual({ at: expect.any(Number), airTemp: 85, freezeMode: false, bodies: [{ temp: 88, setPoint: 0, heating: false }, { temp: 95, setPoint: 102, heating: false }] });
     expect(pool.applied).toEqual({ at: expect.any(Number) });
-    expect(pool.settings).toEqual({ gallons: 14995, spaGallons: 1000, designGpm: 120, filterRpm: 1500, boostRpm: 2400, uv: true, autopilot: 'suggest' });
+    expect(pool.settings).toEqual({ gallons: 14995, spaGallons: 1000, designGpm: 120, filterRpm: 1500, boostRpm: 2400, uv: true, autopilot: 'suggest', turnoverGoal: 3, skimHours: 1, boostCircuit: 8 });
+    expect(Object.keys(pool.water).sort()).toEqual(['gallons', 'goal', 'movedTurnovers', 'projectedTurnovers', 'skimHours']);   // mockup w frame 5: the ring, no money
     for (const k of ['rate', 'todayCost']) expect(pool).not.toHaveProperty(k);
     const ownerPool = await getJson('/api/appliances/pool', owner);
     expect(ownerPool.rate).toBeGreaterThan(0);                               // the seed's bill gives the owner a rate
@@ -389,6 +390,8 @@ describe('everything else is refused to guests', () => {
     expect((await call('/api/models', { cookie: guest })).status).toBe(401);
     expect((await call('/api/models', { cookie: preview })).status).toBe(401);
     expect((await call('/api/appliances/ac/untrim', { cookie: guest, method: 'POST', json: {} })).status).toBe(401);
+    // mockup w: the pool switches are the owner's alone (a guest link never reaches the handler)
+    expect((await call('/api/appliances/pool/command', { cookie: guest, method: 'POST', json: { kind: 'circuit', id: 5, on: true, minutes: 60 } })).status).toBe(401);
     // unknown paths (and case or slash variants of known ones) are refused too: the allow-list matches exact paths
     for (const path of ['/api/nope', '/api/site/', '/API/SITE', '/api/bills?x=1', '/api/now/extra']) expect((await call(path, { cookie: guest })).status, path).toBe(401);
     expect((await call('/API/Now/', { cookie: guest })).status).toBe(200);    // Express matches case-insensitively; so does the allow-list

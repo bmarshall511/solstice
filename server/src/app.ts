@@ -16,14 +16,14 @@ import { SOLAR, warrantedDcPct, systemYear } from './system.js';
 import { siteLocation, exactLocation } from './site.js';
 import { currentTariff, netEnergyCost, NO_TARIFF } from './tariff.js';
 import { appliances, comingSoon } from './appliances/index.js';
-import { poolDetail, applyPlan, restorePrevious } from './appliances/pool.js';
+import { poolDetail, applyPlan, restorePrevious, poolCommand, PoolUnavailable, goalPatchError, scheduleError, saveSchedule, rebaseline, POOL_DEFAULTS, activeClearUp, startClearUp, extendClearUp, endClearUp, finishClearUpIfDue, clearUpError, CLEARUP_DAYS_MAX } from './appliances/pool.js';
 import { readPool } from './appliances/screenlogic.js';
 import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, bandFor, dismissSuggestion, recordNest, observeHold } from './appliances/ac.js';
 import { oidcError, eventOf, seenEvent, applyTraits, isSettingEvent } from './appliances/nestEvents.js';
 import { applianceDay } from './appliances/day.js';
 import { cronTick } from './appliances/sampling.js';
 import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest, ownerCommand, type NestState } from './appliances/nest.js';
-import { GuardRefusal, explainRefusal, type ManualCommand } from './appliances/guards.js';
+import { GuardRefusal, explainRefusal, type ManualCommand, type PoolOwnerCommand } from './appliances/guards.js';
 import { pvsRouter, prunePvs } from './pvs.js';
 import { panelsDay, panelAlerts, panelWatch } from './panels.js';
 import { flowsFor, FlowsInputError } from './flows.js';
@@ -474,18 +474,63 @@ app.post('/api/appliances/pool/apply-tomorrow', wrap(async (req, res) => {
   await kv.set(`${id}:pool:pending`, null as any);
   res.json(r);
 }));
+/** The owner's own pool commands (mockup w): {kind:'circuit', id, on, minutes}, {kind:'speed', id, rpm} or {kind:'spaHeat', on, setF}; answers the fresh Pool card. */
+app.post('/api/appliances/pool/command', express.json({ limit: '1kb' }), wrap(async (req, res) => {
+  const b = req.body ?? {}, kind = String(b.kind ?? ''), id = Number(b.id);
+  const cmd = kind === 'circuit' ? { kind, id, on: b.on === true ? true : b.on === false ? false : (null as any), minutes: b.minutes == null ? undefined : Number(b.minutes) }
+    : kind === 'speed' ? { kind, id, rpm: Number(b.rpm) }
+    : kind === 'spaHeat' ? { kind, on: b.on === true ? true : b.on === false ? false : (null as any), setF: b.setF == null ? undefined : Number(b.setF) } : null;
+  if (!cmd) return res.status(400).json({ error: 'unknown pool command' });
+  const sid = site(req);
+  try { await poolCommand(sid, cmd as PoolOwnerCommand); }
+  catch (e) { if (e instanceof GuardRefusal) return res.status(400).json({ error: e.reason }); if (e instanceof PoolUnavailable) return res.status(503).json({ error: e.message }); throw e; }
+  res.json(await poolDetail(sid, await settingsFor(req), await rateFor(sid)));
+}));
+/** Frame 7: save the Pool and High Speed runs ({schedules:[{circuitId,start,stop}], speeds?:[{circuitId,rpm}]}); answers the fresh Pool card. */
+app.post('/api/appliances/pool/schedule', express.json({ limit: '4kb' }), wrap(async (req, res) => {
+  const sid = site(req), settings = await settingsFor(req), rate = await rateFor(sid), bad = scheduleError(req.body, { ...POOL_DEFAULTS, ...(settings.pool ?? {}) });
+  if (bad) return res.status(400).json({ error: bad });
+  if (await activeClearUp(sid)) return res.status(409).json({ error: 'A Clear-up is running; end it first' });
+  try { await saveSchedule(sid, req.body, settings); }
+  catch (e) { if (e instanceof GuardRefusal) return res.status(400).json({ error: e.reason }); throw e; }
+  res.json(await poolDetail(sid, await settingsFor(req), rate));
+}));
+/** Frame 6: Clear-up. {action:'start', days, rpm}, {action:'extend'} or {action:'end'}; answers the fresh Pool card. */
+app.post('/api/appliances/pool/clearup', express.json({ limit: '1kb' }), wrap(async (req, res) => {
+  const b = req.body ?? {}, sid = site(req), settings = await settingsFor(req), rate = await rateFor(sid);
+  try {
+    if (b.action === 'start') { const bad = clearUpError(b); if (bad) return res.status(400).json({ error: bad }); if (await activeClearUp(sid)) return res.status(409).json({ error: 'A Clear-up is already running' }); await startClearUp(sid, { days: b.days, rpm: b.rpm }, settings); }
+    else if (b.action === 'extend') { const c = await activeClearUp(sid); if (!c) return res.status(409).json({ error: 'No Clear-up is running' }); if (c.days >= CLEARUP_DAYS_MAX + 2) return res.status(400).json({ error: 'That is long enough; end it and start a new one if the water needs more' }); await extendClearUp(sid); }
+    else if (b.action === 'end') { if (!(await activeClearUp(sid))) return res.status(409).json({ error: 'No Clear-up is running' }); await endClearUp(sid, settings, rate, 'you'); }
+    else return res.status(400).json({ error: 'action must be start, extend or end' });
+  } catch (e) { if (e instanceof GuardRefusal) return res.status(400).json({ error: e.reason }); throw e; }
+  res.json(await poolDetail(sid, settings, rate));
+}));
+/** Frame 5's goal: turnovers a day and the daily skim hours. Saved with the owner's pool settings; the next plan uses them. */
+app.post('/api/appliances/pool/goal', express.json({ limit: '1kb' }), wrap(async (req, res) => {
+  const bad = goalPatchError(req.body); if (bad) return res.status(400).json({ error: bad });
+  const patch = Object.fromEntries(['turnoverGoal', 'skimHours'].filter(k => k in req.body).map(k => [k, req.body[k]]));
+  const cur = (await settingsFor(req)).pool ?? {};
+  if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ pool: { ...cur, ...patch } })]);
+  else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), pool: { ...cur, ...patch } });
+  const sid = site(req);
+  res.json(await poolDetail(sid, await settingsFor(req), await rateFor(sid)));
+}));
 app.post('/api/appliances/pool/autopilot', express.json(), wrap(async (req, res) => {
   const mode = String(req.body?.mode ?? ''); if (!['off', 'suggest', 'auto'].includes(mode)) return res.status(400).json({ error: 'mode must be off, suggest or auto' });
   const cur = (await settingsFor(req)).pool ?? {};
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ pool: { ...cur, autopilot: mode } })]);
   else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), pool: { ...cur, autopilot: mode } });
+  // choosing Auto means "plan over what runs now": the controller's programs become the baseline, so they are not taken for an outside edit
+  const snap = mode === 'auto' ? await kv.get<any>(`${site(req)}:pool:last`) : null;
+  if (snap?.schedules) await rebaseline(site(req), snap, { ...POOL_DEFAULTS, ...cur }, 'auto');
   res.json({ ok: true, mode });
 }));
 /** Nightly (8:15 PM Central): Autopilot re-plans tomorrow for every site; Auto mode writes it, Suggest stores it. */
 app.get('/api/cron/pool', wrap(async (req, res) => {
   if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
   const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL'), out: Record<string, unknown> = {};
-  for (const s of sites) { const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; out[s.id] = await poolDetail(s.id, settings, await rateFor(s.id), { fresh: true, act: true }).then(d => d.autopilot).catch(e => ({ error: e.message })); }
+  for (const s of sites) { const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; await finishClearUpIfDue(s.id, settings, await rateFor(s.id)).catch(e => console.error('[solstice] clear-up end failed', e.message)); out[s.id] = await poolDetail(s.id, settings, await rateFor(s.id), { fresh: true, act: true }).then(d => d.autopilot).catch(e => ({ error: e.message })); }
   res.json(out);
 }));
 app.post('/api/appliances/pool/restore', wrap(async (req, res) => { await restorePrevious(site(req), await readPool()); res.json({ ok: true }); }));

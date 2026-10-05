@@ -1,7 +1,7 @@
 // Pentair ScreenLogic (EasyTouch/IntelliTouch) over Pentair's remote dispatcher, using node-screenlogic.
 // Serverless-friendly: every call opens a connection, does its work and closes. Credentials come from the environment only.
 import { RemoteLogin, UnitConnection } from 'node-screenlogic';
-import { guardPoolWrite, GuardRefusal, HEAT_CMD_UNCHANGED, type PoolGuardContext } from './guards.js';
+import { guardPoolWrite, guardOwnerPool, GuardRefusal, HEAT_CMD_UNCHANGED, HEAT_MODE_HEATER, HEAT_MODE_OFF, type PoolGuardContext, type PoolOwnerCommand } from './guards.js';
 
 export type PoolSchedule = { id: number; circuitId: number; start: number; stop: number; dayMask: number; flags: number; heatCmd: number; heatSetPoint: number };
 export type PoolSnapshot = {
@@ -93,5 +93,45 @@ export async function writePoolPlan(opts: { pumpId: number; speeds: Array<{ circ
     }
     for (const e of removed) if (!added.includes(e.scheduleId)) await c.schedule.deleteScheduleEventByIdAsync(e.scheduleId);
     return { removed: removed.map(e => ({ id: e.scheduleId, circuitId: e.circuitId, start: hhmm(e.startTime), stop: hhmm(e.stopTime), dayMask: e.dayMask })), added };
+  });
+}
+
+/** A command that may outlive its ack (Pentair's dispatcher is slow): a timeout is not a failure, the read-back decides. */
+const tolerant = async (f: () => Promise<unknown>) => { try { await f(); } catch (e: any) { if (!/time ?out/i.test(String(e?.message))) throw e; } };
+/** Whether a snapshot shows the owner's command took. */
+/** The spa body in a snapshot (the controller's second body). */
+export const spaBody = (snap: PoolSnapshot) => snap.bodies.find(b => b.id === 2) ?? snap.bodies[1];
+export function commandTook(cmd: PoolOwnerCommand, snap: PoolSnapshot) {
+  if (cmd.kind === 'spaHeat') { const b = spaBody(snap); return !!b && b.heatMode === (cmd.on ? HEAT_MODE_HEATER : HEAT_MODE_OFF) && (!cmd.on || b.setPoint === cmd.setF); }
+  return cmd.kind === 'circuit' ? snap.circuits.find(c => c.id === cmd.id)?.on === cmd.on
+    : snap.pump?.circuits.find(c => c.circuitId === cmd.id)?.speed === cmd.rpm;
+}
+/**
+ * The owner's own command (mockup w), in one session: read the controller, check guardOwnerPool against what it reports, write, then
+ * read back until it shows the change (up to four reads 1.5 s apart). A circuit turned on gets its egg timer set to the run time first,
+ * so the controller turns it off by itself. Throws GuardRefusal before sending anything, or an Error when the read-back never agrees.
+ */
+export async function writeOwnerPool(cmd: PoolOwnerCommand, run: typeof withUnit = withUnit, pauseMs = 1500): Promise<PoolSnapshot> {
+  return run(async c => {
+    const same: typeof withUnit = fn => fn(c) as any, before = await readPool(same);
+    const g = guardOwnerPool(cmd, { circuits: before.circuits, pumpCircuits: (before.pump?.circuits ?? []).map(x => x.circuitId), minRpm: before.pump?.minRpm, maxRpm: before.pump?.maxRpm, hasSpa: !!spaBody(before) });
+    if (!g.ok) throw new GuardRefusal('pool', g.reason);
+    if (cmd.kind === 'spaHeat') {   // body index 1 is the spa; heat mode 3 is the heater (propane here), 0 off
+      if (cmd.on) await tolerant(() => c.bodies.setSetPointAsync(1, cmd.setF!));
+      await tolerant(() => c.bodies.setHeatModeAsync(1, cmd.on ? HEAT_MODE_HEATER : HEAT_MODE_OFF));
+    } else if (cmd.kind === 'circuit') {
+      if (cmd.on) await tolerant(() => c.circuits.setCircuitRuntimebyIdAsync(cmd.id, cmd.minutes));
+      await tolerant(() => c.circuits.setCircuitStateAsync(cmd.id, cmd.on));
+    } else {
+      const slots: Array<{ circuitId: number }> = ((await c.pump.getPumpStatusAsync(before.pump!.id)) as any).pumpCircuits;
+      const idx = slots.findIndex(x => x.circuitId === cmd.id);   // the slot index, not the circuit id (CLAUDE.md)
+      if (idx < 0) throw new Error(`Circuit ${cmd.id} has no pump speed slot on the controller`);
+      await tolerant(() => c.pump.setPumpSpeedAsync(before.pump!.id, idx, cmd.rpm, true));
+    }
+    for (let i = 0; i < 4; i++) {
+      if (i) await new Promise(r => setTimeout(r, pauseMs));
+      const after = await readPool(same); if (commandTook(cmd, after)) return after;
+    }
+    throw new Error('The controller did not confirm the change');
   });
 }

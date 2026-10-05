@@ -76,6 +76,10 @@ export const api = {
   acUntrim: () => send('POST', 'appliances/ac/untrim'),
   // v-ac-control: the owner's own thermostat commands and the hold banner
   acCommand: cmd => send('POST', 'appliances/ac/command', cmd),
+  poolCommand: cmd => send('POST', 'appliances/pool/command', cmd),
+  poolGoal: patch => send('POST', 'appliances/pool/goal', patch),
+  poolClearUp: body => send('POST', 'appliances/pool/clearup', body),
+  poolSchedule: body => send('POST', 'appliances/pool/schedule', body),
   acHold: action => send('POST', 'appliances/ac/hold', { action }),
   breakdown: range => get(`breakdown?range=${encodeURIComponent(range)}`),   // mockup y
   acSuggestion: (action, key) => send('POST', 'appliances/ac/suggestion', { action, key }),

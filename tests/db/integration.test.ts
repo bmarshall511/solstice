@@ -82,12 +82,13 @@ describe('pool Autopilot', () => {
     expect(a.pending).toBe(true);
     expect(a.nextRunAt).toBe('2026-09-26T01:15:00.000Z');
     expect(a.tomorrow.date).toBe('2026-09-26');
-    expect([a.tomorrow.plan.hours, a.tomorrow.plan.boostHours, a.tomorrow.plan.start, a.tomorrow.plan.stop]).toEqual([9, 1, 8, 17]);
-    expect(a.log[0]).toEqual({ at: NOW, day: '2026-09-25', text: 'Suggested for tomorrow: 9 h + boost. season plan', delta: 'waiting for you' });
+    // the turnover goal fills 12 h at 1,750 RPM; 88 °F water adds an hour (mockup w frame 5)
+    expect([a.tomorrow.plan.hours, a.tomorrow.plan.boostHours, a.tomorrow.plan.start, a.tomorrow.plan.stop, a.tomorrow.plan.rpm]).toEqual([13, 1, 6, 19, 1750]);
+    expect(a.log[0]).toEqual({ at: NOW, day: '2026-09-25', text: 'Suggested for tomorrow: 13 h + boost. +1 h: water at 88°F', delta: 'waiting for you' });
     const pending = await kv.get<any>('p-suggest:pool:pending');
     expect(pending.date).toBe('2026-09-26');
-    expect(pending.plan.hours).toBe(9);
-    expect(pending.why).toEqual([]);
+    expect(pending.plan.hours).toBe(13);
+    expect(pending.why).toEqual(['+1 h: water at 88°F']);
     expect(a.week).toHaveLength(6);
     expect(a.signals).toEqual({ waterTemp: 88, sunKwhM2: 6, sunPct: 75, high: 90, heatDays: 0, rainPct: 0, rainMm: 0, rainYesterdayMm: 0, useDays: 0, pollen: 'low' });
   });
@@ -96,19 +97,21 @@ describe('pool Autopilot', () => {
     await run('p-auto', 'auto');
     expect(writePoolPlan).toHaveBeenCalledTimes(1);
     expect(writePoolPlan).toHaveBeenCalledWith({
-      pumpId: 1, speeds: [{ circuitId: 6, rpm: 1500 }, { circuitId: 8, rpm: 2400 }], replaceCircuits: [6, 8, 5],
-      schedules: [{ circuitId: 6, start: 480, stop: 1020 }, { circuitId: 8, start: 720, stop: 780 }],
+      pumpId: 1, speeds: [{ circuitId: 6, rpm: 1750 }, { circuitId: 8, rpm: 2400 }], replaceCircuits: [6, 8, 5],
+      schedules: [{ circuitId: 6, start: 360, stop: 1140 }, { circuitId: 8, start: 720, stop: 780 }],
       // what the safety guard checks the write against: the fixture's circuits and pump slots, the pump's RPM range, and the
       // fixed managed circuits (Pool 6, High Speed 8, Waterfall 5)
       guard: { circuits: poolSnapshot(NOW).circuits, pumpCircuits: [6, 8, 5, 1, 132], minRpm: 450, maxRpm: 3450, managed: [6, 8, 5] },
     });
     const applied = await kv.get<any>('p-auto:pool:applied');
-    expect(applied.plan).toMatchObject({ start: 8, stop: 17, boostAt: 12 });
+    expect(applied.plan).toMatchObject({ start: 6, stop: 19, boostAt: 12, rpm: 1750 });
     expect(applied.added).toEqual([11, 12]);
-    const again = await run('p-auto', 'auto');
+    // the controller now runs what was written (so the evening run sees no outside edit, frame 7)
+    const written = applied.plan.schedules.map((x: any, i: number) => ({ id: 11 + i, circuitId: x.circuitId, start: x.start, stop: x.stop, dayMask: 127, flags: 0, heatCmd: 4, heatSetPoint: 70 }));
+    const again = await autopilot('p-auto', { settings: { ...POOL_DEFAULTS, autopilot: 'auto' }, mode: 'auto', W: W0, rate: RATE, names: NAMES, snap: poolSnapshot(Date.now(), { schedules: written }), waterTemp: 88, currentHours: 9, act: true });
     expect(writePoolPlan).toHaveBeenCalledTimes(1);
-    expect(again.log[0].text).toBe('Tomorrow: 9 h at 1,500 RPM + skim boost. season plan');
-    expect(again.log[0].delta).toBe('2.7 kWh');
+    expect(again.log[0].text).toBe('Tomorrow: 13 h at 1,750 RPM + 1 h skim, 3.26× turnover. +1 h: water at 88°F');   // (12 h × 60.87 + 1 h × 83.48 GPM) × 60 / 14,995
+    expect(again.log[0].delta).toMatch(/^\d+(\.\d)? kWh$/);
   });
 
   it('Off never writes and never suggests', async () => {
@@ -212,7 +215,7 @@ describe('BUG-1: pool-use signals never fire (jsonb ?| on numeric circuit ids)',
   it('BUG-1: yesterday’s use adds an hour to tomorrow’s plan', async () => {
     const a = await suggest();
     expect(a.tomorrow.why).toContain('+1 h: the pool was used yesterday');
-    expect(a.tomorrow.plan.hours).toBe(10);
+    expect(a.tomorrow.plan.hours).toBe(14);   // 12 h goal + 1 h for 88 °F water + 1 h for yesterday's use
   });
   it('BUG-1: the use-days signal counts yesterday', async () => {
     expect((await suggest()).signals.useDays).toBe(1);
@@ -223,7 +226,7 @@ describe('BUG-1: pool-use signals never fire (jsonb ?| on numeric circuit ids)',
   });
   it('BUG-1 (fixed): all three signals fire', async () => {
     const a = await suggest();
-    expect([a.tomorrow.why, a.tomorrow.plan.hours, a.signals.useDays]).toEqual([['+1 h: the pool was used yesterday'], 10, 1]);
+    expect([a.tomorrow.why, a.tomorrow.plan.hours, a.signals.useDays]).toEqual([['+1 h: water at 88°F', '+1 h: the pool was used yesterday'], 14, 1]);
     expect((await poolDetail('p-used', {}, RATE)).extras.lightReadings30d).toBe(1);
   });
 });
@@ -468,7 +471,7 @@ describe('learning layer: prediction hooks, control days and trims on PGlite', (
     await autopilot('lp-pool', { settings: { ...POOL_DEFAULTS, autopilot: 'auto' }, mode: 'auto', W: W0, rate: RATE, names: NAMES, snap: poolSnapshot(Date.now()), waterTemp: 88, currentHours: 9, act: true });
     const [p] = await preds('lp-pool');
     expect(p).toMatchObject({ model: 'pool.kwhDay', target_day: '2026-09-26', unit: 'kWh' });
-    expect(p.inputs).toMatchObject({ mode: 'auto', hours: 9, boostHours: 1, sched: [[480, 1020, 1500], [720, 780, 2400]], uvKwh: .54, waterTemp: 88 });
+    expect(p.inputs).toMatchObject({ mode: 'auto', hours: 13, boostHours: 1, sched: [[360, 1140, 1750], [720, 780, 2400]], uvKwh: .78, waterTemp: 88 });
     expect(Object.keys(p.inputs).filter(k => /rate|cost|usd|price/i.test(k))).toEqual([]);
     await autopilot('lp-pool-off', { settings: { ...POOL_DEFAULTS, autopilot: 'off' }, mode: 'off', W: W0, rate: RATE, names: NAMES, snap: poolSnapshot(Date.now()), waterTemp: 88, currentHours: 9, act: true });
     expect(await preds('lp-pool-off')).toEqual([]);

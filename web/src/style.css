@@ -955,3 +955,88 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .ob-sum span{font-size:11px;color:var(--dim)}
 #nightSum+p{margin-top:10px}
 /* end z-overnight-baseline */
+
+/* ---------- w-pool-control frames 1–2: the switches and each circuit's sheet ---------- */
+.pc-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}
+.pc-grid:empty{display:none}
+.pc{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:4px 9px;padding:10px 11px;border-radius:15px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b);min-width:0}
+.pc i{width:9px;height:9px;border-radius:50%;background:var(--mute)}
+.pc b{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc small{grid-column:2/4;font:500 10.5px "JetBrains Mono";color:var(--mute)}
+.pc em{font-style:normal;font-size:15px;color:var(--mute);padding:0 2px 0 8px}
+.pc:focus-visible{outline:2px solid var(--home);outline-offset:2px}
+.pc.on{border-color:rgba(108,196,255,.45);background:rgba(108,196,255,.09)}
+.pc.on i{background:#6cc4ff;box-shadow:0 0 8px #6cc4ff}
+.pc.on small{color:#9fd6ff}
+.pc.send{border-color:rgba(255,193,94,.45)}.pc.send small{color:var(--solar)}
+.pc-err{grid-column:1/-1;color:var(--warn)!important;margin-top:0!important}
+.pc-lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-top:16px}
+.pc-runs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+.pc-runs.five{grid-template-columns:repeat(5,1fr)}
+.pc-runs button{all:unset;cursor:pointer;text-align:center;padding:11px 0;border-radius:13px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);font:500 13px "JetBrains Mono"}
+.pc-runs button.on{border-color:rgba(78,240,166,.5);background:rgba(78,240,166,.1)}
+.pc-rpm{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
+.pc-rpm .bt{font-size:13.5px;font-weight:600;min-width:0}.pc-rpm .bt small{display:block;font-size:11px;color:var(--mute);font-weight:400}
+#pcGo{width:100%;box-sizing:border-box;margin-top:14px;background:var(--batt);color:#04140c}
+/* frames 3–4: the Boost button and sheet, spa heat */
+.pc-row{display:flex;gap:8px;margin-top:10px}
+.pc-row:empty{display:none}
+.pc-row button{all:unset;box-sizing:border-box;cursor:pointer;flex:1;display:flex;align-items:center;justify-content:center;gap:7px;padding:11px 8px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);font-weight:600;font-size:12.5px}
+.pc-row button small{font:500 10.5px "JetBrains Mono";color:var(--mute)}
+.pc-row button.on{border-color:rgba(255,122,102,.5);background:rgba(255,122,102,.1)}
+.pc-row button.send{border-color:rgba(255,193,94,.45)}
+.pc-heat .seg2{display:flex;margin-top:10px}.pc-heat .seg2 button{flex:1;text-align:center;padding:9px 6px}
+.pc-heat .tstat{margin-top:4px}
+/* frame 6: Clear-up (the row button, the banner on the planner, its badge) */
+.pc-row button.cu{border-color:rgba(108,196,255,.5);background:rgba(108,196,255,.1)}
+.badge.cu{color:#9fd6ff;border-color:rgba(108,196,255,.4);background:rgba(108,196,255,.08)}
+.pl-clear{margin-top:12px;padding:12px 14px;border-radius:16px;background:rgba(108,196,255,.09);border:1px solid rgba(108,196,255,.35);font-size:12.5px;line-height:1.5;color:var(--dim)}
+.pl-clear .hh{display:flex;align-items:center;gap:8px}
+.pl-clear .hh i{flex:none;width:8px;height:8px;border-radius:50%;background:#6cc4ff;box-shadow:0 0 10px #6cc4ff}
+.pl-clear .hh b{color:var(--text);font-weight:700;font-size:13.5px}
+.pl-clear .hh em{margin-left:auto;font:500 10.5px "JetBrains Mono";font-style:normal;color:#9fd6ff;flex:none}
+.pl-clear p{margin-top:4px}
+.pl-clear .bar{height:4px;border-radius:2px;background:rgba(255,255,255,.08);margin-top:9px;overflow:hidden}
+.pl-clear .bar i{display:block;height:100%;background:#6cc4ff}
+.pl-clear .row2{display:flex;gap:8px;margin-top:10px}
+.pl-clear .row2 button{all:unset;cursor:pointer;flex:1;text-align:center;padding:9px 10px;border-radius:12px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);font-weight:600;font-size:12.5px;color:var(--text)}
+.pc-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}
+.pc-nums div{padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
+.pc-nums b{display:block;font:500 15px "JetBrains Mono"}.pc-nums span{font-size:11px;color:var(--dim)}
+/* frame 7: the schedule editor sheet */
+.se-list{display:grid;gap:8px;margin-top:12px}
+.se-row{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:10px 1fr auto;gap:2px 10px;align-items:center;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
+.se-row.on{border-color:rgba(78,240,166,.45)}
+.se-row i{width:10px;height:10px;border-radius:3px}
+.se-row b{font-size:13.5px;font-weight:600}
+.se-row small{grid-column:2/3;font:500 11px "JetBrains Mono";color:var(--dim)}
+.se-row em{font-style:normal;color:var(--mute);font-size:13px;grid-row:1/3;grid-column:3}
+.se-add{all:unset;box-sizing:border-box;cursor:pointer;display:block;text-align:center;padding:10px;border-radius:14px;border:1px dashed rgba(255,255,255,.2);color:var(--dim);font-size:12.5px;margin-top:8px;width:100%}
+.se-time{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.se-time label{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
+.se-time small{display:block;font-size:11px;color:var(--mute)}
+.se-time input{all:unset;font:500 17px "JetBrains Mono";color:var(--text);width:100%}
+.se-time input::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.5}
+#seDel{width:100%;box-sizing:border-box;justify-content:center;margin-top:10px}
+/* frame 5: the turnover planner (the Pump schedule card) */
+.pl-goal{display:flex;align-items:center;gap:14px;margin-top:12px}
+.pl-ring{flex:none;width:92px;height:92px;position:relative}
+.pl-ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.pl-ring .c{position:absolute;inset:0;display:grid;place-items:center;text-align:center}
+.pl-ring .c b{display:block;font-size:22px;font-weight:300;line-height:1}
+.pl-ring .c small{font-size:10px;color:var(--mute)}
+.pl-goal .gt{font-size:12.5px;color:var(--dim);line-height:1.5;min-width:0}
+.pl-goal .gt b{color:var(--text)}
+.pl-day{position:relative;height:30px;border-radius:9px;background:rgba(255,255,255,.04);margin-top:14px;overflow:hidden}
+.pl-day i{position:absolute;top:0;bottom:0;border-radius:4px}
+.pl-day i.now{width:2px;background:#fff;opacity:.7;border-radius:0}
+.pl-tlab{display:flex;justify-content:space-between;font:500 9px "JetBrains Mono";color:var(--mute);margin-top:4px}
+.pl-list{display:grid;gap:6px;margin-top:12px}
+.pl-row{display:grid;grid-template-columns:10px 1fr auto;gap:2px 10px;align-items:baseline;font-size:12.5px;color:var(--dim)}
+.pl-row i{width:10px;height:10px;border-radius:3px;align-self:center}
+.pl-row b{color:var(--text);font-weight:600;min-width:0}
+.pl-row span{font:500 11.5px "JetBrains Mono";color:var(--text)}
+.pl-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}
+.pl-nums div{padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
+.pl-nums b{display:block;font:500 15px "JetBrains Mono"}.pl-nums span{font-size:11px;color:var(--dim)}
+/* end w-pool-control */

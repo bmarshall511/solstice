@@ -13,7 +13,7 @@ import { initPanels, drawPerformance, roofHud } from './views/panels.js';
 import { drawAlerts, initPlanner, drawAC, drawOvernight, drawHealth, initOutage, initBreakdown } from './views/insights.js';
 import { drawSettings, drawConnections, openRawData, applyAlertPrefs } from './views/settings.js';
 import { every } from './lib/poll.js';
-import { initAppliances, poolTwin, drawPool, freshPool } from './views/appliances.js';
+import { initAppliances, poolTwin, drawPool, freshPool, tickBoost } from './views/appliances.js';
 import { initAc, thermalTwin, drawAc, freshAc } from './views/ac.js';
 import { initLearn } from './views/learn.js';
 import { createDayRing } from './scenes/dayring.js';
@@ -261,7 +261,7 @@ function frame(now) {
   }
 }
 requestAnimationFrame(frame);
-setInterval(() => { if (document.hidden) return; safe(renderLive)(S); safe(sideSummary)(); safe(freshness)(S); safe(freshPool)(S); safe(freshAc)(S); }, 1000);
+setInterval(() => { if (document.hidden) return; safe(renderLive)(S); safe(sideSummary)(); safe(freshness)(S); safe(freshPool)(S); safe(tickBoost)(S); safe(freshAc)(S); }, 1000);
 
 function sideSummary() {
   const r = S.live; if (!r) return;
