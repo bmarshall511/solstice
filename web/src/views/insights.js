@@ -141,13 +141,33 @@ function detail(p, d) {
 
 export function drawOvernight(S) {
   const N = (S.overnight ?? []).filter(n => n.date < localDate()); if (N.length < 5) return;
-  const mx = Math.max(...N.map(n => n.kw)) * 1.1, X = i => 8 + i / (N.length - 1) * 294, Y = v => 90 - v / mx * 80;
-  let o = `<path d="${path(N.map((n, i) => [X(i), Y(n.kw)]))}" fill="none" stroke="#c4a2ff" stroke-width="1.8"/>`;
+  const mx = Math.max(...N.map(n => n.kw)) * 1.1, X = i => 8 + i / (N.length - 1) * 294, Y = v => 90 - v / mx * 80, w = Math.max(1, 294 / N.length - 1);
+  // one stacked bar a night (mockup z): always-on, then AC and the pump on nights the Nest readings cover, then the rest
+  let o = '';
+  N.forEach((n, i) => {
+    let y0 = 90; const x = (X(i) - w / 2).toFixed(1);
+    const seg = (v, c) => { if (!(v > 0)) return; const h = v / mx * 80; o += `<rect x="${x}" y="${(y0 - h).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${c}"/>`; y0 -= h; };
+    const base = n.base ?? 0; seg(base, '#c4a2ff');
+    if (n.split) { seg(n.ac, '#f4a46e'); seg(n.pump, '#7cc4ff'); }
+    seg(n.kw - base - (n.split ? (n.ac ?? 0) + (n.pump ?? 0) : 0), 'rgba(255,255,255,.22)');
+  });
+  const first = N.findIndex(n => n.split);
+  if (first > 0) o += `<line x1="${X(first - .5)}" x2="${X(first - .5)}" y1="8" y2="90" stroke="rgba(255,255,255,.25)" stroke-dasharray="2 3"/>` + svgText(X(first - .5) - 3, 14, 'Nest from here', { size: 8.5, anchor: 'end' });
   o += svgText(X(0), 106, niceDate(N[0].date), { size: 9 }) + svgText(X(N.length - 1), 106, niceDate(N.at(-1).date), { size: 9, anchor: 'end' });
-  const min = Math.min(...N.map(n => n.kw)); o += `<line x1="8" x2="302" y1="${Y(min)}" y2="${Y(min)}" stroke="rgba(255,255,255,.15)" stroke-dasharray="3 3"/>` + svgText(302, Y(min) - 4, `lowest ${(min * 1000).toFixed(0)} W`, { size: 9, anchor: 'end' });
   $('nightChart').innerHTML = o;
-  const last7 = N.slice(-7).reduce((a, n) => a + n.kw, 0) / Math.min(7, N.length);
-  $('nightTxt').innerHTML = `Between 1 and 5 AM your home averages <b style="color:var(--text)">${last7.toFixed(1)} kW</b> this week. The lowest night recently was ${(min * 1000).toFixed(0)} W, which is roughly your always-on load (fridges, pool pump, network, standby). The rest is overnight AC.`;
+  $('nightSub').textContent = `1–5 AM · ${N.length} nights`;
+  $('nightKey').hidden = $('nightSum').hidden = false;
+  const W = N.slice(-7), avg = (a, f) => { const v = a.map(f).filter(x => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
+  const kw = avg(W, n => n.kw), base = avg(W, n => n.base), sp = W.filter(n => n.split), ac = avg(sp, n => n.ac), pump = avg(sp, n => n.pump);
+  const f = v => v == null ? '—' : v.toFixed(1);
+  $('nightSum').innerHTML = [[base, 'always-on'], [ac, 'AC'], [pump, 'pool pump']].map(([v, l]) => `<div><b>${f(v)}</b><span>kW ${l}</span></div>`).join('');
+  const parts = [base != null && `${f(base)} kW always-on (fridges, network, standby)`, ac >= .05 && `${f(ac)} kW AC`, pump >= .05 && `${f(pump)} kW the pool pump`].filter(Boolean);
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0];
+  const none = sp.length ? [ac === 0 && 'the AC', pump === 0 && 'the pool pump'].filter(Boolean) : [];   // a part under 0.05 kW that did run is just left out
+  $('nightTxt').innerHTML = `Between 1 and 5 AM your home averaged <b style="color:var(--text)">${f(kw)} kW</b> this week${list ? `: ${list}` : ''}.`
+    + (none.length ? ` ${none.length === 2 ? "The AC and the pool pump didn’t run" : `${none[0][0].toUpperCase()}${none[0].slice(1)} didn’t run`}.` : '')
+    + (base != null ? ' The always-on part is the same figure as in Where your energy goes.' : '')
+    + (sp.length ? '' : ' The AC and the pump can’t be split out on nights without thermostat readings.');
 }
 
 /* ---------- data health ---------- */

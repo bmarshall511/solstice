@@ -2,7 +2,7 @@
 // the always-on push, on in-memory PGlite with synthetic 5-minute energy. All data synthetic.
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { q, kv, migrate } from '../../server/src/db.js';
-import { baseOf, burstsOf, acMask, nightBases, alwaysOnWatch, breakdownFor } from '../../server/src/breakdown.js';
+import { baseOf, burstsOf, acMask, nightBases, alwaysOnWatch, breakdownFor, overnightSplit } from '../../server/src/breakdown.js';
 import { localMidnight, addDays, rfc3339 } from '../../server/src/tesla/client.js';
 
 vi.mock(import('../../server/src/appliances/screenlogic.js'), () => ({ configured: () => false, readPool: vi.fn(), writePoolPlan: vi.fn(), withUnit: vi.fn() }));
@@ -84,5 +84,32 @@ describe('on PGlite', () => {
     const d = await breakdownFor('bd', 'month', {});
     expect(d.spanDays).toBe(30);
     expect(d.days).toBe(10);
+  });
+  it('BD-7 overnight split (mockup z): Nest nights split into always-on, AC and pump; older nights carry only the base', async () => {
+    // one hot Nest night: the AC (2.7 kW) on 10 of every 30 minutes from 1 to 5 AM, read every 5 minutes
+    const d = '2026-10-02', t0 = localMidnight(d).getTime();
+    for (let t = t0 + 3600e3; t < t0 + 5 * 3600e3; t += B) {
+      const on = (t / B) % 6 < 2;
+      await q(`UPDATE energy SET home_wh = home_wh + $1 WHERE site_id = 'bd' AND epoch = $2`, [on ? Math.round(2.7 * 1000 / 12) : 0, t]);
+      await q(`INSERT INTO nest_readings (site_id, ts, day, hour, hvac) VALUES ('bd', $1, $2, $3, $4) ON CONFLICT (site_id, ts) DO UPDATE SET hvac = EXCLUDED.hvac`, [t, d, Math.floor((t - t0) / 3600e3), on ? 'COOLING' : 'OFF']);
+    }
+    const n = await overnightSplit('bd', '2026-09-20'), hot = n.find(x => x.date === d)!, old = n.find(x => x.date === '2026-09-21')!;
+    expect(hot.split).toBe(true);
+    expect(hot.base).toBeCloseTo(1.7, 2);                                // that night's house runs 1.7 kW (one of the three high nights)
+    expect(hot.ac!).toBeCloseTo(2.7 / 3, 1);                              // the meter's 2.7 kW above the quiet level, a third of the time
+    expect(hot.base! + hot.ac! + hot.pump!).toBeLessThanOrEqual(hot.kw + 1e-6);
+    expect(old).toMatchObject({ split: false, ac: null, pump: null });
+    expect(old.base).toBeCloseTo(1.1, 2);
+  });
+  it('BD-8 a sparse night pump read masks only its own stretch: the base stays, the pump gets the meter\'s step', async () => {
+    // 2026-10-01 (a 1.1 kW night): the pump runs 02:00–02:20 at 0.66 kW; one read at 02:05 says so, the next at 05:05 says off
+    const d = '2026-10-01', t0 = localMidnight(d).getTime();
+    for (let t = t0 + 2 * 3600e3; t < t0 + 2 * 3600e3 + 20 * 60_000; t += B) await q(`UPDATE energy SET home_wh = home_wh + 55 WHERE site_id = 'bd' AND epoch = $1`, [t]);
+    for (const [t, running] of [[t0 + 2 * 3600e3 + 5 * 60_000, true], [t0 + 5 * 3600e3 + 5 * 60_000, false]] as const)
+      await q(`INSERT INTO pool_readings (site_id, ts, day, hour, running, watts, rpm) VALUES ('bd', $1, $2, $3, $4, $5, $6)`, [t, d, Math.floor((t - t0) / 3600e3), running, running ? 660 : 0, running ? 2000 : 0]);
+    const n = (await overnightSplit('bd', '2026-09-30')).find(x => x.date === d)!;
+    expect(n.base).toBeCloseTo(1.1, 2);                                   // not 1.1 - 0.66
+    expect(n.pump!).toBeGreaterThan(0);
+    expect(n.pump!).toBeLessThan(0.1);                                    // ~20 of 240 minutes x 0.66 kW, not the whole night
   });
 });
