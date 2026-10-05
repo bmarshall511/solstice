@@ -30,7 +30,7 @@ export function renderLive(S) {
 
   // flows
   const f = splitFlows(r);
-  if (!S.twinReplay) $('flowNote').textContent = out ? 'islanded · grid offline' : `live · ${new Date(r.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+  if (!S.twinReplay) $('flowNote').textContent = out ? 'islanded · grid offline' : `${readingStale(S) ? 'as of' : 'live ·'} ${new Date(r.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;   // mockup x
 
   // one-sentence story
   const share = r.homeKw > 0 ? Math.min(1, f.solHome / r.homeKw) : 0;
@@ -98,6 +98,8 @@ export function renderStatic(S) {
 
 /* ---------- mockup x: how old the live reading is, every second ---------- */
 const STALE_MS = 3 * 60_000;
+/** The newest reading is 3 minutes old or more, or Solstice can't be reached (every writer of the Now status lines uses this). */
+const readingStale = S => !!S.nowOffline || !S.live || Date.now() - S.live.ts >= STALE_MS;
 const clockOf = ts => new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 export const ageText = ms => ms < 60_000 ? 'just now' : ms < 3600_000 ? `${Math.floor(ms / 60_000)} min ago` : `${Math.floor(ms / 3600_000)} h ago`;
 /** The Powerwalls chip, the greeting's time, the flow card's note and the dimming, from the newest reading's own timestamp. */
@@ -105,16 +107,17 @@ export function freshness(S) {
   const r = S.live, offline = !!S.nowOffline || (typeof navigator !== 'undefined' && navigator.onLine === false);
   const age = r ? Date.now() - r.ts : null, stale = offline || age == null || age >= STALE_MS;
   const chip = $('chipGw');
-  chip.classList.toggle('stale', !!r && stale);
+  chip.classList.toggle('stale', offline || (!!r && stale));
   if (offline) chip.innerHTML = '<i></i>Can\u2019t reach Solstice \u00b7 retrying';
   else if (r && stale) chip.innerHTML = `<i></i>Last reading ${ageText(age)}`;
   else if (r) chip.innerHTML = '<i></i>Powerwalls online';
   $('chips').classList.toggle('offline', offline);
   const syn = $('synced');
-  syn.textContent = !r ? (offline ? 'offline' : 'connecting\u2026') : offline ? `offline \u00b7 as of ${clockOf(r.ts)}` : stale ? `as of ${clockOf(r.ts)}` : clockOf(r.ts);
+  syn.textContent = !r ? (offline ? 'offline' : 'connecting\u2026') : offline ? `offline \u00b7 ${clockOf(r.ts)}` : stale ? `as of ${clockOf(r.ts)}` : clockOf(r.ts);
   syn.classList.toggle('asof', !!r && stale);
-  $('syncDot').style.background = r && stale ? 'var(--solar)' : '';
+  $('syncDot').style.background = offline || (r && stale) ? 'var(--solar)' : '';
   if (r && stale && !S.twinReplay && !S.outageActive) { $('flowNote').textContent = `as of ${clockOf(r.ts)}`; $('flowNote').classList.add('asof'); }
+  else if (!r && offline) { $('flowNote').textContent = 'offline'; $('flowNote').classList.add('asof'); }   // no reading yet, and none coming
   else if (!stale) $('flowNote').classList.remove('asof');
   document.querySelector('.orbwrap')?.classList.toggle('dimmed', !!r && stale);
   $('house')?.classList.toggle('dimmed', !!r && stale);
