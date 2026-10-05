@@ -7,7 +7,7 @@ import { hashPassword, verifyPassword, startSession, endSession, currentUser, re
   signOwnerState, consumeOwnerState, setCookie, readCookie, safeEqual } from './auth.js';
 import { gate, presenceHidden, setPreview, PREVIEW_COOKIE } from './access.js';
 import { createShare, listShares, revokeShare, revokeAllShares, redeemShare, pruneShares, guestMaxAge, EXPIRY, DEFAULT_EXPIRY, LABEL_MAX, GUEST_COOKIE } from './share.js';
-import { authorizeUrl, exchangeCode } from './tesla/auth.js';
+import { authorizeUrl, exchangeCode, OtherSiteError } from './tesla/auth.js';
 import { teslaFor, localDay, addDays } from './tesla/client.js';
 import { refreshLive, refreshSiteInfo, syncSite } from './sync.js';
 import { listBills, parsePecPdf, saveBill, type Bill } from './bills.js';
@@ -194,7 +194,11 @@ app.get('/auth/callback', wrap(async (req, res) => {
   let ownerId: number | null = null;
   if (multiUser()) { const user = await currentUser(req); if (!uid || !user || user.id !== uid) return res.redirect('/?tesla_error=expired'); ownerId = user.id; }
   else if (!(await consumeOwnerState(state ?? '', 'tesla'))) return res.redirect('/?tesla_error=expired');
-  const accountId = await exchangeCode(code, ownerId);
+  // single owner, one site: a re-link must be the account that has the linked site, or nothing is saved (tesla/auth.ts)
+  const linked = multiUser() ? [] : (await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL')).map(s => s.id);
+  let accountId: number;
+  try { accountId = await exchangeCode(code, ownerId, { expectSites: linked }); }
+  catch (e) { if (e instanceof OtherSiteError) { console.warn('[solstice] Tesla re-link refused: a different account'); return res.redirect('/?tesla_error=othersite'); } throw e; }
   const products = await teslaFor(accountId).products();
   for (const p of products.filter(p => p.energy_site_id)) {
     const id = String(p.energy_site_id);

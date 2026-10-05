@@ -203,7 +203,7 @@ describe('OAuth links: minted only by the owner, callbacks verify a signed singl
     const cb = await call(`/auth/callback?code=test-code&state=${encodeURIComponent(state)}`);
     expect(cb.status).toBe(302);
     expect(cb.headers.get('location')).toBe('/');
-    expect(teslaAuth.exchangeCode).toHaveBeenCalledWith('test-code', null);
+    expect(teslaAuth.exchangeCode).toHaveBeenCalledWith('test-code', null, { expectSites: expect.any(Array) });   // the linked sites a re-link must include
     const replay = await call(`/auth/callback?code=test-code&state=${encodeURIComponent(state)}`);
     expect(replay.headers.get('location')).toBe('/?tesla_error=expired');
     const body = state.slice(0, state.lastIndexOf('.'));

@@ -362,7 +362,8 @@ explainOnTap(toast, () => S.ownerName);
 async function boot() {
   const params = new URLSearchParams(location.search);
   // the server sends fixed codes only (never upstream text); each maps to one sentence here
-  const OAUTH_ERR = { expired: 'Sign-in expired. Try again.', denied: 'Access was not granted. Try again and allow access.', failed: 'Something went wrong. Try again.' };
+  const OAUTH_ERR = { expired: 'Sign-in expired. Try again.', denied: 'Access was not granted. Try again and allow access.', failed: 'Something went wrong. Try again.',
+    othersite: 'That Tesla account doesn\u2019t have this home\u2019s Powerwalls. Nothing was changed; sign in with the account that owns them.' };
   if (params.get('tesla_error')) toast('!', 'rgba(255,90,78,.25)', 'Tesla connection failed', OAUTH_ERR[params.get('tesla_error')] ?? OAUTH_ERR.failed);
   if (params.get('nest_error')) toast('!', 'rgba(255,90,78,.25)', 'Nest link failed', OAUTH_ERR[params.get('nest_error')] ?? OAUTH_ERR.failed);
   if (params.has('tesla_error') || params.has('nest_error') || params.has('nest')) history.replaceState(null, '', location.pathname + location.hash);   // a reload doesn't toast again

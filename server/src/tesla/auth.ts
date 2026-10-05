@@ -17,8 +17,23 @@ async function tokenRequest(body: Record<string, string>): Promise<TeslaTokens> 
 }
 
 /** Exchange the OAuth code and store/replace the user's Tesla account. Returns the tesla_accounts id. */
-export async function exchangeCode(code: string, userId: number | null): Promise<number> {
+/** The account signed in to doesn't have the energy site already linked here; nothing was saved (the linked account's tokens stand). */
+export class OtherSiteError extends Error {}
+/** The energy-site ids an access token can see (GET /api/1/products), before anything is saved. */
+async function siteIdsFor(accessToken: string): Promise<string[]> {
+  const res = await fetch(`${config.audience}/api/1/products`, { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS) });
+  const j = (await res.json().catch(() => ({}))) as { response?: Array<{ energy_site_id?: unknown }> };
+  if (!res.ok) throw new Error(`Tesla /api/1/products → HTTP ${res.status}`);
+  return (j.response ?? []).filter(p => p.energy_site_id != null).map(p => String(p.energy_site_id));
+}
+/**
+ * Trade the sign-in code for tokens and save them on the one Tesla account row. With `expectSites` (the sites already linked), the
+ * new tokens must see at least one of them, or OtherSiteError is thrown before the save: re-linking with a different Tesla account
+ * used to overwrite the working tokens and break the linked site's sync.
+ */
+export async function exchangeCode(code: string, userId: number | null, o: { expectSites?: string[] } = {}): Promise<number> {
   const t = await tokenRequest({ grant_type: 'authorization_code', client_id: config.clientId, client_secret: config.clientSecret, code, audience: config.audience, redirect_uri: config.redirectUri });
+  if (o.expectSites?.length) { const seen = await siteIdsFor(t.access_token); if (!o.expectSites.some(id => seen.includes(id))) throw new OtherSiteError('that Tesla account has none of the linked sites'); }
   const existing = await one<{ id: number }>('SELECT id FROM tesla_accounts WHERE user_id IS NOT DISTINCT FROM $1 ORDER BY id LIMIT 1', [userId]);
   if (existing) { await q('UPDATE tesla_accounts SET access_token=$2, refresh_token=$3, expires_at=$4, scope=$5 WHERE id=$1', [existing.id, t.access_token, t.refresh_token, t.expires_at, t.scope]); return existing.id; }
   return (await one<{ id: number }>('INSERT INTO tesla_accounts (user_id, access_token, refresh_token, expires_at, scope) VALUES ($1,$2,$3,$4,$5) RETURNING id', [userId, t.access_token, t.refresh_token, t.expires_at, t.scope]))!.id;
