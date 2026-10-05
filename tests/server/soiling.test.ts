@@ -1,7 +1,7 @@
 // Panel cleanliness (approved mockup ai, server/src/soiling.ts): clear days, the clean level after rain or a logged cleaning, the loss,
 // the states and the push. The 8/26/2026 replay uses the real temperature-adjusted clear days from the mockup.
 import { describe, it, expect } from 'vitest';
-import { clearDays, soiling, type SoilWx } from '../../server/src/soiling.js';
+import { clearDays, soiling, mergeRain, type SoilWx } from '../../server/src/soiling.js';
 
 // real (mockup ai): clear days since July and rains of 5 mm or more
 const C: Array<[string, number]> = [['07-03', 8.8], ['07-09', 8.4], ['07-20', 8.3], ['07-23', 8.65], ['07-26', 8.29], ['07-27', 8.37], ['07-28', 8.12], ['08-02', 8.1], ['08-04', 8.25], ['08-08', 8.15],
@@ -40,3 +40,14 @@ describe('soiling', () => {
   });
 });
 
+
+describe('soiling: rain from the archive', () => {
+  it('SO-8 past days use the archive where it has them; recent and future days keep the forecast service', () => {
+    const w: SoilWx = { hourly: { time: [], global_tilted_irradiance: [], cloud_cover: [] },
+      daily: { time: ['2026-09-27', '2026-10-02', '2026-10-04', '2026-10-06'], precipitation_sum: [67, 36.3, 1.5, 0], temperature_2m_max: [98, 77, 76, 82] } };
+    const m = mergeRain(w, { time: ['2026-09-27', '2026-10-02', '2026-10-03', '2026-10-04'], precipitation_sum: [0.5, 57.1, 10.2, null] }, '2026-10-05');
+    expect(m.daily.precipitation_sum).toEqual([0.5, 57.1, 1.5, 0]);   // 10/4: the archive hasn't got it yet; 10/6: forecast
+    expect(m.rainFrom).toEqual(['archive', 'archive', 'forecast', 'forecast']);
+    expect(mergeRain(w, null, '2026-10-05').daily.precipitation_sum).toEqual([67, 36.3, 1.5, 0]);   // archive down: as before
+  });
+});

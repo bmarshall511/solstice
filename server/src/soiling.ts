@@ -59,6 +59,16 @@ export function soiling(o: { points: ClearPoint[]; rains: Array<{ day: string; m
 
 /* ---------- the app: weather once a night, the card on demand, the push nightly ---------- */
 const WX_KEY = 'soiling:wx';
+/**
+ * Past rain from Open-Meteo's archive where it has the day, the forecast service's figure otherwise (the archive runs a few days
+ * behind; future days are always the forecast's). The two disagree on some days (9/27/2026: 0.5 mm archive, 67 mm forecast service,
+ * on a 37 kWh day), and the 13-month backtest behind the rules was on the archive. Returns the forecast payload with its rain merged.
+ */
+export function mergeRain(w: SoilWx, archive: { time: string[]; precipitation_sum: Array<number | null> } | null, today: string): SoilWx & { rainFrom: Array<'archive' | 'forecast'> } {
+  const a = new Map((archive?.time ?? []).map((d, i) => [d, archive!.precipitation_sum[i]]));
+  const from = w.daily.time.map(d => d < today && a.get(d) != null ? 'archive' as const : 'forecast' as const);
+  return { ...w, daily: { ...w.daily, precipitation_sum: w.daily.time.map((d, i) => from[i] === 'archive' ? a.get(d)! : w.daily.precipitation_sum[i]) }, rainFrom: from };
+}
 /** 92 past days and 6 forecast days of panel-plane sun, midday cloud, rain and highs; fetched at most once a day (kv). */
 export async function soilWx(now = Date.now(), fetchIt = true): Promise<SoilWx | null> {
   const c = await kv.get<{ day: string; w: SoilWx }>(WX_KEY);
@@ -69,8 +79,12 @@ export async function soilWx(now = Date.now(), fetchIt = true): Promise<SoilWx |
       '&hourly=global_tilted_irradiance,cloud_cover&daily=precipitation_sum,temperature_2m_max';   // azimuth 64 = the roof's 244° (Open-Meteo: 0 = south)
     const j = await fetch(u, { signal: AbortSignal.timeout(10_000) }).then(r => { if (!r.ok) throw new Error(`Open-Meteo: HTTP ${r.status}`); return r.json(); }) as SoilWx;
     if (!j.hourly?.time?.length || !j.daily?.time?.length) throw new Error('Open-Meteo returned no days');
-    const w = { hourly: j.hourly, daily: j.daily };
-    await kv.set(WX_KEY, { day: localDay(new Date(now)), w });
+    // the archive's daily rain for the same past days; a failure keeps the forecast service's (as before this fix)
+    const today = localDay(new Date(now)), a = j.daily.time[0], b = addDays(today, -1);
+    const arch = await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${loc.lat}&longitude=${loc.lon}&start_date=${a}&end_date=${b}&timezone=America%2FChicago&daily=precipitation_sum`,
+      { signal: AbortSignal.timeout(10_000) }).then(r => r.ok ? r.json() : null).then((x: any) => x?.daily?.time ? x.daily : null).catch(() => null);
+    const w = mergeRain({ hourly: j.hourly, daily: j.daily }, arch, today);
+    await kv.set(WX_KEY, { day: today, w });
     return w;
   } catch (e) { console.warn(`[soiling] Open-Meteo: ${(e as Error).message}`); return c?.w ?? null; }
 }
