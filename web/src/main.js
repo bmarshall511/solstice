@@ -57,6 +57,7 @@ async function loadHistory() {
   S.tariff = S.reconcile.findLast(r => r.tariff?.importRateAllIn > 0)?.tariff ?? null; // learned from the newest parsed bill (server: currentTariff); null = rate unknown
   S.profile = Array.from({ length: 24 }, (_, h) => profile.hours.find(x => x.hour === h)?.home ?? 2);
   S.fcConf = profile.conf ?? null;   // r-learning: the 48-hour forecast's confidence tiers
+  S.profileScale = profile.scale ?? {};   // mockup ah: each day's home total from its forecast high
   computeModel();
   [drawSocHeat, drawRecords, drawOutages, drawBills, drawOvernight, drawAC, drawPerformance, drawAlerts, drawSettings, renderStatic, renderWeather].forEach(f => safe(f)(S));
   if (isOn('v-hist')) drawHistoryChart(S);

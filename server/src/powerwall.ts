@@ -102,7 +102,7 @@ async function reservePoints(siteId: string, info: any, now: number): Promise<Fc
   ]);
   const fc = fc48Inputs(w, daily, hourly, soe, today); if (!fc.ready) return null;
   const capKwh = (info.nameplate_energy ?? 0) / 1000 || 27, maxKw = (info.nameplate_power ?? 0) / 1000 || 10;
-  return forecast48({ w: fc.w, startDate: today, startHour: +rfc3339(new Date(now)).slice(11, 13), soc0: fc.soc0, yieldK: fc.yieldK, profile: fc.profile, capKwh, maxKw, reservePct: info.backup_reserve_percent ?? DEFAULT_FLOOR }).points;
+  return forecast48({ w: fc.w, startDate: today, startHour: +rfc3339(new Date(now)).slice(11, 13), soc0: fc.soc0, yieldK: fc.yieldK, profile: fc.profile, capKwh, maxKw, reservePct: info.backup_reserve_percent ?? DEFAULT_FLOOR, dayScale: fc.dayScale }).points;
 }
 
 /** One rule's suggestion now. Reads only: the database, the caches and (for the reserve) Open-Meteo through the learning layer's cache. */

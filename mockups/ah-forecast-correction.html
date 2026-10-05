@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Solstice · Forecast correction</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* page scaffolding for the mockup only (same as v–ag) */
+html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+body{background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.col{width:100%;max-width:393px;margin:0 auto;padding:28px 0 60px}
+.intro{padding:0 20px}
+.intro .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.intro h2{font-size:30px;line-height:1.1;font-weight:300;letter-spacing:-.02em;margin-bottom:12px}
+.intro p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.intro p+p{margin-top:8px}
+.frame{margin-top:34px}
+.frame>.sect{margin:0 20px 10px}
+.pagepad{padding:0 20px}
+.cap{margin:12px 20px 0;padding:12px 14px;border-radius:16px;background:rgba(0,0,0,.25);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.55}
+.cap b{color:var(--text);font-weight:600}
+.cap p+p{margin-top:6px}
+.cap .new{color:var(--batt)}.cap .same{color:var(--mute)}.cap .fix{color:#ff9e66}
+.wrules{margin:34px 20px 0}
+.wrules h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:10px}
+.wrules ul{list-style:none;display:grid;gap:8px}
+.wrules li{font-size:12.5px;color:var(--dim);line-height:1.55;padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b)}
+.wrules li b{color:var(--text);font-weight:600}
+.m-sheet{border-radius:24px 24px 18px 18px;padding:8px 16px 16px;background:rgba(20,24,36,.92);border:1px solid var(--glass-b)}
+.m-grab{width:38px;height:4px;border-radius:2px;background:rgba(255,255,255,.2);margin:4px auto 12px}
+.m-sheet h4{font-size:17px;font-weight:600}
+.m-sub{font-size:12px;color:var(--dim);margin-top:2px;line-height:1.5}
+.m-stub{height:46px;margin-top:10px;border-radius:12px;background:rgba(255,255,255,.04)}
+/* NEW: "How it predicts" */
+.ah-h{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-top:14px}
+.ah-line{font-size:12.5px;color:var(--dim);margin-top:6px;line-height:1.5}
+.ah-line b{color:var(--text);font-weight:600}
+.ah-tbl{display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:4px 10px;margin-top:8px;font:500 11px "JetBrains Mono";color:var(--dim)}
+.ah-tbl .hd{font:600 9.5px Manrope;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+.ah-tbl .old{color:#ff9e66}.ah-tbl .nw{color:var(--batt)}
+.ah-row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:10px 0;border-top:1px solid rgba(255,255,255,.06)}
+.ah-row:first-child{border-top:0}
+.ah-row b{font-size:13.5px;font-weight:600}
+.ah-row small{display:block;font-size:11.5px;color:var(--dim);margin-top:2px;line-height:1.4}
+.ah-row span{font:500 12px "JetBrains Mono";white-space:nowrap}
+.ah-dots{display:flex;gap:4px;margin-top:8px}
+.ah-dots i{flex:1;height:18px;border-radius:4px;background:rgba(78,240,166,.5);display:grid;place-items:center;font:500 8.5px "JetBrains Mono";font-style:normal;color:#0b0f18}
+.ah-dots i.skip{background:transparent;border:1px dashed rgba(255,255,255,.3);color:var(--mute)}
+</style></head><body>
+<div class="col">
+  <div class="intro">
+    <div class="k">Mockup ah · Forecast correction</div>
+    <h2>Three fixes the data asked for, and one it said to leave alone.</h2>
+    <p>I backtested the forecasts on 197 days, using Open-Meteo's archived day-ahead weather, so each day only uses what was known the evening before. Feeding the error back in ("bias correction") made solar <b>worse</b> (±5.6 → ±6.1 kWh a day). What helps is fixing the specific causes below. The figures are your real ones.</p>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 1 · Home use follows the forecast high</div>
+    <div class="pagepad"><div class="m-sheet"><div class="m-grab"></div>
+      <h4>Next 48 h home use</h4><div class="m-sub">Insights › Home › How well Solstice knows your home</div>
+      <div class="m-stub"></div>
+      <div class="ah-h">How it predicts</div>
+      <svg id="sc" viewBox="0 0 330 150" style="width:100%;margin-top:8px"></svg>
+      <p class="ah-line">From your last 14 days: <b>47 kWh a day, plus 1.5 kWh for every degree</b> the forecast high is above 70°. Tomorrow's forecast 83° → <b>65 kWh</b>, spread over the hours the way your recent days ran.</p>
+      <div class="ah-h">The cool spell, old vs new</div>
+      <div class="ah-tbl"><span class="hd">Day</span><span class="hd">Used</span><span class="hd">Old</span><span class="hd">New</span>
+        <span>Thu 10/1 · 80°</span><span>60</span><span class="old">88</span><span class="nw">62</span>
+        <span>Fri 10/2 · 78°</span><span>50</span><span class="old">86</span><span class="nw">55</span>
+        <span>Sat 10/3 · 77°</span><span>61</span><span class="old">83</span><span class="nw">53</span>
+        <span>Sun 10/4 · 74°</span><span>53</span><span class="old">80</span><span class="nw">52</span></div>
+    </div></div>
+    <div class="cap">
+      <p><b class="fix">Fix:</b> home use was the average of the last 14 days, so a cool week was forecast like the hot one before it (+20 kWh a day for the last 10 days). The new model uses the forecast high; the hour-by-hour shape stays your recent days'.</p>
+      <p>Backtest, 197 days: <b>±11.8 → ±9.8 kWh a day</b>; last 10 days: off by <b>+20 → +6.5</b>. The rest is mostly the pool's old midnight Waterfall still in the 14 days; those days leave the window from 10/9.</p>
+      <p><b class="new">New:</b> a "How it predicts" section in this model's sheet (the chart, the line, the cool-spell check).</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 2 · Always-on load: a bug</div>
+    <div class="pagepad"><div class="m-sheet"><div class="m-grab"></div>
+      <h4>Always-on load (1–5 AM)</h4><div class="m-sub">Insights › Home › How well Solstice knows your home</div>
+      <div style="margin-top:10px">
+        <div class="ah-row"><div><b>Tonight's estimate</b><small>median of the last 7 nights with thermostat data</small></div><span><s style="color:var(--mute)">3.75 kW</s> → 1.28 kW</span></div>
+        <div class="ah-row"><div><b>Last night, measured</b><small>1–5 AM, the AC's share taken out</small></div><span>0.79 kW</span></div>
+      </div>
+    </div></div>
+    <div class="cap">
+      <p><b class="fix">Fix:</b> the estimate was the median of 30 nights, and the nights before 9/25 still held the 3,400 RPM midnight Waterfall and AC the app couldn't subtract (Nest wasn't linked). They read 3.3–4.4 kW, so the estimate sat at 3.75 kW against 0.8–1.6 measured (±198%). It now uses the last 7 nights that have thermostat data.</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 3 · Pool: days you ran it extra aren't misses</div>
+    <div class="pagepad"><div class="m-sheet"><div class="m-grab"></div>
+      <h4>Pool kWh/day</h4><div class="m-sub">Insights › Home › How well Solstice knows your home</div>
+      <div class="ah-dots"><i class="skip">9/26</i><i>9/27</i><i>9/28</i><i>9/29</i><i>9/30</i><i>10/1</i><i>10/2</i><i class="skip">10/3</i><i class="skip">10/4</i></div>
+      <p class="ah-line">Dashed: not scored. The pump ran beyond the plan (your runs, an outside run or a Clear-up), so the plan wasn't wrong. On the 6 planned days it's within <b>±0.2 kWh (9%)</b>; with the 3 extra days it read ±26%.</p>
+    </div></div>
+    <div class="cap">
+      <p><b class="fix">Fix:</b> a day with a Clear-up, a run you started, or a run seen outside the schedule isn't scored. It shows as a dashed day.</p><p>Which past days are dashed here is my reading of 9/26, 10/3 and 10/4; from now on it's decided by the runs Solstice records (kept since 10/5), so older days stay scored as they are.</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Finding · Solar stays as is</div>
+    <div class="cap" style="margin-top:0">
+      <p><b class="same">No change:</b> over 197 days the solar forecast is off by ±5.6 kWh a day (19%) with almost no bias (−0.7). The misses on 10/1–10/4 were the weather forecast: the day before, Open-Meteo forecast 2.7, 2.5, 2.1 and 1.8 kWh/m² of sun; 1.8, 1.2, 0.9 and 1.6 arrived. Four corrections I tried (bias feedback, yield by sky type, a curve for dark days, a 14-day multiplier) were all worse on those days and no better overall.</p>
+      <p>The row's ±58% is per hour (dawn and dusk hours make it large); per day it's ±19%. That label isn't changed here.</p>
+    </div>
+  </div>
+
+  <div class="wrules">
+    <h3>The rules</h3>
+    <ul>
+      <li><b>Home use:</b> the day's total = a line fitted to the last 14 days' use against each day's high (needs 10 days and a spread of at least 6°; otherwise the 14-day average, as now); the hours keep the 14-day shape. The Now tab's Next 48 hours, the outage sim and the reserve rule all use it.</li>
+      <li><b>Always-on:</b> the median of the last 7 nights with thermostat readings (needs 5).</li>
+      <li><b>Pool scoring:</b> days with a Clear-up, your runs or outside runs are skipped and shown dashed.</li>
+      <li><b>Unchanged:</b> solar, the battery % model, every other model, the report's layout and the confidence rules.</li>
+    </ul>
+  </div>
+</div>
+<script>
+// the last 14 days, real: [day, high °F, home kWh]
+const P = [["9/21",98,86.6],["9/22",97,101.5],["9/23",95,89.2],["9/24",94,86.1],["9/25",97,90.1],["9/26",93,72.6],["9/27",98,64.8],["9/28",98,92.8],["9/29",94,82.1],["9/30",93,79],["10/1",81,59.9],["10/2",76,49.5],["10/3",74,61],["10/4",76,53.4]];
+const X = t => 30 + (t - 70) / 32 * 290, Y = k => 130 - (k - 40) / 70 * 120;
+let s = '';
+[70, 80, 90, 100].forEach(t => s += `<text x="${X(t)}" y="146" text-anchor="middle" fill="rgba(242,244,248,.45)" font-size="9" font-family="JetBrains Mono">${t}°</text>`);
+[50, 75, 100].forEach(k => s += `<line x1="30" x2="320" y1="${Y(k)}" y2="${Y(k)}" stroke="rgba(255,255,255,.06)"/><text x="2" y="${Y(k) + 3}" fill="rgba(242,244,248,.45)" font-size="9" font-family="JetBrains Mono">${k}</text>`);
+s += `<line x1="${X(70)}" y1="${Y(46.8)}" x2="${X(102)}" y2="${Y(46.8 + 1.47 * 32)}" stroke="#4ef0a6" stroke-width="2"/>`;
+P.forEach(([d, t, k]) => s += `<circle cx="${X(t)}" cy="${Y(k)}" r="3.5" fill="#ffd27a" fill-opacity=".85"><title>${d}: ${t}°, ${k} kWh</title></circle>`);
+s += `<circle cx="${X(83)}" cy="${Y(46.8 + 1.47 * 13)}" r="5" fill="none" stroke="#fff" stroke-width="1.5"/><text x="${X(83) - 8}" y="${Y(46.8 + 1.47 * 13) - 9}" text-anchor="end" fill="#fff" font-size="9.5" font-family="Manrope">tomorrow</text>`;
+s += `<text x="320" y="12" text-anchor="end" fill="rgba(242,244,248,.45)" font-size="9" font-family="Manrope">kWh a day vs the day's high</text>`;
+document.getElementById('sc').innerHTML = s;
+</script>
+</body></html>

@@ -1026,6 +1026,13 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .ae-chg em{font:500 10.5px "JetBrains Mono";font-style:normal;color:var(--mute)}
 .ae-chg b{color:var(--text);font-weight:600}
 .ae-chg span{font:500 11px "JetBrains Mono";color:var(--text)}
+/* mockup ah: "How it predicts" in the home-use model sheet */
+.ah-h{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-top:14px}
+.ah-line{font-size:12.5px;color:var(--dim);margin-top:6px;line-height:1.5}
+.ah-line b{color:var(--text);font-weight:600}
+.ah-tbl{display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:4px 10px;margin-top:8px;font:500 11px "JetBrains Mono";color:var(--dim)}
+.ah-tbl .hd{font:600 9.5px Manrope;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+.ah-tbl .old{color:#ff9e66}.ah-tbl .nw{color:var(--batt)}
 /* mockup ag: the Comfort card and sheets */
 .ag-edit{all:unset;cursor:pointer;font-size:12px;font-weight:600;color:var(--text);padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b)}
 .ag-two{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
