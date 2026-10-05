@@ -1,6 +1,6 @@
 import { $, niceDate, ago } from '../lib/util.js';
 import { api } from '../lib/api.js';
-import { veil } from '../lib/frost.js';
+import { veil, esc } from '../lib/frost.js';
 import { backupError, httpCode } from './insights.js';
 import { detectPush, subscribePush, unsubscribePush } from '../lib/push.js';
 
@@ -13,7 +13,8 @@ const NEW_PREFS = [['approval', 'var(--batt)', '✓', 'Waiting for your approval
   ['ercot', 'var(--grid)', '⌁', 'Grid stress (ERCOT)', 'Conservation call or EEA'], ['panel', 'var(--out)', '▦', 'Panel fault', 'From the PVS relay · a panel well below its neighbours'],
   ['digest', 'var(--batt)', '◷', 'Weekly digest', 'Monday 7 AM']];
 let prefs = {};
-api.settings().then(p => { prefs = p.alerts ?? {}; document.querySelectorAll('[data-pref]').forEach(el => el.classList.toggle('on', prefs[el.dataset.pref] !== false)); }).catch(() => {});
+/** The alert switches from the settings boot() already read (this module used to fetch them itself at load, before sign-in). */
+export function applyAlertPrefs(alerts) { prefs = alerts ?? {}; document.querySelectorAll('[data-pref]').forEach(el => el.classList.toggle('on', prefs[el.dataset.pref] !== false)); }
 const load = () => prefs;
 
 /** Settings › Connections: Tesla (with the backup-history retry line), Open-Meteo, ScreenLogic and Nest. */
@@ -40,12 +41,12 @@ export function drawSettings(S) {
   drawConnections(S);
   const row = (c, i, title, sub, v) => `<div class="row" style="--c:${c}"><div class="ri">${i}</div><div class="rt">${title}${sub ? `<small>${sub}</small>` : ''}</div><div class="rv">${v}</div></div>`;
   $('sysGroup').innerHTML =
-    row('var(--batt)', '▮', 'Powerwalls', `${site.batteries?.map(b => b.name).join(' + ') ?? ''}`, `${site.capacityKwh ?? '—'} kWh · ${site.maxPowerKw ?? '—'} kW`) +
-    row('var(--solar)', '☀', 'Solar', site.solar ? `${site.solar.panels} × ${site.solar.module} · Enphase IQ7XS microinverters` : '30 panels', site.solar ? `${site.solar.dcKw} kW DC · ${site.solar.acKw} kW AC` : '—') +
-    row('var(--warn)', '⛨', 'Backup reserve', 'Set in the Tesla app', `${site.reservePct ?? '—'}%`) +
-    row('var(--grid)', '⚙', 'Operating mode', site.mode === 'autonomous' ? 'Time-Based Control' : '', site.mode ?? '—') +
+    row('var(--batt)', '▮', 'Powerwalls', `${site.batteries?.map(b => esc(b.name)).join(' + ') ?? ''}`, `${esc(site.capacityKwh ?? '—')} kWh · ${esc(site.maxPowerKw ?? '—')} kW`) +
+    row('var(--solar)', '☀', 'Solar', site.solar ? `${esc(site.solar.panels)} × ${esc(site.solar.module)} · Enphase IQ7XS microinverters` : '30 panels', site.solar ? `${esc(site.solar.dcKw)} kW DC · ${esc(site.solar.acKw)} kW AC` : '—') +
+    row('var(--warn)', '⛨', 'Backup reserve', 'Set in the Tesla app', `${esc(site.reservePct ?? '—')}%`) +
+    row('var(--grid)', '⚙', 'Operating mode', site.mode === 'autonomous' ? 'Time-Based Control' : '', esc(site.mode ?? '—')) +
     row('var(--home)', '$', 'Utility', S.guest ? `${veil('$•.••••/kWh')} all-in · ${veil('$•.••••/kWh')} export credit` : t ? `$${t.importRateAllIn}/kWh all-in · ${t.exportCredit != null ? `$${t.exportCredit}` : '—'}/kWh export credit` : 'Add a bill to learn your rates', 'PEC') +
-    row('var(--mute)', '⌂', 'Installed', S.guest ? '' : `Gateway firmware ${site.firmware?.split(' ')[0] ?? '—'}`, site.installed ? niceDate(site.installed.slice(0, 10), { month: 'short', year: 'numeric' }) : '—');
+    row('var(--mute)', '⌂', 'Installed', S.guest ? '' : `Gateway firmware ${esc(site.firmware?.split(' ')[0] ?? '—')}`, site.installed ? niceDate(site.installed.slice(0, 10), { month: 'short', year: 'numeric' }) : '—');
   const prefs = load();
   $('alertPrefs').innerHTML = PREFS.map(([k, c, i, title, sub]) => `<div class="row" style="--c:${c}"><div class="ri">${i}</div><div class="rt">${title}${sub ? `<small>${sub}</small>` : ''}</div><div class="sw ${prefs[k] === false ? '' : 'on'}" data-pref="${k}"></div></div>`).join('');
   $('alertPrefsNew').innerHTML = NEW_PREFS.map(([k, c, i, title, sub]) => `<div class="row newk" style="--c:${c}"><div class="ri">${i}</div><div class="rt">${title}<span class="nbadge">new</span><small>${sub}</small></div><div class="sw ${prefs[k] === false ? '' : 'on'}" data-pref="${k}"></div></div>`).join('');
@@ -58,8 +59,8 @@ export async function openRawData() {
   $('phone').classList.add('open');
   const [now, site] = await Promise.all([api.now(), api.site()]);
   $('sheetBody').innerHTML = `<h4>All data</h4><p class="sub">Exactly what Tesla returns for your site, and the latest reading Solstice stored.</p>
-    <div class="sect" style="margin-top:14px">Latest reading · ${now.reading ? ago(now.reading.ts) : '—'}</div><div class="raw">${JSON.stringify(now.reading, null, 2)}</div>
-    <div class="sect">site_info</div><div class="raw">${JSON.stringify(site.raw, null, 2).replace(/</g, '&lt;')}</div>`;
+    <div class="sect" style="margin-top:14px">Latest reading · ${now.reading ? ago(now.reading.ts) : '—'}</div><div class="raw">${esc(JSON.stringify(now.reading, null, 2))}</div>
+    <div class="sect">site_info</div><div class="raw">${esc(JSON.stringify(site.raw, null, 2))}</div>`;
 }
 
 /** Settings › Alerts › Push to this device: the switch and its line (mockup t-enhancements frame 3). */

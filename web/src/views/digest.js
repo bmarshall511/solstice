@@ -8,7 +8,7 @@ import { detectPush, subscribePush, deviceName } from '../lib/push.js';
 
 let cur = null, prev = null, showing = 'cur', alertId = null;
 
-const apHtml = lines => lines.map(([i, c, b, t]) => `<div style="--c:${c}"><i>${i}</i><span><b>${b}</b> ${esc(t)}</span></div>`).join('');
+const apHtml = lines => lines.map(([i, c, b, t]) => `<div style="--c:${c}"><i>${i}</i><span><b>${esc(b)}</b> ${esc(t)}</span></div>`).join('');
 const modes = S => ({ pool: S.pool?.autopilot?.mode, ac: S.ac?.settings?.autopilot, powerwall: S.pwRules ? rulesMode(Object.fromEntries(S.pwRules.rules.map(r => [r.id, r.mode]))) : null });
 
 function draw(S) {

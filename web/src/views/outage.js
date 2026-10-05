@@ -1,5 +1,6 @@
 import { $, niceDate, localDate, addDays, svgText } from '../lib/util.js';
 import { api } from '../lib/api.js';
+import { esc } from '../lib/frost.js';
 
 /*
  * Outage readiness: the first card on Insights → Home (approved mockup n-outage). Numbers come from /api/outage
@@ -67,8 +68,8 @@ export function mountOutageCard(S, parent) {
     const chip = (alert, c, text) => `<span class="chipx${alert ? ' alert' : ''}"><i style="--c:${c}"></i>${text}</span>`;
     const e = st.ercot, grey = 'rgba(242,244,248,.38)';
     $q('[data-chips]').innerHTML = chip(sw.active, sw.active ? 'var(--out)' : sw.enabled ? 'var(--batt)' : grey, `Storm Watch · ${sw.active ? 'active' : sw.enabled ? 'on' : sw.enabled === false ? 'off' : '—'}`) +
-      (st.nws.length ? chip(true, 'var(--out)', `NWS · ${st.nws[0].event}`) : chip(false, 'var(--batt)', 'NWS · no alerts')) +
-      (!e ? chip(false, grey, 'ERCOT · —') : e.eea > 0 ? chip(true, 'var(--out)', `ERCOT · EEA ${e.eea}`) : chip(false, /normal/i.test(e.condition ?? '') ? 'var(--batt)' : 'var(--warn)', `ERCOT · ${String(e.condition ?? '—').toLowerCase()}`)) +
+      (st.nws.length ? chip(true, 'var(--out)', `NWS · ${esc(st.nws[0].event)}`) : chip(false, 'var(--batt)', 'NWS · no alerts')) +
+      (!e ? chip(false, grey, 'ERCOT · —') : e.eea > 0 ? chip(true, 'var(--out)', `ERCOT · EEA ${esc(e.eea)}`) : chip(false, /normal/i.test(e.condition ?? '') ? 'var(--batt)' : 'var(--warn)', `ERCOT · ${esc(String(e.condition ?? '—').toLowerCase())}`)) +
       chip(false, 'var(--home)', `Reserve ${d.reservePct ?? '—'}%`);
     $q('[data-swbadge]').hidden = !sw.active;
     const tmr = d.solar.tomorrowKwh;
@@ -80,7 +81,7 @@ export function mountOutageCard(S, parent) {
     // the ladder, re-run here for the selected scenario: hours = usable kWh ÷ each rung's steady draw; switched-off loads are struck through
     const off = id => (id === 'ac' && C.scen !== 'asis') || (id === 'pool' && C.scen === 'noacpool');
     $q('[data-ladder]').innerHTML = d.ladder.map(r => { const [c, small] = RUNGS[r.id], h = r.kw > 0 ? d.usableKwh / r.kw : null, o = off(r.id) ? ' off' : '';
-      return `<span class="rung${o}" style="--c:${c}">${r.label}<small>${small(r, d)}</small><i style="width:${h == null ? 100 : Math.min(100, h / 48 * 100).toFixed(1)}%"></i></span><b class="${o.trim()}">${fmtHM(h)}</b>`; }).join('');
+      return `<span class="rung${o}" style="--c:${c}">${esc(r.label)}<small>${small(r, d)}</small><i style="width:${h == null ? 100 : Math.min(100, h / 48 * 100).toFixed(1)}%"></i></span><b class="${o.trim()}">${fmtHM(h)}</b>`; }).join('');
     $q('[data-usable]').textContent = `${d.usableKwh.toFixed(1)} kWh usable`;
     $q('[data-limit]').textContent = `Up to ${d.maxKw} kW at once (${d.batteries} × PW2 at ${+(d.maxKw / d.batteries).toFixed(1)} kW continuous). The AC and pool pump starting together stay well inside that.`;
   }
@@ -96,7 +97,7 @@ export function mountOutageCard(S, parent) {
     let s = '<line x1="6" x2="304" y1="28" y2="28" stroke="rgba(255,255,255,.1)"/>';
     months.forEach((m, i) => s += svgText(6 + i * 24.8 + 12, 58, new Date(m + '-15T12:00:00Z').toLocaleDateString('en-US', { month: 'narrow', timeZone: 'UTC' }), { anchor: 'middle' }));
     o.list.forEach(e => { const f = (Date.parse(e.ts) - Date.parse(yearAgo)) / (365 * 864e5), r = 3 + Math.sqrt(e.duration_s / 3600) * 5;
-      s += `<circle cx="${(6 + clamp(f, 0, 1) * 298).toFixed(1)}" cy="28" r="${r.toFixed(1)}" fill="#ff5a4e" fill-opacity=".3" stroke="#ff5a4e"><title>${e.ts.slice(0, 16).replace('T', ' ')} · ${dur(e.duration_s)}</title></circle>`; });
+      s += `<circle cx="${(6 + clamp(f, 0, 1) * 298).toFixed(1)}" cy="28" r="${r.toFixed(1)}" fill="#ff5a4e" fill-opacity=".3" stroke="#ff5a4e"><title>${esc(e.ts.slice(0, 16).replace('T', ' '))} · ${dur(e.duration_s)}</title></circle>`; });
     $q('[data-strip]').innerHTML = s;
   }
 

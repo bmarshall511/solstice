@@ -116,6 +116,11 @@ describe('push crypto (push.ts)', () => {
     expect(verify('sha256', Buffer.from(`${m[1]}.${m[2]}`), { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(m[3], 'base64url'))).toBe(true);
     expect(P.vapid({ VAPID_PUBLIC_KEY: 'short', VAPID_PRIVATE_KEY: 'x', VAPID_SUBJECT: 'mailto:a@example.test' })).toBeNull();
     expect(P.vapid({ ...process.env, VAPID_SUBJECT: 'nobody' })).toBeNull();
+    // a private key with its leading zero byte dropped (31 bytes) is still the same key: CI hit one (2026-10-04)
+    for (let i = 0; i < 2000; i++) {
+      const v = createECDH('prime256v1'); v.generateKeys(); const d = v.getPrivateKey();
+      if (d.length === 32 && d[0] === 0) { expect(P.vapid({ VAPID_PUBLIC_KEY: v.getPublicKey('base64url'), VAPID_PRIVATE_KEY: d.subarray(1).toString('base64url'), VAPID_SUBJECT: 'mailto:a@example.test' })).not.toBeNull(); break; }
+    }
   });
 
   it('ALR-3 accepts only a real push service endpoint with a P-256 key and a 16-byte secret', () => {

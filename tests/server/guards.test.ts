@@ -24,8 +24,10 @@ const H = vi.hoisted(() => {
       }
       store.set(key, value); return [];
     }
+    if (/FROM readings/.test(text)) return readings.spare;                                     // ac.ts spareSolarW: set per test
     return [];
   };
+  const readings: { spare: any[] } = { spare: [] };
   const kv = { get: async (k: string) => clone(store.get(k)) as any, set: async (k: string, v: unknown) => { store.set(k, clone(v)); } };
   const db = { q, one: async (t: string, p: unknown[] = []) => (await q(t, p))[0], kv, migrate: async () => {} };
 
@@ -52,8 +54,8 @@ const H = vi.hoisted(() => {
   const sdm: Array<{ url: string; body: any }> = [];
   const nestState = { at: 0, deviceId: 'dev-test', name: 'Hallway', online: true, indoorF: 77, humidity: 45, mode: 'COOL', hvac: 'OFF',
     coolF: 76 as number | null, heatF: null, eco: false, ecoCoolF: null, ecoHeatF: null, fanTimer: false, availableModes: ['COOL', 'HEAT', 'OFF'] };
-  const reset = () => { store.clear(); calls.length = 0; sdm.length = 0; pump = slots(); nextId = 20; run.mockClear(); nestState.coolF = 76; nestState.mode = 'COOL'; };
-  return { store, db, calls, run, sdm, nestState, reset };
+  const reset = () => { readings.spare = []; store.clear(); calls.length = 0; sdm.length = 0; pump = slots(); nextId = 20; run.mockClear(); nestState.coolF = 76; nestState.mode = 'COOL'; };
+  return { store, db, calls, run, sdm, nestState, reset, readings };
 });
 
 vi.mock('../../server/src/db.js', () => H.db);
@@ -76,10 +78,12 @@ vi.mock('../../server/src/appliances/nest.js', async importOriginal => {
 });
 
 import { writePoolPlan } from '../../server/src/appliances/screenlogic.js';
-import { setCool, lastSetpointWrite } from '../../server/src/appliances/nest.js';
+import { setCool, lastSetpointWrite, ownerCommand } from '../../server/src/appliances/nest.js';
 import { applyPlan, restorePrevious, planFor, powerModel, type PoolSettings } from '../../server/src/appliances/pool.js';
 import { autopilot } from '../../server/src/appliances/autopilot.js';
-import { acTick } from '../../server/src/appliances/ac.js';
+import { acTick, resumeHold, dayInputs } from '../../server/src/appliances/ac.js';
+import { getHold, lastSent } from '../../server/src/appliances/hold.js';
+import { presenceKey } from '../../server/src/appliances/presence.js';
 import { localDay, addDays } from '../../server/src/tesla/client.js';
 import type { PoolSnapshot } from '../../server/src/appliances/screenlogic.js';
 
@@ -450,6 +454,135 @@ describe('write paths call the guard (fake ScreenLogic session, fake SDM, in-mem
       await tick();
       expect(setCool).not.toHaveBeenCalled();
       expect(await acLog()).toEqual([]);
+    });
+  });
+
+  describe('AC: manual holds and the owner\'s commands (mockup v)', () => {
+    // a mild day at home: the plan is 76° from 07:00, 76° at 21:00, night band 76° from 22:00; NOW is 13:00 Central
+    const home = { ac: { autopilot: 'auto', presence: 'home' } };
+    const tick = () => acTick(SITE, home, .1064, 2.5);
+    const acLog = async () => ((await H.db.kv.get(`${SITE}:ac:log`)) ?? []) as Array<{ text: string; delta?: string }>;
+    const at = (hhmm: string, day = localDay()) => new Date(`${day}T${hhmm}:00-05:00`).getTime();
+    beforeEach(async () => {
+      const today = localDay();
+      await H.db.kv.set('nest:tokens', { access_token: 'test-token', refresh_token: 'test-refresh', expires_at: NOW + 864e5 });   // the clock runs into the evening
+      await H.db.kv.set('pool:forecast', { at: NOW + 864e5, days: [-1, 0, 1].map(k => ({ date: addDays(today, k), high: 75, rainMm: 0, rainPct: 0, sunKwhM2: 3, hourlySun: Array(24).fill(0) })) });
+    });
+
+    it('H1 a step the thermostat already matches is marked done; a wall change is then held, not undone', async () => {
+      await tick();
+      expect(H.sdm).toEqual([]);
+      expect(((await H.db.kv.get(`${SITE}:ac:plan`)) as any).lastStepHour).toBe(7);
+      H.nestState.coolF = 72; vi.setSystemTime(at('13:05')); await tick();
+      expect(H.sdm).toEqual([]);
+      const h = await getHold(SITE);
+      expect(h).toMatchObject({ by: 'wall', coolF: 72, until: at('21:00') });
+      expect((await acLog())[0]).toMatchObject({ delta: 'hold', text: 'Someone set 72° at the thermostat (1:05 PM). Holding until 9:00 PM' });
+      vi.setSystemTime(at('16:00')); await tick();
+      expect(H.sdm).toEqual([]);
+    });
+    it('H2 when the hold ends the step due then applies, through the guard (2° step)', async () => {
+      await tick(); H.nestState.coolF = 72; vi.setSystemTime(at('13:05')); await tick();
+      vi.setSystemTime(at('21:05')); await tick();
+      expect(await getHold(SITE)).toBeNull();
+      expect((await acLog()).map(l => l.delta)).toContain('resumed');
+      expect(H.sdm.map(s => s.body.params.coolCelsius)).toEqual([23.33]);                     // 72 → 74, stepping toward 76
+    });
+    it('H3 a hold is 2 h at least: a change at 20:30 holds to 22:30, past the 21:00 and 22:00 steps', async () => {
+      vi.setSystemTime(at('20:25')); await tick();
+      H.nestState.coolF = 73; vi.setSystemTime(at('20:30')); await tick();
+      expect(await getHold(SITE)).toMatchObject({ until: at('22:30') });
+      vi.setSystemTime(at('22:05')); await tick();
+      expect(H.sdm).toEqual([]);
+    });
+    it('H4 resume ends the hold and the step due now applies on the next tick', async () => {
+      await tick(); H.nestState.coolF = 72; vi.setSystemTime(at('13:05')); await tick();
+      await resumeHold(SITE);
+      expect(await getHold(SITE)).toBeNull();
+      vi.setSystemTime(at('13:40')); await tick();
+      expect(H.sdm.map(s => s.body.params.coolCelsius)).toEqual([23.33]);
+    });
+    it('H5 going Away after the change ends the hold', async () => {
+      await tick(); H.nestState.coolF = 72; vi.setSystemTime(at('13:05')); await tick();
+      vi.setSystemTime(at('14:00'));
+      await H.db.kv.set(presenceKey(SITE), { state: 'away', at: at('13:30'), until: null, nestEco: null });
+      await tick();
+      expect(await getHold(SITE)).toBeNull();
+      expect((await acLog()).some(l => l.text.startsWith('Away: ended the hold on 72°'))).toBe(true);
+    });
+    it('H6 just after midnight, a night step set yesterday is not re-sent over a later change', async () => {
+      const yesterday = addDays(localDay(), -1);
+      vi.setSystemTime(at('00:15'));
+      await H.db.kv.set(`${SITE}:ac:plan`, { date: yesterday, approved: true, lastStepHour: 22 });
+      H.nestState.coolF = 74;
+      await H.db.kv.set('nest:last', { ...H.nestState, at: at('00:00') });                       // no change since the last reading
+      await tick();
+      expect(H.sdm).toEqual([]);
+      expect(((await H.db.kv.get(`${SITE}:ac:plan`)) as any)).toMatchObject({ date: localDay(), lastStepHour: 22 });
+    });
+    it('H7 Autopilot\'s own write is not mistaken for a wall change', async () => {
+      H.nestState.coolF = 80; await tick();                                                     // 80 → 78 (stepping to 76)
+      expect(H.sdm).toHaveLength(1);
+      H.nestState.coolF = 78; vi.setSystemTime(at('13:05')); await tick();
+      expect(await getHold(SITE)).toBeNull();
+    });
+    it('H8 the owner\'s command is sent inside 65–85 cool / 55–80 heat, recorded, and not taken for a wall change', async () => {
+      await tick();
+      await ownerCommand({ kind: 'cool', f: 78 });
+      expect(H.sdm.map(s => [s.body.command, s.body.params.coolCelsius])).toEqual([['sdm.devices.commands.ThermostatTemperatureSetpoint.SetCool', 25.56]]);
+      expect(await lastSent('dev-test')).toMatchObject({ by: 'owner', coolF: 78 });
+      H.nestState.coolF = 78; vi.setSystemTime(at('13:05')); await tick();
+      expect(await getHold(SITE)).toBeNull();                                                    // the route starts the 'app' hold, not detection
+      await expect(ownerCommand({ kind: 'cool', f: 90 })).rejects.toThrow('cooling setpoints must be 65–85°');
+      await expect(ownerCommand({ kind: 'heat', f: 70 })).rejects.toThrow('the thermostat is in COOL, not HEAT');
+      expect(H.sdm).toHaveLength(1);
+    });
+    it('H9 the day\'s weather inputs freeze at the first plan from 06:00, so a new forecast can\'t flip today\'s plan', async () => {
+      const a = { high: 95, sunKwhM2: 7, hourlySun: Array(24).fill(.5), humidity: 40 }, b = { high: 80, sunKwhM2: 2, hourlySun: Array(24).fill(.1), humidity: 70 };
+      expect(await dayInputs(SITE, '2026-07-15', a, 5)).toEqual(a);
+      expect(await dayInputs(SITE, '2026-07-15', b, 5)).toEqual(b);                             // before 06:00 nothing is frozen
+      expect(await dayInputs(SITE, '2026-07-15', a, 6)).toEqual(a);
+      expect(await dayInputs(SITE, '2026-07-15', b, 13)).toEqual(a);
+      expect(await dayInputs(SITE, '2026-07-16', b, 7)).toEqual(b);
+    });
+  });
+
+  describe('AC: pre-cool only on spare solar (Q7)', () => {
+    // a hot, sunny day at home: the plan pre-cools 74° from 11:00 and coasts to 78° from 16:00; NOW is 13:00 Central
+    const home = { ac: { autopilot: 'auto', presence: 'home' } };
+    const tick = () => acTick(SITE, home, .1064, 2.5);
+    const at = (hhmm: string) => new Date(`${localDay()}T${hhmm}:00-05:00`).getTime();
+    const sun = Array.from({ length: 24 }, (_, h) => Math.max(0, 1 - Math.abs(h - 13) / 6));
+    beforeEach(async () => {
+      const today = localDay();
+      await H.db.kv.set('nest:tokens', { access_token: 'test-token', refresh_token: 'test-refresh', expires_at: NOW + 864e5 });
+      await H.db.kv.set('pool:forecast', { at: NOW + 864e5, days: [-1, 0, 1].map(k => ({ date: addDays(today, k), high: 96, rainMm: 0, rainPct: 0, sunKwhM2: 7, hourlySun: sun })) });
+      await H.db.kv.set(`${SITE}:ac:control`, { count: 1, days: {} });   // not a control day
+    });
+    it('P1 no spare solar: holds the band (76°) instead of pre-cooling, and says so', async () => {
+      H.readings.spare = [{ n: 3, w: -800 }];
+      await tick();
+      expect(H.sdm).toEqual([]);                                                                 // 76 already: nothing to send
+      const log = (await H.db.kv.get(`${SITE}:ac:log`)) as any[] ?? [];
+      expect(log.some(l => /pre-cooling/.test(l.text))).toBe(false);
+    });
+    it('P2 a full AC of spare solar starts the pre-cool; half an AC keeps it; less ends it', async () => {
+      H.readings.spare = [{ n: 3, w: 3500 }];                                                    // the AC is 3.25 kW (estimated) here
+      await tick();
+      expect(H.sdm.map(s => s.body.params.coolCelsius)).toEqual([23.33]);                      // 76 → 74
+      expect(((await H.db.kv.get(`${SITE}:ac:plan`)) as any)).toMatchObject({ precoolOn: true, precoolRan: true });
+      H.nestState.coolF = 74; H.nestState.hvac = 'COOLING'; H.readings.spare = [{ n: 3, w: -900 }];   // AC on: + its 3.25 kW back, 2.35 kW ≥ half
+      vi.setSystemTime(at('13:40')); await tick();
+      expect(H.sdm).toHaveLength(1);
+      H.readings.spare = [{ n: 3, w: -2000 }];
+      vi.setSystemTime(at('14:20')); await tick();
+      expect(H.sdm.map(s => s.body.params.coolCelsius)).toEqual([23.33, 24.44]);               // back to 76
+      expect(((await H.db.kv.get(`${SITE}:ac:plan`)) as any).precoolOn).toBe(false);
+    });
+    it('P3 no pre-cool today: no coast either', async () => {
+      H.readings.spare = [];
+      vi.setSystemTime(at('16:05')); await tick();
+      expect(H.sdm).toEqual([]);                                                                 // stays 76, no 78 coast
     });
   });
 });

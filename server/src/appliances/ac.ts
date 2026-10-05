@@ -7,9 +7,11 @@ import { forecast } from './autopilot.js';
 import type { Mode } from './autopilot.js';
 import { lastSetpointWrite } from './nest.js';
 import { guardCoolSetpoint, explainRefusal, GuardRefusal } from './guards.js';
-import { acSavings, learnedPlan, type AppliedTrim } from '../learn/ac.js';
+import { acSavings, learnedPlan, bandMid, type AppliedTrim } from '../learn/ac.js';
+import { median } from '../learn/models.js';
 import type { Tier } from '../learn/confidence.js';
 import { presenceFor } from './presence.js';
+import { changed, ours, holdUntil, holdOver, morningAfter, getHold, setHold, lastSent, SAME_F, type Hold, type HoldBy } from './hold.js';
 
 export type AcSettings = { band: { homeLo: number; homeHi: number; nightLo: number; nightHi: number }; awayF: number; nightFrom: number; nightTo: number; precoolDepth: number; coastF: number; maxStepF: number; humidityCap: number; autopilot: Mode; presence: 'home' | 'away' };
 const DEFAULTS: AcSettings = { band: { homeLo: 74, homeHi: 78, nightLo: 74, nightHi: 76 }, awayF: 80, nightFrom: 22, nightTo: 7, precoolDepth: 2, coastF: 78, maxStepF: 2, humidityCap: 60, autopilot: 'suggest', presence: 'home' };
@@ -104,6 +106,9 @@ export async function acKwhBetween(siteId: string, spans: Array<{ day: string; e
     days, readingDays, modelDays, acKw: Math.round(acKw * 100) / 100, acKwSource: learned.coolKw != null ? 'learned' as const : 'estimated' as const, slope: Math.round(slope * 100) / 100 };
 }
 
+/** Today's applied-plan record (kv `<site>:ac:plan`). precoolOn/precoolRan: the spare-solar pre-cool state. */
+export type AcRecord = { date: string; approved: boolean; lastStepHour: number | null; precoolOn?: boolean; precoolRan?: boolean };
+
 /* ---------- the plan ---------- */
 export type AcStep = { hour: number; coolF: number; why: string };
 export type AcPlan = { date: string; steps: AcStep[]; precool: boolean; precoolFrom: number; precoolTo: number; coastFrom: number; coastTo: number; high: number; sunKwhM2: number;
@@ -129,6 +134,7 @@ export function planFor(o: { date: string; high: number; sunKwhM2: number; hourl
     why.push(`Pre-cool to ${deep}° from ${from}:00 to ${to}:00 while the panels peak (${(Math.round(o.sunKwhM2 * 10) / 10)} kWh/m² of sun, high ${Math.round(o.high)}°)`);
     why.push(`Coast to ${Math.min(s.coastF, s.band.homeHi)}° until ${Math.min(21, to + 4)}:00 so the batteries carry a lighter evening`);
     if (o.high >= 100) why.push('Heat wave: pre-cool starts at 11:00 so the system never falls behind');
+    why.push('Pre-cool runs only while the panels measurably cover the house and the AC; otherwise it holds the band and skips the coast');
   } else why.push(o.control ? 'Control day: holding the comfort band (1 in 5 hot, sunny days) so Solstice can measure what pre-cooling saves' : !hot ? `Mild day (high ${Math.round(o.high)}°): no pre-cool needed` : !sunny ? 'Cloudy: no solar surplus to pre-cool with' : humid ? `Humidity ${o.humidity}%: no coast, holding ${mid}°` : 'Holding the comfort band');
   steps.push({ hour: precool ? Math.min(21, to + 4) : 21, coolF: mid, why: 'evening, comfort band' });
   steps.push({ hour: s.nightFrom, coolF: night, why: 'night band' });
@@ -139,6 +145,155 @@ export function planFor(o: { date: string; high: number; sunKwhM2: number; hourl
 }
 export const stepAt = (plan: AcPlan, hour: number) => [...plan.steps].reverse().find(s => s.hour <= hour) ?? plan.steps[plan.steps.length - 1];
 
+/* ---------- settings: what POST /api/appliances/ac/settings may change (mockup v frame 5) ---------- */
+export const NIGHT_TO_RANGE = [4, 11] as const, NIGHT_FROM_RANGE = [18, 23] as const;
+const whole = (v: unknown, lo: number, hi: number) => typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
+/**
+ * Why an AC settings patch is unusable, or null. Only known keys pass; temperatures are whole degrees inside 65–85°F (the Autopilot
+ * guard's range), each low at or below its high; night runs from 18–23 h to 4–11 h. `band` is checked merged with the current band.
+ */
+export function acPatchError(patch: Record<string, unknown>, cur: Partial<AcSettings>): string | null {
+  const known = new Set(['band', 'awayF', 'nightFrom', 'nightTo', 'autopilot', 'presence', 'nestPresence']);
+  const bad = Object.keys(patch).filter(k => !known.has(k)); if (bad.length) return `unknown setting ${bad.join(', ').replace(/[^\w ,]/g, '')}`;
+  if (patch.autopilot !== undefined && !['off', 'suggest', 'auto'].includes(patch.autopilot as string)) return 'bad mode';
+  if (patch.presence !== undefined && !['home', 'away'].includes(patch.presence as string)) return 'bad presence';
+  if (patch.nestPresence !== undefined && typeof patch.nestPresence !== 'boolean') return 'nestPresence must be true or false';
+  if (patch.band !== undefined) {
+    if (typeof patch.band !== 'object' || !patch.band) return 'band must be an object';
+    const b = { ...DEFAULTS.band, ...(cur.band ?? {}), ...(patch.band as object) } as Record<string, unknown>;
+    if (Object.keys(patch.band).some(k => !(k in DEFAULTS.band))) return 'band has unknown keys';
+    if (!['homeLo', 'homeHi', 'nightLo', 'nightHi'].every(k => whole(b[k], AC_MIN, AC_MAX))) return `band temperatures must be whole degrees ${AC_MIN}–${AC_MAX}°`;
+    if ((b.homeLo as number) > (b.homeHi as number) || (b.nightLo as number) > (b.nightHi as number)) return 'each low must be at or below its high';
+  }
+  if (patch.awayF !== undefined && !whole(patch.awayF, AC_MIN, AC_MAX)) return `away must be a whole degree ${AC_MIN}–${AC_MAX}°`;
+  if (patch.nightFrom !== undefined && !whole(patch.nightFrom, ...NIGHT_FROM_RANGE)) return `night starts between ${NIGHT_FROM_RANGE[0]}:00 and ${NIGHT_FROM_RANGE[1]}:00`;
+  if (patch.nightTo !== undefined && !whole(patch.nightTo, ...NIGHT_TO_RANGE)) return `night ends between ${NIGHT_TO_RANGE[0]}:00 and ${NIGHT_TO_RANGE[1]}:00`;
+  return null;
+}
+const AC_MIN = 65, AC_MAX = 85;   // guards.ts AC_MIN_F / AC_MAX_F; the band can never ask Autopilot for a refused target
+
+/* ---------- learning from holds (mockup v frame 7) ---------- */
+export type HoldRecord = { at: number; day: string; hour: number; coolF: number; planF: number };
+export const holdHistoryKey = (siteId: string) => `${siteId}:ac:holdHistory`, suggestDismissKey = (siteId: string) => `${siteId}:ac:suggestDismissed`;
+export type BandSuggestion = { key: string; window: 'night' | 'day'; f: number; hour: number; days: number; of: number; from: number };
+const isNight = (h: number, s: Pick<AcSettings, 'nightFrom' | 'nightTo'>) => h >= s.nightFrom || h < s.nightTo;
+const hourGap = (a: number, b: number) => { const d = Math.abs(a - b) % 24; return Math.min(d, 24 - d); };
+/**
+ * The same kind of manual change on 4 of the last 7 days: a cooling hold within ±1 h of the same time of day, in the same direction
+ * against the plan, within 1° of each other. Returns the largest such group as a band suggestion, or null.
+ */
+export function bandSuggestion(holds: HoldRecord[], s: AcSettings, today = localDay()): BandSuggestion | null {
+  const since = addDays(today, -6), recent = holds.filter(h => h.day >= since && h.day <= today && h.coolF !== h.planF);
+  let best: BandSuggestion | null = null;
+  for (const a of recent) {
+    const dir = Math.sign(a.coolF - a.planF), g = recent.filter(h => hourGap(h.hour, a.hour) <= 1 && Math.sign(h.coolF - h.planF) === dir && Math.abs(h.coolF - a.coolF) <= 1);
+    const days = new Set(g.map(h => h.day)).size; if (days < 4 || (best && days <= best.days)) continue;
+    const f = Math.round(median(g.map(h => h.coolF))), hour = Math.round(median(g.map(h => h.hour))) % 24, window = isNight(hour, s) ? 'night' as const : 'day' as const;
+    const from = window === 'night' ? Math.max(s.band.nightLo, Math.min(s.band.nightHi, bandMid(s))) : bandMid(s);
+    if (f === from || f < AC_MIN || f > AC_MAX) continue;
+    best = { key: `${window}:${f}`, window, f, hour, days, of: 7, from };
+  }
+  return best;
+}
+/** The band that makes `f` the night (or daytime) setpoint the plan uses: night = clamp(mid, nightLo, nightHi); daytime = mid of home. */
+export function bandFor(sg: Pick<BandSuggestion, 'window' | 'f'>, b: AcSettings['band']): AcSettings['band'] {
+  const mid = Math.min(b.homeHi, Math.max(b.homeLo, Math.round((b.homeLo + b.homeHi) / 2)));   // learn/ac.ts bandMid
+  // night = max(nightLo, min(nightHi, mid)): pin the end on the side of mid that f is on
+  if (sg.window === 'night') return sg.f >= mid ? { ...b, nightLo: sg.f, nightHi: Math.max(b.nightHi, sg.f) } : { ...b, nightLo: Math.min(b.nightLo, sg.f), nightHi: sg.f };
+  const d = sg.f - mid, lo = Math.max(AC_MIN, b.homeLo + d), hi = Math.min(AC_MAX, b.homeHi + d);
+  return { ...b, homeLo: Math.min(lo, sg.f), homeHi: Math.max(hi, sg.f) };
+}
+async function rememberHold(siteId: string, r: HoldRecord) {
+  const h = await kv.get<HoldRecord[]>(holdHistoryKey(siteId)) ?? [];
+  h.unshift(r); await kv.set(holdHistoryKey(siteId), h.slice(0, 40));
+}
+/** Today's suggestion unless "Not now" hid that same one in the last 14 days. */
+export async function currentSuggestion(siteId: string, s: AcSettings, now = Date.now()) {
+  const sg = bandSuggestion(await kv.get<HoldRecord[]>(holdHistoryKey(siteId)) ?? [], s); if (!sg) return null;
+  const dis = await kv.get<Record<string, number>>(suggestDismissKey(siteId)) ?? {};
+  return dis[sg.key] && now - dis[sg.key] < 14 * 864e5 ? null : sg;
+}
+export async function dismissSuggestion(siteId: string, key: string, now = Date.now()) {
+  const dis = await kv.get<Record<string, number>>(suggestDismissKey(siteId)) ?? {};
+  await kv.set(suggestDismissKey(siteId), Object.fromEntries([...Object.entries(dis).filter(([, t]) => now - t < 14 * 864e5), [key, now]]));
+}
+
+/* ---------- pre-cool only on spare solar (owner, Q7 of docs/audit-2026-10.md) ---------- */
+// The house rarely has spare solar, so a forecast alone mostly pre-cooled on grid power. The pre-cool step now runs only while the
+// panels measurably cover the rest of the house plus the AC. Spare is solar minus the house's load without the AC (the AC's own draw
+// is added back while Nest says it is cooling), averaged over the last 15 minutes of live readings. It starts at a full AC's worth of
+// spare and keeps going down to half of one, so the AC's own draw can't switch it straight back off.
+export const SURPLUS_WINDOW_MS = 15 * 60_000, PRECOOL_START = 1, PRECOOL_KEEP = .5;
+export function precoolDecision(o: { spareW: number | null; acKw: number; on: boolean }) {
+  if (o.spareW == null) return false;
+  return o.spareW >= (o.on ? PRECOOL_KEEP : PRECOOL_START) * o.acKw * 1000;
+}
+async function spareSolarW(siteId: string, cooling: boolean, acKw: number, now = Date.now()) {
+  const r = await q<{ n: number; w: number | null }>(`SELECT COUNT(*)::int n, AVG(solar_w - load_w)::float8 w FROM readings WHERE site_id = $1 AND ts > $2 AND solar_w IS NOT NULL AND load_w IS NOT NULL`, [siteId, now - SURPLUS_WINDOW_MS]);
+  if (!r[0] || r[0].n < 2 || r[0].w == null) return null;
+  return r[0].w + (cooling ? acKw * 1000 : 0);
+}
+
+/* ---------- frozen daily inputs and manual holds (mockup v) ---------- */
+type DayInputs = { high: number; sunKwhM2: number; hourlySun: number[]; humidity: number | null };
+export const FREEZE_FROM_HOUR = 6;
+export const dayInputsKey = (siteId: string) => `${siteId}:ac:dayInputs`;
+/** Today's weather inputs for the plan: the ones frozen at the first plan from 06:00 on, else live (and frozen now if it is 06:00 or later). */
+export async function dayInputs(siteId: string, date: string, live: DayInputs, hour = hourNow()): Promise<DayInputs> {
+  const key = dayInputsKey(siteId), got = await kv.get<DayInputs & { date: string }>(key);
+  if (got?.date === date) return { high: got.high, sunKwhM2: got.sunKwhM2, hourlySun: got.hourlySun, humidity: got.humidity };
+  if (hour >= FREEZE_FROM_HOUR) await kv.set(key, { date, ...live });
+  return live;
+}
+const clockAt = (ms: number) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }).format(new Date(ms)).replace(/\s/g, ' ');
+/** The thermostat's setting in words for the log and the banner: "72°", "heat 68°", "68–76°", "Off". */
+export const setting = (h: Pick<Hold, 'mode' | 'coolF' | 'heatF'>) => h.mode === 'OFF' ? 'Off' : h.mode === 'HEAT' ? `heat ${h.heatF}°` : h.mode === 'HEATCOOL' ? `${h.heatF}–${h.coolF}°` : `${h.coolF}°`;
+type Log = Array<{ at: number; day: string; text: string; delta?: string }>;
+async function logAc(siteId: string, text: string, delta?: string) {
+  const log = await kv.get<Log>(`${siteId}:ac:log`) ?? [];
+  log.unshift({ at: Date.now(), day: localDay(), text, delta }); await kv.set(`${siteId}:ac:log`, log.slice(0, 40));
+}
+/** After a hold ends, the step due now is applied again (subject to Autopilot's own guard). */
+async function replan(siteId: string) { const rec = await kv.get<any>(`${siteId}:ac:plan`); if (rec) { rec.lastStepHour = null; await kv.set(`${siteId}:ac:plan`, rec); } }
+/** Start a hold for a change made by `by` (the wall, or the owner's tap in Solstice). */
+export async function startHold(siteId: string, by: HoldBy, st: Pick<NestState, 'mode' | 'coolF' | 'heatF'>, plan: Pick<AcPlan, 'steps'>, s: AcSettings, now = Date.now()) {
+  const u = holdUntil(now, plan.steps, s.nightTo), h: Hold = { at: now, by, mode: st.mode, coolF: st.coolF, heatF: st.heatF, until: u.until, why: u.why };
+  await setHold(siteId, h);
+  if (st.mode === 'COOL' && st.coolF != null) {   // frame 7: what was set, against what the plan wanted then
+    const t = rfc3339(new Date(now)), hour = Number(t.slice(11, 13)) + Number(t.slice(14, 16)) / 60;
+    await rememberHold(siteId, { at: now, day: t.slice(0, 10), hour, coolF: st.coolF, planF: stepAt(plan as AcPlan, hour).coolF });
+  }
+  await logAc(siteId, `${by === 'app' ? 'You set' : 'Someone set'} ${setting(h)} ${by === 'app' ? 'in Solstice' : 'at the thermostat'} (${clockAt(now)}). Holding until ${clockAt(h.until)}`, 'hold');
+  return h;
+}
+/**
+ * The hold in force after this reading: end one that is over (time, or Away since it began), and start one when the thermostat
+ * moved from the previous reading to something Solstice did not send. `prev` is null unless this call read Nest fresh.
+ */
+export async function observeHold(siteId: string, prev: NestState | null, st: NestState | null, plan: AcPlan, s: AcSettings, presence: { state: string; since: number | null }, now = Date.now()) {
+  let h = await getHold(siteId);
+  if (h) { const over = holdOver(h, now, presence);
+    if (over) { await setHold(siteId, null); await replan(siteId); await logAc(siteId, over === 'away' ? `Away: ended the hold on ${setting(h)}; back to the plan` : `Hold on ${setting(h)} ended; back to the plan`, 'resumed'); h = null; } }
+  if (st && changed(prev, st) && !ours(st, await lastSent(st.deviceId), now)) {
+    const dup = h && now - h.at < 10 * 60_000 && h.mode === st.mode && setting(h) === setting(st);   // two readers saw the same change
+    if (!dup) h = await startHold(siteId, 'wall', st, plan, s, now);
+  }
+  return h;
+}
+/** "Resume now": end the hold and let the step due now apply. */
+export async function resumeHold(siteId: string) {
+  const h = await getHold(siteId); if (!h) return null;
+  await setHold(siteId, null); await replan(siteId); await logAc(siteId, `You resumed the plan (was holding ${setting(h)})`, 'resumed');
+  return h;
+}
+/** "Hold until morning": run the hold to the plan's next morning step. */
+export async function holdToMorning(siteId: string, s: Pick<AcSettings, 'nightTo'>, now = Date.now()) {
+  const h = await getHold(siteId); if (!h) return null;
+  const next: Hold = { ...h, until: morningAfter(now, s.nightTo), why: 'until the morning step, as you asked', extended: true };
+  await setHold(siteId, next); await logAc(siteId, `Holding ${setting(h)} until ${clockAt(next.until)}`, 'hold');
+  return next;
+}
+
 /* ---------- detail for the app ---------- */
 export async function acDetail(siteId: string, settingsAll: Record<string, any>, rate: number | null, slope: number, opts: { fresh?: boolean } = {}) {
   const settings: AcSettings = { ...DEFAULTS, ...(settingsAll.ac ?? {}), band: { ...DEFAULTS.band, ...(settingsAll.ac?.band ?? {}) } };
@@ -146,19 +301,25 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
   settings.presence = presence.state;
   const configured = nestConfigured(), linked = configured && await nestLinked();
   let st = await kv.get<NestState>('nest:last') ?? null, error: string | null = null;
-  if (linked && (opts.fresh || !st || Date.now() - st.at > 60_000)) { try { st = await readNest(); await recordNest(siteId, st); } catch (e: any) { error = e.message; } }
+  const prev = st; let fresh = false;
+  if (linked && (opts.fresh || !st || Date.now() - st.at > 60_000)) { try { st = await readNest(); fresh = true; await recordNest(siteId, st); } catch (e: any) { error = e.message; } }
   const learned = await learnAcKw(siteId), rt = await runtimeToday(siteId);
   const days = await forecast(), today = localDay(), ti = Math.max(0, days.findIndex(d => d.date === today));
-  // today's plan through the learning layer: a control day holds the band, a learned trim applies, the savings carry `conf`
-  const plan = await learnedPlan(siteId, { date: today, high: days[ti]?.high ?? 90, sunKwhM2: days[ti]?.sunKwhM2 ?? 5, hourlySun: days[ti]?.hourlySun ?? Array(24).fill(0), settings, acKw: learned.coolKw, slope, rate, humidity: st?.humidity ?? null },
+  // today's plan through the learning layer: a control day holds the band, a learned trim applies, the savings carry `conf`.
+  // The day's weather inputs are frozen at the first plan from 06:00 on, so a refreshed forecast or a humidity reading near the
+  // cap can't flip the plan back and forth during the day (it used to re-plan every 5 minutes).
+  const inputs = await dayInputs(siteId, today, { high: days[ti]?.high ?? 90, sunKwhM2: days[ti]?.sunKwhM2 ?? 5, hourlySun: days[ti]?.hourlySun ?? Array(24).fill(0), humidity: st?.humidity ?? null });
+  const plan = await learnedPlan(siteId, { date: today, ...inputs, settings, acKw: learned.coolKw, slope, rate },
     planFor, learned.coolKw ?? (slope ? Math.max(2, Math.min(5, slope * 1.3)) : 3.4));
+  const hold = await observeHold(siteId, fresh ? prev : null, st, plan, settings, presence);
   const week = days.slice(ti, ti + 7).map(d => { const p = planFor({ date: d.date, high: d.high, sunKwhM2: d.sunKwhM2, hourlySun: d.hourlySun, settings, acKw: learned.coolKw, slope, rate, humidity: null }); return { date: d.date, high: Math.round(d.high), sunKwhM2: Math.round(d.sunKwhM2 * 10) / 10, precool: p.precool, depth: p.precool ? settings.precoolDepth : 0, shiftedKwh: p.shiftedKwh, eveningAvoidedKwh: p.eveningAvoidedKwh, precoolFrom: p.precoolFrom, precoolTo: p.precoolTo, coastFrom: p.coastFrom, coastTo: p.coastTo }; });
-  const applied = await kv.get<{ date: string; approved: boolean; lastStepHour: number | null }>(`${siteId}:ac:plan`) ?? null;
+  const applied = await kv.get<AcRecord>(`${siteId}:ac:plan`) ?? null;
   const log = await kv.get<Array<{ at: number; day: string; text: string; delta?: string }>>(`${siteId}:ac:log`) ?? [];
   const acKw = acKwFor(learned.coolKw, slope);
   const todayKwh = Math.round(rt.minutes / 60 * acKw * 10) / 10;
   const home = await q<{ kwh: number }>(`SELECT (SUM(home_wh) / 1000.0)::float8 kwh FROM energy WHERE site_id = $1 AND day = $2`, [siteId, today]);
-  return { id: 'ac', name: 'AC', configured, linked, error, settings, state: st, learned: { ...learned, acKw, source: learned.coolKw ? 'measured' : 'estimated' }, runtime: rt, todayKwh, shareOfHomePct: home[0]?.kwh ? Math.round(todayKwh / home[0].kwh * 100) : null,
+  const suggestion = await currentSuggestion(siteId, settings);
+  return { id: 'ac', name: 'AC', configured, linked, error, settings, state: st, hold, suggestion, learned: { ...learned, acKw, source: learned.coolKw ? 'measured' : 'estimated' }, runtime: rt, todayKwh, shareOfHomePct: home[0]?.kwh ? Math.round(todayKwh / home[0].kwh * 100) : null,
     plan, currentStep: stepAt(plan, hourNow()), week, presence, applied: applied?.date === today ? applied : null, log, outdoorF: days[ti] ? Math.round(days[ti].high) : null, hourlyOutdoor: null,
     equipment: { airHandler: 'Trane TEM4A0C42 · 3.5 ton variable-speed (2018)', heat: 'electric strips (staged)',
       outdoor: learned.heatKw != null ? (learned.heatKw < 5 ? `heat pump (measured ${learned.heatKw.toFixed(1)} kW when heating)` : `straight AC, heating on the strips (measured ${learned.heatKw.toFixed(1)} kW)`) : 'outdoor unit type: Solstice will measure it from the first heating steps this winter' } };
@@ -172,9 +333,36 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
 export async function acTick(siteId: string, settingsAll: Record<string, any>, rate: number | null, slope: number) {
   const d = await acDetail(siteId, settingsAll, rate, slope, { fresh: true });
   if (!d.linked || !d.state) return { sampled: false };
-  const s = d.settings, plan = d.plan, h = hourNow(), step = stepAt(plan, h), rec = d.applied ?? { date: plan.date, approved: s.autopilot === 'auto', lastStepHour: null as number | null };
+  if (d.hold) return { sampled: true, applied: !!d.applied?.approved, held: true };   // hold.ts: a manual change is in force; skip the plan
+  const s = d.settings, plan = d.plan, h = hourNow(), planStep = stepAt(plan, h);
+  let rec: AcRecord | null = d.applied;
+  if (!rec) {
+    // a new day: before the morning step the step due is last night's night band; if yesterday already set it, it is done
+    // (it used to be re-sent just after midnight over whatever was set since)
+    const y = await kv.get<{ date: string; lastStepHour: number | null }>(`${siteId}:ac:plan`);
+    const carried = y?.date === addDays(plan.date, -1) && h < plan.steps[0].hour && y.lastStepHour === planStep.hour ? planStep.hour : null;
+    rec = { date: plan.date, approved: s.autopilot === 'auto', lastStepHour: carried } as AcRecord;
+    await kv.set(`${siteId}:ac:plan`, rec);
+  }
   if (s.autopilot === 'auto') rec.approved = true;
   const log = d.log;
+  // pre-cool only on measured spare solar; the coast after it only on a day that pre-cooled
+  let step = planStep;
+  if (plan.precool && step.hour >= plan.precoolFrom && step.hour < plan.coastFrom) {
+    const on = precoolDecision({ spareW: await spareSolarW(siteId, d.state.hvac === 'COOLING', d.learned.acKw), acKw: d.learned.acKw, on: !!rec.precoolOn });
+    if (on !== !!rec.precoolOn) {
+      rec.precoolOn = on; rec.lastStepHour = null; if (on) rec.precoolRan = true;
+      log.unshift({ at: Date.now(), day: plan.date, text: on ? `Spare solar: pre-cooling to ${step.coolF}°` : `No spare solar: holding ${bandMid(s)}° until there is` });
+      await kv.set(`${siteId}:ac:plan`, rec); await kv.set(`${siteId}:ac:log`, log.slice(0, 40));
+    }
+    if (!on) step = { ...step, coolF: bandMid(s), why: 'pre-cool waits for spare solar' };
+  } else if (plan.precool && step.hour >= plan.coastFrom && step.hour < plan.coastTo && !rec.precoolRan) {
+    step = { ...step, coolF: bandMid(s), why: 'no pre-cool ran today, so no coast' };
+  }
+  // a step the thermostat already matches is done, so a later change during it is left alone (it used to be undone within minutes)
+  if (rec.approved && d.state.mode === 'COOL' && rec.lastStepHour !== step.hour && d.state.coolF != null && Math.abs(step.coolF - d.state.coolF) < SAME_F) {
+    rec.lastStepHour = step.hour; await kv.set(`${siteId}:ac:plan`, rec);
+  }
   if (rec.approved && d.state.mode === 'COOL' && rec.lastStepHour !== step.hour && step.coolF !== d.state.coolF) {
     const lo = Math.min(s.band.homeLo, s.band.nightLo), hi = Math.max(s.band.homeHi, s.band.nightHi, s.awayF);
     const target = Math.max(lo, Math.min(hi, step.coolF));

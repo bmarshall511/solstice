@@ -2,6 +2,8 @@ import { config } from '../config.js';
 import { accessToken } from './auth.js';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+/** The longest one Fleet API call may take. */
+export const FLEET_TIMEOUT_MS = 12_000;
 
 export type LiveStatus = {
   solar_power: number; battery_power: number; grid_power: number; load_power: number; percentage_charged: number;
@@ -11,10 +13,12 @@ export type EnergyBucket = { timestamp: string; [field: string]: number | string
 
 /** Fleet API client bound to one connected Tesla account. */
 export function teslaFor(accountId: number) {
-  async function get<T>(path: string, params?: Record<string, string>, attempt = 0): Promise<T> {
+  async function get<T>(path: string, params?: Record<string, string>, attempt = 0, stale: string | null = null): Promise<T> {
     const url = `${config.audience}${path}${params ? `?${new URLSearchParams(params)}` : ''}`;
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${await accessToken(accountId, attempt > 0 && attempt < 2)}` } });
-    if (res.status === 401 && attempt === 0) return get(path, params, 1);
+    const token = await accessToken(accountId, stale);
+    // every Fleet call has a deadline, so one hung request (backup_history is known to stall into a 504) can't eat a cron's 60 s
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(FLEET_TIMEOUT_MS) });
+    if (res.status === 401 && attempt === 0) return get(path, params, 1, token);   // refresh past the refused token only
     if (res.status === 429 && attempt < 3) { await sleep(1500 * 2 ** attempt); return get(path, params, attempt + 2); }
     const j = (await res.json().catch(() => ({}))) as { response?: T; error?: string; error_description?: string };
     if (!res.ok) throw new Error(`Tesla ${path} → HTTP ${res.status}: ${j.error ?? ''} ${j.error_description ?? ''}`.trim());
@@ -44,6 +48,19 @@ export function localMidnight(day: string, timeZone = config.timeZone): Date {
   return new Date(guess.getTime() - offset);
 }
 export const localDay = (d = new Date()) => rfc3339(d).slice(0, 10);
+/**
+ * Epoch ms of a local clock time on a day (`hour` may be fractional: 18.5 = 18:30). DST-aware: on the fall-back day 02:00 is 3 h after
+ * midnight, not 2, and the repeated 01:xx resolves to its first occurrence; on the spring-forward day a time in the skipped hour lands
+ * an hour later. (Midnight + hour × 1 h was an hour off for the rest of both change days.)
+ */
+export function localAt(day: string, hour: number, timeZone = config.timeZone): number {
+  const h = Math.floor(hour), m = Math.round((hour - h) * 60), pad = (v: number) => String(v).padStart(2, '0');
+  const wall = Date.parse(`${day}T${pad(h)}:${pad(m)}:00Z`);   // the clock reading as if it were UTC
+  const offAt = (t: number) => Date.parse(rfc3339(new Date(t), timeZone).slice(0, 19) + 'Z') - t;
+  const a = wall - offAt(wall - 12 * 3600e3), b = wall - offAt(wall + 12 * 3600e3);   // the offsets on either side of a change
+  const ok = (t: number) => Date.parse(rfc3339(new Date(t), timeZone).slice(0, 19) + 'Z') === wall;
+  return ok(a) && ok(b) ? Math.min(a, b) : ok(a) ? a : ok(b) ? b : Math.max(a, b);
+}
 export const addDays = (d: string, n: number) => new Date(Date.parse(d + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
 /**
  * The window to ask Tesla for one local day: local midnight to one second before the next local midnight, so the DST-start day

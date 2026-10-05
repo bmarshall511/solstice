@@ -4,7 +4,7 @@ import { q, one, kv, migrate } from './db.js';
 import { config } from './config.js';
 import { hashPassword, verifyPassword, startSession, endSession, currentUser, requireUser, requireSite, tooManyAttempts, recordAttempt, signState, verifyState, multiUser,
   ownerKey, checkOwnerKey, startOwnerSession, endOwnerSession, endOtherOwnerSessions, endOwnerSessionById, listOwnerSessions, ownerAttemptLimited, guestAttempts, clientIp,
-  signOwnerState, consumeOwnerState, setCookie, readCookie } from './auth.js';
+  signOwnerState, consumeOwnerState, setCookie, readCookie, safeEqual } from './auth.js';
 import { gate, presenceHidden, setPreview, PREVIEW_COOKIE } from './access.js';
 import { createShare, listShares, revokeShare, revokeAllShares, redeemShare, pruneShares, guestMaxAge, EXPIRY, DEFAULT_EXPIRY, LABEL_MAX, GUEST_COOKIE } from './share.js';
 import { authorizeUrl, exchangeCode } from './tesla/auth.js';
@@ -18,16 +18,17 @@ import { currentTariff, netEnergyCost, NO_TARIFF } from './tariff.js';
 import { appliances, comingSoon } from './appliances/index.js';
 import { poolDetail, applyPlan, restorePrevious } from './appliances/pool.js';
 import { readPool } from './appliances/screenlogic.js';
-import { acDetail, acTick } from './appliances/ac.js';
+import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, bandFor, dismissSuggestion } from './appliances/ac.js';
 import { applianceDay } from './appliances/day.js';
 import { cronTick } from './appliances/sampling.js';
-import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest } from './appliances/nest.js';
+import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest, ownerCommand } from './appliances/nest.js';
+import { GuardRefusal, explainRefusal, type ManualCommand } from './appliances/guards.js';
 import { pvsRouter, prunePvs } from './pvs.js';
 import { panelsDay, panelAlerts, panelWatch } from './panels.js';
 import { flowsFor, FlowsInputError } from './flows.js';
 import { outageDetail } from './outage.js';
 
-import { alertRoutes } from './notify.js';
+import { alertRoutes, notify } from './notify.js';
 import { ercotNow, fiveMinuteWatch, nightlyWatch, cronSites, fiveMinuteSteps, nightlySteps } from './watch.js';
 import { digestRoutes, maybeWeeklyDigest } from './digest.js';
 import { presenceRoutes, setPresence } from './appliances/presence.js';
@@ -178,11 +179,12 @@ app.get('/auth/login', wrap(async (req, res) => {
 
 app.get('/auth/callback', wrap(async (req, res) => {
   const { code, state, error, error_description } = req.query as Record<string, string>;
-  if (error) return res.redirect(`/?tesla_error=${encodeURIComponent(error_description || error)}`);
+  // fixed codes only: Tesla's own error text is never reflected into the page (main.js maps each code to a sentence)
+  if (error) { console.warn(`[solstice] Tesla sign-in: ${error} ${error_description ?? ''}`); return res.redirect(`/?tesla_error=${error === 'access_denied' ? 'denied' : 'failed'}`); }
   const uid = verifyState(state ?? '');
   let ownerId: number | null = null;
-  if (multiUser()) { const user = await currentUser(req); if (!uid || !user || user.id !== uid) return res.redirect('/?tesla_error=Sign-in+expired.+Try+again.'); ownerId = user.id; }
-  else if (!(await consumeOwnerState(state ?? '', 'tesla'))) return res.redirect('/?tesla_error=Sign-in+expired.+Try+again.');
+  if (multiUser()) { const user = await currentUser(req); if (!uid || !user || user.id !== uid) return res.redirect('/?tesla_error=expired'); ownerId = user.id; }
+  else if (!(await consumeOwnerState(state ?? '', 'tesla'))) return res.redirect('/?tesla_error=expired');
   const accountId = await exchangeCode(code, ownerId);
   const products = await teslaFor(accountId).products();
   for (const p of products.filter(p => p.energy_site_id)) {
@@ -195,12 +197,15 @@ app.get('/auth/callback', wrap(async (req, res) => {
 }));
 
 /* ======================= nightly sync (Vercel Cron) ======================= */
+/** Vercel Cron's bearer, compared in constant time. */
+const cronOk = (req: Request) => !!process.env.CRON_SECRET && safeEqual(String(req.headers.authorization ?? ''), `Bearer ${process.env.CRON_SECRET}`);
 app.get('/api/cron/sync', wrap(async (req, res) => {
-  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'unauthorized' });
+  if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
   const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL');
   const out: Record<string, unknown> = {};
   const t0 = Date.now();
-  for (const s of sites) out[s.id] = await syncSite(s.id, Math.floor(50_000 / sites.length), { nightly: true }).catch(e => ({ error: e.message }));
+  // the sync gets 30 s, leaving the learning layer, the nightly alerts and the prune room inside Vercel's 60 s (it had 50 s)
+  for (const s of sites) out[s.id] = await syncSite(s.id, Math.floor(30_000 / sites.length), { nightly: true }).catch(e => ({ error: e.message }));
   await q(`DELETE FROM readings WHERE ts < $1`, [Date.now() - 3 * 864e5]); // live snapshots are short-lived; history lives in `energy`
   await pruneShares().catch(e => console.error('[solstice] pruning share links', e)); // revoked/expired links leave the owner's list after 30 days
 
@@ -208,7 +213,9 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
   for (const s of sites) out[`learn:${s.id}`] = await runLearn(s.id, { deadline: t0 + 55_000 }).catch(e => ({ error: e.message }));
   for (const s of sites) out[`watch:${s.id}`] = await nightlyWatch(s.id);   // watch.ts: bill due and the other nightly alert checks
   // raw per-panel readings older than 90 days go, after the learning layer has written the day's per-panel figures (pvs.ts)
-  out.pvsPrune = await prunePvs().catch(e => ({ error: e.message }));
+  out.pvsPrune = Date.now() - t0 < 55_000 ? await prunePvs().catch(e => ({ error: e.message })) : { skipped: 'out of time; tomorrow night' };
+  await kv.set(SYNC_DONE_KEY, Date.now());   // the 5-minute watchdog (below) alerts when this is more than 26 h old
+  out.ms = Date.now() - t0;
   res.json(out);
 }));
 
@@ -229,9 +236,28 @@ app.use('/api', requireUser);
 
 const settingsFor = async (req: Request) => (req.user ? req.user.settings ?? {} : await kv.get<Record<string, any>>('settings:owner') ?? {}) as Record<string, any>;
 app.get('/api/settings', wrap(async (req, res) => res.json({ ...await settingsFor(req), location: exactLocation() })));
-app.put('/api/settings', express.json(), wrap(async (req, res) => {
-  if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify(req.body ?? {})]);
-  else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ...(req.body ?? {}) });
+/**
+ * Why a PUT /api/settings body is unusable, or null. Only the app's own preferences pass (calm, ownerName, alerts) plus the
+ * system figures for the payback card. Pool, AC and Powerwall settings have their own validated routes, so this one can never
+ * flip an Autopilot or point a write at another circuit (security review M4).
+ */
+export function settingsPatchError(b: unknown): string | null {
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return 'settings must be an object';
+  const o = b as Record<string, unknown>, bad = Object.keys(o).filter(k => !['calm', 'ownerName', 'alerts', 'system'].includes(k));
+  if (bad.length) return `not settable here: ${bad.join(', ').replace(/[^\w ,]/g, '')}`;
+  if ('calm' in o && typeof o.calm !== 'boolean' && !(o.calm && typeof o.calm === 'object' && typeof (o.calm as any).enabled === 'boolean')) return 'calm must be true or false';
+  if ('ownerName' in o && (typeof o.ownerName !== 'string' || o.ownerName.length > 200)) return 'ownerName must be text';   // cleaned to 40 printable characters on read (inviteName)
+  if ('alerts' in o) { const a = o.alerts; if (!a || typeof a !== 'object' || Array.isArray(a) || Object.keys(a).length > 30 || Object.values(a).some(v => typeof v !== 'boolean')) return 'alerts must be an object of on/off switches'; }
+  if ('system' in o) {
+    const sy = o.system, keys = ['priceUsd', 'taxCreditPct', 'loanYears', 'loanRatePct'];
+    if (!sy || typeof sy !== 'object' || Array.isArray(sy) || Object.entries(sy).some(([k, v]) => !keys.includes(k) || typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1e7)) return `system takes only ${keys.join(', ')}, as non-negative numbers`;
+  }
+  return null;
+}
+app.put('/api/settings', express.json({ limit: '8kb' }), wrap(async (req, res) => {
+  const bad = settingsPatchError(req.body); if (bad) return res.status(400).json({ error: bad });
+  if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify(req.body)]);
+  else { const cur = await kv.get<object>('settings:owner') ?? {}; await kv.set('settings:owner:prev', cur); await kv.set('settings:owner', { ...cur, ...req.body }); }   // one level of undo
   res.json({ ok: true });
 }));
 
@@ -449,7 +475,7 @@ app.post('/api/appliances/pool/autopilot', express.json(), wrap(async (req, res)
 }));
 /** Nightly (8:15 PM Central): Autopilot re-plans tomorrow for every site; Auto mode writes it, Suggest stores it. */
 app.get('/api/cron/pool', wrap(async (req, res) => {
-  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'unauthorized' });
+  if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
   const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL'), out: Record<string, unknown> = {};
   for (const s of sites) { const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; out[s.id] = await poolDetail(s.id, settings, await rateFor(s.id), { fresh: true, act: true }).then(d => d.autopilot).catch(e => ({ error: e.message })); }
   res.json(out);
@@ -463,8 +489,10 @@ async function acSlope(id: string) {
   const rows = await q<{ day: string; kwh: number }>(`SELECT day, (SUM(home_wh) / 1000.0)::float8 kwh FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day`, [id, addDays(localDay(), -120), localDay()]);
   let highs = await kv.get<{ at: number; byDay: Record<string, number> }>('wx:highs');
   if (!highs || Date.now() - highs.at > 12 * 3600_000) { // daily highs for the last 120 days from Open-Meteo's archive
-    const loc = siteLocation(), w = loc && await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${loc.lat}&longitude=${loc.lon}&start_date=${addDays(localDay(), -120)}&end_date=${localDay()}&daily=temperature_2m_max&temperature_unit=fahrenheit&timezone=America%2FChicago`).then(r => r.json()).catch(() => null) as any;
-    highs = { at: Date.now(), byDay: Object.fromEntries((w?.daily?.time ?? []).map((d: string, i: number) => [d, w.daily.temperature_2m_max[i]])) }; await kv.set('wx:highs', highs);
+    const loc = siteLocation(), w = loc && await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${loc.lat}&longitude=${loc.lon}&start_date=${addDays(localDay(), -120)}&end_date=${localDay()}&daily=temperature_2m_max&temperature_unit=fahrenheit&timezone=America%2FChicago`, { signal: AbortSignal.timeout(10_000) }).then(r => r.ok ? r.json() : null).catch(() => null) as any;
+    const byDay = Object.fromEntries((w?.daily?.time ?? []).map((d: string, i: number) => [d, w.daily.temperature_2m_max[i]]));
+    // a failed fetch keeps the last good highs (it used to cache an empty set for 12 h)
+    if (Object.keys(byDay).length) { highs = { at: Date.now(), byDay }; await kv.set('wx:highs', highs); } else highs = highs ?? { at: 0, byDay: {} };
   }
   const pts = rows.map(r => ({ t: highs!.byDay[r.day], u: r.kwh })).filter(p => p.t != null && p.t >= 80 && p.u > 5);
   let slope = 2.5;
@@ -477,21 +505,58 @@ app.get('/api/appliances/ac', wrap(async (req, res) => { const id = site(req); r
 app.get('/api/appliances/day', wrap(async (req, res) => {
   const date = String(req.query.date ?? localDay());
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
-  res.set('Cache-Control', date < localDay() ? 'private, max-age=86400' : 'no-store');
+  res.set('Cache-Control', 'no-store');   // owner data never stays in the browser cache after sign-out
   res.json(await applianceDay(site(req), date, req.user ? req.user.settings ?? {} : undefined));
 }));
 /** Approve today's plan: the 5-minute cron then applies each setpoint step at its hour. */
 app.post('/api/appliances/ac/apply', wrap(async (req, res) => { const id = site(req); await kv.set(`${id}:ac:plan`, { date: localDay(), approved: true, lastStepHour: null }); res.json(await acTick(id, await settingsFor(req), await rateFor(id), await acSlope(id))); }));
 app.post('/api/appliances/ac/settings', express.json(), wrap(async (req, res) => {
-  const cur = (await settingsFor(req)).ac ?? {}, patch = req.body ?? {}, next = { ...cur, ...patch, band: { ...(cur.band ?? {}), ...(patch.band ?? {}) } };
-  if (patch.autopilot && !['off', 'suggest', 'auto'].includes(patch.autopilot)) return res.status(400).json({ error: 'bad mode' });
-  if (patch.presence && !['home', 'away'].includes(patch.presence)) return res.status(400).json({ error: 'bad presence' });
+  const cur = (await settingsFor(req)).ac ?? {}, patch = req.body ?? {};
+  if (typeof patch !== 'object' || Array.isArray(patch)) return res.status(400).json({ error: 'settings must be an object' });
+  const bad = acPatchError(patch, cur); if (bad) return res.status(400).json({ error: bad });   // ac.ts: known keys, 65–85°, lows ≤ highs
+  const next = { ...cur, ...patch, band: { ...(cur.band ?? {}), ...(patch.band ?? {}) } };
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ ac: next })]);
   else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ac: next });
   if (patch.presence) await setPresence(site(req), { state: patch.presence, until: null });   // presence.ts: the switch is the manual mark
   // marking away/home takes effect right away when the plan is approved or Autopilot is Auto
   const id = site(req); if (patch.presence) { const rec = await kv.get<any>(`${id}:ac:plan`); if (rec) { rec.lastStepHour = null; await kv.set(`${id}:ac:plan`, rec); } await acTick(id, await settingsFor(req), await rateFor(id), await acSlope(id)).catch(() => {}); }
   res.json({ ok: true, ac: next });
+}));
+/* ---------- the owner's own thermostat controls (mockup v): owner-only like every write (access.ts) ---------- */
+/** One command: {kind:'cool'|'heat', f} | {kind:'range', heatF, coolF} | {kind:'mode', mode} | {kind:'eco', on} | {kind:'fan', seconds}.
+ *  A setpoint or mode change starts a hold (hold.ts), so Autopilot leaves it alone until the plan's next step (2–8 h). */
+app.post('/api/appliances/ac/command', express.json({ limit: '2kb' }), wrap(async (req, res) => {
+  const b = req.body ?? {}, kind = String(b.kind ?? '');
+  const cmd = kind === 'cool' || kind === 'heat' ? { kind, f: Number(b.f) } : kind === 'range' ? { kind, heatF: Number(b.heatF), coolF: Number(b.coolF) }
+    : kind === 'mode' ? { kind, mode: String(b.mode ?? '').toUpperCase() } : kind === 'eco' ? { kind, on: b.on === true } : kind === 'fan' ? { kind, seconds: Number(b.seconds) } : null;
+  if (!cmd) return res.status(400).json({ error: 'unknown thermostat command' });
+  const id = site(req), settings = await settingsFor(req), rate = await rateFor(id), slope = await acSlope(id);
+  try { await ownerCommand(cmd as ManualCommand); }
+  catch (e) { if (e instanceof GuardRefusal) return res.status(400).json({ error: explainRefusal(e.reason) }); throw e; }
+  const d = await acDetail(id, settings, rate, slope);
+  if (kind !== 'eco' && kind !== 'fan' && d.state) await startHold(id, 'app', d.state, d.plan, d.settings);
+  res.json(await acDetail(id, settings, rate, slope));
+}));
+/** The hold banner: {action:'resume'} ends it (the step due now applies), {action:'morning'} runs it to the morning step. */
+app.post('/api/appliances/ac/hold', express.json({ limit: '1kb' }), wrap(async (req, res) => {
+  const id = site(req), action = String(req.body?.action ?? ''), settings = await settingsFor(req), rate = await rateFor(id), slope = await acSlope(id);
+  if (action === 'resume') { await resumeHold(id); await acTick(id, settings, rate, slope).catch(e => console.warn(`[solstice] tick after resume: ${e?.message ?? e}`)); }
+  else if (action === 'morning') await holdToMorning(id, { nightTo: { ...AC_DEFAULTS, ...(settings.ac ?? {}) }.nightTo });
+  else return res.status(400).json({ error: 'action must be resume or morning' });
+  res.json(await acDetail(id, settings, rate, slope));
+}));
+/** Frame 7: {action:'accept', key} sets the band the suggestion describes (Autopilot plans it from the next step); {action:'dismiss', key} hides it 14 days. */
+app.post('/api/appliances/ac/suggestion', express.json({ limit: '1kb' }), wrap(async (req, res) => {
+  const id = site(req), action = String(req.body?.action ?? ''), key = String(req.body?.key ?? ''), settings = await settingsFor(req), rate = await rateFor(id), slope = await acSlope(id);
+  const d = await acDetail(id, settings, rate, slope), sg = d.suggestion;
+  if (!sg || sg.key !== key) return res.status(409).json({ error: 'That suggestion is no longer current' });
+  if (action === 'dismiss') await dismissSuggestion(id, key);
+  else if (action === 'accept') {
+    const cur = settings.ac ?? {}, band = bandFor(sg, d.settings.band), bad = acPatchError({ band }, cur); if (bad) return res.status(400).json({ error: bad });
+    await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ac: { ...cur, band } });
+    await dismissSuggestion(id, key);   // accepted: don't offer it again
+  } else return res.status(400).json({ error: 'action must be accept or dismiss' });
+  res.json(await acDetail(id, await settingsFor(req), rate, slope));
 }));
 /* ---------- learning layer: GET /api/models (the model report), POST /api/appliances/ac/untrim (server/src/learn/api.ts) ---------- */
 app.use('/api', learnRouter);
@@ -507,14 +572,23 @@ presenceRoutes(app, async id => { const rec = await kv.get<any>(`${id}:ac:plan`)
 powerwallRoutes(app);
 fiveMinuteSteps.powerwall = powerwallTick; nightlySteps.powerwall = powerwallNightly;
 fiveMinuteSteps.digest = maybeWeeklyDigest; nightlySteps.digest = maybeWeeklyDigest;
-fiveMinuteSteps.panels = panelWatch;   // panels.ts: a panel silent through an hour of daylight, or the relay itself (read-only)
+fiveMinuteSteps.panels = panelWatch;
+/* Watchdog: Vercel never retries a cron, so a nightly run that died (timeout, deploy, outage) would be silent. The 5-minute tick
+ * pushes one alert a day while the last finished nightly run is more than 26 hours old. */
+const SYNC_DONE_KEY = 'cron:sync:done';
+fiveMinuteSteps.watchdog = async (id, now) => {
+  const done = await kv.get<number>(SYNC_DONE_KEY); if (done == null) { await kv.set(SYNC_DONE_KEY, now); return { armed: true }; }   // first run after deploy
+  const h = (now - done) / 3600e3; if (h <= 26) return { ok: true, hours: Math.round(h * 10) / 10 };
+  return notify(id, 'anomaly', 'The nightly update didn\u2019t run', `Solstice's nightly job last finished ${Math.round(h)} hours ago, so history, learning and alerts may be stale. It runs at 5:15 AM; check Vercel's cron logs if this repeats.`,
+    { hours: Math.round(h) }, { key: `watchdog:sync:${localDay(new Date(now))}`, now, url: '/?go=v-ins' });
+};   // panels.ts: a panel silent through an hour of daylight, or the relay itself (read-only)
 /**
  * Fires every 5 minutes; sampling.ts decides what is due. Nest (with acTick: AC learning and due plan steps) every 5 minutes 10:00–22:00
  * in cooling season, every 15 minutes otherwise; a read-only pool read every 15 minutes of scheduled pump hours plus 02:00 and 05:00.
  * A tick with nothing due answers without touching the database.
  */
 app.get('/api/cron/nest', wrap(async (req, res) => {
-  if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'unauthorized' });
+  if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
   const tick = await cronTick(Date.now(), {
     sites: async () => (await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL')).map(s => s.id),
     acTick: async id => acTick(id, await kv.get<Record<string, any>>('settings:owner') ?? {}, await rateFor(id), await acSlope(id)),
@@ -527,8 +601,8 @@ app.get('/api/cron/nest', wrap(async (req, res) => {
 /* ---------- Google (Nest) OAuth ---------- */
 app.get('/auth/google', (req, res) => { if (!nestConfigured()) return res.status(503).send('Nest is not configured'); res.redirect(nestAuthorizeUrl(signOwnerState('nest', 60 * 60_000))); }); // owner-only; Google's permissions page can take a while
 app.get('/auth/google/callback', wrap(async (req, res) => {
-  if (!(await consumeOwnerState(String(req.query.state ?? ''), 'nest'))) return res.redirect('/?nest_error=bad+state');
-  try { await nestExchangeCode(String(req.query.code)); await readNest(); res.redirect('/?nest=linked'); } catch (e: any) { console.error('nest link', e); res.redirect('/?nest_error=' + encodeURIComponent(e.message)); }
+  if (!(await consumeOwnerState(String(req.query.state ?? ''), 'nest'))) return res.redirect('/?nest_error=expired');
+  try { await nestExchangeCode(String(req.query.code)); await readNest(); res.redirect('/?nest=linked'); } catch (e: any) { console.error('nest link', e); res.redirect('/?nest_error=failed'); }
 }));
 
 /* ---------- CSV export ---------- */
@@ -540,7 +614,10 @@ app.get('/api/export.csv', wrap(async (req, res) => {
   res.end();
 }));
 
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error(err);
-  res.status(500).json({ error: err.message });
+/** The owner sees what went wrong (a device error, say); anyone else gets a fixed message and an id to match the log line. */
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+  const id = Math.random().toString(36).slice(2, 10);
+  console.error(`[solstice] error ${id} ${req.method} ${req.path}:`, err);
+  if (res.headersSent) return res.end();
+  res.status(500).json(req.role === 'owner' ? { error: err.message, id } : { error: 'internal error', id });
 });

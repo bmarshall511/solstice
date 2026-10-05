@@ -1,5 +1,6 @@
 import { $, money, niceDate, localDate, localHour } from '../lib/util.js';
 import { api } from '../lib/api.js';
+import { every, stop } from '../lib/poll.js';
 import { createThermalTwin } from '../scenes/thermaltwin.js';
 import { veil, nameStart } from '../lib/frost.js';
 import { confChip, esc } from '../lib/conf.js';
@@ -37,7 +38,7 @@ export function drawAc(S) {
   const sc = $('acScrub'); sc.value = now; sc.oninput = () => { scrubT = +sc.value; show(Math.abs(scrubT - now) < .2 ? null : scrubT); }; show(null);
   const rt = d.runtime, source = d.learned.source ?? (d.learned.coolKw != null ? 'measured' : 'estimated'); // a guest's copy leaves out `source`; the server's own rule
   $('acStats').innerHTML = `<div class="stat"><small>Today</small><b>${d.todayKwh} kWh${d.shareOfHomePct != null ? ` · ${d.shareOfHomePct}%` : ''}</b></div><div class="stat"><small>Run time</small><b>${Math.floor(rt.minutes / 60)} h ${rt.minutes % 60} m${rt.duty != null ? ` · ${rt.duty}% duty` : ''}</b></div>
-    <div class="stat"><small>AC draw · ${source}</small><b>${d.learned.acKw.toFixed(1)} kW${d.learned.samples ? ` · ${d.learned.samples} steps` : ''}</b></div><div class="stat"><small>Indoor · humidity</small><b>${st?.indoorF ?? '—'}° · ${st?.humidity ?? '—'}%</b></div>`;
+    <div class="stat"><small>AC draw · ${esc(source)}</small><b>${d.learned.acKw.toFixed(1)} kW${d.learned.samples ? ` · ${d.learned.samples} steps` : ''}</b></div><div class="stat"><small>Indoor · humidity</small><b>${st?.indoorF ?? '—'}° · ${st?.humidity ?? '—'}%</b></div>`;
   // t-enhancements frame 4: the control lights the presence in force (manual, then Nest Home/Away Assist); Away opens "Away until…"
   const pr = d.presence ?? { state: d.settings.presence, source: 'manual', since: null, until: null }, lit = pr.state ?? d.settings.presence;
   $('acPresence').innerHTML = `<button class="${lit === 'home' ? 'on' : ''}" data-p="home">Home</button><button class="${lit === 'away' ? 'on' : ''}" data-p="away">${lit === 'away' && pr.source === 'manual' && pr.until ? awayButton(pr.until) : `Away · ${d.settings.awayF}°`}</button>`;
@@ -46,7 +47,8 @@ export function drawAc(S) {
     if (b.dataset.p === lit) return;
     await api.acSettings({ presence: b.dataset.p }).catch(err => alert(err.message)); await loadAc(S); };
   const src = presenceLine(pr); $('acPsrc').hidden = !src; $('acPsrc').innerHTML = src ? `<i></i><span>${src}</span>` : '';
-  $('acNote').innerHTML = `${d.equipment.airHandler} · ${d.equipment.heat} · ${d.equipment.outdoor}. AC power is ${source === 'measured' ? 'measured from the step in Tesla’s home load when Nest starts and stops cooling' : 'estimated from your heat model until Nest has been sampled for a few days'}.${d.error ? ` <span style="color:var(--warn)">Last read failed: ${d.error}</span>` : ''}`;
+  $('acNote').innerHTML = `${esc(d.equipment.airHandler)} · ${esc(d.equipment.heat)} · ${esc(d.equipment.outdoor)}. AC power is ${source === 'measured' ? 'measured from the step in Tesla’s home load when Nest starts and stops cooling' : 'estimated from your heat model until Nest has been sampled for a few days'}.${d.error ? ` <span style="color:var(--warn)">Last read failed: ${esc(d.error)}</span>` : ''}`;
+  drawThermostat(S);
   if (!linked) { $('acLinkBtn').href = '/auth/google'; $('acLinkTxt').textContent = d.configured ? 'Sign in with Google and share the thermostat with Solstice.' : 'Google Device Access is not configured yet (NEST_PROJECT_ID, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET).'; return; }
   drawPlan(S, sim, outdoor, sunH); drawAuto(S);
 }
@@ -62,18 +64,20 @@ function drawPlan(S, sim, outdoor, sunH) {
   const nx = X(localHour()); o += `<line x1="${nx}" y1="14" x2="${nx}" y2="150" stroke="#fff" stroke-opacity=".5"/><circle cx="${nx}" cy="14" r="3" fill="#fff"/>`;
   svg.innerHTML = o;
   const b = d.settings.band;
-  $('acBand').textContent = `${b.homeLo}°–${b.homeHi}° home · ${b.nightLo}°–${b.nightHi}° night · away ${d.settings.awayF}°`;
+  $('acBand').textContent = `Band ${b.homeLo}–${b.homeHi}°`;
+  $('acBand').title = `${b.homeLo}°–${b.homeHi}° home · ${b.nightLo}°–${b.nightHi}° night · away ${d.settings.awayF}°`;
+  $('acBand').onclick = () => { if (!S.guest) openBand(S); };
   // r-learning savings row: the plan's two kWh figures (learn/ac.ts), each with its confidence tier from plan.conf
   const sv = (label, v, tier) => `<div><small>${label}</small><b>${v == null ? '—' : `${Number(v).toFixed(1)} kWh`}</b><span>today's plan</span>${confChip(tier) && `<span style="margin-top:5px">${confChip(tier)}</span>`}</div>`;
   $('acDeltas').innerHTML = sv('kWh shifted onto solar', P.shiftedKwh, P.conf?.shiftedKwh) + sv('Evening kWh avoided', P.eveningAvoidedKwh, P.conf?.eveningAvoidedKwh) + `
     <div><small>Today</small><b>${Math.round(P.high)}°</b><span>${Number(P.sunKwhM2).toFixed(1)} kWh/m² sun<br>${P.precool ? 'pre-cool day' : 'hold the band'}</span></div><div><small>Warmest indoor</small><b>${Math.max(...P.steps.map(s => s.coolF))}°</b><span>${P.precool ? `${hm(P.coastFrom)}–${hm(P.coastTo)}` : 'all day'}</span></div>`;
-  const why = P.why.map((w, i) => `<div><i>${['☀', '▮', '°', '⏱', '⚡'][i % 5]}</i><b>${i === 0 ? 'Today' : 'Also'}</b><p>${w}.</p></div>`).concat([
+  const why = P.why.map((w, i) => `<div><i>${['☀', '▮', '°', '⏱', '⚡'][i % 5]}</i><b>${i === 0 ? 'Today' : 'Also'}</b><p>${esc(w)}.</p></div>`).concat([
     `<div><i>°</i><b>Every degree counts</b><p>Your heat model says about ${(S.acSlope ?? 2.5).toFixed(1)} kWh a day per degree of daily high, so each degree of setpoint is worth roughly ${((S.acSlope ?? 2.5) * .6).toFixed(1)} kWh on a hot day.</p></div>`,
     `<div><i>⚡</i><b>Outage and grid mode</b><p>Storm Watch, an outage or an ERCOT conservation call: pre-cool, then hold ${d.settings.coastF}° to stretch backup hours.</p></div>`,
     `<div><i>🔥</i><b>Winter: keep the strips off</b><p>Electric strip heat draws 5–15 kW. Autopilot uses gentle setbacks only, because recovering from a deep one is exactly what stacks the strips.</p></div>`]);
   $('acWhy').innerHTML = why.join(''); $('acDots').innerHTML = why.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('');
   const rs = $('acWhy'); rs.onscroll = () => { const i = Math.round(rs.scrollLeft / (rs.children[0].offsetWidth + 10)); [...$('acDots').children].forEach((x, k) => x.classList.toggle('on', k === i)); };
-  $('acSteps').innerHTML = P.steps.map(s => `<span>${hm(s.hour)} · ${s.why}</span><b>${s.coolF}°</b>`).join('');
+  $('acSteps').innerHTML = P.steps.map(s => `<span>${hm(s.hour)} · ${esc(s.why)}</span><b>${s.coolF}°</b>`).join('');
   $('acActions').innerHTML = S.guest ? `<p class="fine" style="margin-top:12px;text-align:center">${nameStart(S.ownerName)} approves changes from their own devices.</p>` : d.applied?.approved ? `<p class="fine" style="margin-top:10px">Today's plan is approved: Solstice sets each step at its hour${d.applied.lastStepHour != null ? ` (last step ${hm(d.applied.lastStepHour)})` : ''}.</p>` : `<button class="primary" id="acApply">Apply today's plan to Nest</button><button class="link" id="acShow">Show the steps instead</button>`;
   const show = $('acShow'); if (show) show.onclick = () => { const el = $('acSteps'); el.style.display = el.style.display === 'none' ? 'grid' : 'none'; };
   const apply = $('acApply'); if (apply) apply.onclick = async () => { if (!confirm(`Let Solstice set the thermostat through today?\n\n${P.steps.map(s => `• ${hm(s.hour)}: ${s.coolF}° (${s.why})`).join('\n')}\n\nOnly the cooling setpoint changes, never outside ${d.settings.band.homeLo}–${Math.max(d.settings.band.homeHi, d.settings.awayF)}°, at most ${d.settings.maxStepF}° per step. Mark Away or change the mode in the Nest app at any time.`)) return; apply.textContent = 'Applying…'; try { await api.acApply(); await loadAc(S); } catch (e) { alert(e.message); apply.textContent = "Apply today's plan to Nest"; } };
@@ -83,15 +87,17 @@ function drawAuto(S) {
   document.querySelectorAll('#acMode button').forEach(b => b.classList.toggle('on', b.dataset.m === s.autopilot));
   $('acAutoBadge').textContent = `Autopilot · ${{ off: 'Off', suggest: 'Suggest', auto: 'Auto' }[s.autopilot] ?? s.autopilot}`; $('acAutoBadge').className = `badge${s.autopilot === 'off' ? '' : ' g'}`;   // a guest's static badge
   $('acMode').onclick = async e => { const b = e.target.closest('button'); if (!b || b.dataset.m === s.autopilot) return; if (b.dataset.m === 'auto' && !confirm('Auto mode sets the cooling setpoint through each day without asking, always inside your comfort band. Turn it on?')) return; await api.acSettings({ autopilot: b.dataset.m }).catch(err => alert(err.message)); await loadAc(S); };
-  $('acStatus').innerHTML = `<i class="${s.autopilot === 'off' ? 'off' : ''}"></i><span>${s.autopilot === 'off' ? 'Off. Suggest plans each day and waits for you; Auto applies the steps itself.' : `${s.autopilot === 'auto' ? 'Applies' : 'Suggests'} each day's plan from the 6 AM forecast, samples Nest every 5 minutes, never leaves your comfort band, never touches heating mode`}</span></div>`;
+  // v-ac-control frame 3: a hold in force says so here too
+  if (d.hold && s.autopilot !== 'off') $('acStatus').innerHTML = `<i class="hold-dot"></i><span><b>Holding your change until ${clk(d.hold.until)}.</b> Plan steps in that time are skipped, not stacked up.</span>`;
+  else $('acStatus').innerHTML = `<i class="${s.autopilot === 'off' ? 'off' : ''}"></i><span>${s.autopilot === 'off' ? 'Off. Suggest plans each day and waits for you; Auto applies the steps itself.' : `${s.autopilot === 'auto' ? 'Applies' : 'Suggests'} each day's plan from the 6 AM forecast, samples Nest every 5 minutes, never leaves your comfort band, never touches heating mode`}</span></div>`;
   drawTrim(S);
   const P = d.plan, st = d.state, ring =(v, l, f, c) => { const C = 2 * Math.PI * 17; return `<div><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="17" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="3.5"/><circle cx="22" cy="22" r="17" fill="none" stroke="${c}" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="${C * Math.max(0, Math.min(1, f))} ${C}" transform="rotate(-90 22 22)"/></svg><b>${v}</b><small>${l}</small></div>`; };
   const soc = S.live?.soc ?? null;
-  $('acSignals').innerHTML = ring(`${Math.round(P.high)}°`, 'high', P.high / 105, '#ff9e66') + ring(P.sunKwhM2, 'sun', P.sunKwhM2 / 8, '#ffc15e') + ring(s.presence ?? '—', 'presence', s.presence === 'home' ? 1 : .2, '#4ef0a6') + ring(soc != null ? Math.round(soc) + '%' : '—', 'battery', (soc ?? 0) / 100, '#6cc4ff') + ring(st?.humidity != null ? st.humidity + '%' : '—', 'rh', (st?.humidity ?? 0) / 100, '#c4a2ff') + ring(S.ercot?.condition ?? '—', 'ercot', S.ercot?.eea ? .9 : .15, '#8d93a8');
+  $('acSignals').innerHTML = ring(`${Math.round(P.high)}°`, 'high', P.high / 105, '#ff9e66') + ring(esc(P.sunKwhM2), 'sun', P.sunKwhM2 / 8, '#ffc15e') + ring(esc(s.presence ?? '—'), 'presence', s.presence === 'home' ? 1 : .2, '#4ef0a6') + ring(soc != null ? Math.round(soc) + '%' : '—', 'battery', (soc ?? 0) / 100, '#6cc4ff') + ring(st?.humidity != null ? st.humidity + '%' : '—', 'rh', (st?.humidity ?? 0) / 100, '#c4a2ff') + ring(esc(S.ercot?.condition ?? '—'), 'ercot', S.ercot?.eea ? .9 : .15, '#8d93a8');
   const days = d.week, X = i => 12 + i * 42; let o = ''; days.forEach((x, i) => { const px = X(i), tm = i === 0, hh = Math.max(4, (x.high - 70) / 35 * 56); o += `${tm ? `<rect x="${px - 2}" y="4" width="34" height="102" rx="8" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.1)"/>` : ''}<rect x="${px + 7}" y="${84 - hh}" width="16" height="${hh}" rx="4" fill="#ff9e66" opacity="${tm ? 1 : .7}"/>${x.precool ? `<rect x="${px + 7}" y="${84 - hh - 4 - x.depth * 6}" width="16" height="${x.depth * 6}" rx="3" fill="#4ef0a6"/>` : ''}<text x="${px + 15}" y="${84 - hh - 8 - (x.precool ? x.depth * 6 : 0)}" text-anchor="middle" fill="#f2f4f8" font-size="9.5" font-family="JetBrains Mono">${x.high}°</text><text x="${px + 15}" y="100" text-anchor="middle" fill="rgba(242,244,248,${tm ? .9 : .5})" font-size="9.5" font-family="Manrope">${new Date(x.date + 'T12:00').toLocaleDateString('en-US', { weekday: 'short' })}</text>`; });
   $('acWeek').innerHTML = o;
   $('acTomorrow').textContent = days[1] ? `Tomorrow ${days[1].high}° · ${days[1].precool ? `pre-cool ${days[1].depth}°` : 'hold the band'}` : '';
-  $('acLog').innerHTML = d.log.slice(0, 6).map(l => `<div><i></i><span>${niceDate(l.day, { month: 'short', day: 'numeric' })}</span><p>${l.text}${l.delta ? `<em>${l.delta}</em>` : ''}</p></div>`).join('') || `<div><i class="w"></i><span>—</span><p>No changes yet. Nest is sampled every 5 minutes to learn the AC's real draw.</p></div>`;
+  $('acLog').innerHTML = d.log.slice(0, 6).map(l => { const h = l.delta === 'hold' ? 'h' : ''; return `<div><i class="${h}"></i><span>${niceDate(l.day, { month: 'short', day: 'numeric' })}</span><p>${esc(l.text)}${l.delta ? `<em class="${h}">${esc(l.delta)}</em>` : ''}</p></div>`; }).join('') || `<div><i class="w"></i><span>—</span><p>No changes yet. Nest is sampled every 5 minutes to learn the AC's real draw.</p></div>`;
 }
 /** r-learning: today's learned trim ("trimmed because…", Undo for the owner) or the control-day note, under the Autopilot status. */
 function drawTrim(S) {
@@ -103,9 +109,145 @@ function drawTrim(S) {
   box.hidden = !t && !P.control;
   const u = $('acUntrim'); if (u) u.onclick = async () => { u.disabled = true; u.textContent = 'Undoing…'; try { await api.acUntrim(); await loadAc(S); } catch (e) { alert(e.message); u.disabled = false; u.textContent = 'Undo for today'; } };
 }
+/* ---------- v-ac-control: the Thermostat card (owner only), the hold banner and the fan sheet ---------- */
+const clk = ms => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+const deg = f => `${Math.round(f * 2) / 2}`;
+/** Taps wait 1.5 s after the last one and then send once (Google allows 5 thermostat commands a minute). */
+const SEND_AFTER_MS = 1500;
+const ts = { timer: null, pending: null, pick: 'cool', line: null };
+const MANUAL = { COOL: [65, 85], HEAT: [55, 80] };
+function drawThermostat(S) {
+  const d = S.ac, st = d.state, card = $('acTstat');
+  card.hidden = !!S.guest || !d.linked || !st;
+  if (card.hidden) return;
+  $('tsBadge').textContent = `${st.name ?? 'Thermostat'} · ${st.online ? 'online' : 'offline'}`; $('tsBadge').className = `badge${st.online ? ' g' : ''}`;
+  const p = ts.pending ?? { mode: st.mode, coolF: st.coolF, heatF: st.heatF }, mode = st.eco ? 'ECO' : p.mode;
+  const v = $('tsVal'), k = mode === 'HEAT' ? 'heat' : mode === 'OFF' ? 'off' : 'cool';
+  $('tsLabel').textContent = { COOL: 'Cool to', HEAT: 'Heat to', HEATCOOL: 'Keep between', OFF: 'Thermostat', ECO: 'Eco · Away' }[mode] ?? mode;
+  v.className = k + (mode === 'HEATCOOL' ? ' rng' : '');
+  v.innerHTML = mode === 'OFF' ? 'Off' : mode === 'ECO' ? `${st.ecoCoolF != null ? deg(st.ecoCoolF) : '—'}<sup>°</sup>`
+    : mode === 'HEATCOOL' ? `<span data-end="heat" class="${ts.pick === 'heat' ? 'pick' : ''}">${p.heatF != null ? deg(p.heatF) : '—'}</span><span class="dash">–</span><span data-end="cool" class="${ts.pick === 'cool' ? 'pick' : ''}">${p.coolF != null ? deg(p.coolF) : '—'}</span><sup>°</sup>`
+    : `${(mode === 'HEAT' ? p.heatF : p.coolF) != null ? deg(mode === 'HEAT' ? p.heatF : p.coolF) : '—'}<sup>°</sup>`;
+  const line = $('tsLine');
+  if (ts.line) { line.className = ts.line.cls; line.textContent = ts.line.text; }
+  else { line.className = ''; line.textContent = `Indoor ${st.indoorF ?? '—'}° · ${st.humidity ?? '—'}% · ${String(st.hvac ?? 'off').toLowerCase()}`; }
+  const canStep = mode === 'COOL' || mode === 'HEAT' || mode === 'HEATCOOL';
+  ['tsDown', 'tsUp'].forEach(id => { $(id).style.visibility = canStep ? '' : 'hidden'; });
+  document.querySelectorAll('#tsMode button').forEach(b => { const on = b.dataset.m === p.mode && !st.eco; b.className = on ? `on ${b.dataset.m === 'HEAT' ? 'heat' : b.dataset.m === 'OFF' ? 'off' : 'cool'}` : ''; b.setAttribute('aria-pressed', on); b.hidden = !!st.availableModes?.length && !st.availableModes.includes(b.dataset.m); });
+  $('tsEco').classList.toggle('on', !!st.eco); $('tsEco').setAttribute('aria-pressed', !!st.eco);
+  const fanLeft = st.fanTimer && st.fanUntil ? Math.max(0, Math.round((st.fanUntil - Date.now()) / 60_000)) : null;
+  $('tsFan').classList.toggle('on', !!st.fanTimer); $('tsFan').setAttribute('aria-pressed', !!st.fanTimer);
+  $('tsFanT').textContent = st.fanTimer ? (fanLeft != null ? (fanLeft >= 60 ? `${Math.floor(fanLeft / 60)} h ${fanLeft % 60} m left` : `${fanLeft} m left`) : 'on') : 'off';
+  $('tsHold').innerHTML = holdHtml(d, mode);
+  // frame 7: the same manual change on 4 of the last 7 days becomes a band suggestion (nothing changes unless tapped)
+  const sg = d.suggestion, hr = sg ? `${Math.round(sg.hour) % 12 || 12} ${sg.hour < 12 ? 'AM' : 'PM'}` : '';
+  $('tsSuggest').innerHTML = sg ? `<div class="rec learn"><b>You keep setting ${sg.f}° around ${hr}</b><br>${sg.days} of the last ${sg.of} ${sg.window === 'night' ? 'nights' : 'days'}. Make ${sg.f}° your ${sg.window === 'night' ? 'night' : 'daytime'} setpoint? Autopilot would plan ${sg.f}° ${sg.window === 'night' ? `from ${d.settings.nightFrom % 12 || 12} ${d.settings.nightFrom < 12 ? 'AM' : 'PM'}` : 'through the day'} instead of ${sg.from}°, and you wouldn’t need to change it.
+    <div class="row2"><button class="y" data-sg="accept">Make ${sg.f}° the ${sg.window === 'night' ? 'night' : 'daytime'} setpoint</button><button class="n" data-sg="dismiss">Not now</button></div></div>` : '';
+  $('tsSuggest').onclick = async e => { const b = e.target.closest('[data-sg]'); if (!b) return; b.disabled = true; b.textContent = '…';
+    try { S.ac = await api.acSuggestion(b.dataset.sg, sg.key); } catch (err) { alert(err.message); } drawAc(S); };
+  // −/+ : one degree, sent once 1.5 s after the last tap
+  const bump = dir => {
+    const cur = ts.pending ?? { mode: st.mode, coolF: st.coolF, heatF: st.heatF }, n = { ...cur };
+    const end = cur.mode === 'HEAT' ? 'heat' : cur.mode === 'HEATCOOL' ? ts.pick : 'cool', key = end === 'heat' ? 'heatF' : 'coolF', lim = MANUAL[end === 'heat' ? 'HEAT' : 'COOL'];
+    if (n[key] == null) return;
+    n[key] = Math.max(lim[0], Math.min(lim[1], Math.round(n[key]) + dir));
+    if (cur.mode === 'HEATCOOL' && n.coolF - n.heatF < 3) return;   // Nest keeps them 3° apart
+    ts.pending = n; ts.line = { cls: 'sending', text: `Sending ${cur.mode === 'HEATCOOL' ? `${n.heatF}–${n.coolF}` : n[key]}°…` }; drawThermostat(S);
+    clearTimeout(ts.timer);
+    ts.timer = setTimeout(() => send(S, cur.mode === 'HEATCOOL' ? { kind: 'range', heatF: n.heatF, coolF: n.coolF } : { kind: end, f: n[key] }), SEND_AFTER_MS);
+  };
+  $('tsDown').onclick = () => bump(-1); $('tsUp').onclick = () => bump(1);
+  v.onclick = e => { const end = e.target.closest('[data-end]')?.dataset.end; if (end) { ts.pick = end; drawThermostat(S); } };
+  $('tsMode').onclick = async e => { const b = e.target.closest('button'); if (!b || (b.dataset.m === st.mode && !st.eco)) return;
+    const word = { COOL: 'Cool', HEAT: 'Heat', HEATCOOL: 'Heat · Cool', OFF: 'Off' }[b.dataset.m];
+    if (!confirm(`Switch the thermostat to ${word}?${b.dataset.m !== 'COOL' ? '\n\nAC Autopilot pauses until it is back in Cool.' : ''}`)) return;
+    await send(S, { kind: 'mode', mode: b.dataset.m }); };
+  $('tsEco').onclick = () => send(S, { kind: 'eco', on: !st.eco });
+  $('tsFan').onclick = () => openFan(S);
+  const hb = $('tsHold');
+  hb.onclick = async e => { const b = e.target.closest('[data-hold]'); if (!b) return; b.disabled = true; b.textContent = '…';
+    try { S.ac = await api.acHold(b.dataset.hold); drawAc(S); } catch (err) { alert(err.message); drawAc(S); } };
+}
+/** The banner under the controls: a hold, Autopilot paused by the mode, or what Autopilot is doing. */
+function holdHtml(d, mode) {
+  const s = d.settings, h = d.hold;
+  if (mode !== 'COOL') {
+    const why = { HEAT: 'Autopilot only plans cooling. It starts again when the thermostat is back in Cool. Your heat setpoint is yours alone.',
+      HEATCOOL: 'Autopilot plans a single cooling setpoint, so it waits until the thermostat is back in Cool. Tap a number to choose which end −/+ moves.',
+      OFF: 'The thermostat is off. Solstice sends nothing until it is turned back on.',
+      ECO: 'Nest is in Eco, so presence reads Away and Autopilot plans the away temperature. Tap Eco to turn it off.' }[mode] ?? '';
+    return `<div class="hold paused"><div class="hh"><i></i><b>${mode === 'ECO' ? 'Away · Eco' : 'AC Autopilot paused'}</b><em>${{ HEAT: 'Heat', HEATCOOL: 'Heat · Cool', OFF: 'Off', ECO: 'Eco' }[mode] ?? ''}</em></div><p>${why}</p></div>`;
+  }
+  if (h) {
+    const pct = Math.max(2, Math.min(100, (Date.now() - h.at) / (h.until - h.at) * 100)), what = h.mode === 'OFF' ? 'Off' : h.mode === 'HEAT' ? `heat ${h.heatF}°` : h.mode === 'HEATCOOL' ? `${h.heatF}–${h.coolF}°` : `${h.coolF}°`;
+    return `<div class="hold"><div class="hh"><i></i><b>${h.by === 'app' ? `Holding your ${what}` : `Holding ${what} set at the thermostat`}</b><em>until ${clk(h.until)}</em></div>
+      <p>${h.by === 'app' ? 'You set it here' : 'Changed at the thermostat'} at ${clk(h.at)}. Autopilot skips its steps until <b>${clk(h.until)}</b>: ${esc(h.why)}.</p>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+      <div class="row2"><button class="p" data-hold="resume">Resume now</button>${h.extended ? '' : '<button data-hold="morning">Hold until morning</button>'}</div></div>`;
+  }
+  const P = d.plan, now = localHour(), next = P.steps.filter(x => x.hour > now).slice(0, 2), cur = currentStepOf(P, now);
+  const txt = s.autopilot === 'off' ? '<b>Autopilot · Off.</b> Solstice makes no thermostat changes.'
+    : s.autopilot === 'suggest' && !d.applied?.approved ? '<b>Autopilot · Suggest.</b> Today’s plan is waiting for your approval below.'
+    : `<b>Autopilot · ${s.autopilot === 'auto' ? 'Auto' : 'Suggest'}.</b> Following today’s plan: ${cur ? `${cur.coolF}° now` : 'nothing due now'}${next.map(x => `, ${x.coolF}° at ${x.hour % 12 || 12}${x.hour % 1 ? ':' + String(Math.round(x.hour % 1 * 60)).padStart(2, '0') : ''} ${x.hour < 12 ? 'AM' : 'PM'}`).join('')}.`;
+  return `<div class="follow"><i class="${s.autopilot === 'off' ? 'off' : ''}"></i><span>${txt}</span></div>`;
+}
+const currentStepOf = (P, h) => [...P.steps].reverse().find(x => x.hour <= h) ?? P.steps[P.steps.length - 1];
+async function send(S, cmd) {
+  clearTimeout(ts.timer); ts.timer = null;
+  try { S.ac = await api.acCommand(cmd); ts.pending = null; ts.line = { cls: 'ok', text: `Set · Nest confirmed ${clk(Date.now())}` }; }
+  catch (e) { ts.pending = null; ts.line = { cls: 'err', text: e.message }; }
+  drawAc(S);
+  setTimeout(() => { ts.line = null; if (!ts.timer) drawThermostat(S); }, 6000);
+}
+/* frame 5: the comfort band sheet. Saving writes only Solstice's settings; the plan uses them from its next step. */
+function openBand(S) {
+  const s = S.ac.settings, v = { homeLo: s.band.homeLo, homeHi: s.band.homeHi, nightLo: s.band.nightLo, nightHi: s.band.nightHi, awayF: s.awayF, nightFrom: s.nightFrom, nightTo: s.nightTo };
+  const hr = h => `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`, LIM = { t: [65, 85], nightFrom: [18, 23], nightTo: [4, 11] };
+  const row = (label, sub, a, b) => `<div class="brow"><span class="bt">${label}<small>${sub}</small></span><span class="stp"><button data-k="${a}" data-d="-1" aria-label="Lower">−</button><b id="bv_${a}"></b></span>${b ? `<span class="stp"><span class="to">to</span><b id="bv_${b}"></b><button data-k="${b}" data-d="1" aria-label="Higher">+</button></span>` : `<button class="stp-plus" data-k="${a}" data-d="1" aria-label="Higher" style="all:unset;cursor:pointer;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);font-size:16px">+</button>`}</div>`;
+  $('sheetBody').innerHTML = `<div class="shead"><h4>Comfort band</h4><button class="x" id="bandX" aria-label="Close">✕</button></div>
+    <p class="sub">Autopilot plans only inside these. Manual changes can go anywhere from 65° to 85°. Tap a number to choose which end −/+ moves.</p>
+    <div class="bands" id="bands">${row('Home', `daytime, <span id="bsub_day"></span>`, 'homeLo', 'homeHi')}${row('Night', '<span id="bsub_night"></span>', 'nightLo', 'nightHi')}${row('Away', 'Nest Eco or Away until…', 'awayF')}${row('Night hours', 'when the night band starts and ends', 'nightFrom', 'nightTo')}</div>
+    <button class="primary" id="bandGo">Save band</button>
+    <p class="fine" style="text-align:center;margin-top:10px">Takes effect at the next plan step. A hold in force is left alone.</p>`;
+  const draw = () => { Object.entries(v).forEach(([k, x]) => { $(`bv_${k}`).textContent = k === 'nightFrom' || k === 'nightTo' ? hr(x) : `${x}°`; });
+    $('bsub_day').textContent = `${hr(v.nightTo)} – ${hr(v.nightFrom)}`; $('bsub_night').textContent = `${hr(v.nightFrom)} – ${hr(v.nightTo)}`; };
+  // −/+ move the end of a pair you tapped last (default: − the low end, + the high end), so a band can widen and narrow
+  const PAIRS = { homeLo: 'homeHi', homeHi: 'homeLo', nightLo: 'nightHi', nightHi: 'nightLo', nightFrom: 'nightTo', nightTo: 'nightFrom' }, picked = {};
+  const pairOf = k => ['homeLo', 'homeHi'].includes(k) ? 'home' : ['nightLo', 'nightHi'].includes(k) ? 'night' : ['nightFrom', 'nightTo'].includes(k) ? 'hours' : k;
+  $('bands').onclick = e => {
+    const num = e.target.closest('b[id^="bv_"]');
+    if (num) { const k = num.id.slice(3); if (PAIRS[k]) { picked[pairOf(k)] = k; document.querySelectorAll('#bands b').forEach(x => x.style.borderBottom = Object.values(picked).includes(x.id.slice(3)) ? '2px solid rgba(255,255,255,.4)' : ''); } return; }
+    const b = e.target.closest('[data-k]'); if (!b) return;
+    const k = picked[pairOf(b.dataset.k)] ?? b.dataset.k, d = +b.dataset.d, lim = LIM[k] ?? LIM.t;
+    v[k] = Math.max(lim[0], Math.min(lim[1], v[k] + d));
+    if (k === 'homeLo' && v.homeLo > v.homeHi) v.homeHi = v.homeLo; if (k === 'homeHi' && v.homeHi < v.homeLo) v.homeLo = v.homeHi;
+    if (k === 'nightLo' && v.nightLo > v.nightHi) v.nightHi = v.nightLo; if (k === 'nightHi' && v.nightHi < v.nightLo) v.nightLo = v.nightHi;
+    draw(); };
+  $('bandX').onclick = () => $('phone').classList.remove('open');
+  $('bandGo').onclick = async () => { const go = $('bandGo'); go.textContent = 'Saving…';
+    try { await api.acSettings({ band: { homeLo: v.homeLo, homeHi: v.homeHi, nightLo: v.nightLo, nightHi: v.nightHi }, awayF: v.awayF, nightFrom: v.nightFrom, nightTo: v.nightTo }); $('phone').classList.remove('open'); await loadAc(S); }
+    catch (e) { alert(e.message); go.textContent = 'Save band'; } };
+  draw(); $('phone').classList.add('open');
+}
+const FAN = [[900, '15 m'], [1800, '30 m'], [3600, '1 h'], [7200, '2 h'], [14400, '4 h'], [28800, '8 h'], [43200, '12 h'], [0, 'Stop']];
+function openFan(S) {
+  let pick = 3600;
+  $('sheetBody').innerHTML = `<div class="shead"><h4>Run the fan</h4><button class="x" id="fanX" aria-label="Close">✕</button></div>
+    <p class="sub">Circulates air without cooling. Nest stops it on its own when the time is up.</p>
+    <div class="fan" id="fanPick">${FAN.map(([s, l]) => `<button data-s="${s}" class="${s === pick ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <button class="primary" id="fanGo">Run for 1 h</button>`;
+  const draw = () => { document.querySelectorAll('#fanPick button').forEach(b => b.classList.toggle('on', +b.dataset.s === pick)); $('fanGo').textContent = pick ? `Run for ${FAN.find(f => f[0] === pick)[1].replace(' m', ' min')}` : 'Stop the fan'; };
+  $('fanPick').onclick = e => { const b = e.target.closest('button'); if (!b) return; pick = +b.dataset.s; draw(); };
+  $('fanX').onclick = () => $('phone').classList.remove('open');
+  $('fanGo').onclick = async () => { $('fanGo').textContent = 'Sending…'; await send(S, { kind: 'fan', seconds: pick }); $('phone').classList.remove('open'); };
+  draw(); $('phone').classList.add('open');
+}
+
 let timer;
-export function initAc(S) { loadAc(S); clearInterval(timer); timer = setInterval(() => loadAc(S), 3 * 60_000); }
-async function loadAc(S) { S.ac = await api.ac().catch(e => ({ error: e.message, configured: false, linked: false })); if (S.ac.plan) drawAc(S); else { $('acBadge').textContent = 'Not set up'; $('acLink').hidden = false; $('acLinkTxt').textContent = S.ac.error ?? 'Nest is not configured.'; } S.onAc?.(); }
+/** Started by main.js once the role is known (and again when it changes); every 3 minutes while the tab is visible. */
+export function initAc(S) { stop(timer); timer = every(3 * 60_000, () => loadAc(S)); }
+// a failed refresh keeps the last good plan and reading, with the failure in the card's note, instead of showing "Not set up"
+async function loadAc(S) { S.ac = await api.ac().catch(e => S.ac?.plan ? { ...S.ac, error: e.message } : { error: e.message, configured: false, linked: false }); if (S.ac.plan) drawAc(S); else { $('acBadge').textContent = 'Not set up'; $('acLink').hidden = false; $('acLinkTxt').textContent = S.ac.error ?? 'Nest is not configured.'; } S.onAc?.(); }
 
 /* ---------- presence (t-enhancements frame 4): the line under Home/Away and the "Away until…" sheet ---------- */
 const NEST_SAYS = pr => `<b>Nest says Away</b>${pr.since ? ` since ${when(pr.since)}` : ''} (Home/Away Assist)`;

@@ -214,7 +214,7 @@ describe('revoking and expiry', () => {
     // the cron's sync output is unchanged by the share cleanup; the learning layer adds its own `learn:<site>` report after the sync
     const out = await sync.json();
     expect(out.s).toEqual({ mocked: true });
-    expect(Object.keys(out).sort()).toEqual(['learn:s', 'pvsPrune', 's', 'watch:s']);   // watch: the nightly alert checks (server/src/watch.ts); pvsPrune: the 90-day readings prune (pvs.ts)
+    expect(Object.keys(out).sort()).toEqual(['learn:s', 'ms', 'pvsPrune', 's', 'watch:s']);   // ms: the run's duration   // watch: the nightly alert checks (server/src/watch.ts); pvsPrune: the 90-day readings prune (pvs.ts)
     expect(out['learn:s']).not.toHaveProperty('error');
     expect(await row(cron.id)).toBeUndefined();
   });
@@ -302,8 +302,8 @@ describe('the share UI\'s server pieces', () => {
     expect(await me(guest)).toEqual({ mode: 'single', owner: false, guest: true, label: null, ownerName: 'Sam Example', expiresAt: s.expiresAt });
     await call('/api/settings', { cookie: owner, method: 'PUT', json: { ownerName: 'x'.repeat(60) } });
     expect((await me(guest)).ownerName).toBe('x'.repeat(40));
-    await call('/api/settings', { cookie: owner, method: 'PUT', json: { ownerName: 42 } });
-    expect((await me(guest)).ownerName).toBe('The owner');
+    expect((await call('/api/settings', { cookie: owner, method: 'PUT', json: { ownerName: 42 } })).status).toBe(400);   // not text: refused, the name stays
+    expect((await me(guest)).ownerName).toBe('x'.repeat(40));
     expect(await me()).toEqual({ mode: 'single', owner: false });                          // anonymous: the mode, nothing else
     await db.q(`UPDATE access_tokens SET revoked_at = now() WHERE id = $1`, [s.id]);
     expect(await me(guest)).toEqual({ mode: 'single', owner: false, reason: 'revoked' });   // a dead link learns no name either

@@ -1,7 +1,8 @@
 // Google Nest via the Smart Device Management API. Credentials from the environment (NEST_PROJECT_ID, GOOGLE_CLIENT_ID,
 // GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI); the refresh token from the one-time Google consent is kept in the database (kv 'nest:tokens').
 import { q, kv } from '../db.js';
-import { guardCoolSetpoint, GuardRefusal, AC_WRITE_INTERVAL_MS } from './guards.js';
+import { guardCoolSetpoint, guardManual, GuardRefusal, AC_WRITE_INTERVAL_MS, type ManualCommand } from './guards.js';
+import { recordSent } from './hold.js';
 
 const SDM = 'https://smartdevicemanagement.googleapis.com/v1';
 const env = (k: string) => process.env[k] ?? '';
@@ -14,7 +15,7 @@ export const nestAuthorizeUrl = (state: string) => `https://nestservices.google.
   redirect_uri: env('GOOGLE_REDIRECT_URI'), access_type: 'offline', prompt: 'consent', client_id: env('GOOGLE_CLIENT_ID'), response_type: 'code', scope: 'https://www.googleapis.com/auth/sdm.service', state });
 
 async function tokenRequest(body: Record<string, string>) {
-  const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: env('GOOGLE_CLIENT_ID'), client_secret: env('GOOGLE_CLIENT_SECRET'), ...body }) });
+  const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: env('GOOGLE_CLIENT_ID'), client_secret: env('GOOGLE_CLIENT_SECRET'), ...body }), signal: AbortSignal.timeout(8_000) });
   const j = await r.json() as any;
   if (!r.ok) throw new Error(`Google token: ${j.error_description ?? j.error ?? r.status}`);
   return j;
@@ -31,7 +32,7 @@ async function accessToken() {
   return j.access_token as string;
 }
 async function sdm(path: string, init: RequestInit = {}) {
-  const r = await fetch(`${SDM}${path}`, { ...init, headers: { Authorization: `Bearer ${await accessToken()}`, 'Content-Type': 'application/json', ...(init.headers ?? {}) } });
+  const r = await fetch(`${SDM}${path}`, { signal: AbortSignal.timeout(10_000), ...init, headers: { Authorization: `Bearer ${await accessToken()}`, 'Content-Type': 'application/json', ...(init.headers ?? {}) } });
   const j = await r.json().catch(() => ({})) as any;
   if (!r.ok) throw new Error(`Nest: ${j.error?.message ?? r.status}`);
   return j;
@@ -39,7 +40,7 @@ async function sdm(path: string, init: RequestInit = {}) {
 export const cToF = (c: number) => Math.round((c * 9 / 5 + 32) * 10) / 10, fToC = (f: number) => Math.round(((f - 32) * 5 / 9) * 100) / 100;
 
 export type NestState = { at: number; deviceId: string; name: string; online: boolean; indoorF: number | null; humidity: number | null; mode: string; hvac: 'OFF' | 'HEATING' | 'COOLING' | string;
-  coolF: number | null; heatF: number | null; eco: boolean; ecoCoolF: number | null; ecoHeatF: number | null; fanTimer: boolean; availableModes: string[] };
+  coolF: number | null; heatF: number | null; eco: boolean; ecoCoolF: number | null; ecoHeatF: number | null; fanTimer: boolean; fanUntil?: number | null; availableModes: string[] };
 
 /** The first thermostat on the account. */
 export async function readNest(): Promise<NestState> {
@@ -51,7 +52,7 @@ export async function readNest(): Promise<NestState> {
     mode: T('ThermostatMode').mode ?? 'OFF', hvac: T('ThermostatHvac').status ?? 'OFF', coolF: T('ThermostatTemperatureSetpoint').coolCelsius != null ? cToF(T('ThermostatTemperatureSetpoint').coolCelsius) : null,
     heatF: T('ThermostatTemperatureSetpoint').heatCelsius != null ? cToF(T('ThermostatTemperatureSetpoint').heatCelsius) : null, eco: T('ThermostatEco').mode === 'MANUAL_ECO',
     ecoCoolF: T('ThermostatEco').coolCelsius != null ? cToF(T('ThermostatEco').coolCelsius) : null, ecoHeatF: T('ThermostatEco').heatCelsius != null ? cToF(T('ThermostatEco').heatCelsius) : null,
-    fanTimer: T('Fan').timerMode === 'ON', availableModes: T('ThermostatMode').availableModes ?? [] };
+    fanTimer: T('Fan').timerMode === 'ON', fanUntil: T('Fan').timerMode === 'ON' && T('Fan').timerTimeout ? Date.parse(T('Fan').timerTimeout) || null : null, availableModes: T('ThermostatMode').availableModes ?? [] };
   await kv.set('nest:last', st);
   return st;
 }
@@ -79,8 +80,29 @@ export async function setCool(deviceId: string, f: number, mode: string) {
   if (!g.ok) throw new GuardRefusal('ac', g.reason);
   if (g.value !== f) throw new GuardRefusal('ac', `the write would have to be stepped (${g.reason})`);
   if (!(await claimSetpointWrite(deviceId, f, now))) throw new GuardRefusal('ac', `another setpoint change was just made; one per ${AC_WRITE_INTERVAL_MS / 60_000} min`);
+  await recordSent(deviceId, { at: now, by: 'autopilot', mode: 'COOL', coolF: f, heatF: null });   // hold.ts: so the next reading is known as ours
   return exec(deviceId, 'ThermostatTemperatureSetpoint.SetCool', { coolCelsius: fToC(f) });
 }
-export const setHeat = (deviceId: string, f: number) => exec(deviceId, 'ThermostatTemperatureSetpoint.SetHeat', { heatCelsius: fToC(f) });
-export const setMode = (deviceId: string, mode: 'HEAT' | 'COOL' | 'HEATCOOL' | 'OFF') => exec(deviceId, 'ThermostatMode.SetMode', { mode });
-export const setEco = (deviceId: string, on: boolean) => exec(deviceId, 'ThermostatEco.SetMode', { mode: on ? 'MANUAL_ECO' : 'OFF' });
+
+/* ---------- the owner's own commands (mockup v), behind guardManual ---------- */
+/**
+ * Send one owner command. Checked by guardManual against the thermostat as last read; not subject to Autopilot's 2 °F step or
+ * 30-minute slot, and it does not take that slot. What is sent is recorded (hold.ts) and written into `nest:last` at once, so the
+ * app shows it and the next reading is not mistaken for somebody else's change. Returns the state as Solstice now expects it.
+ */
+export async function ownerCommand(c: ManualCommand): Promise<NestState> {
+  const st = await kv.get<NestState>('nest:last'); if (!st?.deviceId) throw new Error('The thermostat has not been read yet');
+  const g = guardManual(c, st); if (!g.ok) throw new GuardRefusal('ac', g.reason);
+  const id = st.deviceId, now = Date.now(), next: NestState = { ...st };
+  switch (c.kind) {
+    case 'cool': await exec(id, 'ThermostatTemperatureSetpoint.SetCool', { coolCelsius: fToC(c.f) }); next.coolF = c.f; break;
+    case 'heat': await exec(id, 'ThermostatTemperatureSetpoint.SetHeat', { heatCelsius: fToC(c.f) }); next.heatF = c.f; break;
+    case 'range': await exec(id, 'ThermostatTemperatureSetpoint.SetRange', { heatCelsius: fToC(c.heatF), coolCelsius: fToC(c.coolF) }); next.heatF = c.heatF; next.coolF = c.coolF; break;
+    case 'mode': await exec(id, 'ThermostatMode.SetMode', { mode: c.mode }); next.mode = c.mode; break;
+    case 'eco': await exec(id, 'ThermostatEco.SetMode', { mode: c.on ? 'MANUAL_ECO' : 'OFF' }); next.eco = c.on; break;
+    case 'fan': await exec(id, 'Fan.SetTimer', c.seconds ? { timerMode: 'ON', duration: `${c.seconds}s` } : { timerMode: 'OFF' }); next.fanTimer = c.seconds > 0; next.fanUntil = c.seconds ? now + c.seconds * 1000 : null; break;
+  }
+  if (c.kind !== 'eco' && c.kind !== 'fan') await recordSent(id, { at: now, by: 'owner', mode: next.mode, coolF: next.coolF, heatF: next.heatF });
+  await kv.set('nest:last', next);
+  return next;
+}

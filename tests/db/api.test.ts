@@ -22,7 +22,7 @@ vi.mock(import('../../server/src/appliances/nest.js'), async importOriginal => {
   const real = await importOriginal();
   const blocked = (what: string) => vi.fn(async () => { throw new Error(`${what} in api test`); });
   return { ...real, nestConfigured: () => false, nestLinked: vi.fn(async () => false), readNest: blocked('readNest'),
-    nestExchangeCode: blocked('nestExchangeCode'), setCool: blocked('setCool'), setHeat: blocked('setHeat'), setMode: blocked('setMode'), setEco: blocked('setEco') };
+    nestExchangeCode: blocked('nestExchangeCode'), setCool: blocked('setCool'), ownerCommand: blocked('ownerCommand') };
 });
 
 let server: Server, base = '', cookie = '';
@@ -55,9 +55,14 @@ describe('single-owner mode', () => {
 
   it('PUT /api/settings merges top-level keys into the owner settings', async () => {
     expect((await send('PUT', '/api/settings', { calm: { enabled: true } })).status).toBe(200);
-    expect((await send('PUT', '/api/settings', { pool: { autopilot: 'suggest' } })).status).toBe(200);
+    expect((await send('PUT', '/api/settings', { pool: { autopilot: 'suggest' } })).status).toBe(400);   // only through /api/appliances/pool/autopilot
+    for (const bad of [{ ac: { autopilot: 'off' } }, { powerwall: { rules: { storm: 'auto' } } }, { alerts: { storm: 'yes' } }, { system: { priceUsd: -1 } }, { system: { extra: 1 } }, [1]])
+      expect((await send('PUT', '/api/settings', bad)).status, JSON.stringify(bad)).toBe(400);
+    expect((await send('PUT', '/api/settings', { alerts: { storm: false } })).status).toBe(200);
+    expect(await kv.get('settings:owner:prev')).toMatchObject({ calm: { enabled: true } });   // the one-level undo copy
+    expect((await send('PUT', '/api/settings', { alerts: {} })).status).toBe(200);
     // GET adds the site location from SITE_LAT/SITE_LON, which tests never set
-    expect(await (await get('/api/settings')).json()).toEqual({ calm: { enabled: true }, pool: { autopilot: 'suggest' }, location: null });
+    expect(await (await get('/api/settings')).json()).toEqual({ calm: { enabled: true }, alerts: {}, location: null });
   });
 });
 

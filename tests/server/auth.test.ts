@@ -175,7 +175,7 @@ describe('crons keep their bearer check and need no cookie', () => {
     expect(sync.status).toBe(200);
     // the nightly sync, then the learning layer's nightly job for the site (server/src/learn/nightly.ts)
     // then the alert watch's nightly steps (server/src/watch.ts: bill due, new anomalies)
-    expect(await sync.json()).toEqual({ s: { mocked: true }, 'learn:s': expect.objectContaining({ errors: [] }), 'watch:s': expect.objectContaining({ billDue: { due: false, reason: 'no bill yet' } }), pvsPrune: { deleted: 0, since: null } });
+    expect(await sync.json()).toEqual({ s: { mocked: true }, 'learn:s': expect.objectContaining({ errors: [] }), 'watch:s': expect.objectContaining({ billDue: { due: false, reason: 'no bill yet' } }), pvsPrune: { deleted: 0, since: null }, ms: expect.any(Number) });
     // the 5-minute cron decides by the clock what is due (sampling.ts): pin it to a due tick, 10:00 CDT in cooling season
     vi.useFakeTimers({ toFake: ['Date'], now: Date.parse('2026-07-15T15:00:00Z') });
     await db.kv.set('ercot', { at: Date.now(), data: { condition: 'normal', title: 'Normal', note: null, eea: 0, demandMw: 1, capacityMw: 2, at: 'x' } }); // the watch reads the cache, never ercot.com
@@ -205,11 +205,11 @@ describe('OAuth links: minted only by the owner, callbacks verify a signed singl
     expect(cb.headers.get('location')).toBe('/');
     expect(teslaAuth.exchangeCode).toHaveBeenCalledWith('test-code', null);
     const replay = await call(`/auth/callback?code=test-code&state=${encodeURIComponent(state)}`);
-    expect(replay.headers.get('location')).toBe('/?tesla_error=Sign-in+expired.+Try+again.');
+    expect(replay.headers.get('location')).toBe('/?tesla_error=expired');
     const body = state.slice(0, state.lastIndexOf('.'));
     for (const forged of [`${body}.AAAA`, `owner.tesla.${Date.now() + 60_000}.00.x`, auth.signState(0), auth.signOwnerState('tesla', -1000), auth.signOwnerState('nest', 60_000), '']) {
       const r = await call(`/auth/callback?code=test-code&state=${encodeURIComponent(forged)}`);
-      expect(r.headers.get('location'), forged).toBe('/?tesla_error=Sign-in+expired.+Try+again.');
+      expect(r.headers.get('location'), forged).toBe('/?tesla_error=expired');
     }
     expect(teslaAuth.exchangeCode).toHaveBeenCalledTimes(1);
   });
@@ -221,10 +221,10 @@ describe('OAuth links: minted only by the owner, callbacks verify a signed singl
     const state = stateOf(start);
     const cb = await call(`/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`);
     expect(cb.headers.get('location')).toBe('/?nest=linked');
-    expect((await call(`/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`)).headers.get('location')).toBe('/?nest_error=bad+state');
+    expect((await call(`/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`)).headers.get('location')).toBe('/?nest_error=expired');
     const tesla = stateOf(await call('/auth/login', { cookie }));   // a Tesla state is not a Nest state
     for (const forged of [tesla, `owner.nest.${Date.now() + 60_000}.00.x`, auth.signState(0, 60_000), auth.signOwnerState('nest', -1000)]) {
-      expect((await call(`/auth/google/callback?code=test-code&state=${encodeURIComponent(forged)}`)).headers.get('location'), forged).toBe('/?nest_error=bad+state');
+      expect((await call(`/auth/google/callback?code=test-code&state=${encodeURIComponent(forged)}`)).headers.get('location'), forged).toBe('/?nest_error=expired');
     }
   });
 });
