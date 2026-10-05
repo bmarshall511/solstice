@@ -57,7 +57,7 @@ beforeAll(async () => {
     await n(13, m, 'COOLING', 74, 75); await n(18, m, 'OFF', 78, 76.5);
     await n(21, m, m < 50 ? 'COOLING' : 'OFF', 76, 76.2); await n(23, m, 'OFF', 76, 75.8);
   }
-  await db.kv.set('s:ac:learned', { at: Date.now(), learned: { coolKw: 2.016, heatKw: null, samples: 9, heatSamples: 0 } });
+  await db.kv.set('s:ac:learned:v2', { at: Date.now(), learned: { coolKw: 2.016, heatKw: null, samples: 9, heatSamples: 0 } });
 
   server = createServer(app).listen(0, '127.0.0.1'); await once(server, 'listening');
   const { port } = server.address() as AddressInfo;

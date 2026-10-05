@@ -27,45 +27,50 @@ export async function recordNest(siteId: string, st: NestState) {
 }
 type AcLearned = { coolKw: number | null; heatKw: number | null; samples: number; heatSamples: number };
 const LEARN_TTL_MS = 3600e3;
+/** v2: the clean-switch method; a new key so the old cached figure is never reused. */
+export const acLearnedKey = (siteId: string) => `${siteId}:ac:learned:v2`;
 /**
  * AC power learned from load steps: for each pair of consecutive readings where HVAC switched between COOLING and OFF within 10 min,
  * the difference in Tesla's 5-minute home power across the switch. Median over the last 14 days; null until 5 samples exist.
- * Cached in kv (`<site>:ac:learned`) for an hour, so app reads and the 5-minute cron share one computation; new transitions show up
+ * Cached in kv (`<site>:ac:learned:v2`) for an hour, so app reads and the 5-minute cron share one computation; new transitions show up
  * on the first call after the entry expires.
  */
 export async function learnAcKw(siteId: string): Promise<AcLearned> {
-  const key = `${siteId}:ac:learned`, hit = await kv.get<{ at: number; learned: AcLearned }>(key), age = hit ? Date.now() - hit.at : -1;
+  const key = acLearnedKey(siteId), hit = await kv.get<{ at: number; learned: AcLearned }>(key), age = hit ? Date.now() - hit.at : -1;
   if (hit && age >= 0 && age < LEARN_TTL_MS) return hit.learned;
   const learned = await computeAcKw(siteId);
   await kv.set(key, { at: Date.now(), learned });
   return learned;
 }
-async function computeAcKw(siteId: string): Promise<AcLearned> {
-  type R = { ts: string; hvac: string };
-  const rows = await q<R>(`SELECT ts::text, hvac FROM nest_readings WHERE site_id = $1 AND day >= $2 ORDER BY ts`, [siteId, addDays(localDay(), -14)]);
-  const pairs: Array<{ on: R; off: R }> = [];
-  for (let i = 1; i < rows.length; i++) {
-    const a = rows[i - 1], b = rows[i], dt = Number(b.ts) - Number(a.ts); if (dt > 10 * 60_000) continue;
-    const change = a.hvac !== b.hvac && (a.hvac === 'OFF' || b.hvac === 'OFF'); if (!change) continue;
-    pairs.push(b.hvac !== 'OFF' ? { on: b, off: a } : { on: a, off: b });
+/**
+ * The AC's draw from Tesla's home load at clean on/off switches (v2, 2026-10). A switch counts only when the thermostat held the old
+ * state for the reading before and the new state for the reading after (no short cycling), and the step is taken between the 5-minute
+ * bucket that ends before the switch window and the one that starts after it. (v1 used the buckets containing the readings; those
+ * straddle the switch, so the step came out about half the real draw: 1.7 kW against ~4.3 kW for this 3.5-ton system.)
+ * Buckets are labelled by their start. Median over the last 14 days; null until 5 samples exist.
+ */
+export function acStepsFrom(rows: Array<{ ts: number; hvac: string }>, kwAt: (start: number) => number | null) {
+  const steps: number[] = [], heat: number[] = [], B = 300_000, near = (a: number, b: number) => b - a <= 10 * 60_000;
+  for (let i = 2; i < rows.length - 1; i++) {
+    const p2 = rows[i - 2], p1 = rows[i - 1], n0 = rows[i], n1 = rows[i + 1];
+    if (p1.hvac === n0.hvac || !(p1.hvac === 'OFF' || n0.hvac === 'OFF')) continue;                  // a switch between OFF and a running state
+    if (p2.hvac !== p1.hvac || n1.hvac !== n0.hvac || !near(p2.ts, p1.ts) || !near(p1.ts, n0.ts) || !near(n0.ts, n1.ts)) continue;   // steady on both sides
+    const before = kwAt(Math.floor(p1.ts / B) * B - B), after = kwAt(Math.ceil(n0.ts / B) * B);          // whole buckets outside the switch window
+    if (before == null || after == null) continue;
+    const on = n0.hvac !== 'OFF', d = on ? after - before : before - after, running = on ? n0.hvac : p1.hvac;
+    if (d > .5 && d < 15) (running === 'HEATING' ? heat : steps).push(d);
   }
-  // One query for every transition: the energy bucket nearest each reading within ±5 min (energy_site_epoch index), kW from its
-  // home_wh (null when the bucket is missing or has no home_wh). Two equally near buckets resolve to the earlier one.
-  const kwAt = new Map<string, number | null>();
-  if (pairs.length) {
-    const ts = [...new Set(pairs.flatMap(p => [p.on.ts, p.off.ts]))].map(Number);
-    const got = await q<{ ts: string; kw: number | null }>(`SELECT t.ts::text, e.kw FROM unnest($2::bigint[]) t(ts) LEFT JOIN LATERAL (
-        SELECT (home_wh * 12 / 1000.0)::float8 kw FROM energy WHERE site_id = $1 AND epoch BETWEEN t.ts - 300000 AND t.ts + 300000
-        ORDER BY ABS(epoch - t.ts), epoch LIMIT 1) e ON true`, [siteId, ts]);
-    for (const r of got) kwAt.set(r.ts, r.kw);
-  }
-  const steps: number[] = [], heat: number[] = [];
-  for (const { on, off } of pairs) {
-    const kOn = kwAt.get(on.ts), kOff = kwAt.get(off.ts); if (kOn == null || kOff == null) continue;
-    const d = kOn - kOff; if (d > .5 && d < 25) (on.hvac === 'HEATING' ? heat : steps).push(d);
-  }
-  const med = (a: number[]) => a.length >= 5 ? a.sort((x, y) => x - y)[Math.floor(a.length / 2)] : null;
+  const med = (a: number[]) => a.length >= 5 ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : null;
   return { coolKw: med(steps), heatKw: med(heat), samples: steps.length, heatSamples: heat.length };
+}
+async function computeAcKw(siteId: string): Promise<AcLearned> {
+  const since = addDays(localDay(), -14);
+  const rows = (await q<{ ts: string; hvac: string }>(`SELECT ts::text, hvac FROM nest_readings WHERE site_id = $1 AND day >= $2 ORDER BY ts`, [siteId, since])).map(r => ({ ts: Number(r.ts), hvac: r.hvac }));
+  if (rows.length < 4) return { coolKw: null, heatKw: null, samples: 0, heatSamples: 0 };
+  const buckets = await q<{ epoch: string; kw: number | null }>(`SELECT epoch::text, (home_wh * 12 / 1000.0)::float8 kw FROM energy WHERE site_id = $1 AND epoch BETWEEN $2 AND $3`,
+    [siteId, rows[0].ts - 600_000, rows[rows.length - 1].ts + 600_000]);
+  const byStart = new Map(buckets.map(b => [Number(b.epoch), b.kw]));
+  return acStepsFrom(rows, start => byStart.get(start) ?? null);
 }
 /** Today's run time and duty from readings. Each reading holds until the next, at most 20 min: the cron samples every 5 minutes
  *  in cooling-season daytime and every 15 minutes otherwise (sampling.ts), so a 15-minute gap counts in full. */

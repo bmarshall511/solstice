@@ -108,3 +108,21 @@ describe('pre-cool on spare solar: start at a full AC, keep at half', () => {
   it.each([[null, false, false], [1800, false, true], [1000, false, false], [1000, true, true], [800, true, false]] as const)
   ('spare %s W, already on %s → %s', (spareW, on, want) => { expect(precoolDecision({ spareW, acKw: 1.8, on })).toBe(want); });
 });
+
+import { acStepsFrom } from '../../server/src/appliances/ac.js';
+describe('AC draw from clean on/off switches (v2)', () => {
+  // a synthetic afternoon: 1.5 kW base, a 4.3 kW AC that cycles 40 min on / 30 min off; switches land between 5-minute samples
+  const B = 300_000, t0 = Date.UTC(2026, 6, 15, 18), BASE = 1.5, AC = 4.3;
+  const onAt = (t: number) => { const c = (t - t0 - 7 * 60_000) % (70 * 60_000); return c >= 0 && c < 40 * 60_000; };
+  const kwAt = (start: number) => { let wh = 0; for (let s = 0; s < 300; s++) wh += (BASE + (onAt(start + s * 1000) ? AC : 0)) / 3600; return wh * 12; };   // bucket mean kW
+  const rows = Array.from({ length: 96 }, (_, i) => ({ ts: t0 + i * B + 60_000, hvac: onAt(t0 + i * B + 60_000) ? 'COOLING' : 'OFF' }));
+  it('recovers the full draw (4.3 kW), not the diluted half the v1 buckets gave', () => {
+    const r = acStepsFrom(rows, kwAt);
+    expect(r.samples).toBeGreaterThanOrEqual(5);
+    expect(r.coolKw!).toBeCloseTo(AC, 1);
+  });
+  it('ignores short cycling (a state that did not hold for a reading on each side)', () => {
+    const blip = [{ ts: 0, hvac: 'OFF' }, { ts: B, hvac: 'OFF' }, { ts: 2 * B, hvac: 'COOLING' }, { ts: 3 * B, hvac: 'OFF' }, { ts: 4 * B, hvac: 'OFF' }];
+    expect(acStepsFrom(blip, () => 3).samples).toBe(0);
+  });
+});

@@ -104,7 +104,7 @@ export function spanOf(date: string, now = new Date()) { const today = localDay(
  * undefined and the owner's settings come from kv in the same query as the pool and AC keys.
  */
 export async function applianceDay(siteId: string, date: string, settingsAll?: Record<string, any>): Promise<ApplianceDay> {
-  const keys = [`${siteId}:pool:last`, `${siteId}:pool:applied`, `${siteId}:ac:learned`, `${siteId}:ac:slope`, 'settings:owner'];
+  const keys = [`${siteId}:pool:last`, `${siteId}:pool:applied`, `${siteId}:ac:learned:v2`, `${siteId}:ac:slope`, 'settings:owner'];
   const [energy, soc, pool, nest, kvRows] = await Promise.all([
     q<EnergyRow>(`SELECT hour::int AS hour, COUNT(*)::int AS n,
         (AVG(COALESCE(solar_wh, 0)) * 12 / 1000)::float8 AS solar, (AVG(COALESCE(home_wh, 0)) * 12 / 1000)::float8 AS home,
