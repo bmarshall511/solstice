@@ -108,11 +108,13 @@ const leftText = ms => { const m = Math.max(1, Math.round(ms / 60_000)); return 
 function drawBoost(S) {
   const d = S.pool, row = $('poolBoost'), id = boostId(S), c = d.snapshot?.circuits.find(x => x.id === id); if (!row) return;
   if (S.guest || !c) { row.innerHTML = ''; return; }
-  const busy = pc.sending.has(id), until = d.until?.[id];
-  row.innerHTML = busy ? `<button class="send" disabled>Sending\u2026</button>`
+  const busy = pc.sending.has(id), until = d.until?.[id], cu = d.clearUp;
+  row.innerHTML = (busy ? `<button class="send" disabled>Sending\u2026</button>`
     : c.on ? `<button class="on" id="pcBoost">Boosting <small id="pcBoostLeft">${until ? `${leftText(until - Date.now())} left \u00b7 ` : ''}End</small></button>`
-    : `<button id="pcBoost">Boost <small>1\u20134 h</small></button>`;
+    : `<button id="pcBoost">Boost <small>1\u20134 h</small></button>`)
+    + (pc.clearBusy ? `<button class="send" disabled>Sending\u2026</button>` : cu ? `<button class="cu" id="pcClear">Clear-up <small>day ${cu.day} of ${cu.days}</small></button>` : `<button id="pcClear">Clear-up <small>1\u20133 days</small></button>`);
   if ($('pcBoost')) $('pcBoost').onclick = () => c.on ? poolSend(S, { kind: 'circuit', id, on: false }) : openBoost(S);
+  if ($('pcClear')) $('pcClear').onclick = () => cu ? $('poolSched').scrollIntoView({ behavior: 'smooth', block: 'start' }) : openClearUp(S);
 }
 /** The Boost button's time left, on the 1 s tick. */
 export function tickBoost(S) { const u = S.pool?.until?.[boostId(S)], el = $('pcBoostLeft'); if (el && u) el.textContent = `${leftText(u - Date.now())} left \u00b7 End`; }
@@ -131,6 +133,49 @@ function openBoost(S) {
   $('pcX').onclick = () => $('phone').classList.remove('open');
   $('pcGo').onclick = () => { $('phone').classList.remove('open'); poolSend(S, ...(rpm0 != null && rpm !== rpm0 ? [{ kind: 'speed', id, rpm }] : []), { kind: 'circuit', id, on: true, minutes: pick }); };
   draw(); $('phone').classList.add('open');
+}
+/* frame 6: Clear-up — the Pool circuit all day for 1–3 days, then back to the planner by itself; only End now ends it early */
+const endsLabel = ms => `${new Date(ms).toLocaleDateString('en-US', { weekday: 'short' })} ${clockAt(ms)}`;
+const poolRunAfter = t => { const d = new Date(t); d.setUTCHours(1, 15, 0, 0); if (d.getTime() < t) d.setUTCDate(d.getUTCDate() + 1); return d.getTime(); };   // as the server
+async function clearUpSend(S, body) {
+  pc.clearBusy = true; pc.err = null; drawControls(S);
+  try { S.pool = await api.poolClearUp(body); } catch (e) { pc.err = `Clear-up: ${e.message}`; }
+  pc.clearBusy = false; drawPool(S);
+}
+function openClearUp(S) {
+  const d = S.pool, rates = d.clearUpRates ?? []; if (!rates.length) return;
+  let days = 2, rpm = 2000;
+  $('sheetBody').innerHTML = `<div class="shead"><h4>Clear-up</h4><button class="x" id="pcX" aria-label="Close">\u2715</button></div>
+    <p class="sub">Pool runs around the clock to clear cloudy water, then goes back to the planner by itself</p>
+    <div class="pc-lbl">For</div><div class="pc-runs" id="pcDays" style="grid-template-columns:repeat(3,1fr)">${[1, 2, 3].map(n => `<button data-n="${n}">${n} day${n > 1 ? 's' : ''}</button>`).join('')}</div>
+    <div class="pc-rpm"><div class="bt">Speed<small id="pcTurn"></small></div><div class="stp"><button id="pcDn" aria-label="Slower">\u2212</button><b id="pcRpm"></b><button id="pcUp" aria-label="Faster">+</button></div></div>
+    <div class="pc-nums" id="pcNums"></div>
+    <button class="primary" id="pcGo">Start Clear-up</button>`;
+  const draw = () => {
+    const r = rates.find(x => x.rpm === rpm) ?? rates[0], end = poolRunAfter(Date.now() + days * 864e5);
+    document.querySelectorAll('#pcDays button').forEach(b => b.classList.toggle('on', +b.dataset.n === days));
+    $('pcRpm').textContent = rpm.toLocaleString(); $('pcTurn').textContent = `about ${r.turnovers} turnovers a day`;
+    $('pcNums').innerHTML = `<div><b>24 h</b><span>pump a day</span></div><div><b>${r.kwhPerDay}</b><span>kWh a day</span></div><div><b>${new Date(end).toLocaleDateString('en-US', { weekday: 'short' })}</b><span>ends ${clockAt(end)}</span></div>`;
+  };
+  $('pcDays').onclick = e => { const b = e.target.closest('button'); if (!b) return; days = +b.dataset.n; draw(); };
+  const lo = rates[0].rpm, hi = rates.at(-1).rpm;
+  $('pcDn').onclick = () => { rpm = Math.max(lo, rpm - 50); draw(); }; $('pcUp').onclick = () => { rpm = Math.min(hi, rpm + 50); draw(); };
+  $('pcX').onclick = () => $('phone').classList.remove('open');
+  $('pcGo').onclick = () => { $('phone').classList.remove('open'); clearUpSend(S, { action: 'start', days, rpm }); };
+  draw(); $('phone').classList.add('open');
+}
+/** The banner on the planner while a Clear-up runs (and its badge). */
+function drawClearBanner(S) {
+  const cu = S.pool.clearUp, box = $('plClear'); if (!box) return;
+  $('plMode').className = cu ? 'badge cu' : 'badge g';
+  if (cu) $('plMode').textContent = 'Clear-up';
+  if (!cu) { box.innerHTML = ''; return; }
+  const f = Math.min(1, Math.max(0, (Date.now() - cu.startedAt) / (cu.until - cu.startedAt)));
+  box.innerHTML = `<div class="pl-clear"><div class="hh"><i></i><b>Clear-up \u00b7 day ${cu.day} of ${cu.days}</b><em>ends ${endsLabel(cu.until)}</em></div>
+    <p>Pool on all day at ${cu.rpm.toLocaleString()} RPM. The planner and Autopilot leave the schedule alone until it ends, then the next evening plan takes over. Brush the walls and backwash the DE filter when the pressure climbs.</p>
+    <div class="bar"><i style="width:${Math.round(f * 100)}%"></i></div>
+    ${S.guest ? '' : `<div class="row2" data-owner><button id="cuMore">Add a day</button><button id="cuEnd">End now</button></div>`}</div>`;
+  if ($('cuMore')) { $('cuMore').onclick = () => clearUpSend(S, { action: 'extend' }); $('cuEnd').onclick = () => { if (confirm('End the Clear-up now? The planner\u2019s schedule goes back on the controller.')) clearUpSend(S, { action: 'end' }); }; }
 }
 /** Send one or more commands for a circuit in order; the tile says "sending…" until the controller's read-back answers. */
 async function poolSend(S, ...cmds) {
@@ -196,6 +241,7 @@ function drawPlanner(S) {
   const d = S.pool, w = d.water, P = d.plan, C = d.current, sp = d.settings; if (!w || !P) return;
   const mode = d.autopilot?.mode ?? sp.autopilot;
   $('plMode').textContent = `Autopilot · ${mode === 'auto' ? 'Auto' : mode === 'off' ? 'Off' : 'Suggest'}`;
+  drawClearBanner(S);
   // the ring: water moved so far today (readings) against the goal
   const f = Math.min(1, w.movedTurnovers / w.goal), circ = 2 * Math.PI * 42;
   $('plArc').setAttribute('stroke-dasharray', `${circ * f} ${circ}`);

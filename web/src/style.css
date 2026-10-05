@@ -987,6 +987,22 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .pc-row button.send{border-color:rgba(255,193,94,.45)}
 .pc-heat .seg2{display:flex;margin-top:10px}.pc-heat .seg2 button{flex:1;text-align:center;padding:9px 6px}
 .pc-heat .tstat{margin-top:4px}
+/* frame 6: Clear-up (the row button, the banner on the planner, its badge) */
+.pc-row button.cu{border-color:rgba(108,196,255,.5);background:rgba(108,196,255,.1)}
+.badge.cu{color:#9fd6ff;border-color:rgba(108,196,255,.4);background:rgba(108,196,255,.08)}
+.pl-clear{margin-top:12px;padding:12px 14px;border-radius:16px;background:rgba(108,196,255,.09);border:1px solid rgba(108,196,255,.35);font-size:12.5px;line-height:1.5;color:var(--dim)}
+.pl-clear .hh{display:flex;align-items:center;gap:8px}
+.pl-clear .hh i{flex:none;width:8px;height:8px;border-radius:50%;background:#6cc4ff;box-shadow:0 0 10px #6cc4ff}
+.pl-clear .hh b{color:var(--text);font-weight:700;font-size:13.5px}
+.pl-clear .hh em{margin-left:auto;font:500 10.5px "JetBrains Mono";font-style:normal;color:#9fd6ff;flex:none}
+.pl-clear p{margin-top:4px}
+.pl-clear .bar{height:4px;border-radius:2px;background:rgba(255,255,255,.08);margin-top:9px;overflow:hidden}
+.pl-clear .bar i{display:block;height:100%;background:#6cc4ff}
+.pl-clear .row2{display:flex;gap:8px;margin-top:10px}
+.pl-clear .row2 button{all:unset;cursor:pointer;flex:1;text-align:center;padding:9px 10px;border-radius:12px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);font-weight:600;font-size:12.5px;color:var(--text)}
+.pc-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}
+.pc-nums div{padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
+.pc-nums b{display:block;font:500 15px "JetBrains Mono"}.pc-nums span{font-size:11px;color:var(--dim)}
 /* frame 5: the turnover planner (the Pump schedule card) */
 .pl-goal{display:flex;align-items:center;gap:14px;margin-top:12px}
 .pl-ring{flex:none;width:92px;height:92px;position:relative}

@@ -73,7 +73,9 @@ export async function autopilot(siteId: string, o: { settings: PoolSettings; mod
   const cleaned = await q<{ day: string }>(`SELECT day FROM events WHERE site_id = $1 AND type = 'filter_cleaned' ORDER BY day DESC LIMIT 1`, [siteId]);
   const since = cleaned[0]?.day ?? (log.at(-1)?.day ?? today), daysSince = Math.max(0, Math.round((Date.parse(today) - Date.parse(since)) / 864e5));
   let pending = false;
-  if (o.act && o.mode !== 'off' && o.snap) {
+  // a Clear-up holds the controller's programs until it ends (frame 6): no write and no suggestion while it runs, whatever the mode
+  const clearUp = await kv.get<{ until: number } | null>(`${siteId}:pool:clearup`), held = !!clearUp && clearUp.until > Date.now();
+  if (o.act && o.mode !== 'off' && o.snap && !held) {
     const applied = await kv.get<any>(`${siteId}:pool:applied`);
     // the same programs (circuit, start, stop and speed) as the last write: nothing to send (records from before the planner carry them too)
     const key = (xs: Array<{ circuitId: number; start: number; stop: number; rpm: number }> = []) => JSON.stringify(xs.map(x => [x.circuitId, x.start, x.stop, x.rpm]));

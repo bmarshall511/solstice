@@ -269,7 +269,10 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
     projectedTurnovers: Math.round((movedGal + restGal) / settings.gallons * 100) / 100, gallons: settings.gallons };
   const untilAll = await kv.get<Record<string, number>>(`${siteId}:pool:until`) ?? {}, nowMs = Date.now();
   const until = Object.fromEntries(Object.entries(untilAll).filter(([id, t]) => t > nowMs && snap?.circuits.find(c => c.id === Number(id))?.on));   // only runs still going
-  return { id: 'pool', water, runFor: await kv.get<Record<string, number>>(`${siteId}:pool:runFor`) ?? {}, until, autopilot: auto, pending, extras: { hourlyToday: extraHourly.map(v => Math.round(v * 1000) / 1000), todayKwh: Math.round(extraKwh * 100) / 100, nowW: extraNowW, loads: settings.loads, uvW: settings.uv ? UV_W : 0, lightReadings30d: lightH[0]?.h ?? 0 }, spaSession, name: 'Pool pump', linked: configured() && !!snap, error, settings, snapshot: snap,
+  const cu = await activeClearUp(siteId), clearUp = cu ? { ...cu, day: Math.min(cu.days, Math.floor((Date.now() - cu.startedAt) / 864e5) + 1) } : null;
+  const clearUpRates = Array.from({ length: (CLEARUP_RPM_MAX - CLEARUP_RPM_MIN) / 50 + 1 }, (_, i) => CLEARUP_RPM_MIN + i * 50)
+    .map(r => ({ rpm: r, kwhPerDay: Math.round((W(r) * 24 + (settings.uv ? UV_W * 24 : 0)) / 100) / 10, turnovers: Math.round(gpmAt(r, settings.designGpm) * 1440 / settings.gallons * 10) / 10 }));
+  return { id: 'pool', water, clearUp, clearUpRates, runFor: await kv.get<Record<string, number>>(`${siteId}:pool:runFor`) ?? {}, until, autopilot: auto, pending, extras: { hourlyToday: extraHourly.map(v => Math.round(v * 1000) / 1000), todayKwh: Math.round(extraKwh * 100) / 100, nowW: extraNowW, loads: settings.loads, uvW: settings.uv ? UV_W : 0, lightReadings30d: lightH[0]?.h ?? 0 }, spaSession, name: 'Pool pump', linked: configured() && !!snap, error, settings, snapshot: snap,
     live: snap?.pump ? { watts: snap.pump.watts, rpm: snap.pump.rpm, running: snap.pump.running, gpm: snap.pump.gpm, at: snap.at, waterTemp, airTemp: snap.airTemp, freezeMode: snap.freezeMode,
       on: snap.circuits.filter(c => c.on).map(c => c.name), activeRpm: Math.max(0, ...snap.circuits.filter(c => c.on).map(c => speeds.get(c.id) ?? 0)) } : null,
     model: { measured: await measuredPoints(siteId), curve: [1000, 1500, 1800, 2400, 3000, 3450].map(r => ({ rpm: r, watts: Math.round(W(r)) })) },
@@ -298,6 +301,58 @@ async function logPool(siteId: string, text: string, delta?: string) {
   log.unshift({ at: Date.now(), day: localDay(), text, delta });
   await kv.set(`${siteId}:pool:autolog`, log.slice(0, 30));
 }
+/* ---------- mockup w frame 6: Clear-up (the Pool circuit all day for 1–3 days, then back to the planner by itself) ---------- */
+export type ClearUp = { startedAt: number; until: number; days: number; rpm: number };
+export const CLEARUP_RPM_MIN = 1500, CLEARUP_RPM_MAX = 3000, CLEARUP_DAYS_MAX = 3;
+const clearUpKey = (siteId: string) => `${siteId}:pool:clearup`;
+/** The evening pool run (01:15 UTC, the pool cron) at or after `t`: a Clear-up ends there, so the planner takes over in the same run. */
+export const poolRunAfter = (t: number) => { const d = new Date(t); d.setUTCHours(1, 15, 0, 0); if (d.getTime() < t) d.setUTCDate(d.getUTCDate() + 1); return d.getTime(); };
+/** The Clear-up in force, or null (one past its end counts as over; the evening run ends it properly). */
+export async function activeClearUp(siteId: string, now = Date.now()) { const c = await kv.get<ClearUp | null>(clearUpKey(siteId)); return c && c.until > now ? c : null; }
+/** Why a Clear-up request is unusable, or null: 1–3 whole days at 1,500–3,000 RPM in 50 RPM steps. */
+export function clearUpError(b: any): string | null {
+  if (!Number.isInteger(b?.days) || b.days < 1 || b.days > CLEARUP_DAYS_MAX) return `a Clear-up runs 1–${CLEARUP_DAYS_MAX} days`;
+  if (!Number.isInteger(b?.rpm) || b.rpm < CLEARUP_RPM_MIN || b.rpm > CLEARUP_RPM_MAX || b.rpm % 50) return `a Clear-up runs at ${CLEARUP_RPM_MIN.toLocaleString()}–${CLEARUP_RPM_MAX.toLocaleString()} RPM`;
+  return null;
+}
+/** Start a Clear-up: the Pool circuit's programs (and the skim's) replaced by one all-day program at `rpm`, through the guarded write. */
+export async function startClearUp(siteId: string, o: { days: number; rpm: number }, settingsAll: Record<string, any>, now = Date.now()) {
+  const settings: PoolSettings = { ...DEFAULTS, ...(settingsAll.pool ?? {}) }, snap = await readPool();
+  if (!snap.pump) throw new Error('No pump found on the controller');
+  await guardedWrite(siteId, 'the Clear-up', { pumpId: snap.pump.id, speeds: [{ circuitId: settings.poolCircuit, rpm: o.rpm }], replaceCircuits: [settings.poolCircuit, settings.boostCircuit],
+    schedules: [{ circuitId: settings.poolCircuit, start: 0, stop: 1439 }], guard: guardContext(snap) });
+  const c: ClearUp = { startedAt: now, until: poolRunAfter(now + o.days * 864e5), days: o.days, rpm: o.rpm };
+  await kv.set(clearUpKey(siteId), c); await kv.set(`${siteId}:pool:last`, null as any); await kv.set(`${siteId}:pool:pending`, null as any);
+  await logPool(siteId, `You started a ${o.days}-day Clear-up at ${o.rpm.toLocaleString()} RPM`, 'you');
+  return c;
+}
+/** One more day (the end moves to the next evening run). */
+export async function extendClearUp(siteId: string) {
+  const c = await activeClearUp(siteId); if (!c) throw new Error('No Clear-up is running');
+  const next = { ...c, days: c.days + 1, until: poolRunAfter(c.until + 864e5 - 3600e3) };
+  await kv.set(clearUpKey(siteId), next); await logPool(siteId, `You added a day to the Clear-up`, 'you');
+  return next;
+}
+/**
+ * End a Clear-up (End now, or the evening run once it is due): the planner's plan for the day goes back on the controller, whatever
+ * Autopilot's mode (starting a Clear-up was the owner's choice to come back to the planner), then Autopilot carries on as before.
+ */
+export async function endClearUp(siteId: string, settingsAll: Record<string, any>, rate: number | null, why: 'you' | 'done') {
+  const c = await kv.get<ClearUp | null>(clearUpKey(siteId)); if (!c) return null;
+  const settings: PoolSettings = { ...DEFAULTS, ...(settingsAll.pool ?? {}) }, snap = await readPool();
+  const W = powerModel(await measuredPoints(siteId)), month = Number(localDay().slice(5, 7)) - 1, names = new Map(snap.circuits.map(x => [x.id, x.name]));
+  const plan = planFor({ waterTemp: snap.bodies[0]?.temp ?? WATER_BY_MONTH[month], solarKw: await solarProfile(siteId), settings, W, rate, month, names });
+  await applyPlan(siteId, plan, snap, settings);
+  await kv.set(clearUpKey(siteId), null as any);
+  await logPool(siteId, `${why === 'you' ? 'You ended the Clear-up' : 'Clear-up done'}: back to the planner, ${plan.hours} h at ${plan.rpm.toLocaleString()} RPM`, why === 'you' ? 'you' : undefined);
+  return plan;
+}
+/** The evening run: a Clear-up whose end has come (within 10 minutes of it) is ended before Autopilot plans. */
+export async function finishClearUpIfDue(siteId: string, settingsAll: Record<string, any>, rate: number | null, now = Date.now()) {
+  const c = await kv.get<ClearUp | null>(clearUpKey(siteId));
+  return c && c.until - 10 * 60_000 <= now ? endClearUp(siteId, settingsAll, rate, 'done') : null;
+}
+
 /** Why a turnover goal patch (frame 5's steppers) is unusable, or null: 1–4 turnovers a day in half steps, 0–3 whole skim hours. */
 export function goalPatchError(b: any): string | null {
   if (!b || typeof b !== 'object') return 'send turnoverGoal and/or skimHours';

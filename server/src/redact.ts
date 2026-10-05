@@ -103,7 +103,8 @@ const POOL: Rule = {
   extras: { hourlyToday: true, todayKwh: true, nowW: true, uvW: true, lightReadings30d: true },
   spaSession: { spaGallons: true, spaTemp: true, spaSet: true, riseF: true, heatMinutes: true, propaneGal: true, pumpWattsAtSpa: true, blowerWatts: true, electricUsdPerHour: 'veil' },
   settings: { gallons: true, spaGallons: true, designGpm: true, filterRpm: true, boostRpm: true, uv: true, autopilot: true, turnoverGoal: true, skimHours: true, boostCircuit: true },
-  water: { goal: true, skimHours: true, movedTurnovers: true, projectedTurnovers: true, gallons: true },   // mockup w frame 5: the planner's ring
+  water: { goal: true, skimHours: true, movedTurnovers: true, projectedTurnovers: true, gallons: true },
+  clearUp: { startedAt: true, until: true, days: true, rpm: true, day: true },   // frame 6: the Clear-up banner   // mockup w frame 5: the planner's ring
   snapshot: { at: true, airTemp: true, freezeMode: true, bodies: [{ temp: true, setPoint: true, heating: true }] },
   live: { watts: true, rpm: true, running: true, gpm: true, at: true, waterTemp: true, airTemp: true, freezeMode: true, on: true, activeRpm: true },
   model: { measured: [{ rpm: true, watts: true }], curve: [{ rpm: true, watts: true }] },

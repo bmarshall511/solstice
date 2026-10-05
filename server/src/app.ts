@@ -16,7 +16,7 @@ import { SOLAR, warrantedDcPct, systemYear } from './system.js';
 import { siteLocation, exactLocation } from './site.js';
 import { currentTariff, netEnergyCost, NO_TARIFF } from './tariff.js';
 import { appliances, comingSoon } from './appliances/index.js';
-import { poolDetail, applyPlan, restorePrevious, poolCommand, PoolUnavailable, goalPatchError } from './appliances/pool.js';
+import { poolDetail, applyPlan, restorePrevious, poolCommand, PoolUnavailable, goalPatchError, activeClearUp, startClearUp, extendClearUp, endClearUp, finishClearUpIfDue, clearUpError, CLEARUP_DAYS_MAX } from './appliances/pool.js';
 import { readPool } from './appliances/screenlogic.js';
 import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, bandFor, dismissSuggestion, recordNest, observeHold } from './appliances/ac.js';
 import { oidcError, eventOf, seenEvent, applyTraits, isSettingEvent } from './appliances/nestEvents.js';
@@ -486,6 +486,17 @@ app.post('/api/appliances/pool/command', express.json({ limit: '1kb' }), wrap(as
   catch (e) { if (e instanceof GuardRefusal) return res.status(400).json({ error: e.reason }); if (e instanceof PoolUnavailable) return res.status(503).json({ error: e.message }); throw e; }
   res.json(await poolDetail(sid, await settingsFor(req), await rateFor(sid)));
 }));
+/** Frame 6: Clear-up. {action:'start', days, rpm}, {action:'extend'} or {action:'end'}; answers the fresh Pool card. */
+app.post('/api/appliances/pool/clearup', express.json({ limit: '1kb' }), wrap(async (req, res) => {
+  const b = req.body ?? {}, sid = site(req), settings = await settingsFor(req), rate = await rateFor(sid);
+  try {
+    if (b.action === 'start') { const bad = clearUpError(b); if (bad) return res.status(400).json({ error: bad }); if (await activeClearUp(sid)) return res.status(409).json({ error: 'A Clear-up is already running' }); await startClearUp(sid, { days: b.days, rpm: b.rpm }, settings); }
+    else if (b.action === 'extend') { const c = await activeClearUp(sid); if (!c) return res.status(409).json({ error: 'No Clear-up is running' }); if (c.days >= CLEARUP_DAYS_MAX + 2) return res.status(400).json({ error: 'That is long enough; end it and start a new one if the water needs more' }); await extendClearUp(sid); }
+    else if (b.action === 'end') { if (!(await activeClearUp(sid))) return res.status(409).json({ error: 'No Clear-up is running' }); await endClearUp(sid, settings, rate, 'you'); }
+    else return res.status(400).json({ error: 'action must be start, extend or end' });
+  } catch (e) { if (e instanceof GuardRefusal) return res.status(400).json({ error: e.reason }); throw e; }
+  res.json(await poolDetail(sid, settings, rate));
+}));
 /** Frame 5's goal: turnovers a day and the daily skim hours. Saved with the owner's pool settings; the next plan uses them. */
 app.post('/api/appliances/pool/goal', express.json({ limit: '1kb' }), wrap(async (req, res) => {
   const bad = goalPatchError(req.body); if (bad) return res.status(400).json({ error: bad });
@@ -507,7 +518,7 @@ app.post('/api/appliances/pool/autopilot', express.json(), wrap(async (req, res)
 app.get('/api/cron/pool', wrap(async (req, res) => {
   if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
   const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL'), out: Record<string, unknown> = {};
-  for (const s of sites) { const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; out[s.id] = await poolDetail(s.id, settings, await rateFor(s.id), { fresh: true, act: true }).then(d => d.autopilot).catch(e => ({ error: e.message })); }
+  for (const s of sites) { const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; await finishClearUpIfDue(s.id, settings, await rateFor(s.id)).catch(e => console.error('[solstice] clear-up end failed', e.message)); out[s.id] = await poolDetail(s.id, settings, await rateFor(s.id), { fresh: true, act: true }).then(d => d.autopilot).catch(e => ({ error: e.message })); }
   res.json(out);
 }));
 app.post('/api/appliances/pool/restore', wrap(async (req, res) => { await restorePrevious(site(req), await readPool()); res.json({ ok: true }); }));
