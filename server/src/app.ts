@@ -18,10 +18,11 @@ import { currentTariff, netEnergyCost, NO_TARIFF } from './tariff.js';
 import { appliances, comingSoon } from './appliances/index.js';
 import { poolDetail, applyPlan, restorePrevious } from './appliances/pool.js';
 import { readPool } from './appliances/screenlogic.js';
-import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, bandFor, dismissSuggestion } from './appliances/ac.js';
+import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, bandFor, dismissSuggestion, recordNest, observeHold } from './appliances/ac.js';
+import { oidcError, eventOf, seenEvent, applyTraits, isSettingEvent } from './appliances/nestEvents.js';
 import { applianceDay } from './appliances/day.js';
 import { cronTick } from './appliances/sampling.js';
-import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest, ownerCommand } from './appliances/nest.js';
+import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest, ownerCommand, type NestState } from './appliances/nest.js';
 import { GuardRefusal, explainRefusal, type ManualCommand } from './appliances/guards.js';
 import { pvsRouter, prunePvs } from './pvs.js';
 import { panelsDay, panelAlerts, panelWatch } from './panels.js';
@@ -598,6 +599,30 @@ app.get('/api/cron/nest', wrap(async (req, res) => {
   for (const id of await cronSites()) watch[id] = await fiveMinuteWatch(id);
   res.json({ ...tick, watch });
 }));
+/* ---------- Nest change events (Google Pub/Sub push; appliances/nestEvents.ts) ----------
+ * Open route: Pub/Sub signs each push with the subscription's service account (NEST_EVENTS_SA) for NEST_EVENTS_AUDIENCE, and anything
+ * else is refused. A setting change (mode, setpoint, Eco) runs the manual-change detection at once; a reading (temperature, humidity,
+ * HVAC) just updates the stored state and the readings. Nothing here writes to Nest. 204 acknowledges; Pub/Sub retries anything else. */
+app.post('/api/nest/events', express.json({ limit: '64kb' }), wrap(async (req, res) => {
+  const audience = process.env.NEST_EVENTS_AUDIENCE ?? '', email = process.env.NEST_EVENTS_SA ?? '';
+  if (!audience || !email) return res.status(503).json({ error: 'nest events are not configured' });
+  const h = String(req.headers.authorization ?? ''), bad = h.startsWith('Bearer ') ? await oidcError(h.slice(7), { audience, email }) : 'no token';
+  if (bad) { console.warn(`[solstice] nest event refused: ${bad}`); return res.status(401).json({ error: 'unauthorized' }); }
+  const ev = eventOf(req.body);
+  if (!ev?.resourceUpdate || await seenEvent(ev.eventId)) return res.status(204).end();   // relation events and redeliveries: nothing to do
+  const prev = await kv.get<NestState>('nest:last'), at = Date.parse(ev.timestamp ?? '') || Date.now();
+  if (!prev || ev.resourceUpdate.name !== prev.deviceId || at < prev.at) return res.status(204).end();   // another device, or older than what we have
+  const next = applyTraits(prev, ev.resourceUpdate.traits ?? {}, at);
+  await kv.set('nest:last', next); await kv.set('nest:eventAt', Date.now());
+  const [id] = await cronSites(); if (!id) return res.status(204).end();
+  await recordNest(id, next);
+  if (isSettingEvent(ev)) {
+    const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}, d = await acDetail(id, settings, await rateFor(id), await acSlope(id));
+    await observeHold(id, prev, next, d.plan, d.settings, d.presence);
+  }
+  res.status(204).end();
+}));
+
 /* ---------- Google (Nest) OAuth ---------- */
 app.get('/auth/google', (req, res) => { if (!nestConfigured()) return res.status(503).send('Nest is not configured'); res.redirect(nestAuthorizeUrl(signOwnerState('nest', 60 * 60_000))); }); // owner-only; Google's permissions page can take a while
 app.get('/auth/google/callback', wrap(async (req, res) => {
