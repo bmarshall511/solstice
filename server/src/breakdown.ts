@@ -107,7 +107,7 @@ const NIGHTS_SQL = `SELECT day, (PERCENTILE_CONT(${BASE_QUANTILE}) WITHIN GROUP 
 export const nightBases = (siteId: string, since: string) => q<{ day: string; kw: number }>(NIGHTS_SQL, [siteId, since]);
 /** Thirteen months of the base: the median night of each month. Cached a day in kv. */
 export async function alwaysOnTrend(siteId: string, now = Date.now()) {
-  const key = `${siteId}:breakdown:trend`, hit = await kv.get<{ day: string; months: Array<{ month: string; kw: number }> }>(key), today = localDay(new Date(now));
+  const key = `${siteId}:breakdown:trend:v2`, hit = await kv.get<{ day: string; months: Array<{ month: string; kw: number }> }>(key), today = localDay(new Date(now));
   if (hit?.day === today) return hit.months;
   const nights = await nightBases(siteId, `${addDays(today, -400).slice(0, 7)}-01`), byMonth = new Map<string, number[]>();
   for (const n of nights) { const m = n.day.slice(0, 7), a = byMonth.get(m); if (a) a.push(Number(n.kw)); else byMonth.set(m, [Number(n.kw)]); }
