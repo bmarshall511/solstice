@@ -268,12 +268,15 @@ async function logPool(siteId: string, text: string, delta?: string) {
   log.unshift({ at: Date.now(), day: localDay(), text, delta });
   await kv.set(`${siteId}:pool:autolog`, log.slice(0, 30));
 }
+/** A pool command that cannot reach the controller at all (no ScreenLogic credentials on this server): 503, not a hang. */
+export class PoolUnavailable extends Error {}
 /**
  * The owner's own pool command (mockup w): written and read back in one ScreenLogic session (writeOwnerPool), the confirmed reading
  * stored like any other (it counts toward the day's water), the run time remembered per circuit for the next tap in the grid
  * (kv `<site>:pool:runFor`), and a line in the pool activity log. A refusal is logged too, then rethrown.
  */
 export async function poolCommand(siteId: string, cmd: PoolOwnerCommand, run?: Parameters<typeof writeOwnerPool>[1]) {
+  if (!run && !configured()) throw new PoolUnavailable('The pool controller is not set up on this server');
   let snap: PoolSnapshot;
   try { snap = await writeOwnerPool(cmd, run); }
   catch (e) { if (e instanceof GuardRefusal) await logPool(siteId, `Refused your change: ${e.reason}`, 'refused'); throw e; }

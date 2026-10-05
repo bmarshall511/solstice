@@ -88,4 +88,10 @@ describe('poolCommand (PGlite)', () => {
     expect((await kv.get<any[]>('pr:pool:autolog'))![0]).toMatchObject({ delta: 'refused' });
     expect(await kv.get('pr:pool:runFor')).toBeUndefined();
   });
+  it('PC-8 without ScreenLogic credentials on the server the command fails at once, before any session', async () => {
+    const { PoolUnavailable } = await import('../../server/src/appliances/pool.js');
+    const saved = process.env.SCREENLOGIC_SYSTEM; delete process.env.SCREENLOGIC_SYSTEM;
+    try { await expect(poolCommand('nu', { kind: 'circuit', id: 4, on: true, minutes: 30 })).rejects.toBeInstanceOf(PoolUnavailable); }
+    finally { if (saved !== undefined) process.env.SCREENLOGIC_SYSTEM = saved; }
+  });
 });
