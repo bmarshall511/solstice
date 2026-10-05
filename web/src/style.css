@@ -955,3 +955,27 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .ob-sum span{font-size:11px;color:var(--dim)}
 #nightSum+p{margin-top:10px}
 /* end z-overnight-baseline */
+
+/* ---------- w-pool-control frames 1–2: the switches and each circuit's sheet ---------- */
+.pc-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}
+.pc-grid:empty{display:none}
+.pc{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:4px 9px;padding:10px 11px;border-radius:15px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b);min-width:0}
+.pc i{width:9px;height:9px;border-radius:50%;background:var(--mute)}
+.pc b{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc small{grid-column:2/4;font:500 10.5px "JetBrains Mono";color:var(--mute)}
+.pc em{font-style:normal;font-size:15px;color:var(--mute);padding:0 2px 0 8px}
+.pc:focus-visible{outline:2px solid var(--home);outline-offset:2px}
+.pc.on{border-color:rgba(108,196,255,.45);background:rgba(108,196,255,.09)}
+.pc.on i{background:#6cc4ff;box-shadow:0 0 8px #6cc4ff}
+.pc.on small{color:#9fd6ff}
+.pc.send{border-color:rgba(255,193,94,.45)}.pc.send small{color:var(--solar)}
+.pc-err{grid-column:1/-1;color:var(--warn)!important;margin-top:0!important}
+.pc-lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-top:16px}
+.pc-runs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+.pc-runs.five{grid-template-columns:repeat(5,1fr)}
+.pc-runs button{all:unset;cursor:pointer;text-align:center;padding:11px 0;border-radius:13px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);font:500 13px "JetBrains Mono"}
+.pc-runs button.on{border-color:rgba(78,240,166,.5);background:rgba(78,240,166,.1)}
+.pc-rpm{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
+.pc-rpm .bt{font-size:13.5px;font-weight:600;min-width:0}.pc-rpm .bt small{display:block;font-size:11px;color:var(--mute);font-weight:400}
+#pcGo{width:100%;box-sizing:border-box;margin-top:14px}
+/* end w-pool-control */

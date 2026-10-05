@@ -389,6 +389,8 @@ describe('everything else is refused to guests', () => {
     expect((await call('/api/models', { cookie: guest })).status).toBe(401);
     expect((await call('/api/models', { cookie: preview })).status).toBe(401);
     expect((await call('/api/appliances/ac/untrim', { cookie: guest, method: 'POST', json: {} })).status).toBe(401);
+    // mockup w: the pool switches are the owner's alone (a guest link never reaches the handler)
+    expect((await call('/api/appliances/pool/command', { cookie: guest, method: 'POST', json: { kind: 'circuit', id: 5, on: true, minutes: 60 } })).status).toBe(401);
     // unknown paths (and case or slash variants of known ones) are refused too: the allow-list matches exact paths
     for (const path of ['/api/nope', '/api/site/', '/API/SITE', '/api/bills?x=1', '/api/now/extra']) expect((await call(path, { cookie: guest })).status, path).toBe(401);
     expect((await call('/API/Now/', { cookie: guest })).status).toBe(200);    // Express matches case-insensitively; so does the allow-list

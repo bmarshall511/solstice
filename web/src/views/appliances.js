@@ -63,6 +63,7 @@ export function drawPool(S) {
   const ex = d.extras ?? { nowW: 0, todayKwh: 0 };
   $('poolHud').innerHTML = `${running ? (names.map(esc).join(' + ') || 'Running') + ` · ${L.rpm.toLocaleString()} RPM · ${Math.round(L.watts)} W` : 'Pump off'}${ex.nowW ? ` · +${ex.nowW} W ${[st.blower ? 'blower' : '', st.lights ? 'lights' : '', running && d.settings.uv ? 'UV' : ''].filter(Boolean).join('/')}` : ''}${st.heater ? ' · heater' : ''}${L?.freezeMode ? ' · freeze mode' : ''}`;
   $('poolCirc').innerHTML = [['Pool', st.pool], ['Spa', st.spa], ['Sheer descent', st.waterfall], ['Jets', st.jets], ['Air blower', st.blower], ['Heater', st.heater], ['Lights', st.lights]].map(([n, on]) => `<span class="${on ? 'on' : ''}">${n}</span>`).join('');
+  drawControls(S);
   const ss = d.spaSession;
   $('poolStats').innerHTML = `<div class="stat"><small>Pump</small><b>${running ? `${Math.round(L.watts)} W · ${L.rpm.toLocaleString()} rpm` : 'off'}</b></div><div class="stat"><small>Today</small><b>${d.todayKwh} kWh${d.shareOfHomePct != null ? ` · ${d.shareOfHomePct}%` : ''}</b></div>
     <div class="stat"><small>Pool · spa · air</small><b>${st.poolTemp ?? '—'}° · ${st.spaTemp ?? '—'}° · ${L?.airTemp ?? '—'}°</b></div><div class="stat"><small>Turnover</small><b>${d.current.turnoverPerDay}× a day</b></div>`
@@ -70,6 +71,77 @@ export function drawPool(S) {
   $('poolNote').innerHTML = `IntelliFlo VSF on a Quad D.E. 80 filter, ${sp.gallons.toLocaleString()} gal. Streams follow the water: skimmer → pump → filter → heater → returns; green is the spa loop, purple the sheer-descent feed. Speed follows the pump's RPM. Lights are 500 W + 100 W incandescent, the blower 1.1 kW, the UV lamp ~60 W while the pump runs.${d.model.measured.length ? ` Measured: ${d.model.measured.map(m => `${m.rpm}→${Math.round(m.watts)} W`).join(', ')}.` : ''}${d.error ? ` <span style="color:var(--warn)">Last read failed: ${esc(d.error)}</span>` : ''}`;
   drawDial(S); drawAutopilot(S);
   $('poolSeason').innerHTML = d.seasons.map(s => `<div class="${s.current ? 'cur' : ''}"><b>${esc(s.kwhPerDay)}</b>${esc(s.label)}</div>`).join('');
+}
+
+/* ---------- mockup w frames 1–2: the switches (owner only; guests keep the chips above) and each circuit's sheet ---------- */
+const ORDER = ['Pool', 'High Speed', 'Waterfall', 'Jets', 'Air Blower', 'Spa', 'Pool Light', 'Spa Light'];
+const RUNS = [[30, '30 min'], [60, '1 h'], [120, '2 h'], [240, '4 h']], LONG_RUN = [720, '12 h'];
+const runLabel = m => m % 60 ? `${m} min` : `${m / 60} h`;
+const clockAt = ms => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+const pc = { sending: new Set(), err: null };
+const speedsOf = snap => new Map((snap?.pump?.circuits ?? []).map(c => [c.circuitId, c.speed]));
+const isSpa = c => c.function === 1 || /^spa$/i.test(c.name);
+function drawControls(S) {
+  const d = S.pool, snap = d.snapshot, box = $('poolCtl'); if (!box) return;
+  if (S.guest || !snap?.circuits?.length) { box.innerHTML = ''; return; }
+  const speeds = speedsOf(snap), rank = c => { const i = ORDER.indexOf(c.name); return i < 0 ? 99 + c.id : i; };
+  box.innerHTML = [...snap.circuits].sort((a, b) => rank(a) - rank(b)).map(c => {
+    const busy = pc.sending.has(c.id), rpm = speeds.get(c.id), spaT = snap.bodies?.[1]?.temp;
+    const sub = busy ? 'sending…' : `${c.on ? 'on' : 'off'}${isSpa(c) ? (spaT != null ? ` · ${spaT}°` : '') : rpm ? ` · ${rpm.toLocaleString()} RPM` : ''}`;
+    return `<button class="pc${c.on ? ' on' : ''}${busy ? ' send' : ''}" data-id="${c.id}" aria-pressed="${c.on}"><i></i><b>${esc(c.name)}</b><em data-more aria-label="${esc(c.name)} settings">›</em><small>${sub}</small></button>`;
+  }).join('') + (pc.err ? `<p class="fine pc-err">${esc(pc.err)}</p>` : '');
+  let press = null;
+  box.onpointerdown = e => { const b = e.target.closest('.pc'); if (!b) return; press = setTimeout(() => { press = 'long'; openCircuit(S, +b.dataset.id); }, 550); };
+  box.onpointerup = box.onpointerleave = () => { if (press && press !== 'long') clearTimeout(press); };
+  box.onclick = e => {
+    const b = e.target.closest('.pc'); if (!b) return;
+    if (press === 'long') { press = null; return; }
+    const id = +b.dataset.id; if (e.target.closest('[data-more]')) return openCircuit(S, id);
+    const c = snap.circuits.find(x => x.id === id); if (!c || pc.sending.has(id)) return;   // one command per circuit at a time
+    poolSend(S, c.on ? { kind: 'circuit', id, on: false } : { kind: 'circuit', id, on: true, minutes: d.runFor?.[id] ?? 60 });
+  };
+}
+/** Send one or more commands for a circuit in order; the tile says "sending…" until the controller's read-back answers. */
+async function poolSend(S, ...cmds) {
+  const id = cmds[0].id, name = S.pool.snapshot?.circuits.find(c => c.id === id)?.name ?? 'Pool';
+  pc.sending.add(id); pc.err = null; drawControls(S);
+  try { for (const c of cmds) S.pool = await api.poolCommand(c); }
+  catch (e) { pc.err = `${name}: ${e.message}`; }
+  pc.sending.delete(id); drawPool(S);
+}
+function openCircuit(S, id) {
+  const d = S.pool, snap = d.snapshot, c = snap?.circuits.find(x => x.id === id); if (!c || S.guest) return;
+  const rpm0 = speedsOf(snap).get(id), lim = { min: snap.pump?.minRpm ?? 450, max: snap.pump?.maxRpm ?? 3450 };
+  const runs = /light/i.test(c.name) || isSpa(c) ? [...RUNS, LONG_RUN] : RUNS, sched = (d.current?.schedules ?? []).filter(x => x.circuitId === id);
+  let pick = d.runFor?.[id] ?? 60, rpm = rpm0;
+  if (!runs.some(r => r[0] === pick)) pick = 60;
+  $('sheetBody').innerHTML = `<div class="shead"><h4>${esc(c.name)}</h4><button class="x" id="pcX" aria-label="Close">✕</button></div>
+    <p class="sub">${c.on ? 'On' : 'Off'} · ${sched.length ? `on schedule ${sched.map(x => `${hm(x.start)}–${hm(x.stop)}`).join(', ')}` : 'not on any schedule'}</p>
+    <div id="pcRun"${c.on ? ' hidden' : ''}><div class="pc-lbl">Run for</div><div class="pc-runs${runs.length > 4 ? ' five' : ''}" id="pcRuns">${runs.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
+    ${rpm0 != null ? `<div class="pc-rpm"><div class="bt">Speed<small>whenever ${esc(c.name)} runs · ${lim.min.toLocaleString()}–${lim.max.toLocaleString()}</small></div><div class="stp"><button id="pcDn" aria-label="Slower">−</button><b id="pcRpm"></b><button id="pcUp" aria-label="Faster">+</button></div></div>` : ''}
+    <button class="primary" id="pcGo"></button>${c.on ? '<button class="link" id="pcOff" hidden>Turn off</button>' : ''}
+    <p class="fine" id="pcNote" style="margin-top:10px"></p>`;
+  const draw = () => {
+    document.querySelectorAll('#pcRuns button').forEach(b => b.classList.toggle('on', +b.dataset.m === pick));
+    if ($('pcRpm')) $('pcRpm').textContent = rpm.toLocaleString();
+    const sped = rpm0 != null && rpm !== rpm0;
+    $('pcGo').textContent = c.on ? (sped ? `Save ${rpm.toLocaleString()} RPM` : 'Turn off') : `Turn on for ${runLabel(pick)}`;
+    if ($('pcOff')) $('pcOff').hidden = !sped;
+    $('pcNote').textContent = c.on ? (sped ? `The new speed applies now and whenever ${c.name} runs, schedules included.` : '')
+      : `Turns itself off at ${clockAt(Date.now() + pick * 60_000)} (the controller's own timer, so it stops even if Solstice is offline).`;
+  };
+  const step = dv => { rpm = Math.max(lim.min, Math.min(lim.max, Math.round((rpm + dv) / 50) * 50)); draw(); };
+  if ($('pcRuns')) $('pcRuns').onclick = e => { const b = e.target.closest('button'); if (!b) return; pick = +b.dataset.m; draw(); };
+  if ($('pcDn')) { $('pcDn').onclick = () => step(-50); $('pcUp').onclick = () => step(50); }
+  $('pcX').onclick = () => $('phone').classList.remove('open');
+  const close = () => $('phone').classList.remove('open');
+  $('pcGo').onclick = () => {
+    const sped = rpm0 != null && rpm !== rpm0, cmds = sped ? [{ kind: 'speed', id, rpm }] : [];
+    if (!c.on) cmds.push({ kind: 'circuit', id, on: true, minutes: pick }); else if (!sped) cmds.push({ kind: 'circuit', id, on: false });
+    close(); poolSend(S, ...cmds);
+  };
+  if ($('pcOff')) $('pcOff').onclick = () => { close(); poolSend(S, { kind: 'circuit', id, on: false }); };
+  draw(); $('phone').classList.add('open');
 }
 
 /* ---------- 24-hour dial: now vs recommended ---------- */

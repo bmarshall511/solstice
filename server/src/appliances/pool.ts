@@ -1,10 +1,10 @@
 // Pool pump appliance: what the IntelliFlo is doing, what the current schedule costs, and a season-aware smarter schedule.
 import { q, kv } from '../db.js';
-import { readPool, writePoolPlan, configured, type PoolSnapshot } from './screenlogic.js';
+import { readPool, writePoolPlan, writeOwnerPool, configured, type PoolSnapshot } from './screenlogic.js';
 import { localDay, addDays, rfc3339 } from '../tesla/client.js';
 import type { Appliance, ApplianceSummary } from './index.js';
 import { autopilot, type Mode } from './autopilot.js';
-import { GuardRefusal, type PoolGuardContext } from './guards.js';
+import { GuardRefusal, type PoolGuardContext, type PoolOwnerCommand } from './guards.js';
 import { usd } from '../tariff.js';
 import { confidenceFor } from '../learn/confidence.js';
 
@@ -239,7 +239,7 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   const btu = rise != null ? settings.spaGallons * 8.34 * rise : null, heatMin = btu != null ? Math.round(btu / (settings.heaterBtu * .82) * 60) : null, propaneGal = btu != null ? Math.round(btu / .82 / 91_500 * 100) / 100 : null;
   const spaRpm = speeds.get(1) ?? 3190, spaSession = { spaGallons: settings.spaGallons, spaTemp, spaSet, riseF: rise, heatMinutes: heatMin, propaneGal, propaneUsd: propaneGal != null ? Math.round(propaneGal * settings.propaneUsdPerGal * 100) / 100 : null,
     pumpWattsAtSpa: Math.round(W(spaRpm)), blowerWatts: settings.loads['2'] ?? 0, electricUsdPerHour: usd((W(spaRpm) + (settings.loads['2'] ?? 0) + (settings.loads['4'] ?? 0)) / 1000, rate, true) };
-  return { id: 'pool', autopilot: auto, pending, extras: { hourlyToday: extraHourly.map(v => Math.round(v * 1000) / 1000), todayKwh: Math.round(extraKwh * 100) / 100, nowW: extraNowW, loads: settings.loads, uvW: settings.uv ? UV_W : 0, lightReadings30d: lightH[0]?.h ?? 0 }, spaSession, name: 'Pool pump', linked: configured() && !!snap, error, settings, snapshot: snap,
+  return { id: 'pool', runFor: await kv.get<Record<string, number>>(`${siteId}:pool:runFor`) ?? {}, autopilot: auto, pending, extras: { hourlyToday: extraHourly.map(v => Math.round(v * 1000) / 1000), todayKwh: Math.round(extraKwh * 100) / 100, nowW: extraNowW, loads: settings.loads, uvW: settings.uv ? UV_W : 0, lightReadings30d: lightH[0]?.h ?? 0 }, spaSession, name: 'Pool pump', linked: configured() && !!snap, error, settings, snapshot: snap,
     live: snap?.pump ? { watts: snap.pump.watts, rpm: snap.pump.rpm, running: snap.pump.running, gpm: snap.pump.gpm, at: snap.at, waterTemp, airTemp: snap.airTemp, freezeMode: snap.freezeMode,
       on: snap.circuits.filter(c => c.on).map(c => c.name), activeRpm: Math.max(0, ...snap.circuits.filter(c => c.on).map(c => speeds.get(c.id) ?? 0)) } : null,
     model: { measured: await measuredPoints(siteId), curve: [1000, 1500, 1800, 2400, 3000, 3450].map(r => ({ rpm: r, watts: Math.round(W(r)) })) },
@@ -267,6 +267,22 @@ async function logPool(siteId: string, text: string, delta?: string) {
   const log = await kv.get<Array<{ at: number; day: string; text: string; delta?: string }>>(`${siteId}:pool:autolog`) ?? [];
   log.unshift({ at: Date.now(), day: localDay(), text, delta });
   await kv.set(`${siteId}:pool:autolog`, log.slice(0, 30));
+}
+/**
+ * The owner's own pool command (mockup w): written and read back in one ScreenLogic session (writeOwnerPool), the confirmed reading
+ * stored like any other (it counts toward the day's water), the run time remembered per circuit for the next tap in the grid
+ * (kv `<site>:pool:runFor`), and a line in the pool activity log. A refusal is logged too, then rethrown.
+ */
+export async function poolCommand(siteId: string, cmd: PoolOwnerCommand, run?: Parameters<typeof writeOwnerPool>[1]) {
+  let snap: PoolSnapshot;
+  try { snap = await writeOwnerPool(cmd, run); }
+  catch (e) { if (e instanceof GuardRefusal) await logPool(siteId, `Refused your change: ${e.reason}`, 'refused'); throw e; }
+  await recordReading(siteId, snap);
+  const name = snap.circuits.find(c => c.id === cmd.id)?.name.replace(/[<>&"'`]/g, '') ?? `Circuit ${cmd.id}`;
+  if (cmd.kind === 'circuit' && cmd.on) await kv.set(`${siteId}:pool:runFor`, { ...(await kv.get<Record<string, number>>(`${siteId}:pool:runFor`) ?? {}), [cmd.id]: cmd.minutes! });
+  const dur = (m: number) => m % 60 ? `${m} min` : `${m / 60} h`;
+  await logPool(siteId, cmd.kind === 'speed' ? `You set ${name} to ${cmd.rpm.toLocaleString()} RPM` : cmd.on ? `You turned ${name} on for ${dur(cmd.minutes!)}` : `You turned ${name} off`, 'you');
+  return snap;
 }
 /** writePoolPlan, with a guard refusal recorded in the pool activity log before it is rethrown. */
 async function guardedWrite(siteId: string, what: string, opts: Parameters<typeof writePoolPlan>[0]) {

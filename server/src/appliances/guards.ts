@@ -161,6 +161,31 @@ export function guardPoolWrite<W extends PoolWrite>(w: W, ctx: PoolGuardContext)
   return why.length ? refuse(why.join('; ')) : allow(w);
 }
 
+/**
+ * The owner's own pool commands (mockup w): any circuit on the controller on or off with a run time, and the speed of any circuit with a
+ * pump slot. Wider than Autopilot's limits on purpose (the spa, lights, jets and blower are the owner's to switch); never freeze
+ * protection, and pump speeds stay inside the pump's range. The run time is the controller's egg timer, 1 min to 12 h.
+ */
+export const POOL_RUN_MAX_MIN = 720;
+export type PoolOwnerCommand = { kind: 'circuit'; id: number; on: boolean; minutes?: number } | { kind: 'speed'; id: number; rpm: number };
+export function guardOwnerPool(c: PoolOwnerCommand, ctx: Omit<PoolGuardContext, 'managed'>): Verdict<PoolOwnerCommand> {
+  if (!c || !Number.isInteger(c.id)) return refuse('pick a circuit');
+  const info = ctx.circuits.find(x => x.id === c.id);
+  if (c.id === FREEZE_CIRCUIT || /freeze/i.test(info?.name ?? '')) return refuse('freeze protection is never switched');
+  if (!info) return refuse(`${label(c.id)} is not on the controller`);
+  switch (c.kind) {
+    case 'circuit':
+      if (typeof c.on !== 'boolean') return refuse('on must be true or false');
+      if (c.on && !(Number.isInteger(c.minutes) && c.minutes! >= 1 && c.minutes! <= POOL_RUN_MAX_MIN)) return refuse(`run times are 1 min to ${POOL_RUN_MAX_MIN / 60} h`);
+      return allow(c);
+    case 'speed': {
+      if (!ctx.pumpCircuits.includes(c.id)) return refuse(`${label(c.id, info)} has no pump speed`);
+      const r = guardPumpRpm(c.rpm, pumpRpmLimits(ctx.minRpm, ctx.maxRpm)); return r.ok ? allow(c) : r;
+    }
+    default: return refuse('unknown pool command');
+  }
+}
+
 /* ---------- Powerwall (Fleet API energy_cmds: backup reserve, operation mode, grid export rule) ---------- */
 export const RESERVE_MIN = 10, RESERVE_MAX = 100, RESERVE_STORM_MIN = 20, PW_CHANGE_INTERVAL_MS = 3600_000;
 export const EXPORT_RULES = ['battery_ok', 'pv_only'] as const;             // never 'never': the array must always be able to export
