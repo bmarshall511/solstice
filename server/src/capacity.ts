@@ -55,12 +55,12 @@ export function summarize(ms: Measurement[], nameplateKwh: number, now = Date.no
   const byMonth = new Map<string, Measurement[]>();
   for (const m of ms) { const k = m.day.slice(0, 7); byMonth.set(k, [...byMonth.get(k) ?? [], m]); }
   const months = [...byMonth.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-14).map(([month, v]) => ({ month, kwh: r1(pooled(v)), n: v.length }));
-  const year = ms.length ? pooled(ms) : null, last = months.at(-1);
+  const year = ms.length ? pooled(ms) : null, last = months.at(-1), full = months.filter(m => m.n >= 3);
   const pct = year && last && last.n >= 3 ? (year - last.kwh) / year * 100 : 0;
   return {
     measuredKwh: recent.length >= MIN_COUNT ? r1(pooled(recent)) : null, nameplateKwh, count: recent.length, countAll: ms.length,
     since: ms.length ? ms.reduce((a, m) => m.day < a ? m.day : a, ms[0].day) : null, months,
-    range: months.length ? [Math.min(...months.map(m => m.kwh)), Math.max(...months.map(m => m.kwh))] : null,
+    range: full.length ? [Math.min(...full.map(m => m.kwh)), Math.max(...full.map(m => m.kwh))] : null,   // months with 3 or more measurements
     fade: pct >= FADE_PCT ? { month: last!.month, pct: Math.round(pct) } : null, at: now,
   };
 }

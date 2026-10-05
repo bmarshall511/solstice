@@ -35,6 +35,7 @@ describe('capacity', () => {
     const five = summarize([...ms, ...measurements(...Object.values(evening('2026-10-02', { hours: 6, kw: 2, s0: 95, full: 25 })) as [Bucket[], SoePoint[]])], 27, NOW);
     expect(five.measuredKwh).toBe(24.3);                                                     // (8 × 4 + 12) / (33.3 × 4 + 48) × 100: the long one weighs more
     expect(five.months).toEqual([{ month: '2026-09', kwh: 24, n: 4 }, { month: '2026-10', kwh: 25, n: 1 }]);
+    expect(five.range).toEqual([24, 24]);                                                       // a month with fewer than 3 measurements stays out of the range
     expect(modelKwh(five, 27)).toBe(25.58);
     expect(usableKwh(100, modelKwh(five, 27))).toBeCloseTo(24.3, 1);                         // a full charge in the outage view = the measured figure
   });

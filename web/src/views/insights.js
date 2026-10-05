@@ -119,7 +119,9 @@ function drawSpare(d) {
 let bcTimer = null;
 export function initCapacity(S, every) {
   $('bcCard').hidden = !!S.guest; if (S.guest) return;
-  bcTimer ??= every(60 * 60_000, async () => { try { drawCapacity(S, await api.capacity()); } catch { /* keep the last */ } });
+  // the install date comes from /api/now: until it has loaded, draw again shortly
+  const load = async () => { try { drawCapacity(S, await api.capacity()); if (!S.now?.site) setTimeout(load, 5000); } catch { /* keep the last */ } };
+  bcTimer ??= every(60 * 60_000, load);
 }
 function drawCapacity(S, c) {
   const site = S.now?.site ?? {}, name = c?.nameplateKwh || site.capacityKwh || 27;
