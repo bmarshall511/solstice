@@ -209,7 +209,7 @@ function holdHtml(d, mode) {
     return `<div class="hold paused"><div class="hh"><i></i><b>${mode === 'ECO' ? 'Away · Eco' : 'AC Autopilot paused'}</b><em>${{ HEAT: 'Heat', HEATCOOL: 'Heat · Cool', OFF: 'Off', ECO: 'Eco' }[mode] ?? ''}</em></div><p>${why}</p></div>`;
   }
   if (h) {
-    const pct = Math.max(2, Math.min(100, (Date.now() - h.at) / (h.until - h.at) * 100)), what = h.mode === 'OFF' ? 'Off' : h.mode === 'HEAT' ? `heat ${h.heatF}°` : h.mode === 'HEATCOOL' ? `${h.heatF}–${h.coolF}°` : `${h.coolF}°`;
+    const pct = Math.max(2, Math.min(100, (Date.now() - h.at) / (h.until - h.at) * 100)), R = v => v == null ? v : Math.round(v), what = h.mode === 'OFF' ? 'Off' : h.mode === 'HEAT' ? `heat ${R(h.heatF)}°` : h.mode === 'HEATCOOL' ? `${R(h.heatF)}–${R(h.coolF)}°` : `${R(h.coolF)}°`;
     return `<div class="hold"><div class="hh"><i></i><b>${h.by === 'app' ? `Holding your ${what}` : `Holding ${what} set at the thermostat`}</b><em>until ${clk(h.until)}</em></div>
       <p>${h.by === 'app' ? 'You set it here' : 'Changed at the thermostat'} at ${clk(h.at)}. Autopilot skips its steps until <b>${clk(h.until)}</b>: ${esc(h.why)}.</p>
       <div class="bar"><i style="width:${pct}%"></i></div>
