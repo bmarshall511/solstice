@@ -29,7 +29,9 @@ export function vapid(env: NodeJS.ProcessEnv = process.env): Vapid | null {
   const pub = env.VAPID_PUBLIC_KEY ?? '', priv = env.VAPID_PRIVATE_KEY ?? '', subject = env.VAPID_SUBJECT ?? '';
   if (!pub || !priv || !/^(mailto:|https:)/.test(subject)) return null;
   try {
-    const p = b64u(pub), d = b64u(priv);
+    const p = b64u(pub), raw = b64u(priv);
+    // a P-256 private key is 32 bytes, but encoders (Node's ECDH included) drop leading zero bytes: about 1 key in 256 is 31 long
+    const d = raw.length >= 30 && raw.length < 32 ? Buffer.concat([Buffer.alloc(32 - raw.length), raw]) : raw;
     if (p.length !== 65 || p[0] !== 4 || d.length !== 32) return null;
     const key = createPrivateKey({ key: { kty: 'EC', crv: 'P-256', d: d.toString('base64url'), x: p.subarray(1, 33).toString('base64url'), y: p.subarray(33).toString('base64url') }, format: 'jwk' });
     return { publicKey: pub, key, subject };
