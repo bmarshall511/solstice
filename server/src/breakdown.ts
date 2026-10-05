@@ -103,8 +103,8 @@ export async function breakdownFor(siteId: string, range: Range, settings: Recor
 }
 
 /**
- * GET /api/overnight (mockup z): each night's 01:00–05:00 average split into always-on (the same rule as the breakdown), AC (the share of
- * buckets the Nest reported cooling or heating x the learned draw) and the pool pump (ScreenLogic readings). `split` is false on nights the
+ * GET /api/overnight (mockup z): each night's 01:00–05:00 average split into always-on (the same rule as the breakdown), AC (the meter's
+ * draw above the quiet level while the Nest reported cooling or heating) and the pool pump (ScreenLogic readings). `split` is false on nights the
  * Nest readings cover less than NEST_COVERAGE of the window; those carry only `kw` and `base` (unmasked), and the UI shows the rest as "not split".
  */
 export async function overnightSplit(siteId: string, from: string) {
@@ -122,8 +122,11 @@ export async function overnightSplit(siteId: string, from: string) {
   return [...byDay.entries()].map(([date, bs]) => {
     const kw = bs.reduce((a, b) => a + b.kw, 0) / bs.length, split = (covered.get(date) ?? 0) >= NEST_COVERAGE * 240;
     if (!split) { const raw = baseOf(bs); return { date, kw: r3(kw), base: raw == null ? null : r3(Math.min(kw, raw)), ac: null, pump: null, split }; }
-    const pump = Math.min(kw, pumpKw.get(date) ?? 0), raw = baseOf(bs, acOn), ac = Math.min(kw - pump, bs.filter(b => acOn(b.epoch)).length / bs.length * acKw);
-    const base = raw == null ? null : Math.max(0, Math.min(kw - pump - ac, raw - pump));
+    // AC from the meter: on buckets the Nest marks as running, the draw above the night's quiet level (at most the learned draw). Nest is
+    // sampled every 15 min at night, so a sample-time share x the draw overstates short cycles.
+    const raw = baseOf(bs, acOn), quiet = raw ?? Math.min(...bs.map(b => b.kw)), pump = Math.min(quiet, pumpKw.get(date) ?? 0);
+    const ac = bs.reduce((a, b) => a + (acOn(b.epoch) ? Math.max(0, Math.min(acKw, b.kw - quiet)) : 0), 0) / bs.length;
+    const base = raw == null ? null : Math.max(0, raw - pump);
     return { date, kw: r3(kw), base: base == null ? null : r3(base), ac: r3(ac), pump: r3(pump), split };
   });
 }

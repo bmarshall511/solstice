@@ -4,7 +4,6 @@ import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { q, kv, migrate } from '../../server/src/db.js';
 import { baseOf, burstsOf, acMask, nightBases, alwaysOnWatch, breakdownFor, overnightSplit } from '../../server/src/breakdown.js';
 import { localMidnight, addDays, rfc3339 } from '../../server/src/tesla/client.js';
-import { learnAcKw, acKwFor } from '../../server/src/appliances/ac.js';
 
 vi.mock(import('../../server/src/appliances/screenlogic.js'), () => ({ configured: () => false, readPool: vi.fn(), writePoolPlan: vi.fn(), withUnit: vi.fn() }));
 const NOW = Date.parse('2026-10-05T18:00:00Z');   // 13:00 CDT
@@ -96,9 +95,8 @@ describe('on PGlite', () => {
     }
     const n = await overnightSplit('bd', '2026-09-20'), hot = n.find(x => x.date === d)!, old = n.find(x => x.date === '2026-09-21')!;
     expect(hot.split).toBe(true);
-    const acKw = acKwFor((await learnAcKw('bd')).coolKw, 2.5);            // whatever draw the site has learned from the synthetic days
-    expect(hot.ac!).toBeCloseTo(acKw / 3, 2);                              // a third of the window x the learned draw
-    expect(hot.base).toBeCloseTo(Math.min(1.7, hot.kw - hot.ac!), 2);    // the quiet buckets read 1.7 kW, never more than what's left after the AC
+    expect(hot.base).toBeCloseTo(1.7, 2);                                // that night's house runs 1.7 kW (one of the three high nights)
+    expect(hot.ac!).toBeCloseTo(2.7 / 3, 1);                              // the meter's 2.7 kW above the quiet level, a third of the time
     expect(hot.base! + hot.ac! + hot.pump!).toBeLessThanOrEqual(hot.kw + 1e-6);
     expect(old).toMatchObject({ split: false, ac: null, pump: null });
     expect(old.base).toBeCloseTo(1.1, 2);
