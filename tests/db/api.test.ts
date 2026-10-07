@@ -103,6 +103,13 @@ describe('data routes', () => {
     expect(d.totals).toEqual({ solar: .5, home: .37, import: .03, export: .1, charge: .11, discharge: .05 });
   });
 
+  it('POST /api/events accepts filter_cleaned (B2-6, audit L-02: the pool card\'s "I cleaned the filter" button got a 400)', async () => {
+    const r = await send('POST', '/api/events', { type: 'filter_cleaned', day: '2026-09-20' });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ type: 'filter_cleaned', day: '2026-09-20', note: null });
+    expect((await send('POST', '/api/events', { type: 'filter', day: '2026-09-20' })).status).toBe(400);
+    await q(`DELETE FROM events WHERE type = 'filter_cleaned'`);
+  });
   it('POST /api/events rejects a malformed day', async () => {
     const r = await send('POST', '/api/events', { type: 'cleaned', day: '2026-9-1' });
     expect(r.status).toBe(400);

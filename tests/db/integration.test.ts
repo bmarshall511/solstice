@@ -18,6 +18,7 @@ import { modelsReport } from '../../server/src/learn/api.js';
 import { logPrediction, forgetWritten } from '../../server/src/learn/store.js';
 import { untrim, learnAcKey, controlKey } from '../../server/src/learn/ac.js';
 import { WX_KEY } from '../../server/src/learn/wx.js';
+import { filterForecast } from '../../server/src/appliances/poolFilter.js';
 import { PEC_BILL } from '../fixtures/pec-bill.js';
 import { BELL } from '../fixtures/forecast.js';
 import { forecastDays, type Daily } from '../fixtures/forecast.js';
@@ -784,5 +785,20 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
     expect(r2.anomalies.opened).toContain('pump.below_baseline@1500');
     expect(await q(`SELECT day, resolved_at IS NULL AS open FROM anomalies WHERE site_id = $1 AND kind = 'pump.below_baseline@1500' ORDER BY id`, [S]))
       .toEqual([{ day: '2026-09-24', open: false }, { day: '2026-09-30', open: true }]);
+  });
+  it('B2-6: "I cleaned the filter" restarts the clean-filter baseline from that day; the pool payload says when the next cleaning is due', async () => {
+    await q(`INSERT INTO events (site_id, type, day) VALUES ($1, 'filter_cleaned', '2026-09-28')`, [S]);   // what POST /api/events now accepts
+    vi.setSystemTime(Date.parse('2026-10-01T05:30:00-05:00'));
+    const r = await runLearn(S, { now: Date.now() });
+    expect(await kv.get(`${S}:learn:pump`)).toMatchObject({ cleanedOn: '2026-09-28', from: '2026-09-28', to: '2026-10-12', baseline: { '1500': { watts: 120, n: 15 } } });
+    expect(r.anomalies.resolved).toContain('pump.below_baseline@1500');                 // 120 W is the clean filter now
+    expect(await filterForecast(S, '2026-10-01')).toMatchObject({ cleanedOn: '2026-09-28', rpm: 1500, baselineW: 120, points: 3, forecastDay: null, conf: 'learning' });
+    // another site: ten days at 1,750 RPM falling 3 W a day from a 300 W clean baseline → 88% (264 W) on day 12
+    const F = 'flt', d0 = '2026-09-21', dayN = (i: number) => new Date(Date.parse(d0 + 'T12:00:00Z') + i * 864e5).toISOString().slice(0, 10);
+    for (let i = 0; i < 10; i++) await q(`INSERT INTO pool_readings (site_id, ts, day, hour, running, watts, rpm) SELECT $1, t, $2, 12, true, $3, 1750 FROM unnest($4::bigint[]) t`,
+      [F, dayN(i), 300 - 3 * i, Array.from({ length: 4 }, (_, k) => Date.parse(ts(dayN(i), 12, k * 15)))]);
+    await kv.set(`${F}:learn:pump`, { cleanedOn: null, from: null, to: null, baseline: { '1750': { watts: 300, n: 40 } } });
+    await kv.set(`${F}:pool:last`, poolSnapshot(Date.now() - 30_000));
+    expect((await poolDetail(F, {}, RATE)).filter).toEqual({ rpm: 1750, baselineW: 300, cleanedOn: null, thresholdW: 264, points: 10, slopeWPerDay: -3, r2: 1, forecastDay: dayN(12), conf: 'learned' });
   });
 });

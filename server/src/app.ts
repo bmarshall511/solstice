@@ -440,7 +440,8 @@ app.delete('/api/bills/:date', wrap(async (req, res) => { await q('DELETE FROM b
 app.get('/api/events', wrap(async (req, res) => res.json(await q('SELECT id, type, day, note, created_at FROM events WHERE site_id = $1 ORDER BY day DESC, id DESC', [site(req)]))));
 app.post('/api/events', express.json(), wrap(async (req, res) => {
   const { type, day, note } = req.body ?? {};
-  if (!['cleaned', 'note'].includes(type) || !/^\d{4}-\d{2}-\d{2}$/.test(day ?? '')) return res.status(400).json({ error: 'type and day required' });
+  // 'cleaned': the panels (soiling.ts); 'filter_cleaned': the pool's D.E. filter (B2-6: the pump's clean-filter baseline restarts from it)
+  if (!['cleaned', 'filter_cleaned', 'note'].includes(type) || !/^\d{4}-\d{2}-\d{2}$/.test(day ?? '')) return res.status(400).json({ error: 'type and day required' });
   res.json(await one('INSERT INTO events (site_id, type, day, note) VALUES ($1, $2, $3, $4) RETURNING id, type, day, note', [site(req), type, day, note ?? null]));
 }));
 app.delete('/api/events/:id', wrap(async (req, res) => { await q('DELETE FROM events WHERE site_id = $1 AND id = $2', [site(req), Number(req.params.id)]); res.json({ ok: true }); }));
