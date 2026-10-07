@@ -1,6 +1,8 @@
 import { $, niceDate, localDate, addDays, svgText } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { esc } from '../lib/frost.js';
+import { icon } from '../lib/icons.js';
+import { segSet } from './csheet.js';
 
 /*
  * Outage readiness: the first card on Insights → Home (approved mockup n-outage). Numbers come from /api/outage
@@ -17,28 +19,34 @@ const fmtHM = h => { if (h == null || !isFinite(h)) return '—'; let H = Math.f
 const RUNGS = { on: ['rgba(242,244,248,.75)', (r) => `${r.kw.toFixed(1)} kW`], pool: ['var(--home)', r => `+${r.addKw.toFixed(2)} → ${r.kw.toFixed(2)} kW`],
   ac: ['#ff9e66', (r, d) => `+${r.addKw.toFixed(1)} kW (${d.loads.acKw.toFixed(1)} × ${Math.round(d.loads.acDuty * 100)}% duty)`], else: ['#8d93a8', r => `+${r.addKw.toFixed(2)} → ${r.kw.toFixed(1)} kW`] };
 
-const MARKUP = `<div class="card outage">
-  <div class="h"><b>Outage readiness</b><span class="hbtns"><span class="badge" data-swbadge hidden>Storm Watch</span><button class="chip" data-preview>Preview</button></span></div>
+// Systems › Powerwall (approved mockup al frame 11): a disclosure tagged "simulation". Collapsed: the hours the Powerwalls would last
+// with the sun ahead, at the current draw, and what tomorrow's sun adds; opened: the scene, the scenarios, the ladder and the history.
+const MARKUP = `<div class="c-card c-disc c-acc-out outage" id="sysOutage">
+  <div class="c-disc-h" role="button" tabindex="0" aria-expanded="false"><h5>Outage readiness</h5><span class="c-badge" data-t="sim">simulation</span><span class="c-badge" data-t="sim" data-swbadge hidden>Storm Watch</span><span class="c-fig" data-fig>—</span><span class="c-chev">${icon('down')}</span></div>
+  <div class="c-sum" data-sum>—</div>
+  <div class="c-disc-body" hidden>
   <div class="ring3d o3d" data-scene><div class="roofhud" data-hud>—</div></div>
-  <div class="seg2 wide" data-seg><button class="on" data-s="asis">As is</button><button data-s="noac">Without AC</button><button data-s="noacpool">Without AC + pool</button></div>
+  <div class="c-seg wide sm c-acc-out" data-seg style="--n:3;--i:0" role="group" aria-label="Scenario"><button class="on" data-s="asis" aria-pressed="true">As is</button><button data-s="noac" aria-pressed="false">No AC</button><button data-s="noacpool" aria-pressed="false">No AC or pool</button></div>
+  <div class="c-btns"><button class="c-btn line block" data-preview>Play the next 48 hours</button></div>
   <div class="ochips" data-chips></div>
-  <div class="wkhead"><span>If it kept drawing</span><b data-usable>—</b></div>
+  <div class="c-head" style="margin-top:12px"><h5 style="font-size:13px">If it kept drawing</h5><span class="c-fig" data-usable>—</span></div>
   <div class="kv" data-ladder></div>
-  <div class="kv" data-rows></div>
-  <p class="fine" data-limit>Up to 10 kW at once (2 × PW2 at 5 kW continuous). The AC and pool pump starting together stay well inside that.</p>
-  <div class="wkhead"><span>Outages</span><b>12 months</b></div>
-  <p data-last style="margin-top:6px">—</p>
+  <div class="c-kv" data-rows></div>
+  <p class="c-fine" data-limit>Up to 10 kW at once (2 × PW2 at 5 kW continuous). The AC and pool pump starting together stay well inside that.</p>
+  <div class="c-head" style="margin-top:12px"><h5 style="font-size:13px">Outages</h5><span class="c-fig">12 months</span></div>
+  <p class="c-sum" data-last>—</p>
   <svg class="mini" data-strip viewBox="0 0 310 64"></svg>
-  <p class="fine">The ladder divides what the Powerwalls hold now (<span data-capnote>charge × 27 kWh × 95%</span>) by a steady draw. The HUD runs tonight's hourly load through the Next 48 hours battery model instead, so it lasts longer as the house draws less overnight. "Sun tomorrow adds" counts the hours tomorrow's sun keeps the house fully powered after the first empty.</p>
+  <p class="c-fine">The ladder divides what the Powerwalls hold now (<span data-capnote>charge × 27 kWh × 95%</span>) by a steady draw. The figure above and the scene run tonight's hourly load through the Next 48 hours battery model instead, with the sun ahead, so they last longer as the house draws less overnight. "Tomorrow's sun adds" counts the hours tomorrow's sun keeps the house fully powered after the first empty.</p>
+  </div>
 </div>`;
 
-/** Mounts the card as the first child of `parent` (#ip-home). Returns { frame(dt, now) } for main.js's loop. */
+/** Mounts the card into `parent` (Systems › Powerwall's slot). Returns { frame(dt, now) } for main.js's loop. */
 export function mountOutageCard(S, parent) {
   parent.insertAdjacentHTML('afterbegin', MARKUP);
   const root = parent.firstElementChild, $q = s => root.querySelector(s), host = $q('[data-scene]'), hud = $q('[data-hud]');
   const C = { data: null, scen: 'asis', sim: null, knots: null, kw0: 0, kNight: 0, socNight: 0, kMin: 0, startHour: 21, storm: false, previewOutage: false, anim: null, hudDirty: true,
     cur: { k: 0, soc: 0, s: 0, h: 0, b: 0, dark: false } };
-  let scene = null, building = false, failed = false, vis = false, hiddenAt = 0, loading = false, t = 0, lastHud = '';
+  let tried = -Infinity, scene = null, building = false, failed = false, vis = false, hiddenAt = 0, loading = false, t = 0, lastHud = '';
 
   /* ---------- time labels ---------- */
   const weekday = d => new Date(addDays(C.data.date, d) + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
@@ -73,6 +81,10 @@ export function mountOutageCard(S, parent) {
       chip(false, 'var(--home)', `Reserve ${d.reservePct ?? '—'}%`);
     $q('[data-swbadge]').hidden = !sw.active;
     const tmr = d.solar.tomorrowKwh;
+    const fig = m.emptyH != null ? fmtHM(m.emptyH) : '48 h+';
+    $q('[data-fig]').textContent = fig;
+    $q('[data-sum]').textContent = m.emptyH != null ? `If the grid went down now: ${fig} at ${C.kw0.toFixed(1)} kW with the sun ahead · tomorrow’s sun adds ~${m.sunAdds} h${d.solar.cloudy ? ' (clouds)' : ''}`
+      : `If the grid went down now: the next 48 hours and more at ${C.kw0.toFixed(1)} kW · lowest ${Math.round(m.minSoc * 100)}% at ${clock(C.kMin)}`;
     $q('[data-rows]').innerHTML = [['Powerwalls now', d.soc == null ? '?% · ? kWh' : `${Math.round(d.soc)}% · ${d.usableKwh.toFixed(1)} kWh`], ['Reserve (kept for outages)', `${d.reservePct ?? '—'}%`],
       ['Backup at current draw', `${fmtHM(sc.backupH)} at ${sc.drawKw.toFixed(1)} kW`],
       ['Tonight (sim)', m.emptyH != null && m.emptyH < 16 ? `empty ~${clock(m.emptyH, 1, false)}` : `${Math.round(C.socNight * 100)}% by ${clock(C.kNight, 1, false)}`],
@@ -104,7 +116,7 @@ export function mountOutageCard(S, parent) {
 
   /* ---------- the timeline: drain after a selector change, hold, ease back; Preview plays 48 h in 9 s ---------- */
   const go = anim => { C.anim = anim ? { ...anim, t0: performance.now() } : null; };
-  const stopPreview = () => { C.previewOutage = false; $q('[data-preview]').classList.remove('on'); };
+  const stopPreview = () => { C.previewOutage = false; const b = $q('[data-preview]'); b.classList.remove('soft'); b.textContent = 'Play the next 48 hours'; };
   function tick(now) {
     const A = C.anim; if (!A) { sample(0); C.cur.soc = C.data.soc / 100; setHud(...summary()); return; }
     const p = clamp((now - A.t0) / A.dur, 0, 1);
@@ -118,9 +130,9 @@ export function mountOutageCard(S, parent) {
     else if (A.type === 'back') { sample(0); C.cur.soc = lerp(A.from, C.data.soc / 100, ease(p)); setHud(...summary()); if (p >= 1) go(null); }
   }
   $q('[data-seg]').onclick = e => { const b = e.target.closest('button'); if (!b || !C.data) return;
-    root.querySelectorAll('[data-seg] button').forEach(x => x.classList.toggle('on', x === b)); C.scen = b.dataset.s; run(); rows(); stopPreview();
+    segSet($q('[data-seg]'), b.dataset.s, 'data-s'); C.scen = b.dataset.s; run(); rows(); stopPreview();
     go({ type: 'drain', dur: 2000, kEnd: C.sim.emptyH ?? C.kNight }); };
-  $q('[data-preview]').onclick = e => { if (!C.data) return; C.previewOutage = !C.previewOutage; e.currentTarget.classList.toggle('on', C.previewOutage);
+  $q('[data-preview]').onclick = e => { if (!C.data) return; C.previewOutage = !C.previewOutage; e.currentTarget.classList.toggle('soft', C.previewOutage); e.currentTarget.textContent = C.previewOutage ? 'Stop' : 'Play the next 48 hours';
     if (C.previewOutage) go({ type: 'preview', dur: 9000, kEnd: 47.99 }); else go({ type: 'back', dur: 700, from: C.cur.soc }); };
 
   /* ---------- data ---------- */
@@ -148,7 +160,7 @@ export function mountOutageCard(S, parent) {
 
   return {
     frame(dt, now = performance.now()) {
-      if (!C.data) return;
+      if (!C.data) { if (!loading && root.offsetParent && now - tried > 60_000) { tried = now; load(); } return; }   // the collapsed card still shows its figure: load once it is on screen
       t += dt; tick(now);
       if (scene && vis) scene.render(dt, t, C, S.calm || RM.matches);
       else if (scene && hiddenAt && now - hiddenAt > 45_000) dispose();

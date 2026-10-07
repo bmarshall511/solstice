@@ -43,12 +43,12 @@ export async function stormWatch(siteId: string, now = Date.now()) {
   const st = await stormNow(siteId, { now, fetchNws: true }), out: NotifyResult[] = [];
   const pw = `Powerwalls ${st.soc != null ? `${Math.round(st.soc)}%` : 'at an unknown charge'} · Storm Watch ${st.stormWatchEnabled === false ? 'off' : st.stormWatchActive ? 'charging' : 'on'}`;
   for (const a of st.alerts) out.push(await notify(siteId, 'storm', a.event, `${a.headline ?? a.event}. ${pw}.`, { event: a.event, severity: a.severity, ends: a.ends },
-    { key: `nws:${a.event}:${a.ends ?? ''}`, windowH: 48, now, url: '/?go=v-ins' }));
+    { key: `nws:${a.event}:${a.ends ?? ''}`, windowH: 48, now, url: '/?go=v-sys&p=home' }));
   const key = `${siteId}:storm:active`, prev = !!(await kv.get<boolean>(key));
   if (st.stormWatchActive !== prev) {
     await kv.set(key, st.stormWatchActive);
     if (st.stormWatchActive) out.push(await notify(siteId, 'storm', 'Storm Watch is charging the Powerwalls',
-      `Tesla's Storm Watch switched on ahead of severe weather. ${pw}.`, { stormWatch: true }, { key: `stormwatch:${localDay(new Date(now))}`, windowH: 12, now, url: '/?go=v-ins' }));
+      `Tesla's Storm Watch switched on ahead of severe weather. ${pw}.`, { stormWatch: true }, { key: `stormwatch:${localDay(new Date(now))}`, windowH: 12, now, url: '/?go=v-sys&p=powerwall' }));
   }
   return { alerts: st.alerts.length, stormWatchActive: st.stormWatchActive, notified: out.filter(r => r.stored).length };
 }

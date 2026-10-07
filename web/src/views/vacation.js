@@ -44,7 +44,7 @@ async function load(S) {
 const reload = async S => { await load(S).catch(e => toast('!', 'rgba(255,90,78,.25)', 'Vacation mode', e.message)); S.reloadAc?.(); };
 
 /* ======================= Now: the pill and the banner are drawn by views/nowhub.js; these are their actions ======================= */
-export function drawNow(S) { S.redrawNow?.(); }
+export function drawNow(S) { S.redrawNow?.(); drawTrips(S); }
 /** The trip report on Now for four days after a trip, until dismissed on this device. */
 export function reportDue(S, now = Date.now()) { const last = S.vac?.last; return !S.vac?.trip && last?.report && now - last.endedAt < 4 * D && !dismissed(last.id) ? last : null; }
 export function dismissReport(S, id) { dismiss(id); S.redrawNow?.(); }
@@ -76,17 +76,31 @@ export function reportHtml(trip, closable) {
     <p class="fine" style="margin-top:10px">Used is measured. The other two are Solstice’s estimates for the same days and weather${r.model?.days ? `, from this house’s own model (${r.model.days} days)` : ''}.${r.alerts ? ` ${r.alerts} alert${r.alerts === 1 ? '' : 's'} while you were away.` : ''}</p>`;
 }
 
-/* ======================= Insights › Home: past trips ======================= */
+/* ======================= Systems › Home: Your trips (mockup al frame 9: one row; the trips open in a sheet) ======================= */
+let trips = [];
+/** The row's line: the planned or running trip first, else how many past trips have a report. */
+export function drawTrips(S) {
+  const t = S.vac?.trip, card = $('tripsCard'); if (!card) return;
+  const span = x => `${esc(weekday(x.leaveAt))} ${esc(new Date(x.leaveAt).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric' }))} → ${x.backAt ? `${esc(weekday(x.backAt))} ${esc(new Date(x.backAt).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric' }))}` : 'open'}`;
+  card.hidden = !t && !trips.length;
+  $('tripsLine').innerHTML = t ? `${S.vac.phase === 'planned' ? '1 planned' : 'Away now'} · ${span(t)}${trips.length ? ` · ${trips.length} past` : ''}` : `${trips.length} past trip${trips.length === 1 ? '' : 's'} · Vacation mode`;
+}
 function initTrips(S, every) {
-  const home = $('ip-home'); if (!home || $('vacTrips')) return;
-  home.insertAdjacentHTML('beforeend', '<div class="card" id="vacTrips" data-owner hidden><div class="h"><b>Your trips</b><span>Vacation mode</span></div><div class="group" id="vacTripList" style="margin-top:10px"></div></div>');
-  every(10 * 60_000, async () => {
-    const trips = (await api.vacationTrips()).filter(x => x.report);
-    $('vacTrips').hidden = !trips.length;
-    $('vacTripList').innerHTML = trips.map(x => `<div class="row tap" data-trip="${x.id}" tabindex="0" style="--c:var(--vac)"><div class="ri">✈</div><div class="rt">${esc(dateLabel(x.startedAt))} – ${esc(dateLabel(x.endedAt))}<small>${k0(x.report.usedKwh)} kWh used · about ${k0(x.report.emptyKwh)} empty without Vacation mode</small></div><div class="chev">›</div></div>`).join('');
-    $('vacTripList').onclick = e => { const row = e.target.closest('[data-trip]'); const x = trips.find(y => String(y.id) === row?.dataset.trip); if (!x) return;
-      $('sheetBody').innerHTML = `<div class="vrep sheetrep">${reportHtml(x, false)}</div><button class="primary" id="vrClose">Close</button>`; $('vrClose').onclick = close; $('phone').classList.add('open'); };
-  });
+  $('tripsRow').onclick = () => openTrips(S);
+  every(10 * 60_000, async () => { trips = (await api.vacationTrips()).filter(x => x.report); drawTrips(S); });
+}
+/** The trips sheet: the planned or running trip (opens the Away & Vacation sheet) and each past trip's report. */
+function openTrips(S) {
+  const t = S.vac?.trip;
+  const cur = t ? `<div class="c-card flush"><div class="c-sys compact c-acc-vac" role="button" tabindex="0" data-cur><span class="c-ic">${icon('plane')}</span><div style="min-width:0"><div class="c-sys-top"><b>${S.vac.phase === 'planned' ? 'Planned trip' : 'This trip'}</b>${modePill(S.vac.phase === 'planned' ? 'home' : 'away')}</div><div class="c-sys-l">${esc(weekday(t.leaveAt))} ${esc(clock(t.leaveAt))} → ${t.backAt ? `${esc(weekday(t.backAt))} ${esc(clock(t.backAt))}` : 'open'}</div></div><span class="c-chev">${icon('chev')}</span></div></div>` : '';
+  const past = trips.map(x => `<div class="c-sys compact c-acc-vac" role="button" tabindex="0" data-trip="${x.id}"><span class="c-ic">${icon('plane')}</span><div style="min-width:0"><div class="c-sys-top"><b>${esc(dateLabel(x.startedAt))} – ${esc(dateLabel(x.endedAt))}</b></div><div class="c-sys-l">${k0(x.report.usedKwh)} kWh used · about ${k0(x.report.emptyKwh)} empty without Vacation mode</div></div><span class="c-chev">${icon('chev')}</span></div>`).join('');
+  sheet(`${sheetHead('Your trips', '', 'Vacation mode · each trip’s report')}${cur}${past ? `<div class="c-lab">Past trips</div><div class="c-card flush">${past}</div>` : '<p class="c-fine">No finished trips yet.</p>'}${sheetFoot(t ? '' : 'Plan a trip', 'Done', 'c-acc-vac')}`);
+  const body = $('sheetBody');
+  body.querySelector('[data-f="pri"]').onclick = close;
+  body.querySelector('[data-f="sec"]')?.addEventListener('click', () => openVacation(S));
+  body.querySelector('[data-cur]')?.addEventListener('click', () => openVacation(S));
+  body.querySelectorAll('[data-trip]').forEach(row => row.onclick = () => { const x = trips.find(y => String(y.id) === row.dataset.trip); if (!x) return;
+    $('sheetBody').innerHTML = `<div class="vrep sheetrep">${reportHtml(x, false)}</div><button class="primary" id="vrClose">Close</button>`; $('vrClose').onclick = close; $('phone').classList.add('open'); });
 }
 
 /* ======================= the Away & Vacation sheet (mockup al frame 8; the trip parts are mockup ak frames 1, 1b and 2) ======================= */

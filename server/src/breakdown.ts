@@ -226,5 +226,5 @@ export async function alwaysOnWatch(siteId: string, now = Date.now()) {
   await kv.set(key, true);
   return notify(siteId, 'anomaly', `Always-on is up: ${avg.toFixed(1)} kW`,
     `Three nights at ${avg.toFixed(1)} kW against your usual ${med.toFixed(1)} kW. About ${Math.round((avg - med) * 24)} kWh a day more. A fridge or freezer may be struggling, or something was left on.`,
-    { kw: Math.round(avg * 100) / 100, usual: Math.round(med * 100) / 100 }, { key: `alwaysOn:${today}`, now, url: '/?go=v-ins&p=home' });
+    { kw: Math.round(avg * 100) / 100, usual: Math.round(med * 100) / 100 }, { key: `alwaysOn:${today}`, now, url: '/?go=v-sys&p=home' });
 }

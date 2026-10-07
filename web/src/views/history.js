@@ -4,6 +4,10 @@ import { yearRingCard, yearModel } from '../scenes/yearring.js';
 import { createFlowsCard, mountFlows } from '../scenes/flows.js';
 import { veil, esc } from '../lib/frost.js';
 import { lockBillCards } from './guest.js';
+import { badge } from '../lib/conf.js';
+import { jumpTarget, scrollFor } from '../lib/sysui.js';
+import { tileDelta, sumUntil } from '../lib/nowui.js';
+import { tileHtml, segSet, sheet, sheetHead, sheetFoot, closeSheet } from './csheet.js';
 
 let range = 'day', day = null;
 
@@ -26,13 +30,22 @@ async function drawDay(S) {
   const t = d.totals, self = t.home ? Math.round(clamp(1 - t.import / t.home, 0, 1) * 100) : 0;
   o += svgText(0, -4, `${self}%`, { size: 28, fill: '#f2f4f8', anchor: 'middle', font: 'Manrope', weight: 300 }) + svgText(0, 15, 'solar + battery', { size: 10.5, fill: 'rgba(242,244,248,.5)', anchor: 'middle', font: 'Manrope' });
   svg.innerHTML = o;
-  $('hleg').innerHTML = `<span><i style="background:var(--solar)"></i>Solar kW</span><span><i style="background:var(--home)"></i>Home kW</span><span><i style="background:var(--batt)"></i>Battery %</span>`;
-  const rate = S.tariff?.importRateAllIn;
+  const f1 = v => v == null ? '—' : v.toFixed(1);
+  $('hleg').innerHTML = `<span class="c-acc-solar"><i></i>Solar <b>${f1(t.solar)}</b></span><span class="c-acc-home"><i></i>Home <b>${f1(t.home)}</b></span><span class="c-acc-grid"><i></i>From PEC <b>${f1(t.import)}</b></span><span class="c-acc-batt"><i></i>Battery %</span>`;
+  const rate = S.tariff?.importRateAllIn, credit = S.tariff?.exportCredit, today = localDate();
+  // the comparison: today against yesterday at the same time; an earlier day against the day before it (both whole)
+  const prev = day === today ? (S.yday?.date === addDays(today, -1) ? sumUntil(S.yday, (Date.now() - Date.parse(`${today}T00:00:00`)) / 36e5) : null) : (S.daily ?? []).find(r => r.date === addDays(day, -1)) ?? null;
+  const week = (S.daily ?? []).filter(r => r.date <= day).slice(-7);
+  S.histDay = { date: day, charge: t.charge, discharge: t.discharge };
   // B2-12: the server's peaks leave out Tesla's inflated solar buckets (a guest's hourly view has none)
-  $('hstats').innerHTML = stat('Solar', t.solar, `peak ${(d.peaks?.solarKw ?? Math.max(0, ...B.map(b => b.solar))).toFixed(1)} kW`) + stat('Home', t.home, `peak ${(d.peaks?.homeKw ?? Math.max(0, ...B.map(b => b.home))).toFixed(1)} kW`) +
-    stat('Bought from PEC', t.import, S.guest ? `≈ ${veil('$•.••')}` : rate != null ? `≈ $${((t.import ?? 0) * rate).toFixed(2)}` : 'rate unknown') + stat('Powerwall', t.discharge, `out · ${(t.charge ?? 0).toFixed(1)} in`);
+  $('hstats').innerHTML = stat('hsSol', 'c-acc-solar', 'Solar produced', t.solar, `peak ${(d.peaks?.solarKw ?? Math.max(0, ...B.map(b => b.solar))).toFixed(1)} kW`, tileDelta(t.solar, prev?.solar ?? null, 'up'), week.map(r => r.solar))
+    + stat('hsHome', 'c-acc-home', 'Home used', t.home, `${self}% from solar + battery`, tileDelta(t.home, prev?.home ?? null, 'down'), week.map(r => r.home))
+    + stat('hsImp', 'c-acc-grid', 'Bought from PEC', t.import, S.guest ? `≈ ${veil('$•.••')}` : rate != null ? `≈ $${((t.import ?? 0) * rate).toFixed(2)}` : '', tileDelta(t.import, prev?.import ?? null, 'down'), week.map(r => r.import))
+    + stat('hsExp', 'c-acc-batt', 'Sent to PEC', t.export, S.guest ? `≈ ${veil('$•.••')} credit` : credit != null && t.export ? `≈ $${((t.export ?? 0) * credit).toFixed(2)} credit` : '', tileDelta(t.export, prev?.export ?? null, 'up'), week.map(r => r.export));
+  drawSocStats(S);
 }
-const stat = (label, v, sub) => `<div class="stat"><span>${label}</span><b>${v == null ? '—' : v >= 1000 ? (v / 1000).toFixed(1) + '<small>MWh</small>' : v.toFixed(1) + '<small>kWh</small>'}</b><em>${sub}</em></div>`;
+/** One History tile: kWh (MWh from 1,000), a note, the delta chip and the sparkline. */
+const stat = (id, acc, label, v, note, chip, spark) => tileHtml({ id, acc, k: label, v: v == null ? '—' : v >= 1000 ? (v / 1000).toFixed(1) : v.toFixed(1), unit: v >= 1000 ? 'MWh' : 'kWh', note, chip, spark });
 
 /* ---------- Week / Month / Year bars ---------- */
 async function drawBars(S) {
@@ -51,10 +64,15 @@ async function drawBars(S) {
     o += svgText(x + bw / 2, H - 12, label(r, i), { size: 10, anchor: 'middle' }); });
   o += svgText(10, 8, range === 'year' ? 'kWh / month' : 'kWh / day', { font: 'Manrope' });
   svg.innerHTML = o;
-  $('hleg').innerHTML = `<span><i style="background:var(--solar)"></i>Solar</span><span><i style="background:var(--home)"></i>Home</span><span><i style="background:var(--out)"></i>Outage</span>`;
+  $('hleg').innerHTML = `<span class="c-acc-solar"><i></i>Solar</span><span class="c-acc-home"><i></i>Home</span><span class="c-acc-out"><i></i>Outage</span>`;
   const sum = k => rows.reduce((a, r) => a + (r[k] ?? 0), 0), rate = S.tariff?.importRateAllIn, credit = S.tariff?.exportCredit;
-  $('hstats').innerHTML = stat('Solar', sum('solar'), `${Math.round(sum('solar') / sum('home') * 100)}% of home use`) + stat('Home', sum('home'), `${(sum('home') / (range === 'year' ? 365 : rows.length)).toFixed(0)} kWh/day avg`) +
-    stat('Bought from PEC', sum('import'), S.guest ? `≈ ${veil()}` : rate != null ? `≈ $${Math.round(sum('import') * rate)}` : 'rate unknown') + stat('Sent to PEC', sum('export'), S.guest ? `≈ ${veil()} credit` : credit != null ? `≈ $${Math.round(sum('export') * credit)} credit` : 'rate unknown');
+  // the comparison: the same number of days just before (Week and Month); the year has none
+  const n = rows.length, before = range === 'year' ? [] : (S.daily ?? []).slice(-2 * n, -n), was = k => before.length === n ? before.reduce((a, r) => a + (r[k] ?? 0), 0) : null;
+  const ch = (k, better) => tileDelta(sum(k), was(k), better);
+  $('hstats').innerHTML = stat('hsSol', 'c-acc-solar', 'Solar produced', sum('solar'), `${Math.round(sum('solar') / sum('home') * 100)}% of home use`, ch('solar', 'up'), rows.map(r => r.solar))
+    + stat('hsHome', 'c-acc-home', 'Home used', sum('home'), `${(sum('home') / (range === 'year' ? 365 : rows.length)).toFixed(0)} kWh/day avg`, ch('home', 'down'), rows.map(r => r.home))
+    + stat('hsImp', 'c-acc-grid', 'Bought from PEC', sum('import'), S.guest ? `≈ ${veil()}` : rate != null ? `≈ $${Math.round(sum('import') * rate)}` : '', ch('import', 'down'), rows.map(r => r.import))
+    + stat('hsExp', 'c-acc-batt', 'Sent to PEC', sum('export'), S.guest ? `≈ ${veil()} credit` : credit != null ? `≈ $${Math.round(sum('export') * credit)} credit` : '', ch('export', 'up'), rows.map(r => r.export));
 }
 
 export async function drawHistoryChart(S) {
@@ -79,30 +97,42 @@ function drawYearRing(S) {
 /** Open one date in the Day view ("Open this day →" on the year ring). */
 export function showDay(S, date) {
   day = date; range = 'day';
-  document.querySelectorAll('#hseg button').forEach(x => x.classList.toggle('on', x.dataset.r === 'day'));
+  segSet($('hseg'), 'day', 'data-r');
   drawHistoryChart(S); $('screen').scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-/* ---------- m-flows: "Where every kWh went", after the totals, for Day and Month (scenes/flows.js) ---------- */
-let flowsCard = null, flowsView = null, flowsSeq = 0;
+/* ---------- m-flows: "Where every kWh went", for Day and Month (scenes/flows.js). Mockup al frame 14: collapsed to one stacked bar
+   (pool · AC · everything else) and "3D flow", which builds the Sankey scene only when asked. Owner only (/api/flows). ---------- */
+let flowsCard = null, flowsView = null, flowsSeq = 0, flowsOpen = false;
 async function drawFlows(S) {
-  const today = localDate(), date = range === 'day' ? day ?? today : today, key = `${range}|${date}`, seq = ++flowsSeq;
-  if (!flowsCard) { flowsCard = createFlowsCard(); $('hstats').after(flowsCard); }
-  flowsCard.hidden = S.guest || (range !== 'day' && range !== 'month');   // owner-only (/api/flows): never a guest's
-  if (flowsCard.hidden) { flowsView?.dispose(); flowsView = null; return; }
+  const today = localDate(), date = range === 'day' ? day ?? today : today, key = `${range}|${date}`, seq = ++flowsSeq, box = $('flowSum');
+  box.hidden = S.guest || (range !== 'day' && range !== 'month');
+  if (box.hidden) { flowsView?.dispose(); flowsView = null; return; }
   const hit = (S.flowsCache ??= {})[key], fresh = hit && (Date.now() - hit.at < 5 * 60e3 || (range === 'day' && date < today));
-  if (fresh && flowsView?.alive() && flowsView.key === key && flowsView.data === hit.data) return;   // already showing it
-  try {
-    const data = fresh ? hit.data : (S.flowsCache[key] = { at: Date.now(), data: await api.flows(range, date) }).data;
-    if (seq !== flowsSeq) return;
-    const sel = flowsView?.key === key ? flowsView.sel() : null;
-    flowsView?.dispose();
-    flowsView = Object.assign(mountFlows(flowsCard, data, { title: range === 'month' ? 'Last 30 days' : date === today ? 'Today' : niceDate(date, { weekday: 'short', month: 'short', day: 'numeric' }), today, calm: () => S.calm, sel }), { key, data });
-  } catch (e) { if (seq === flowsSeq) { flowsView?.dispose(); flowsView = null; flowsCard.querySelector('.landtip').textContent = 'Could not load where the energy went.'; } }
+  let data;
+  try { data = fresh ? hit.data : (S.flowsCache[key] = { at: Date.now(), data: await api.flows(range, date) }).data; }
+  catch (e) { if (seq === flowsSeq) { $('flowFig').textContent = '—'; $('flowDl').innerHTML = '<span>Could not load where the energy went.</span>'; } return; }
+  if (seq !== flowsSeq) return;
+  const H = data.home ?? {}, pool = H.pool?.kwh ?? 0, ac = H.ac?.kwh ?? 0, rest = H.rest ?? 0, tot = (data.totals?.home ?? pool + ac + rest) || 1, f1 = v => (Math.round(v * 10) / 10).toFixed(1);
+  $('flowFig').textContent = `${f1(data.totals?.home ?? pool + ac + rest)} kWh`;
+  $('flowStack').innerHTML = [['c-acc-pool', pool], ['c-acc-ac', ac], ['c-acc-mute', rest]].map(([c, v]) => v > 0 ? `<i class="${c}" style="width:${(v / tot * 100).toFixed(1)}%"></i>` : '').join('');
+  $('flowDl').innerHTML = `<span class="c-acc-pool"><i></i>Pool <b>${f1(pool)}</b></span><span class="c-acc-ac"><i></i>AC <b>${f1(ac)}</b></span><span class="c-acc-mute"><i></i>Everything else <b>${f1(rest)}</b></span>`;
+  if (!flowsOpen) { flowsView?.dispose(); flowsView = null; return; }
+  if (flowsView?.alive() && flowsView.key === key && flowsView.data === data) return;   // already showing it
+  flowsCard ??= $('flowHost').appendChild(createFlowsCard());
+  const sel = flowsView?.key === key ? flowsView.sel() : null;
+  flowsView?.dispose();
+  flowsView = Object.assign(mountFlows(flowsCard, data, { title: range === 'month' ? 'Last 30 days' : date === today ? 'Today' : niceDate(date, { weekday: 'short', month: 'short', day: 'numeric' }), today, calm: () => S.calm, sel }), { key, data });
 }
 
 export function initHistory(S) {
-  document.querySelectorAll('#hseg button').forEach(b => b.onclick = () => { document.querySelectorAll('#hseg button').forEach(x => x.classList.toggle('on', x === b)); range = b.dataset.r; drawHistoryChart(S); });
+  $('hseg').onclick = e => { const b = e.target.closest('[data-r]'); if (!b) return; segSet($('hseg'), b.dataset.r, 'data-r'); range = b.dataset.r; drawHistoryChart(S); };
+  // mockup al frame 14: the jump chips scroll to their section
+  $('hjumps').onclick = e => { const b = e.target.closest('[data-j]'), el = b && $(jumpTarget(b.dataset.j)); if (!el) return;
+    const sc = $('screen'); sc.scrollTo({ top: scrollFor(el.getBoundingClientRect().top, sc.getBoundingClientRect().top, sc.scrollTop, 12), behavior: S.calm ? 'auto' : 'smooth' }); };
+  $('flow3d').onclick = () => { flowsOpen = !flowsOpen; $('flowHost').hidden = !flowsOpen; $('flow3d').setAttribute('aria-expanded', String(flowsOpen)); $('flow3d').textContent = flowsOpen ? 'Hide the 3D flow' : '3D flow'; drawFlows(S); };
+  $('billSeg').onclick = e => { const b = e.target.closest('[data-b]'); if (!b) return; segSet($('billSeg'), b.dataset.b, 'data-b'); document.querySelectorAll('#billAnalysis [data-pane]').forEach(p => { p.hidden = p.dataset.pane !== b.dataset.b; }); };
+  $('recAll').onclick = () => openRecords(S); $('outAll').onclick = () => openOutages(S); $('billAll').onclick = () => openBills(S);
   $('dayPrev').onclick = () => { day = addDays(day ?? localDate(), -1); drawDay(S); drawFlows(S); };
   $('dayNext').onclick = () => { if (day < localDate()) { day = addDays(day, 1); drawDay(S); drawFlows(S); } };
 }
@@ -125,56 +155,82 @@ export function drawSocHeat(S) {
   [0, 6, 12, 18].forEach(h => o += svgText(22 + h * 11.9, 188, ['12a', '6a', '12p', '6p'][h / 6], { size: 9 }));
   o += svgText(0, 12, niceDate(G.dates[0]).split(' ')[1], { size: 8.5 }) + svgText(0, 180, 'today', { size: 8.5 });
   $('socHeat').innerHTML = o;
-  const days = (S.daily ?? []).slice(-30).filter(d => d.socMax != null);
-  if (!days.length) { $('socStats').innerHTML = '<div><span>Battery history</span><b>loading…</b><em>backfilling from Tesla</em></div>'; return; }
-  const full = days.filter(d => d.socMax >= 99).length, atRes = days.filter(d => d.socMin <= reserve + .5).length, avgMax = days.reduce((a, d) => a + d.socMax, 0) / days.length;
-  const cyc = days.reduce((a, d) => a + (d.discharge ?? 0), 0) / days.length / (S.now?.site?.measuredKwh || S.now?.site?.capacityKwh || 27);   // mockup af: a cycle = what a full charge really delivers
-  $('socStats').innerHTML = `<div><span>Reached 100%</span><b>${full} of ${days.length}</b><em>days</em></div><div><span>Typical daily peak</span><b>${Math.round(avgMax)}%</b><em>average high</em></div>
-    <div><span>Hit the ${reserve}% reserve</span><b>${atRes} of ${days.length}</b><em>days</em></div><div><span>Cycles per day</span><b>${cyc.toFixed(2)}</b><em>30-day average</em></div>`;
+  drawSocStats(S);
+}
+/** Charge level's rows (mockup al frame 14): reserve, the shown day's range and in/out, then the 30-day figures. */
+function drawSocStats(S) {
+  const reserve = S.now?.site?.reservePct ?? 20, days = (S.daily ?? []).slice(-30).filter(d => d.socMax != null), shown = day ?? localDate();
+  const dd = (S.daily ?? []).find(d => d.date === shown), hd = S.histDay?.date === shown ? S.histDay : null, f1 = v => v == null ? '—' : v.toFixed(1);
+  const rows = [['Reserve', `${reserve}%`], [`${shown === localDate() ? 'Today' : niceDate(shown, { weekday: 'short', month: 'short', day: 'numeric' })}’s range`, dd?.socMin != null ? `${Math.round(dd.socMin)}–${Math.round(dd.socMax)}%` : '—'],
+    ['Charged · discharged', hd ? `${f1(hd.charge)} · ${f1(hd.discharge)} kWh` : dd ? `${f1(dd.charge)} · ${f1(dd.discharge)} kWh` : '—']];
+  if (days.length) {
+    const full = days.filter(d => d.socMax >= 99).length, atRes = days.filter(d => d.socMin <= reserve + .5).length, avgMax = days.reduce((a, d) => a + d.socMax, 0) / days.length;
+    const cyc = days.reduce((a, d) => a + (d.discharge ?? 0), 0) / days.length / (S.now?.site?.measuredKwh || S.now?.site?.capacityKwh || 27);   // mockup af: a cycle = what a full charge really delivers
+    rows.push(['Reached 100%', `${full} of ${days.length} days`], ['Typical daily peak', `${Math.round(avgMax)}%`], [`Hit the ${reserve}% reserve`, `${atRes} of ${days.length} days`], ['Cycles per day · 30 days', cyc.toFixed(2)]);
+  } else rows.push(['Battery history', 'backfilling from Tesla']);
+  $('socStats').innerHTML = rows.map(([a, b]) => `<span>${a}</span><b>${b}</b>`).join('');
 }
 
 /* ---------- records ---------- */
 export function drawRecords(S) {
-  const R = S.records; if (!R) return;
-  $('recSince').textContent = `since ${niceDate(R.totals.since, { month: 'short', year: 'numeric' })}`;
-  const cell = (label, v, sub) => `<div><span>${label}</span><b>${v}</b><em>${sub}</em></div>`;
-  $('records').innerHTML = cell('Best solar day', `${R.bestSolarDay.kwh} kWh`, niceDate(R.bestSolarDay.date, { month: 'short', day: 'numeric', year: 'numeric' })) +
-    cell('Biggest usage day', `${R.biggestUsageDay.kwh} kWh`, niceDate(R.biggestUsageDay.date, { month: 'short', day: 'numeric', year: 'numeric' })) +
-    cell('Lowest PEC day', `${R.lowestImportDay.kwh} kWh`, niceDate(R.lowestImportDay.date, { month: 'short', day: 'numeric', year: 'numeric' })) +
-    cell('Solar produced', `${(R.totals.solar / 1000).toFixed(1)} MWh`, `since ${niceDate(R.totals.since, { month: 'short', year: 'numeric' })}`) +
-    cell('Longest outage', R.longestOutage ? fmtDur(R.longestOutage.duration_s / 3600) : '—', R.longestOutage ? niceDate(R.longestOutage.ts.slice(0, 10), { month: 'short', day: 'numeric', year: 'numeric' }) : '') +
-    cell('CO₂ avoided', `${(R.totals.solar * .37 / 1000).toFixed(1)} t`, 'at ERCOT’s average mix');
+  const R = S.records; if (!R?.totals) return;
+  const d = x => niceDate(x, { month: 'short', day: 'numeric', year: 'numeric' });
+  // mockup al frame 14: two tiles, the rest behind "All records"
+  $('records').innerHTML = tileHtml({ id: 'recSol', acc: 'c-acc-solar', k: 'Best solar day', v: R.bestSolarDay.kwh, unit: 'kWh', chip: { t: 'flat', text: niceDate(R.bestSolarDay.date, { month: 'short', day: 'numeric' }) } })
+    + tileHtml({ id: 'recUse', acc: 'c-acc-home', k: 'Highest use', v: R.biggestUsageDay.kwh, unit: 'kWh', chip: { t: 'flat', text: niceDate(R.biggestUsageDay.date, { month: 'short', day: 'numeric' }) } });
+  S.recordRows = [['Best solar day', `${R.bestSolarDay.kwh} kWh`, d(R.bestSolarDay.date)], ['Biggest usage day', `${R.biggestUsageDay.kwh} kWh`, d(R.biggestUsageDay.date)], ['Lowest PEC day', `${R.lowestImportDay.kwh} kWh`, d(R.lowestImportDay.date)],
+    ['Solar produced', `${(R.totals.solar / 1000).toFixed(1)} MWh`, `since ${niceDate(R.totals.since, { month: 'short', year: 'numeric' })}`],
+    ['Longest outage', R.longestOutage ? fmtDur(R.longestOutage.duration_s / 3600) : '—', R.longestOutage ? d(R.longestOutage.ts.slice(0, 10)) : ''], ['CO₂ avoided', `${(R.totals.solar * .37 / 1000).toFixed(1)} t`, 'at ERCOT’s average mix']];
+  $('recAll').textContent = `All ${S.recordRows.length}`;
+}
+function openRecords(S) {
+  const rows = S.recordRows ?? [];
+  sheet(`${sheetHead('Records', '', S.records?.totals ? `since ${niceDate(S.records.totals.since, { month: 'short', year: 'numeric' })}` : '')}<div class="c-card"><div class="c-kv">${rows.map(([a, b, c]) => `<span>${a}${c ? `<br><small class="c-cap">${c}</small>` : ''}</span><b>${b}</b>`).join('')}</div></div>${sheetFoot('', 'Done')}`);
+  $('sheetBody').querySelector('[data-f="pri"]').onclick = closeSheet;
 }
 
 /* ---------- outages ---------- */
+const outRow = o => { const d = new Date(o.ts);
+  return `<div class="c-tl-e c-k-warn"><time>${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</time><i></i><p>Grid down · Powerwalls carried the house<small>${d.toLocaleDateString('en-US', { weekday: 'short' })}${d.getFullYear() !== new Date().getFullYear() ? ` ${d.getFullYear()}` : ''} · ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} · ${fmtDur(o.duration_s / 3600)}</small></p></div>`; };
 export function drawOutages(S) {
   const O = S.outages ?? [], yearAgo = addDays(localDate(), -365), recent = O.filter(o => o.ts.slice(0, 10) >= yearAgo);
-  const total = recent.reduce((a, o) => a + o.duration_s, 0) / 3600;
-  $('outTitle').textContent = recent.length ? 'Your home stayed on' : 'No outages this year';
-  $('outBadge').textContent = `${recent.length} in 12 months`;
-  $('outText').textContent = recent.length ? `The grid dropped ${recent.length} time${recent.length > 1 ? 's' : ''} in the last 12 months, ${fmtDur(total)} in total. Your Powerwalls took over each time.` : 'Tesla has no grid outages on record for the last 12 months.';
+  // mockup al frame 14: the newest three on the timeline, every one (with the 12-month strip) behind "All"
+  $('outBadge').innerHTML = badge('', `${recent.length} in 12 months`);
+  $('outList').innerHTML = O.length ? `<div class="c-tl-g">${O.slice(0, 3).map(outRow).join('')}</div>` : '<p class="c-sum">No outages on record.</p>';
+  $('outAll').textContent = `All ${O.length}`; $('outAll').parentElement.hidden = O.length <= 3;
+}
+function openOutages(S) {
+  const O = S.outages ?? [], yearAgo = addDays(localDate(), -365), recent = O.filter(o => o.ts.slice(0, 10) >= yearAgo), total = recent.reduce((a, o) => a + o.duration_s, 0) / 3600;
   const months = Array.from({ length: 12 }, (_, i) => addDays(yearAgo, i * 30.4).slice(0, 7));
-  let s = '<line x1="6" x2="304" y1="28" y2="28" stroke="rgba(255,255,255,.1)"/>';
+  let s = '<line x1="6" x2="304" y1="28" y2="28" style="stroke:var(--c-line)"/>';
   months.forEach((m, i) => s += svgText(6 + i * 24.8 + 12, 58, new Date(m + '-15').toLocaleDateString('en-US', { month: 'narrow' }), { anchor: 'middle' }));
   recent.forEach(o => { const f = (Date.parse(o.ts) - Date.parse(yearAgo)) / (365 * 864e5), r = 3 + Math.sqrt(o.duration_s / 3600) * 5;
-    s += `<circle cx="${6 + f * 298}" cy="28" r="${r}" fill="#ff5a4e" fill-opacity=".3" stroke="#ff5a4e"><title>${esc(o.ts.slice(0, 16).replace('T', ' '))} · ${fmtDur(o.duration_s / 3600)}</title></circle>`; });
-  $('outStrip').innerHTML = s;
-  $('outList').innerHTML = O.slice(0, 8).map(o => { const d = new Date(o.ts);
-    return `<div class="ev"><div class="d">${d.toLocaleDateString('en-US', { month: 'short' })}<b>${d.getDate()}</b></div><div class="m"><b>${d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric' })}</b><br>${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} · Powerwalls kept the home running</div><div class="t">${fmtDur(o.duration_s / 3600)}</div></div>`; }).join('') || '<div class="empty">No outages on record.</div>';
+    s += `<circle cx="${6 + f * 298}" cy="28" r="${r}" style="fill:var(--out);stroke:var(--out)" fill-opacity=".3"><title>${esc(o.ts.slice(0, 16).replace('T', ' '))} · ${fmtDur(o.duration_s / 3600)}</title></circle>`; });
+  sheet(`${sheetHead(recent.length ? 'Your home stayed on' : 'No outages this year', badge('', `${recent.length} in 12 months`))}
+    <p class="c-sheet-sub">${recent.length ? `The grid dropped ${recent.length} time${recent.length > 1 ? 's' : ''} in the last 12 months, ${fmtDur(total)} in total. Your Powerwalls took over each time.` : 'Tesla has no grid outages on record for the last 12 months.'}</p>
+    <svg class="mini" viewBox="0 0 310 64" aria-label="Outages over the last 12 months">${s}</svg>
+    <div class="c-tl"><div class="c-tl-g">${O.map(outRow).join('')}</div></div>${sheetFoot('', 'Done', 'c-acc-out')}`);
+  $('sheetBody').querySelector('[data-f="pri"]').onclick = closeSheet;
 }
 
 /* ---------- bills ---------- */
-/** Every saved bill, newest first; tap one for details and to remove it. */
+/** Your bills (mockup al frame 14): the newest three as rows with the check's badge and the amount; "All" lists every one. */
+const billRows = (S, R) => R.map(r => { const ok = r.checks.every(c => c.ok);
+  return `<div class="c-part c-acc-grid"${S.guest ? '' : ` role="button" tabindex="0" data-bill="${esc(r.billDate)}"`}><i></i><span>${niceDate(r.billDate, { month: 'long' })}${r.billDate.slice(0, 4) !== localDate().slice(0, 4) ? ` ${r.billDate.slice(0, 4)}` : ''} ${ok ? badge('', 'matches Tesla') : badge('estimated', 'check')}</span><b>${S.guest ? veil() : money2(r.total)}</b></div>`; }).join('');
 function drawBillList(S) {
   const R = (S.reconcile ?? []).slice().reverse();
   $('billCount').textContent = `${R.length} saved`;
-  $('billList').innerHTML = R.length ? R.map(r => { const ok = r.checks.every(c => c.ok);
-    if (S.guest) return `<div class="bill" style="cursor:default"><div class="bm"><b>${niceDate(r.billDate, { month: 'long', year: 'numeric' })}</b><br>${niceDate(r.period.from)} – ${niceDate(r.period.to)} · ${r.pec.deliveredKwh.toLocaleString()} kWh bought · ${(r.pec.receivedKwh ?? 0).toLocaleString()} sent</div>
-      <div class="bt">${veil()}<small style="color:${ok ? 'var(--batt)' : 'var(--warn)'}">${ok ? '✓ matches Tesla' : '! check'}</small></div></div>`;   // no detail sheet for a guest
-    return `<div class="bill" data-bill="${esc(r.billDate)}"><div class="bm"><b>${niceDate(r.billDate, { month: 'long', year: 'numeric' })}</b><br>${niceDate(r.period.from)} – ${niceDate(r.period.to)} · ${r.pec.deliveredKwh.toLocaleString()} kWh bought</div>
-      <div class="bt">${money2(r.total)}<small style="color:${ok ? 'var(--batt)' : 'var(--warn)'}">${ok ? '✓ matches Tesla' : '! check'}</small></div></div>`; }).join('')
-    : '<div class="empty">No bills yet.</div>';
-  document.querySelectorAll('[data-bill]').forEach(el => el.onclick = () => openBillDetail(S, R.find(r => r.billDate === el.dataset.bill)));
+  $('billList').innerHTML = R.length ? billRows(S, R.slice(0, 3)) : '<p class="c-sum">No bills yet.</p>';
+  $('billAll').textContent = `All ${R.length}`; $('billAll').hidden = R.length <= 3;
+  $('billList').onclick = e => { const el = e.target.closest('[data-bill]'); if (el) openBillDetail(S, R.find(r => r.billDate === el.dataset.bill)); };
+}
+function openBills(S) {
+  const R = (S.reconcile ?? []).slice().reverse();
+  sheet(`${sheetHead('Your bills', '', `${R.length} saved · PEC`)}<div class="c-card" style="padding:4px 16px"><div class="c-parts" style="margin:0">${billRows(S, R)}</div></div>${sheetFoot(S.guest ? '' : 'Add a PEC bill', 'Done', 'c-acc-grid')}`);
+  const body = $('sheetBody');
+  body.querySelector('[data-f="pri"]').onclick = closeSheet;
+  body.querySelector('[data-f="sec"]')?.setAttribute('data-addbill', '1');   // main.js's document listener opens the bill sheet
+  body.querySelectorAll('[data-bill]').forEach(el => el.onclick = () => openBillDetail(S, R.find(r => r.billDate === el.dataset.bill)));
 }
 
 function openBillDetail(S, r) {
@@ -200,21 +256,23 @@ function openBillDetail(S, r) {
 export function drawBills(S) {
   drawBillList(S);
   const R = S.reconcile ?? [], last = R.at(-1);
-  if (!last) { $('billChecks').innerHTML = '<div class="card"><div class="empty">No PEC bills yet. Add one to compare it with Tesla.</div></div>'; return; }
-  const cov = last.coverage < .95 ? `<div class="flag">Tesla has only ${Math.round(last.coverage * 100)}% of this period stored so far.</div>` : '';
+  if (!last) { $('billBadge').innerHTML = ''; $('billChecks').innerHTML = '<p class="c-sum">No PEC bills yet. Add one to compare it with Tesla.</p>'; return; }
+  const cov = last.coverage < .95 ? `<p class="c-fine" style="color:var(--warn)">Tesla has only ${Math.round(last.coverage * 100)}% of this period stored so far.</p>` : '';
   const yoy = last.lastYear?.homeKwh ? (() => { const h = last.tesla.homeKwh, ph = last.lastYear.homeKwh, s = last.tesla.solarKwh, ps = last.lastYear.solarKwh;
-    return `<div class="check"><i class="${Math.abs(h / ph - 1) > .1 ? 'wa' : 'ok'}">${Math.abs(h / ph - 1) > .1 ? '!' : '✓'}</i><div><b>Versus the same dates last year:</b> home use ${h >= ph ? '+' : ''}${Math.round((h / ph - 1) * 100)}%, solar ${s >= ps ? '+' : ''}${Math.round((s / ps - 1) * 100)}%, bought from PEC ${last.tesla.importKwh >= last.lastYear.importKwh ? '+' : ''}${Math.round((last.tesla.importKwh / last.lastYear.importKwh - 1) * 100)}%.</div></div>`; })() : '';
-  $('billChecks').innerHTML = `<div class="card"><div class="h"><b>${niceDate(last.billDate, { month: 'long' })} bill check</b><span class="badge ${last.checks.every(c => c.ok) ? 'g' : ''}">${last.checks.every(c => c.ok) ? 'all good' : 'look at this'}</span></div>
-    <div style="margin-top:8px">${last.checks.map(c => `<div class="check"><i class="${c.ok ? 'ok' : 'al'}">${c.ok ? '✓' : '!'}</i><div><b>${esc(c.label)}.</b> ${esc(c.detail)}</div></div>`).join('')}${yoy}</div>${cov}
-    <div class="kv"><span>${niceDate(last.period.from)} – ${niceDate(last.period.to)} · total</span><b>${S.guest ? veil() : money2(last.total)}</b>
-    <span>Your rate, all-in</span><b>${S.guest ? veil('$•.••••/kWh') : last.tariff ? `$${last.tariff.importRateAllIn.toFixed(4)}/kWh` : '—'}</b><span>Solar + Powerwall covered</span><b style="color:var(--batt)">${last.solarShareOfHome ?? '—'}% of home use</b>
-    <span>Without solar it would have been</span><b>${S.guest ? veil() : money2(last.withoutSolarCost)}</b></div></div>`;
+    return `<div class="c-check"><i class="${Math.abs(h / ph - 1) > .1 ? 'todo' : ''}">${Math.abs(h / ph - 1) > .1 ? '!' : '✓'}</i><div><b>Versus the same dates last year:</b> home use ${h >= ph ? '+' : ''}${Math.round((h / ph - 1) * 100)}%, solar ${s >= ps ? '+' : ''}${Math.round((s / ps - 1) * 100)}%, bought from PEC ${last.tesla.importKwh >= last.lastYear.importKwh ? '+' : ''}${Math.round((last.tesla.importKwh / last.lastYear.importKwh - 1) * 100)}%.</div></div>`; })() : '';
+  const good = last.checks.every(c => c.ok);
+  $('billBadge').innerHTML = good ? badge('learned', 'all good') : badge('estimated', 'look at this');
+  $('billChecks').innerHTML = `<p class="c-cap" style="margin-top:2px">${niceDate(last.billDate, { month: 'long' })} bill · ${niceDate(last.period.from)} – ${niceDate(last.period.to)}</p>
+    <div style="margin-top:4px">${last.checks.map(c => `<div class="c-check"><i class="${c.ok ? '' : 'todo'}"${c.ok ? '' : ' style="color:var(--warn)"'}>${c.ok ? '✓' : '!'}</i><div><b>${esc(c.label)}.</b> ${esc(c.detail)}</div></div>`).join('')}${yoy}</div>${cov}
+    <div class="c-kv"><span>Total</span><b>${S.guest ? veil() : money2(last.total)}</b>
+    <span>Your rate, all-in</span><b>${S.guest ? veil('$•.••••/kWh') : last.tariff ? `$${last.tariff.importRateAllIn.toFixed(4)}/kWh` : '—'}</b><span>Solar + Powerwall covered</span><b>${last.solarShareOfHome ?? '—'}% of home use</b>
+    <span>Without solar it would have been</span><b>${S.guest ? veil() : money2(last.withoutSolarCost)}</b></div>`;
 
   // meter vs Tesla per bill
   const mx = Math.max(1, ...R.flatMap(r => [r.pec.deliveredKwh, r.tesla.importKwh ?? 0])) * 1.1, bw = Math.min(46, 280 / R.length);
   let s = '';
   R.forEach((r, i) => { const x = 26 + i * (bw + 8), h1 = r.pec.deliveredKwh / mx * 100, h2 = (r.tesla.importKwh ?? 0) / mx * 100, bad = r.importGapPct != null && Math.abs(r.importGapPct) > 5;
-    s += `<rect x="${x}" y="${112 - h1}" width="${bw}" height="${h1}" rx="5" fill="${bad ? 'rgba(255,90,78,.35)' : 'rgba(196,162,255,.28)'}"/><rect x="${x + bw * .28}" y="${112 - h2}" width="${bw * .44}" height="${h2}" rx="3" fill="#c4a2ff"/>`;
+    s += `<rect x="${x}" y="${112 - h1}" width="${bw}" height="${h1}" rx="5" style="fill:var(${bad ? '--out' : '--grid'})" fill-opacity=".32"/><rect x="${x + bw * .28}" y="${112 - h2}" width="${bw * .44}" height="${h2}" rx="3" style="fill:var(--home)"/>`;
     s += svgText(x + bw / 2, 108 - Math.max(h1, h2), r.importGapPct == null ? '' : `${r.importGapPct > 0 ? '+' : ''}${r.importGapPct}%`, { anchor: 'middle', fill: bad ? '#ff8a80' : 'rgba(242,244,248,.6)', size: 9 });
     s += svgText(x + bw / 2, 128, niceDate(r.billDate, { month: 'short' }), { anchor: 'middle' }); });
   s += svgText(26, 146, 'Within ±5% means PEC billed what Tesla measured.', { size: 9, font: 'Manrope' });

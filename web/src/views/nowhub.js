@@ -109,7 +109,7 @@ export function drawBanner(S) {
     const btn = e.target.closest('[data-b]'); if (!btn) return;
     const [k, a1, a2] = btn.dataset.b.split(':');
     switch (k) {
-      case 'outage': return S.nav?.insights('home', 'outage');
+      case 'outage': return S.nav?.sys('powerwall', 'sysOutage');
       case 'vac-check': return openVacation(S, { scrollTo: 'vaCheck' });
       case 'vac-edit': return openVacation(S);
       case 'vac-home': return endTrip(S, btn);
@@ -209,7 +209,7 @@ export function openConditions(S) {
   const links = `<div class="c-card flush">${S.guest ? '' : sysRow({ acc: 'c-acc-out', ic: 'shield', title: 'Outage readiness', line: esc(ready), id: 'cdOutage' })}${sysRow({ acc: 'c-acc-home', ic: 'link', title: 'Connections', line: 'Tesla · Open-Meteo · ScreenLogic · Nest · PEC bills', id: 'cdConn' })}</div>`;
   sheet(`${sheetHead('Conditions', badge, 'Everything the Status pill adds up, in one place.')}<div class="c-card flush">${rows}</div>${alerts}${health}${links}${sheetFoot('', 'Done')}`);
   $('sheetBody').querySelector('[data-f="pri"]').onclick = closeSheet;
-  if ($('cdOutage')) $('cdOutage').onclick = () => { closeSheet(); S.nav?.insights('home', 'outage'); };
+  if ($('cdOutage')) $('cdOutage').onclick = () => { closeSheet(); S.nav?.sys('powerwall', 'sysOutage'); };
   $('cdConn').onclick = () => { closeSheet(); S.nav?.go('v-set'); };
 }
 const ageShort = ms => ms < 60_000 ? `${Math.round(ms / 1000)} s` : ms < 3600_000 ? `${Math.floor(ms / 60_000)} min` : `${Math.floor(ms / 3600_000)} h`;

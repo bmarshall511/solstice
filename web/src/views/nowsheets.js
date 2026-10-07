@@ -1,4 +1,6 @@
 // The control sheets opened from Now's Autopilot hub (approved mockup mockups/al-ia.html v2, frames 5, 6 and 7): Pool, AC and Powerwalls.
+// The Pool and AC panels are also drawn in place on Systems › Pool and AC (frames 12 and 13): the same component, the same staging;
+// there the write sits on its own [Cancel] [write] row instead of the sheet footer.
 // Writes are staged: the dial, presets, toggles and mode segments change only this sheet's state, and the pinned footer's primary names
 // the one exact write ("Run 2,400 rpm · 1 h", "Set 77°"); only its tap calls a route, and only routes that already existed:
 // /api/appliances/pool/command, …/pool/autopilot, …/pool/clearup, …/pool/apply-tomorrow, …/ac/command, …/ac/hold, …/ac/settings,
@@ -12,7 +14,7 @@ import { icon } from '../lib/icons.js';
 import { dialPoint, arcPath, dialFrac, toFrac, fromFrac, snapRpm, snapDeg, thermoTone, pumpPresets, poolSpeedStage, circuitStage, autopilotStage, acStage,
   holdProgress, runLabel, rulesPill, ageWords, NEST_WORD } from '../lib/nowui.js';
 import { sheet, sheetHead, sheetFoot, modePill, seg, sysRow, banner, closeSheet } from './csheet.js';
-import { poolSend, clearUpSend, openClearUp, boostId, drawPool } from './appliances.js';
+import { poolSend, clearUpSend, openClearUp, boostId, drawPool, openCircuits, poolError } from './appliances.js';
 import { drawAc, openComfort, openNudge, loadAc } from './ac.js';
 import { RULE, EXPORT, MODE, waitingSuggestion, applyRule, setRuleMode, skip, loadPowerwallRules } from './powerwall.js';
 import { openVacation } from './vacation.js';
@@ -21,6 +23,8 @@ const MODES = [['off', 'Off'], ['suggest', 'Suggest'], ['auto', 'Auto']];
 const foot = () => $('sheetBody').querySelector('.c-sheet-f');
 /** The footer: nothing staged → [Open …] [Done]; staged → [Cancel] [the write]. */
 const footer = (stage, open, acc) => stage ? sheetFoot('Cancel', esc(stage.label), acc) : sheetFoot(open, 'Done', acc);
+/** In place (Systems › Pool and AC): the staged change's own row, [Cancel] [the exact write]; nothing when nothing is staged. */
+const stageRow = (stage, acc) => stage ? `<div class="c-btns c-stagerow"><button class="c-btn line" data-f="sec">Cancel</button><button class="c-btn pri ${acc}" data-f="pri">${esc(stage.label)}</button></div>` : '';
 const vib = () => { try { navigator.vibrate?.(8); } catch { /* no haptics */ } };
 
 /* ---------- the 240° dial (equipment panel and thermostat) ---------- */
@@ -47,18 +51,27 @@ function wireDial(el, { min, max, snap, step, onMove, onSet }) {
   svg.style.touchAction = 'none';
 }
 
-/* ======================= Pool (frame 5) ======================= */
+/* ======================= Pool (frame 5; in place on Systems › Pool, frame 12) ======================= */
 const TGL = [['Features', 'tap · hold for time', [['Waterfall', 'waterfall'], ['Jets', 'jets'], ['Air Blower', 'blower']]], ['Spa & lights', 'hold Spa for heat', [['Spa', 'spa'], ['Pool Light', 'light'], ['Spa Light', 'spalight']]]];
 const RUNS = [30, 60, 120, 240, 720];
 const isSpa = c => c.function === 1 || /^spa$/i.test(c.name);
 const leftText = ms => { const m = Math.max(1, Math.round(ms / 60_000)); return m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} m` : ''}` : `${m} min`; };
 const hm = m => `${String(Math.floor(m / 60) % 12 || 12)}${m % 60 ? `:${String(m % 60).padStart(2, '0')}` : ''}${Math.floor(m / 60) % 24 < 12 ? 'a' : 'p'}`;
-export function openPoolSheet(S) {
-  const st = { rpm: null, tab: null, stage: null, long: null, minutes: null, heat: null, setF: null, sending: false };
+export const openPoolSheet = S => mountPool(S, { inSheet: true });
+const poolPanels = new Set();
+/** Systems › Pool's Controls card (mockup al frame 12): the same equipment panel in place; a staged change gets its own Cancel / send row. */
+export function mountPoolPanel(S, root) { const p = mountPool(S, { root }); poolPanels.add(p); return p; }
+/** New pool data: redraw the in-place panels (not while a finger is on one, or a write is on its way). */
+export const redrawPoolPanels = () => poolPanels.forEach(p => p.refresh());
+function mountPool(S, { inSheet = false, root = null }) {
+  const st = { rpm: null, tab: null, stage: null, long: null, minutes: null, heat: null, setF: null, sending: false, touch: false };
+  const box = () => inSheet ? $('sheetBody') : root, q = sel => box()?.querySelector(sel);
+  const show = (head, html, foot) => { if (inSheet) sheet(`${head}${html}${foot}`, { keepScroll: true }); else root.innerHTML = html + foot; };
+  if (root) { root.addEventListener('pointerdown', () => { st.touch = true; }); ['pointerup', 'pointercancel'].forEach(t => root.addEventListener(t, () => { st.touch = false; })); }
   const draw = () => {
-    const d = S.pool; if (!d) return sheet(`${sheetHead('Pool')}<p class="c-sheet-sub">Waiting for the controller…</p>${sheetFoot('', 'Done', 'c-acc-pool')}`), wireFoot();
+    const d = S.pool; if (!d) return show(sheetHead('Pool'), '<p class="c-sheet-sub">Waiting for the controller…</p>', inSheet ? sheetFoot('', 'Done', 'c-acc-pool') : ''), wireFoot();
     const L = d.live, snap = d.snapshot, s = d.settings ?? {}, linked = d.linked || !!L, ap = d.autopilot, mode = ap?.mode ?? s.autopilot;
-    if (!linked) { sheet(`${sheetHead('Pool')}<p class="c-sheet-sub">${esc(d.error ?? 'ScreenLogic is not linked. Add the system name and password to link the pool.')}</p>${sheetFoot('Open Pool', 'Done', 'c-acc-pool')}`); return wireFoot(); }
+    if (!linked) { show(sheetHead('Pool'), `<p class="c-sheet-sub">${esc(d.error ?? 'ScreenLogic is not linked. Add the system name and password to link the pool.')}</p>`, inSheet ? sheetFoot('Open Pool', 'Done', 'c-acc-pool') : ''); return wireFoot(); }
     const pid = s.poolCircuit ?? 6, bid = boostId(S), speeds = new Map((snap?.pump?.circuits ?? []).map(c => [c.circuitId, c.speed]));
     const lim = { min: snap?.pump?.minRpm ?? 450, max: snap?.pump?.maxRpm ?? 3450 }, presets = pumpPresets(d);
     const circ = id => snap?.circuits?.find(c => c.id === id), poolOn = !!circ(pid)?.on, boostOn = !!circ(bid)?.on, cu = d.clearUp;
@@ -69,10 +82,10 @@ export function openPoolSheet(S) {
     const sub = `Pool ${temp ?? '—'}° · pump ${running ? 'running' : 'off'}${at ? ` · linked ${ageWords(Date.now() - at)}` : ''}`;
     // dial + presets
     const em = st.rpm != null ? 'staged · tap below to send' : cu ? 'Clear-up' : boostOn ? 'Boost' : running ? `${match ? `${match.name} · ` : ''}on plan` : 'pump off';
-    const dial = `<div class="c-dial c-acc-pool" id="plDial">${dialSvg({ label: 'Pump speed', min: lim.min, max: lim.max, value: v, ticks: presets.map(p => ({ v: p.rpm, on: p.rpm === v })), aria: `${v.toLocaleString()} rpm` })}
-      <div class="c-dial-c"><small>Pump</small><b id="plV">${v.toLocaleString()}</b><span>rpm${running ? ` · ${Math.round(L.watts)} W` : ''}</span><em id="plEm">${esc(em)}</em></div>
+    const dial = `<div class="c-dial c-acc-pool" data-pl="dial">${dialSvg({ label: 'Pump speed', min: lim.min, max: lim.max, value: v, ticks: presets.map(p => ({ v: p.rpm, on: p.rpm === v })), aria: `${v.toLocaleString()} rpm` })}
+      <div class="c-dial-c"><small>Pump</small><b data-pl="v">${v.toLocaleString()}</b><span>rpm${running ? ` · ${Math.round(L.watts)} W` : ''}</span><em>${esc(em)}</em></div>
       <span class="c-dial-end" style="left:22px">${lim.min.toLocaleString()}</span><span class="c-dial-end" style="right:12px">${lim.max.toLocaleString()}</span></div>
-      <div class="c-presets c-acc-pool" id="plPre">${presets.map(p => `<button class="c-preset${p.rpm === v ? ' on' : ''}" data-rpm="${p.rpm}" aria-pressed="${p.rpm === v}"><b>${p.name}</b><span>${p.rpm.toLocaleString()}</span></button>`).join('')}</div>
+      <div class="c-presets c-acc-pool" data-pl="pre">${presets.map(p => `<button class="c-preset${p.rpm === v ? ' on' : ''}" data-rpm="${p.rpm}" aria-pressed="${p.rpm === v}"><b>${p.name}</b><span>${p.rpm.toLocaleString()}</span></button>`).join('')}</div>
       <p class="c-fine" style="margin-top:8px">Filter and Skim are ${presets[1].src === 'controller' ? 'the controller’s saved Pool and High Speed speeds' : 'Solstice’s defaults until the controller is read'}; Quiet and Max are Solstice’s.</p>`;
     // Plan · Boost · Clear-up, the mode line carrying that mode's actions
     const runs = (d.current?.schedules ?? []).map(x => `${x.circuitId === bid ? 'skim ' : ''}${hm(x.start)}–${hm(x.stop)} at ${x.rpm.toLocaleString()}`).join(' · ');
@@ -96,8 +109,10 @@ export function openPoolSheet(S) {
       ${T ? `<div class="c-modeline c-acc-batt"><p><b>Tomorrow:</b> ${T.hours} h at ${(T.rpm ?? s.filterRpm ?? 0).toLocaleString()} rpm${T.boostHours ? ` + ${T.boostHours} h skim` : ''} · ${mode === 'auto' ? 'writes' : mode === 'off' ? 'off, nothing written' : 'suggests'}${mode !== 'off' && ap?.nextRunAt ? ` at ${esc(clock(Date.parse(ap.nextRunAt)))}` : ''}</p></div>` : ''}
       ${ap?.pending && d.pending ? `<div class="c-well"><div class="c-head"><h5>Plan waiting</h5><span class="c-fig">${esc(new Date(d.pending.date + 'T12:00').toLocaleDateString('en-US', { weekday: 'long' }))}</span></div>
         <p class="c-sum">${d.pending.plan.hours} h at ${(s.filterRpm ?? 0).toLocaleString()} rpm${d.pending.plan.boostHours ? ' + skim' : ''}. ${esc(d.pending.why.join('; ') || 'Season plan.')}</p><div class="c-btns"><button class="c-btn pri c-acc-batt" data-act="apply-tomorrow">Apply tomorrow</button></div></div>` : ''}`;
-    const rows = `<div class="c-card flush">${sysRow({ acc: 'c-acc-pool', ic: 'grid', title: 'Circuits', line: 'every circuit, its speed and schedule', id: 'plCirc' })}</div>`;
-    sheet(`${sheetHead('Pool', modePill(cu ? 'clear' : boostOn ? 'boost' : mode))}<p class="c-sheet-sub">${esc(sub)}</p><div class="c-equip">${dial}${modes}${toggles}</div>${auto}${rows}${footer(st.stage, 'Open Pool', 'c-acc-pool')}`, { keepScroll: true });
+    const err = poolError() ? `<p class="c-fine" style="color:var(--warn)">${esc(poolError())}</p>` : '';   // the last command's refusal or failure
+    const rows = `${err}<div class="c-card flush" data-pl="circ">${sysRow({ acc: 'c-acc-pool', ic: 'grid', title: 'Circuits', line: 'every circuit, its speed and schedule' })}</div>`;
+    show(`${sheetHead('Pool', modePill(cu ? 'clear' : boostOn ? 'boost' : mode))}<p class="c-sheet-sub">${esc(sub)}</p>`, `<div class="c-equip">${dial}${modes}${toggles}</div>${inSheet ? auto : ''}${rows}`,
+      inSheet ? footer(st.stage, 'Open Pool', 'c-acc-pool') : stageRow(st.stage, 'c-acc-pool'));
     wire(d, { pid, bid, lim, presets, poolOn, boostOn, speeds, cur });
   };
   /* long-press: the run-for well (Spa's adds its heat and setpoint) */
@@ -106,9 +121,9 @@ export function openPoolSheet(S) {
     const body = isSpa(c) ? d.snapshot.bodies?.[1] : null, heat0 = body?.heatMode === 3, set0 = Math.min(104, Math.max(80, body?.setPoint || 100));
     const heat = st.heat ?? heat0, setF = st.setF ?? set0, minutes = st.minutes ?? d.runFor?.[c.id] ?? 60;
     const runs = /light/i.test(c.name) || isSpa(c) ? RUNS : RUNS.slice(0, 4);
-    return `<div class="c-well c-acc-pool" id="plLong"><div class="c-head"><h5>${esc(c.name)}</h5><span class="c-fig">${c.on ? 'on' : 'off'}</span></div>
+    return `<div class="c-well c-acc-pool" data-pl="long"><div class="c-head"><h5>${esc(c.name)}</h5><span class="c-fig">${c.on ? 'on' : 'off'}</span></div>
       ${c.on ? '' : `<div class="c-tgl-lab" style="margin-top:10px">Run for</div>${seg(runs.map(m => [String(m), runLabel(m)]), String(minutes), { acc: 'c-acc-pool', attr: 'data-min', label: 'Run for' })}`}
-      ${body ? `<div class="c-swrow" style="grid-template-columns:1fr"><div class="c-swp c-acc-warn" role="switch" tabindex="0" aria-checked="${heat}" id="plHeat">${icon('flame')}<span>Spa heat<small>heater runs only while Spa is on</small></span><span class="c-sw${heat ? ' on' : ''}"></span></div></div>
+      ${body ? `<div class="c-swrow" style="grid-template-columns:1fr"><div class="c-swp c-acc-warn" role="switch" tabindex="0" aria-checked="${heat}" data-pl="heat">${icon('flame')}<span>Spa heat<small>heater runs only while Spa is on</small></span><span class="c-sw${heat ? ' on' : ''}"></span></div></div>
         ${heat ? `<div class="c-stepper" style="border:0;margin-top:6px"><div>Heat to<small>80–104°</small></div><button class="c-step" data-heat="-1" aria-label="Cooler">−</button><b>${setF}°</b><button class="c-step" data-heat="1" aria-label="Warmer">+</button></div>` : ''}` : ''}
       <p class="c-fine">${body ? 'Autopilot never touches the spa, its heat, the lights or the heater; only you do.' : c.on ? 'Tap the switch to turn it off.' : `Turns itself off after ${runLabel(minutes)} (the controller’s own timer).`}</p></div>`;
   };
@@ -121,19 +136,19 @@ export function openPoolSheet(S) {
     const label = c.on ? (heat ? `Spa heat to ${setF}°` : 'Spa heat off') : `${c.name} on · ${runLabel(minutes)}${body && heat ? ` · heat to ${setF}°` : ''}`;
     st.stage = { id: c.id, label, cmds };
   };
-  const wireFoot = () => { const f = foot(); if (!f) return;
+  const wireFoot = () => { if (!inSheet) return; const f = foot(); if (!f) return;
     f.querySelector('[data-f="pri"]').onclick = closeSheet;
-    const sec = f.querySelector('[data-f="sec"]'); if (sec) sec.onclick = () => { closeSheet(); S.nav?.insights('appl', 'applPool', 'pool'); }; };
+    const sec = f.querySelector('[data-f="sec"]'); if (sec) sec.onclick = () => { closeSheet(); S.nav?.sys('pool'); }; };
   const wire = (d, k) => {
-    const dialEl = $('plDial');
+    const dialEl = q('[data-pl="dial"]');
     const setRpm = v => { st.rpm = v === k.cur ? null : v; st.stage = st.rpm == null ? null : (() => { const x = poolSpeedStage({ rpm: v, poolId: k.pid, boostId: k.bid, poolSpeed: k.speeds.get(k.pid) ?? null, boostSpeed: k.speeds.get(k.bid) ?? null, poolOn: k.poolOn, boostOn: k.boostOn, minutes: d.runFor?.[k.pid] ?? 60 }); return x && { ...x, kind: 'rpm' }; })(); st.long = null; draw(); };
     wireDial(dialEl, { min: k.lim.min, max: k.lim.max, snap: x => snapRpm(x, k.presets, k.lim), step: dir => snapRpm((st.rpm ?? k.cur) + dir * 50, [], k.lim),
       onMove: v => { const svg = dialEl.querySelector('svg'), f = toFrac(v, k.lim.min, k.lim.max), [x, y] = dialPoint(f);
         svg.querySelector('.c-arc-val').setAttribute('d', arcPath(0, f)); svg.querySelectorAll('.c-arc-halo,.c-arc-knob').forEach(c => { c.setAttribute('cx', x.toFixed(1)); c.setAttribute('cy', y.toFixed(1)); });
-        $('plV').textContent = v.toLocaleString(); },
+        q('[data-pl="v"]').textContent = v.toLocaleString(); },
       onSet: setRpm });
-    $('plPre').onclick = e => { const b = e.target.closest('[data-rpm]'); if (b) { vib(); setRpm(+b.dataset.rpm); } };
-    const body = $('sheetBody');
+    q('[data-pl="pre"]').onclick = e => { const b = e.target.closest('[data-rpm]'); if (b) { vib(); setRpm(+b.dataset.rpm); } };
+    const body = box();
     body.querySelector('[data-tab]')?.parentElement.addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) { st.tab = b.dataset.tab; draw(); } });
     body.querySelector('[data-ap]')?.parentElement.addEventListener('click', e => { const b = e.target.closest('[data-ap]'); if (!b) return; const m = b.dataset.ap, cur = d.autopilot?.mode ?? d.settings?.autopilot;
       st.stage = m === cur ? null : { ap: m, label: autopilotStage('', m), run: async () => {
@@ -150,13 +165,13 @@ export function openPoolSheet(S) {
         const c = d.snapshot.circuits.find(x => x.id === +b.dataset.cid); if (!c) return;
         st.long = null; st.rpm = null; st.stage = st.stage?.id === c.id ? null : { id: c.id, ...circuitStage(c.name, c.id, c.on, d.runFor?.[c.id] ?? 60) }; draw(); };
     });
-    const lw = $('plLong');
+    const lw = q('[data-pl="long"]');
     if (lw) lw.onclick = e => {
       const m = e.target.closest('[data-min]'); if (m) { st.minutes = +m.dataset.min; stageLong(d); return draw(); }
-      if (e.target.closest('#plHeat')) { const body0 = d.snapshot.bodies?.[1]; st.heat = !(st.heat ?? body0?.heatMode === 3); stageLong(d); return draw(); }
+      if (e.target.closest('[data-pl="heat"]')) { const body0 = d.snapshot.bodies?.[1]; st.heat = !(st.heat ?? body0?.heatMode === 3); stageLong(d); return draw(); }
       const h = e.target.closest('[data-heat]'); if (h) { const body0 = d.snapshot.bodies?.[1]; st.setF = Math.max(80, Math.min(104, (st.setF ?? Math.min(104, Math.max(80, body0?.setPoint || 100))) + +h.dataset.heat)); stageLong(d); return draw(); }
     };
-    if ($('plHeat')) $('plHeat').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('plHeat').click(); } };
+    const ht = q('[data-pl="heat"]'); if (ht) ht.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ht.click(); } };
     // named actions in the mode line
     body.querySelectorAll('[data-act]').forEach(b => b.onclick = async () => {
       const a = b.dataset.act;
@@ -170,30 +185,39 @@ export function openPoolSheet(S) {
       else if (a === 'apply-tomorrow') { try { await api.poolApplyTomorrow(); S.pool = await api.pool(); drawPool(S); } catch (err) { alert(err.message); } }
       st.tab = null; draw(); S.redrawNow?.();
     });
-    $('plCirc').onclick = () => { closeSheet(); S.nav?.insights('appl', 'poolCtl', 'pool'); };
+    q('[data-pl="circ"]').onclick = () => openCircuits(S);
     // the footer
-    const f = foot(), pri = f.querySelector('[data-f="pri"]'), sec = f.querySelector('[data-f="sec"]');
-    if (!st.stage) { pri.onclick = closeSheet; sec.onclick = () => { closeSheet(); S.nav?.insights('appl', 'applPool', 'pool'); }; return; }
+    const pri = q('[data-f="pri"]'), sec = q('[data-f="sec"]');
+    if (!st.stage) { if (inSheet) { pri.onclick = closeSheet; sec.onclick = () => { closeSheet(); S.nav?.sys('pool'); }; } return; }
     sec.onclick = () => { st.stage = null; st.rpm = null; st.long = null; draw(); };
     pri.onclick = async () => {
       if (st.sending) return; st.sending = true; pri.textContent = 'Sending…'; pri.disabled = true;
-      $('sheetBody').querySelector(`.c-tgl[data-cid="${st.stage.id}"]`)?.classList.add('busy');
+      box().querySelector(`.c-tgl[data-cid="${st.stage.id}"]`)?.classList.add('busy');
       try { if (st.stage.run) { const ok = await st.stage.run(); if (ok === false) { st.sending = false; return draw(); } drawPool(S); S.onPool?.(); } else await poolSend(S, ...st.stage.cmds); }
       catch (err) { alert(err.message); }
       st.sending = false; st.stage = null; st.rpm = null; st.long = null; draw(); S.redrawNow?.();
     };
   };
   draw();
+  return { refresh: () => { if (!st.touch && !st.sending && root?.isConnected !== false) draw(); } };
 }
-
-/* ======================= AC (frame 6) ======================= */
+/* ======================= AC (frame 6; in place on Systems › AC, frame 13) ======================= */
 const MANUAL = { COOL: [65, 85], HEAT: [55, 80] };
-export function openAcSheet(S) {
-  const st = { change: null, ap: null, sending: false };
+export const openAcSheet = S => mountAc(S, { inSheet: true });
+const acPanels = new Set();
+/** Systems › AC's Thermostat card (mockup al frame 13): the AC sheet's component in place, staged changes on their own row. */
+export function mountAcPanel(S, root) { const p = mountAc(S, { root }); acPanels.add(p); return p; }
+export const redrawAcPanels = () => acPanels.forEach(p => p.refresh());
+function mountAc(S, { inSheet = false, root = null }) {
+  const st = { change: null, ap: null, sending: false, touch: false };
+  const box = () => inSheet ? $('sheetBody') : root, q = sel => box()?.querySelector(sel);
+  if (root) { root.addEventListener('pointerdown', () => { st.touch = true; }); ['pointerup', 'pointercancel'].forEach(t => root.addEventListener(t, () => { st.touch = false; })); }
   const draw = () => {
     const d = S.ac;
-    if (!d?.linked || !d.state) { sheet(`${sheetHead('AC')}<p class="c-sheet-sub">${d?.configured === false ? 'Google Device Access is not configured yet.' : 'Nest isn’t linked. Link it once on the AC page.'}</p>${sheetFoot('Open AC', 'Done', 'c-acc-home')}`);
-      const f = foot(); f.querySelector('[data-f="pri"]').onclick = closeSheet; f.querySelector('[data-f="sec"]').onclick = () => { closeSheet(); S.nav?.insights('appl', 'applAc', 'ac'); }; return; }
+    if (!d?.linked || !d.state) { const msg = `<p class="c-sheet-sub">${d?.configured === false ? 'Google Device Access is not configured yet.' : 'Nest isn’t linked. Link it once on Systems › AC.'}</p>`;
+      if (!inSheet) { root.innerHTML = msg; return; }
+      sheet(`${sheetHead('AC')}${msg}${sheetFoot('Open AC', 'Done', 'c-acc-home')}`);
+      const f = foot(); f.querySelector('[data-f="pri"]').onclick = closeSheet; f.querySelector('[data-f="sec"]').onclick = () => { closeSheet(); S.nav?.sys('ac'); }; return; }
     const s = d.settings, t = d.state, nest = t.eco ? 'ECO' : t.mode, ch = st.change;
     const mode = ch?.kind === 'mode' ? ch.mode : nest, k = mode === 'HEAT' ? 'heatF' : 'coolF', [lo, hi] = MANUAL[mode === 'HEAT' ? 'HEAT' : 'COOL'];
     const canDial = (mode === 'COOL' || mode === 'HEAT' || mode === 'HEATCOOL') && ch?.kind !== 'mode';
@@ -210,7 +234,7 @@ export function openAcSheet(S) {
     const tone = thermoTone(indoor, val), hvac = String(t.hvac ?? 'off').toLowerCase();
     const em = ch && ch.kind !== 'mode' ? 'staged · tap Set below' : val == null || indoor == null ? hvac : hvac === 'cooling' || hvac === 'heating' ? `${hvac === 'cooling' ? 'Cooling' : 'Heating'} · ${Math.abs(indoor - val).toFixed(1)}° to go` : `Idle · ${Math.abs(indoor - val).toFixed(1)}° ${indoor < val ? 'under' : 'over'} target`;
     const label = !canDial ? (mode === 'OFF' ? 'Thermostat' : mode === 'ECO' ? 'Eco · Away' : `Switching to ${NEST_WORD[mode]}`) : hp && nest === 'COOL' ? 'Holding at' : { COOL: 'Cool to', HEAT: 'Heat to', HEATCOOL: 'Cool end' }[mode];
-    const dial = `<div class="c-dial c-thermo ${tone}" id="acDial">${canDial && val != null ? dialSvg({ label: 'Setpoint', min: lo, max: hi, value: val, minor: true, soft: true, dot: indoor != null ? Math.max(lo, Math.min(hi, indoor)) : null, aria: `${val}°` }) : `<svg viewBox="0 0 260 196" aria-hidden="true"><path class="c-arc-track" d="${arcPath(0, 1)}"/></svg>`}
+    const dial = `<div class="c-dial c-thermo ${tone}" data-ac="dial">${canDial && val != null ? dialSvg({ label: 'Setpoint', min: lo, max: hi, value: val, minor: true, soft: true, dot: indoor != null ? Math.max(lo, Math.min(hi, indoor)) : null, aria: `${val}°` }) : `<svg viewBox="0 0 260 196" aria-hidden="true"><path class="c-arc-track" d="${arcPath(0, 1)}"/></svg>`}
       <div class="c-dial-c"><small>${esc(label)}</small><b>${canDial && val != null ? `${val}<sup>°</sup>` : mode === 'OFF' ? 'Off' : mode === 'ECO' ? `${t.ecoCoolF != null ? Math.round(t.ecoCoolF) : '—'}<sup>°</sup>` : '—'}</b><span>inside ${indoor ?? '—'}° · ${t.humidity ?? '—'}%</span>${canDial ? `<em>${esc(em)}</em>` : ''}</div>
       ${canDial ? '<button class="c-step" style="left:0" data-step="-1" aria-label="One degree cooler">−</button><button class="c-step" style="right:0" data-step="1" aria-label="One degree warmer">+</button>' : ''}</div>`;
     const avail = t.availableModes?.length ? t.availableModes : ['COOL', 'HEAT', 'HEATCOOL', 'OFF'];
@@ -220,25 +244,26 @@ export function openAcSheet(S) {
     const sw = `<div class="c-swrow"><div class="c-swp c-acc-batt" role="switch" tabindex="0" aria-checked="${eco}" data-sw="eco">${icon('eco')}<span>Eco<small>${eco ? 'on' : 'off'}</small></span><span class="c-sw${eco ? ' on' : ''}"></span></div>
       <div class="c-swp c-acc-batt" role="switch" tabindex="0" aria-checked="${fan}" data-sw="fan">${icon('fan')}<span>Fan<small>${ch?.kind === 'fan' ? (fan ? '1 h' : 'stop') : t.fanTimer ? (fanLeft != null ? `${leftText(fanLeft * 60_000)} left` : 'on') : 'off'}</small></span><span class="c-sw${fan ? ' on' : ''}"></span></div></div>`;
     const pr = d.presence ?? { state: s.presence }, away = pr.state === 'away';
-    const rows = `<div class="c-card flush">${sysRow({ acc: 'c-acc-ac', ic: 'sliders', title: 'Comfort', line: `${s.dayF}° day · ${s.nightF}° night · pre-cool ${s.precoolDepth ?? 0}°`, id: 'acComf', end: `<span class="c-end"><span class="c-num c-cap">Edit</span><span class="c-chev">${icon('chev')}</span></span>` })}
-      ${sysRow({ acc: 'c-acc-vac', ic: 'plane', title: 'Away', mode: modePill(away ? 'away' : 'home'), line: away ? (pr.source === 'vacation' ? 'Vacation mode' : pr.until ? `Away until ${esc(clock(pr.until))}` : 'Away') + ' · Home · plan a vacation' : 'Away until… · plan a vacation', id: 'acAway' })}</div>`;
+    const rows = `<div class="c-card flush" data-ac="rows">${sysRow({ acc: 'c-acc-ac', ic: 'sliders', title: 'Comfort', line: `${s.dayF}° day · ${s.nightF}° night · pre-cool ${s.precoolDepth ?? 0}°`, go: 'comf', end: `<span class="c-end"><span class="c-num c-cap">Edit</span><span class="c-chev">${icon('chev')}</span></span>` })}
+      ${sysRow({ acc: 'c-acc-vac', ic: 'plane', title: 'Away', mode: modePill(away ? 'away' : 'home'), line: away ? (pr.source === 'vacation' ? 'Vacation mode' : pr.until ? `Away until ${esc(clock(pr.until))}` : 'Away') + ' · Home · plan a vacation' : 'Away until… · plan a vacation', go: 'away' })}</div>`;
     const nudge = `<div class="c-nudge"><button class="c-acc-home" data-nudge="1">${icon('cool')}Too cold</button><button class="c-acc-ac" data-nudge="-1">${icon('sun')}Too warm</button></div>`;
     const apMode = st.ap ?? s.autopilot, P = d.plan, tr = P?.trim, clk = h => `${Math.floor(h) % 12 || 12}${h % 1 ? ':' + String(Math.round(h % 1 * 60)).padStart(2, '0') : ''} ${h < 12 ? 'AM' : 'PM'}`;
     const trim = tr ? `<div class="c-modeline c-acc-batt"><p><b>Trim today</b> · ${tr.what === 'coast' ? `coast ${tr.to < tr.from ? 'ends earlier' : 'runs longer'}, to ${clk(tr.to)}` : `pre-cool to ${tr.to}° instead of ${tr.from}°`} · ${esc(tr.reason)}</p><button class="c-btn sm line" data-act="untrim">Undo</button></div>`
       : P?.control ? '<div class="c-modeline c-acc-batt"><p><b>Control day</b> · holding the comfort band so Solstice can measure what pre-cooling saves</p></div>' : '';
     const auto = `<div class="c-lab">AC Autopilot</div>${seg(MODES, apMode, { acc: 'c-acc-batt', attr: 'data-ap', label: 'AC Autopilot' })}${trim}`;
     const stage = st.ap != null ? { label: autopilotStage('', st.ap) } : ch ? acStage(ch) : null;
-    sheet(`${sheetHead('AC', modePill(s.autopilot))}<p class="c-sheet-sub">${esc(sub)}</p>${top}${dial}${modes}${sw}${rows}${nudge}${auto}${footer(stage, 'Open AC', 'c-acc-home')}`, { keepScroll: true });
+    if (inSheet) sheet(`${sheetHead('AC', modePill(s.autopilot))}<p class="c-sheet-sub">${esc(sub)}</p>${top}${dial}${modes}${sw}${rows}${nudge}${auto}${footer(stage, 'Open AC', 'c-acc-home')}`, { keepScroll: true });
+    else root.innerHTML = `${top}${dial}${modes}${sw}${rows}${nudge}${stageRow(stage, 'c-acc-home')}`;
     wire(d, { lo, hi, val, mode, nest, canDial, set0, k });
   };
   const wire = (d, x) => {
-    const t = d.state, body = $('sheetBody');
+    const t = d.state, body = box();
     const setF = v => { const kind = x.mode === 'HEAT' ? 'heat' : 'cool';
       if (v === x.set0) { st.change = null; return draw(); }
       if (x.mode === 'HEATCOOL') { if (v - t.heatF < 3) return draw(); st.change = { kind: 'range', heatF: Math.round(t.heatF), coolF: v }; } else st.change = { kind, f: v };
       st.ap = null; draw(); };
     if (x.canDial && x.val != null) {
-      const el = $('acDial');
+      const el = q('[data-ac="dial"]');
       wireDial(el, { min: x.lo, max: x.hi, snap: v => snapDeg(v, x.lo, x.hi), step: dir => snapDeg(x.val + dir, x.lo, x.hi),
         onMove: v => { const svg = el.querySelector('svg'), f = toFrac(v, x.lo, x.hi), [px, py] = dialPoint(f);
           svg.querySelector('.c-arc-soft')?.setAttribute('d', arcPath(0, f));
@@ -258,14 +283,14 @@ export function openAcSheet(S) {
     body.querySelector('[data-ap]')?.parentElement.addEventListener('click', e => { const b = e.target.closest('[data-ap]'); if (!b) return;
       st.ap = b.dataset.ap === d.settings.autopilot ? null : b.dataset.ap; st.change = null; draw(); });
     body.querySelectorAll('[data-nudge]').forEach(b => b.onclick = () => openNudge(S, +b.dataset.nudge));   // the existing nudge sheet, which calls /ac/nudge
-    $('acComf').onclick = () => openComfort(S);
-    $('acAway').onclick = () => openVacation(S);
+    q('[data-go2="comf"]').onclick = () => openComfort(S);
+    q('[data-go2="away"]').onclick = () => openVacation(S);
     body.querySelectorAll('.c-ban [data-b]').forEach(b => b.onclick = async () => { b.disabled = true; b.textContent = '…';
       try { S.ac = await api.acHold(b.dataset.b.split(':')[1]); drawAc(S); S.onAc?.(); } catch (err) { alert(err.message); } draw(); });
     const un = body.querySelector('[data-act="untrim"]');
     if (un) un.onclick = async () => { un.disabled = true; un.textContent = 'Undoing…'; try { await api.acUntrim(); await loadAc(S); } catch (err) { alert(err.message); } draw(); };
-    const f = foot(), pri = f.querySelector('[data-f="pri"]'), sec = f.querySelector('[data-f="sec"]');
-    if (!st.change && st.ap == null) { pri.onclick = closeSheet; sec.onclick = () => { closeSheet(); S.nav?.insights('appl', 'applAc', 'ac'); }; return; }
+    const pri = q('[data-f="pri"]'), sec = q('[data-f="sec"]');
+    if (!st.change && st.ap == null) { if (inSheet) { pri.onclick = closeSheet; sec.onclick = () => { closeSheet(); S.nav?.sys('ac'); }; } return; }
     sec.onclick = () => { st.change = null; st.ap = null; draw(); };
     pri.onclick = async () => {
       if (st.sending) return;
@@ -285,8 +310,8 @@ export function openAcSheet(S) {
     };
   };
   draw();
+  return { refresh: () => { if (!st.touch && !st.sending && !st.change) draw(); } };
 }
-
 /* ======================= Powerwalls (frame 7) ======================= */
 export function openPwSheet(S) {
   const st = { modes: {}, sending: false };
@@ -328,9 +353,9 @@ export function openPwSheet(S) {
       if (k === 'skip') { const r = S.pwRules.rules.find(x => x.id === rid); skip(rid, r?.suggestion?.value); S.redrawNow?.(); return draw(); }
       if (k === 'apply') { await applyRule(S, rid, b); S.redrawNow?.(); return draw(); }
     });
-    $('pwOutage').onclick = () => { closeSheet(); S.nav?.insights('home', 'outage'); };
+    $('pwOutage').onclick = () => { closeSheet(); S.nav?.sys('powerwall', 'sysOutage'); };
     const f = foot(), pri = f.querySelector('[data-f="pri"]'), sec = f.querySelector('[data-f="sec"]');
-    if (!staged) { pri.onclick = closeSheet; sec.onclick = () => { closeSheet(); S.nav?.insights('home', 'pwr'); }; return; }
+    if (!staged) { pri.onclick = closeSheet; sec.onclick = () => { closeSheet(); S.nav?.sys('powerwall', 'sysRules'); }; return; }
     sec.onclick = () => { st.modes = {}; draw(); };
     pri.onclick = async () => { if (st.sending) return; st.sending = true; pri.textContent = 'Saving…';
       await setRuleMode(S, staged[0], staged[1]); st.sending = false; st.modes = {}; draw(); S.redrawNow?.(); };

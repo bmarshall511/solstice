@@ -9,14 +9,17 @@ import { createLandscape } from './scenes/landscape.js';
 import { createHomeView } from './scenes/home.js';
 import { renderLive, renderStatic, renderWeather, freshness, initAhead, initPwDisc } from './views/now.js';
 import { initNowTop, redrawNowTop } from './views/nowhub.js';
-import { keyActivate } from './views/csheet.js';
+import { keyActivate, wireDisclosures, segSet, banner } from './views/csheet.js';
+import { route, fromInsights, fromQuery } from './lib/sysui.js';
+import { openLog } from './views/timeline.js';
+import { showSeg, segKeys, drawSysHeader, drawHomeLive, drawRingLegend, drawSolarLive, drawPwLive } from './views/systems.js';
 import { initHistory, drawHistoryChart, landscapeData, drawSocHeat, drawRecords, drawOutages, drawBills, openBillSheet } from './views/history.js';
 import { initPanels, drawPerformance, roofHud } from './views/panels.js';
-import { drawAlerts, initPlanner, drawAC, drawOvernight, drawHealth, initOutage, initBreakdown, initSpare, initCapacity } from './views/insights.js';
+import { drawAlerts, openPlanner, drawAC, drawOvernight, initOutage, initBreakdown, initSpare, initCapacity } from './views/insights.js';
 import { initWater } from './views/water.js';
-import { drawSettings, drawConnections, openRawData, applyAlertPrefs } from './views/settings.js';
+import { drawSettings, drawConnections, openRawData, applyAlertPrefs, initAlertGroups } from './views/settings.js';
 import { every } from './lib/poll.js';
-import { initAppliances, poolTwin, drawPool, freshPool, tickBoost, releasePoolTwin } from './views/appliances.js';
+import { initAppliances, poolTwin, drawPool, freshPool, releasePoolTwin } from './views/appliances.js';
 import { initAc, thermalTwin, drawAc, freshAc, releaseThermalTwin } from './views/ac.js';
 import { initLearn } from './views/learn.js';
 import { createDayRing } from './scenes/dayring.js';
@@ -166,33 +169,43 @@ const flowReading = r => S.preview && !S.realOutage ? { ...r, gridKw: 0, battery
 
 /* ---------------- the appliance twins: a WebGL context only while their card is on screen (like the Now twin) ---------------- */
 function syncTwins() {
-  const ins = $('v-ins').classList.contains('on') && insPanel === 'appl';
-  if (ins && applSel === 'pool') { if (!poolTwin() && S.pool) safe(drawPool)(S); } else releasePoolTwin();
-  if (ins && applSel === 'ac') { if (!thermalTwin() && S.ac) safe(drawAc)(S); } else releaseThermalTwin();
+  const sys = isOn('v-sys');
+  if (sys && sysSeg === 'pool') { if (!poolTwin() && S.pool) safe(drawPool)(S); } else releasePoolTwin();
+  if (sys && sysSeg === 'ac') { if (!thermalTwin() && S.ac) safe(drawAc)(S); } else releaseThermalTwin();
 }
 
-/* ---------------- navigation ---------------- */
-function go(v, anchor) {
-  document.querySelectorAll('.c-tab').forEach(x => { const on = x.dataset.v === v; x.classList.toggle('on', on); if (on) x.setAttribute('aria-current', 'page'); else x.removeAttribute('aria-current'); });
-  document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === v));
+/* ---------------- navigation: four tabs (mockup al), Systems' segments, and the old view ids as aliases ---------------- */
+let sysSeg = 'home';
+/** Open a tab (and, for Systems, a segment), optionally scrolled to a card. `go('v-ins', …)` / `go('v-roof')` still land (lib/sysui.js). */
+function go(v, anchor, p) {
+  const r = route(v, p ?? (v === 'v-sys' ? sysSeg : null), anchor);
+  document.querySelectorAll('.c-tab').forEach(x => { const on = x.dataset.v === r.view; x.classList.toggle('on', on); if (on) x.setAttribute('aria-current', 'page'); else x.removeAttribute('aria-current'); });
+  document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === r.view));
   // the Now twin keeps a WebGL context only while Now is open: disposed on leaving, rebuilt (live framing) on return
-  if (v === 'v-now') { house ??= createHomeView($('house'), 'flow', { onLink: openAppliance }); loadApplDay().catch(() => {}); } else if (house) { house.dispose(); house = null; S.twinReplay = false; }
-  if (v === 'v-hist') { land.replay(); drawHistoryChart(S); }
-  setTimeout(syncTwins);   // next tick: the view is shown, and the sub-tab state below is initialised
-  const sc = $('screen');
-  if (anchor) setTimeout(() => sc.scrollTo({ top: $(anchor).getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 50, behavior: 'smooth' }), 60); else sc.scrollTo({ top: 0 });
+  if (r.view === 'v-now') { house ??= createHomeView($('house'), 'flow', { onLink: openAppliance }); loadApplDay().catch(() => {}); } else if (house) { house.dispose(); house = null; S.twinReplay = false; }
+  if (r.view === 'v-hist') { land.replay(); drawHistoryChart(S); }
+  if (r.view === 'v-sys') setSeg(r.seg, false);
+  setTimeout(syncTwins);   // next tick: the view is shown
+  const sc = $('screen'), el = r.anchor && $(r.anchor);
+  if (el?.classList.contains('c-disc') && !el.classList.contains('expanded')) el.querySelector('.c-disc-h')?.click();   // a link to a disclosure opens it
+  if (el) setTimeout(() => sc.scrollTo({ top: el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 50, behavior: 'smooth' }), 60); else sc.scrollTo({ top: 0 });
+  if (r.planner) setTimeout(() => openPlanner(S), 120);
+}
+/** Systems: show a segment (its page, the pill, the header) and free or build the scenes that belong to it. */
+function setSeg(seg, top = true) {
+  sysSeg = S.sysSeg = showSeg(seg);
+  setTimeout(syncTwins); setTimeout(() => { dayRing.resize(); poolTwin()?.resize(); thermalTwin()?.resize(); });
+  safe(drawSysHeader)(S, sysSeg); safe(drawHomeLive)(S); safe(drawSolarLive)(S); safe(drawPwLive)(S);
+  if (top) $('screen').scrollTo({ top: 0 });
 }
 document.querySelectorAll('.c-tab[data-v]').forEach(t => t.onclick = () => go(t.dataset.v));
-/** Links out of Now's sheets: an Insights panel (and an appliance), scrolled to a card. Links only; nothing is written. */
-function openInsights(panel, anchor, appl) {
-  go('v-ins'); $('insSeg').querySelector(`[data-p="${panel}"]`)?.click();
-  if (appl) $('applStrip').querySelector(`.app[data-id="${appl}"]`)?.click();
-  const el = anchor === 'outage' ? document.querySelector('#ip-home .card.outage') : $(anchor);
-  if (el) setTimeout(() => { const sc = $('screen'); sc.scrollTo({ top: el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 50, behavior: 'smooth' }); }, 80);
-}
-S.nav = { go, insights: openInsights };
+$('sysSeg').onclick = e => { const b = e.target.closest('[data-seg]'); if (b) setSeg(b.dataset.seg); };
+segKeys($('sysSeg'), setSeg);
+/** Links out of Now's sheets: a Systems segment, scrolled to a card. The old Insights form (panel, anchor, appliance) still works. */
+S.openLog = opts => openLog(S, opts);   // mockup al frame 18: every Autopilot's Log row
+S.nav = { go, sys: (seg, anchor) => go('v-sys', anchor, seg), insights: (panel, anchor, appl) => { const r = fromInsights(panel, anchor, appl); go('v-sys', r.anchor, r.seg); } };
 S.redrawNow = () => safe(redrawNowTop)(S);
-document.addEventListener('click', e => { const el = e.target.closest('[data-go]'); if (el) go(el.dataset.go, el.dataset.land ? 'landSect' : el.dataset.bills ? 'billSect' : null); });
+document.addEventListener('click', e => { const el = e.target.closest('[data-go]'); if (el) go(el.dataset.go, el.dataset.land ? 'landSect' : el.dataset.bills ? 'billSect' : null, el.dataset.p); });
 const closeSheet = () => $('phone').classList.remove('open');
 /* accessibility (October audit): every .sw toggle is a keyboard-reachable switch with its state announced, and the bottom sheet is a
    labelled dialog that takes focus when it opens. One observer keeps both right as views redraw. */
@@ -201,18 +214,21 @@ function a11y() {
     if (!el.hasAttribute('role')) { el.setAttribute('role', 'switch'); el.tabIndex = 0; const t = el.closest('.row')?.querySelector('.rt'); if (t) el.setAttribute('aria-label', t.firstChild?.textContent?.trim() || t.textContent.trim()); }
     const on = String(el.classList.contains('on')); if (el.getAttribute('aria-checked') !== on) el.setAttribute('aria-checked', on);
   });
+  document.querySelectorAll('.sw-row').forEach(el => { const on = String(el.classList.contains('on')); if (el.getAttribute('aria-checked') !== on) el.setAttribute('aria-checked', on); });   // mockup al: the row is the switch
   const h = $('sheetBody').querySelector('h4'); if (h && $('sheet').getAttribute('aria-label') !== h.textContent) $('sheet').setAttribute('aria-label', h.textContent);
   $('sheet').classList.toggle('is-c', !!$('sheetBody').firstElementChild?.classList.contains('c-sbody'));   // mockup al: the component sheet's look and pinned footer
 }
 new MutationObserver(a11y).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
-document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('.sw[role=switch]')) { e.preventDefault(); e.target.click(); } });
+document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('.sw[role=switch],.sw-row[role=switch]')) { e.preventDefault(); e.target.click(); } });
 new MutationObserver(() => { if ($('phone').classList.contains('open')) setTimeout(() => $('sheetBody').querySelector('button,input,[tabindex]')?.focus({ preventScroll: true }), 50); })
   .observe($('phone'), { attributes: true, attributeFilter: ['class'] });
 a11y();
-keyActivate($('v-now')); keyActivate($('sheet'));   // role=button rows, disclosure headers and date cards answer Enter and Space
+['v-now', 'v-sys', 'v-hist', 'v-set', 'sheet'].forEach(id => keyActivate($(id)));
+['v-sys', 'v-hist', 'v-set'].forEach(id => wireDisclosures($(id)));   // disclosure cards and their rows open in place   // role=button rows, disclosure headers and date cards answer Enter and Space
 $('scrim').onclick = closeSheet;
 document.addEventListener('click', e => { if (e.target.closest('[data-addbill]')) openBillSheet(S, () => loadHistory()); });
-$('openData').onclick = openRawData;
+$('connCard').addEventListener('click', e => { if (e.target.closest('#openData')) openRawData(); });   // Settings › Connections › All data
+initAlertGroups();
 addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); if (e.key === 'd' && !S.guest && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) openRawData(); });
 /* Calm mode: the owner's is a setting; a guest's lives on the device (it cannot write settings). html[data-calm] stills the veils. */
 const guestCalm = () => { try { const v = localStorage.getItem('solstice:calm'); return v == null ? null : v === '1'; } catch { return null; } };
@@ -225,8 +241,8 @@ $('outSw').onclick = () => { S.preview = !S.preview; S.previewSince = Date.now()
 
 /* ---------------- scenes + loop ---------------- */
 let house = createHomeView($('house'), 'flow', { onLink: openAppliance });
-/** POOL / AC labels on the Now twin: Insights → Appliances with that appliance selected. A link only; it changes nothing. */
-function openAppliance(id) { go('v-ins'); $('insSeg').querySelector('[data-p="appl"]')?.click(); $('applStrip').querySelector(`.app[data-id="${id}"]`)?.click(); }
+/** POOL / AC labels on the Now twin: that system's Systems page. A link only; it changes nothing. */
+function openAppliance(id) { go('v-sys', null, id === 'ac' ? 'ac' : 'pool'); }
 /** Today hour by hour for the Now twin (/api/appliances/day): at most every 5 minutes while Now is open, never on the 30-second loop. */
 async function loadApplDay() {
   if (S.guest) return;   // owner-only route (no guest view in server/src/redact.ts): a guest's twin runs live-only, without a 401 a minute
@@ -237,28 +253,24 @@ async function loadApplDay() {
   safe(drawDayRing)();   // B2-7: the Day Ring's AC hours come from this day
 }
 const aurora = createAurora($('aurora')), orb = createOrb($('orb')), land = createLandscape($('land'), $('landTip')), roof = createHomeView($('roof'), 'sun');
-$('roofBars').onclick = e => { const on = !S.roofBars; S.roofBars = on; e.currentTarget.classList.toggle('on', on); e.currentTarget.setAttribute('aria-pressed', on); $('roofBarsKey').classList.toggle('on', on); roof.setBars(on); };   // mockup p-roof-veil
-initHistory(S); initPanels(S, roof); initPlanner(S);   // initAppliances / initAc start in boot(), once the role is known
+initHistory(S); initPanels(S, roof);   // initAppliances / initAc start in boot(), once the role is known
 const outage = initOutage(S);
 mountPowerwallRules();   // t-enhancements: the Powerwall rules card, directly below Outage readiness
-let applSel = 'pool';
-$('applStrip').onclick = e => { const a = e.target.closest('.app'); if (!a || !a.dataset.id || a.classList.contains('dim')) return; applSel = a.dataset.id; setTimeout(syncTwins); document.querySelectorAll('#applStrip .app').forEach(x => x.classList.toggle('on', x === a)); $('applPool').hidden = applSel !== 'pool'; $('applAc').hidden = applSel !== 'ac'; poolTwin()?.resize(); thermalTwin()?.resize(); if (applSel === 'ac') safe(drawAc)(S); };
+$('planRow').onclick = () => openPlanner(S);   // mockup al frame 9: "What if you added…" opens the Planner in a sheet
 
-/* ---------------- Insights: four panels + the Day Ring ---------------- */
-let insPanel = 'today';
-$('insSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; insPanel = b.dataset.p; setTimeout(syncTwins); document.querySelectorAll('#insSeg button').forEach(x => x.classList.toggle('on', x === b)); document.querySelectorAll('#v-ins .panel').forEach(p => p.classList.toggle('on', p.id === 'ip-' + insPanel)); poolTwin()?.resize(); dayRing.resize(); };
+/* ---------------- Systems › Home: the Day Ring ---------------- */
 const dayRing = createDayRing($('dayRing'), (h, d) => {
   const ro = $('drRead'); if (!d) return;
   const sum = a => a.reduce((x, y) => x + y, 0), bd = (p, a, r) => `<div class="bd"><span><i style="background:#6cc4ff"></i>${p}</span><span><i style="background:#ff9e66"></i>${a}</span><span><i style="background:#8d93a8"></i>${r}</span></div>`;
   // B2-7: today so far reads Tesla's home total (the parts are split out of it); the what-if modes read their parts' sum
-  if (h == null) ro.innerHTML = `<b>${Math.round(d.total ?? sum(d.rest) + sum(d.ac) + sum(d.pool))} kWh</b><small>${d.label}</small>${bd(Math.round(sum(d.pool)), Math.round(sum(d.ac)), Math.round(sum(d.rest)))}`;
+  if (h == null) ro.innerHTML = `<b>${(Math.round((d.total ?? sum(d.rest) + sum(d.ac) + sum(d.pool)) * 10) / 10).toFixed(1)}</b><small>kWh ${d.label}</small>`;   // the parts are in the legend under the ring
   else ro.innerHTML = `<b>${(d.rest[h] + d.ac[h] + d.pool[h]).toFixed(1)} kWh</b><small>${h % 12 || 12}${h < 12 ? ' AM' : ' PM'} · solar ${d.solar[h].toFixed(1)} kWh</small>${bd(d.pool[h].toFixed(1), d.ac[h].toFixed(1), d.rest[h].toFixed(1))}`;
 });
-/** Settings › Connections and Data health follow the latest sync, pool and Nest reads (health waits for its first /api/status). */
-const refreshStatus = () => { safe(drawConnections)(S); if ('status' in S) safe(drawHealth)(S, S.status); };
+/** Settings › Connections (with Data health folded in) follows the latest sync, pool and Nest reads and /api/status. */
+const refreshStatus = () => safe(drawConnections)(S);
 S.ringMode = 'now'; S.onPool = () => { safe(drawDayRing)(); refreshStatus(); S.redrawNow(); }; S.onAc = () => { safe(drawDayRing)(); refreshStatus(); S.redrawNow(); };
 initNowTop(S); initAhead(S); initPwDisc();   // mockup al: the pills, banner slot, Autopilot hub, Ahead's 12 h | 48 h and the Powerwall disclosure
-$('drModes').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.ringMode = b.dataset.m; document.querySelectorAll('#drModes button').forEach(x => x.classList.toggle('on', x === b)); drawDayRing(); };
+$('drModes').onclick = e => { const b = e.target.closest('[data-m]'); if (!b) return; S.ringMode = b.dataset.m; segSet($('drModes'), b.dataset.m, 'data-m'); drawDayRing(); };
 /**
  * Today's hourly loads (B2-7, audit L-13/L-14, O-11): the AC from Nest's cooling minutes × the learned kW (/api/appliances/day), the pool
  * from the schedule model for the hours so far only, the rest from Tesla's home load; in "now" mode the parts add up to Tesla's total.
@@ -284,7 +296,8 @@ function drawDayRing() {
   const label = S.ringMode === 'now' ? 'today so far' : S.ringMode === 'pool' ? 'with the smarter pool schedule' : 'with 8 more panels';
   const tot = day.totals?.home ?? home.reduce((a, b) => a + b, 0), pk = pool.reduce((a, b) => a + b, 0);   // Tesla's home total, as Now and History show it
   dayRing.setData({ rest, ac, pool, solar: sol, label, total: S.ringMode === 'now' ? tot : null }); dayRing.setHour(localHour());
-  $('insToday').textContent = Math.round(tot);
+  const sum = a => a.reduce((x, y) => x + y, 0), pNow = sum(poolNow), aNow = sum(ac);
+  drawRingLegend(S, { pool: pNow, ac: aNow, rest: Math.max(0, tot - pNow - aNow), acConf: A?.acConf ?? null });
   const acTxt = !A ? 'AC isn’t split out in this view'
     : A.acConf === 'measured' ? `AC is measured: Nest’s cooling minutes × the AC’s draw from Tesla’s load steps (${A.acKw.toFixed(1)} kW, confirmed by two independent checks)`
     : `AC is estimated: Nest’s cooling minutes × ${A.acKw.toFixed(1)} kW, a draw not yet confirmed by Tesla’s load steps`;
@@ -292,7 +305,6 @@ function drawDayRing() {
     : S.ringMode === 'pool' ? `With the smarter schedule the pump moves under the solar curve and drops to about <b style="color:var(--text)">${Math.round(pk)} kWh</b> a day, so nights are just the house idling and the Powerwalls reach the evening fuller.`
     : `Eight more panels lift the gold ribbon by a third. Midday surplus covers more of the AC ramp, and the planner says the batteries would fill on far more days.`;
 }
-$('planMore').onclick = () => { $('cmp').hidden = !$('cmp').hidden; $('planFine').hidden = $('cmp').hidden; };
 
 let HIDDEN = false; document.addEventListener('visibilitychange', () => HIDDEN = document.hidden);
 let last = performance.now(), T = 0, hudTick = 0;
@@ -311,19 +323,21 @@ function frame(now) {
       day: S.applDay, wx: S.wx, pool: S.pool, ac: S.ac, reservePct: S.now?.site?.reservePct })?.replaying ?? false;
   }
   if (isOn('v-hist')) land.render(dt, S.calm);
-  if (isOn('v-ins') && insPanel === 'today') dayRing.render(dt, S.calm);
-  if (isOn('v-ins') && insPanel === 'appl' && applSel === 'pool') poolTwin()?.render(dt, S.calm);
-  if (isOn('v-ins') && insPanel === 'appl' && applSel === 'ac') thermalTwin()?.render(dt, S.calm);
-  if (isOn('v-ins') && insPanel === 'home') outage.frame(dt, now);
-  if (isOn('v-roof')) {
+  const sys = isOn('v-sys');
+  if (sys && sysSeg === 'home') dayRing.render(dt, S.calm);
+  if (sys && sysSeg === 'pool') poolTwin()?.render(dt, S.calm);
+  if (sys && sysSeg === 'ac') thermalTwin()?.render(dt, S.calm);
+  if (sys && sysSeg === 'powerwall') outage.frame(dt, now);
+  if (sys && sysSeg === 'solar') {
     const d = new Date(), dayStart = Date.parse(`${localDate(d)}T00:00:00${new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', timeZoneName: 'longOffset' }).formatToParts(d).find(p => p.type === 'timeZoneName').value.replace('GMT', '') || 'Z'}`);
     hudTick += dt;
     const info = roof.render({ r, now: d, dayStart, cloud: S.roofWx?.cc ?? .1, code: S.roofWx?.code ?? 0, out: S.outageActive, peakKw: S.peakKw ?? 9, dt, t: T, calm: S.calm });
-    if (hudTick > .5) { hudTick = 0; if (S.location) { S.roofWx = roofHud(S, info, d); roof.setHours(S.roofWx.hours); } roof.setDust(S.dust?.score); $('rfKw').textContent = r ? r.solarKw.toFixed(1) : '—'; }
+    if (hudTick > .5) { hudTick = 0; if (S.location) { S.roofWx = roofHud(S, info, d); roof.setHours(S.roofWx.hours); } roof.setDust(S.dust?.score); }
   }
 }
 requestAnimationFrame(frame);
-setInterval(() => { if (document.hidden) return; safe(renderLive)(S); safe(sideSummary)(); safe(freshness)(S); safe(freshPool)(S); safe(tickBoost)(S); safe(freshAc)(S); }, 1000);
+setInterval(() => { if (document.hidden) return; safe(renderLive)(S); safe(sideSummary)(); safe(freshness)(S); safe(freshPool)(S); safe(freshAc)(S);
+  if (isOn('v-sys')) { safe(drawSysHeader)(S, sysSeg); if (sysSeg === 'home') safe(drawHomeLive)(S); if (sysSeg === 'solar') safe(drawSolarLive)(S); if (sysSeg === 'powerwall') safe(drawPwLive)(S); } }, 1000);
 
 function sideSummary() {
   const r = S.live; if (!r) return;
@@ -337,13 +351,13 @@ function sideSummary() {
 function drawBillDue() {
   const last = S.reconcile?.at(-1); if (!last) return;
   const nextClose = addDays(last.period.to, 31), ready = addDays(nextClose, 2), today = localDate();
-  const card = ready <= today
-    ? `<div class="card due"><div class="h"><b>Your ${niceDate(nextClose, { month: 'long' })} PEC bill should be ready</b><span>${niceDate(last.period.to)} – ${niceDate(nextClose)}</span></div>
-        <p>Download it from SmartHub or myPEC.com and add it. Solstice checks it against Tesla and updates your rates.</p><button class="link" data-addbill="1">+ Add the bill</button></div>` : '';
-  $('billDue').innerHTML = card;
+  // History › Bills (mockup al frame 14): the plain banner, its button opens the bill sheet
+  $('billDue').innerHTML = ready <= today && !S.guest ? banner({ cls: 'plain', ic: 'bill', title: `Your ${niceDate(nextClose, { month: 'long' })} PEC bill should be ready`,
+    line: `${niceDate(last.period.to)} – ${niceDate(nextClose)} · download it from SmartHub or myPEC.com and add it; Solstice checks it against Tesla and updates your rates.`, btns: [['Add the bill', 'bill']] }) : '';
+  $('billDue').querySelector('[data-b]')?.setAttribute('data-addbill', '1');
   // mockup al: on Now it is the banner slot's plain bill banner (owner only; no dollar figure)
   S.billDue = ready <= today && !S.guest ? { month: niceDate(nextClose, { month: 'long' }), period: `${niceDate(last.period.to)} – ${niceDate(nextClose)}` } : null; S.redrawNow();
-  $('setBills').textContent = ready <= today ? `${niceDate(nextClose, { month: 'long' })} bill ready to add` : `Last: ${niceDate(last.billDate, { month: 'long' })} · next ~${niceDate(ready)}`;
+  S.billsLine = ready <= today ? `${niceDate(nextClose, { month: 'long' })} bill ready to add` : `last ${niceDate(last.billDate, { month: 'long' })} · next ~${niceDate(ready)}`; safe(drawConnections)(S);
 }
 
 /* ---------------- sign-in gate ---------------- */
@@ -390,7 +404,7 @@ setUnauthorized(() => {
 async function reloadAll() {
   const prefs = await api.settings().catch(() => null);
   if (prefs) S.location = setSiteLocation(prefs.location);
-  initAppliances(S); initAc(S); $('rPv').dispatchEvent(new Event('input'));
+  initAppliances(S); initAc(S);
   initLearn(S);
   await Promise.allSettled([loadNow(), loadHistory(), loadExternal(), loadWeather()]);
   if (isOn('v-hist')) safe(drawHistoryChart)(S);
@@ -406,7 +420,7 @@ async function boot() {
   if (params.get('tesla_error')) toast('!', 'rgba(255,90,78,.25)', 'Tesla connection failed', OAUTH_ERR[params.get('tesla_error')] ?? OAUTH_ERR.failed);
   if (params.get('nest_error')) toast('!', 'rgba(255,90,78,.25)', 'Nest link failed', OAUTH_ERR[params.get('nest_error')] ?? OAUTH_ERR.failed);
   if (params.has('tesla_error') || params.has('nest_error') || params.has('nest')) history.replaceState(null, '', location.pathname + location.hash);   // a reload doesn't toast again
-  if (params.get('nest') === 'linked') toast('✓', 'rgba(78,240,166,.2)', 'Nest linked', 'Solstice can now see the thermostat. Open Insights → Appliances → AC.');
+  if (params.get('nest') === 'linked') toast('✓', 'rgba(78,240,166,.2)', 'Nest linked', 'Solstice can now see the thermostat. Open Systems › AC.');
   if (ownerLink) {   // first open of the owner link on this device: trade the key for the owner cookie
     const ok = await api.owner(ownerLink).then(() => true, () => false);
     unlocking = false;
@@ -457,9 +471,9 @@ async function boot() {
   every(60_000, () => isOn('v-now') ? loadApplDay() : Promise.resolve());   // the Now twin's day (self-limited to every 5 min)
   if (!S.guest) { every(5 * 60_000, () => loadDigest(S)); every(5 * 60_000, () => loadPowerwallRules(S)); }   // t-enhancements (owner-only routes)
   if (!S.guest && !S.asGuest) initVacation(S, every);   // mockup ak: the Vacation chip, banner, sheet and report (owner-only routes)
-  // a tapped push opens /?go=<view>[&p=<Insights panel>] (web/public/sw.js)
-  const goV = params.get('go'), goP = params.get('p');
-  if (goV && /^v-(now|hist|roof|ins|set)$/.test(goV)) { go(goV); if (goV === 'v-ins' && /^(today|appl|plan|home)$/.test(goP ?? '')) $('insSeg').querySelector(`[data-p="${goP}"]`)?.click(); history.replaceState(null, '', location.pathname); }
+  // a tapped push opens /?go=<view>[&p=<segment>] (web/public/sw.js); the old v-ins / v-roof links land on their Systems segment
+  const dl = fromQuery(params);
+  if (dl) { go(dl.view, dl.anchor, dl.seg); history.replaceState(null, '', location.pathname); }
   loadArchive().catch(e => console.warn('archive', e.message));
   // keep history current: sync now, then every 5 min while open; keep going while there are missing days to backfill
   // one task, so a slow sync and the next 5-minute run can't overlap (the backfill keeps going inside the task while days remain)
@@ -468,7 +482,7 @@ async function boot() {
     S.syncInfo = r; $('sideDays').textContent = r?.remaining ? `loading… ${r.remaining} days left` : $('sideDays').textContent; refreshStatus();
     if (!(r?.remaining > 0)) return; await new Promise(res => setTimeout(res, 1500)); } };
   if (!S.guest) every(5 * 60_000, sync); // syncing is a write: the owner's device keeps history current
-  every(60_000, async () => { const s = await api.status().catch(() => null); S.status = s; safe(drawHealth)(S, s); });
+  every(60_000, async () => { const s = await api.status().catch(() => null); S.status = s; safe(drawConnections)(S); });
 }
 boot();
 

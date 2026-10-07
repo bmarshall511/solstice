@@ -140,25 +140,34 @@
         </div>
       </section>
 
-      <!-- ================= HISTORY ================= -->
+      <!-- ================= HISTORY (approved mockup al-ia v2, frame 14) ================= -->
       <section class="view" id="v-hist">
         <div class="hello"><div><h3>History</h3><p id="hdate">—</p></div></div>
-        <div class="seg" id="hseg"><button class="on" data-r="day">Day</button><button data-r="week">Week</button><button data-r="month">Month</button><button data-r="year">Year</button></div>
-        <div class="daynav" id="dayNav"><button id="dayPrev" aria-label="Previous day">‹</button><span id="dayLabel">Today</span><button id="dayNext" aria-label="Next day">›</button></div>
+        <div class="c-seg wide" id="hseg" style="--n:4;--i:0" role="group" aria-label="Range"><button class="on" data-r="day" aria-pressed="true">Day</button><button data-r="week" aria-pressed="false">Week</button><button data-r="month" aria-pressed="false">Month</button><button data-r="year" aria-pressed="false">Year</button></div>
+        <div class="c-fpills" id="hjumps" style="margin-top:10px" role="group" aria-label="Jump to"><button class="c-fpill" data-j="energy">Energy</button><button class="c-fpill" data-j="battery">Battery</button><button class="c-fpill" data-j="outages">Outages</button><button class="c-fpill" data-j="bills">Bills</button></div>
+        <div class="daynav" id="dayNav"><button class="c-step" id="dayPrev" aria-label="Previous day">‹</button><b id="dayLabel">Today</b><button class="c-step" id="dayNext" aria-label="Next day">›</button></div>
+        <div id="hjEnergy" class="hj"></div>
         <svg id="hchart" width="330" height="310" viewBox="-165 -165 330 330"></svg>
-        <div class="legend" id="hleg"></div>
-        <div class="stats" id="hstats"></div>
+        <div class="c-dl" id="hleg"></div>
+        <div class="c-tiles" id="hstats" style="margin-top:6px"></div>
 
-        <div class="sect" id="landSect">Production landscape</div>
-        <div class="card">
-          <div class="h"><b>Last 30 days × 24 hours</b><span>drag · tap a bar</span></div>
+        <div class="c-card" id="flowSum" data-owner hidden>
+          <div class="c-head"><h5>Where every kWh went</h5><span class="c-fig" id="flowFig">—</span></div>
+          <div class="c-stack" id="flowStack"></div>
+          <div class="c-dl" id="flowDl"></div>
+          <div class="c-btns"><button class="c-btn line block" id="flow3d" aria-expanded="false">3D flow</button></div>
+          <div id="flowHost" hidden></div>
+        </div>
+
+        <div class="c-card" id="landCard">
+          <div class="c-head"><h5>Last 30 days × 24 hours</h5><span class="c-fig">drag · tap a bar</span></div>
           <div class="land" id="land"></div>
-          <div class="legend" style="justify-content:flex-start;margin-top:6px"><span>kWh/hr<span class="ramp"></span></span><span style="color:var(--warn)">▌ below the weather model</span></div>
+          <div class="c-dl"><span class="c-acc-solar"><i style="width:40px;background:linear-gradient(90deg,var(--c-fill-2),var(--solar))"></i>kWh an hour</span><span class="c-acc-warn"><i></i>below the weather model</span></div>
           <div class="landtip" id="landTip">Each bar is one hour of solar production. Red rows are days that came in more than 10% below what the sunlight should have produced.</div>
         </div>
 
-        <div class="card" id="yrCard" hidden>
-          <div class="h"><b>Your year</b><span>drag · tap a day</span></div>
+        <div class="c-card" id="yrCard" hidden>
+          <div class="c-head"><h5>Your year</h5><span class="c-fig">drag · tap a day</span></div>
           <div class="ring3d yr3d" id="yr">
             <div class="labs" id="yrLabs"></div>
             <div class="hint" id="yrHint">last year shown where data exists</div>
@@ -174,324 +183,406 @@
             <span><i class="hd"></i>Today</span>
           </div>
           <div class="two" id="yrStats"></div>
-          <p class="fine" id="yrNote">Bars share one scale, so solar, home and PEC heights compare directly.</p>
+          <p class="c-fine" id="yrNote">Bars share one scale, so solar, home and PEC heights compare directly.</p>
         </div>
 
-        <div class="sect">Powerwall patterns</div>
-        <div class="card">
-          <div class="h"><b>Charge level · 30 days</b><span>each row is a day</span></div>
-          <svg class="mini" id="socHeat" viewBox="0 0 310 190"></svg>
-          <div class="legend" style="justify-content:flex-start">0%<span class="ramp" style="background:linear-gradient(90deg,#10151f,#1d5c4a,#4ef0a6,#d9fff0)"></span>100% · <span style="color:var(--warn)">▌ at reserve</span></div>
-          <div class="rec2" id="socStats"></div>
+        <div id="hjBattery" class="hj"></div>
+        <div class="c-card" id="socCard">
+          <div class="c-head"><h5>Charge level</h5><span class="c-fig">30 days</span></div>
+          <svg class="mini" id="socHeat" viewBox="0 0 310 190" aria-label="Charge level, one row a day"></svg>
+          <div class="c-dl"><span class="c-acc-batt"><i style="width:40px;background:linear-gradient(90deg,var(--c-fill-2),var(--batt))"></i>0 → 100%</span><span class="c-acc-warn"><i></i>at reserve</span></div>
+          <div class="c-kv" id="socStats"></div>
         </div>
 
-        <div class="card">
-          <div class="h"><b>Records</b><span id="recSince">—</span></div>
-          <div class="rec2" id="records"></div>
+        <div class="c-tiles" id="records"></div>
+        <div class="c-btns" style="margin-top:8px"><button class="c-btn line block" id="recAll">All records</button></div>
+
+        <div id="hjOutages" class="hj"></div>
+        <div class="c-card" id="outCard">
+          <div class="c-head"><h5 id="outTitle">Outages</h5><span id="outBadge" style="margin-left:auto"></span></div>
+          <div class="c-tl" id="outList"></div>
+          <div class="c-btns"><button class="c-btn line block" id="outAll">All</button></div>
         </div>
 
-        <div class="sect">Outages</div>
-        <div class="card">
-          <div class="h"><b id="outTitle">Grid outages</b><span class="badge g" id="outBadge">—</span></div>
-          <p id="outText">—</p>
-          <svg class="mini" id="outStrip" viewBox="0 0 310 64"></svg>
-          <div id="outList" style="margin-top:6px"></div>
-        </div>
-
-        <div class="sect" id="billSect">Electric bills · PEC</div>
-        <div class="card" id="billListCard">
-          <div class="h"><b>Your bills <span id="billCount" style="font-weight:400;font-size:12px;color:var(--mute);margin-left:4px">—</span></b><button class="link" data-addbill="1" style="margin:0;padding:7px 12px">+ Add a PEC bill</button></div>
-          <div id="billList" style="margin-top:6px"></div></div>
+        <div id="hjBills" class="hj"></div>
         <div id="billDue"></div>
-        <div id="billChecks"></div>
-        <div class="card">
-          <div class="h"><b>PEC meter vs Tesla</b><span>kWh bought per bill</span></div>
-          <svg class="mini" id="meterChart" viewBox="0 0 310 150"></svg>
-          <div class="legend" style="justify-content:flex-start"><span><i style="background:rgba(196,162,255,.35)"></i>PEC billed</span><span><i style="background:var(--grid)"></i>Tesla measured</span><span><i style="background:var(--out)"></i>&gt;5% apart</span></div>
+        <div class="c-card" id="billListCard">
+          <div class="c-head"><h5>Your bills</h5><span class="c-fig" id="billCount">—</span></div>
+          <div class="c-parts" id="billList"></div>
+          <div class="c-btns"><button class="c-btn line" id="billAll">All</button><button class="c-btn soft c-acc-grid" data-addbill="1"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add a PEC bill</button></div>
         </div>
-        <div class="card">
-          <div class="h"><b>Where your last bill went</b><span id="wfNote">vs. no solar</span></div>
-          <svg class="mini" id="waterfall" viewBox="0 0 310 190"></svg>
-        </div>
-        <div class="card">
-          <div class="h"><b>This billing cycle</b><span id="cycNote">—</span></div>
-          <div class="cyc"><i id="cycBar" style="width:0"></i></div><div class="cycl"><span id="cycFrom">—</span><span>today</span><span id="cycTo">—</span></div>
-          <div class="kv" id="cycKv"></div>
-        </div>
-        <div class="card">
-          <div class="h"><b>Monthly cost</b><span>Tesla usage × your PEC rates</span></div>
-          <svg class="mini" id="billChart" viewBox="0 0 310 130"></svg>
-          <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Paid (est.)</span><span><i style="background:rgba(255,255,255,.2)"></i>Without solar + Powerwall</span></div>
-          <button class="link" data-addbill="1">+ Add a PEC bill</button>
-        </div>
-      </section>
-
-      <!-- ================= PANELS ================= -->
-      <section class="view" id="v-roof">
-        <div class="hello"><div><h3>Panels</h3><p><span>30 × 320 W · 9.6 kW DC · faces 244°</span></p></div><div class="wx"><b id="rfKw">—</b>kW right now</div></div>
-        <div class="card">
-          <div class="h"><b>Live roof</b><span>drag to rotate</span></div>
-          <div class="roof3d" id="roof"><div class="roofhud" id="roofHud">—</div></div>
-          <div class="legend" style="justify-content:flex-start">Output<span class="ramp"></span><span>0 → peak</span><span class="togs"><button class="chip tog pp" id="roofPP" aria-pressed="false" hidden><i></i><span>Per panel</span></button><button class="chip tog" id="roofBars" aria-pressed="false"><i></i>Hour bars</button></span></div>
-          <div class="legend ppk" id="roofPPKey" style="justify-content:flex-start"><span>vs median now</span><span>−15%</span><span class="dramp"></span><span>+10%</span><span>· ±5% no tint · tap a panel</span></div>
-          <div class="legend bl" id="roofBarsKey" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Produced</span><span><i style="background:rgba(255,255,255,.25)"></i>Expected from sunlight</span><span>hourly means</span></div>
-        </div>
-        <div class="card">
-          <div class="h"><b>Performance vs sunlight</b><span>last 30 days</span></div>
-          <svg class="mini" id="prChart" viewBox="0 0 310 150"></svg>
-          <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Produced</span><span><i style="background:rgba(255,255,255,.25)"></i>Expected from sunlight</span></div>
-          <p id="prTxt">—</p>
-          <div class="kv">
-            <span>Output at full sun · last 30 days · heat-corrected</span><b id="wrNow">—</b>
-            <span>SunPower warranty floor · <span id="wrYear">year —</span></span><b id="wrFloor">—</b>
-            <span>AC floor for the full 25 years</span><b id="wrAc">—</b>
+        <div class="c-card" id="billAnalysis">
+          <div class="c-head"><h5>Bill analysis</h5><span id="billBadge" style="margin-left:auto"></span></div>
+          <div id="billChecks"></div>
+          <div class="c-seg wide sm" id="billSeg" style="--n:4;--i:0" role="group" aria-label="Bill analysis"><button class="on" data-b="meter" aria-pressed="true">Meter</button><button data-b="wf" aria-pressed="false">Waterfall</button><button data-b="cycle" aria-pressed="false">Cycle</button><button data-b="monthly" aria-pressed="false">Monthly</button></div>
+          <div class="card bpane" data-pane="meter">
+            <div class="h"><b>PEC meter vs Tesla</b><span>kWh bought per bill</span></div>
+            <svg class="mini" id="meterChart" viewBox="0 0 310 150"></svg>
+            <div class="c-dl"><span class="c-acc-grid"><i></i>PEC billed</span><span class="c-acc-home"><i></i>Tesla measured</span><span class="c-acc-out"><i></i>&gt;5% apart</span></div>
           </div>
-        </div>
-        <div class="card ph" id="panelHealth" hidden></div>
-        <div class="card">
-          <div class="h"><b>Cleaning check</b><span class="badge g" id="cleanBadge">—</span></div>
-          <div class="cleanrow"><svg width="84" height="84" viewBox="0 0 84 84" id="cleanRing"></svg><p id="cleanTxt">—</p></div>
-          <div class="kv">
-            <span>Below clean · last 3 clear days</span><b id="clLoss">—</b>
-            <span>Clean level</span><b id="clRef">—</b>
-            <span>Last rain of 5 mm or more</span><b id="clRain">—</b>
-            <span>Next rain of 5 mm or more</span><b id="clNext">—</b>
-            <span>Value of the gap</span><b id="clCost">—</b>
+          <div class="card bpane" data-pane="wf" hidden>
+            <div class="h"><b>Where your last bill went</b><span id="wfNote">vs. no solar</span></div>
+            <svg class="mini" id="waterfall" viewBox="0 0 310 190"></svg>
           </div>
-          <svg id="clChart" viewBox="0 0 330 140" style="width:100%;margin-top:12px" hidden></svg>
-          <div class="sl-key" id="clKey" hidden><span><i style="background:#ffd27a"></i>clear-day output per unit of sun</span><span><i style="background:#6cc4ff"></i>rain ≥ 5 mm</span><span><i style="background:#4ef0a6"></i>clean level</span></div>
-          <button class="link" id="cleaned">✓ I cleaned the panels</button>
-        </div>
-        <div class="card">
-          <div class="h"><b>About panel-level data</b><span class="chip">system-level</span></div>
-          <p>Each of your 30 SunPower panels has its own Enphase IQ7XS microinverter, so there are no strings: every panel tracks its own maximum power point and tops out at 315 W AC. Tesla's meter only sees the array's total, so Solstice compares that total against the sunlight hitting your roof, which is enough to catch dust, shading changes or a failed section of the array. Per-panel readings would need the SunPower monitoring box (PVS) on your wall.</p>
+          <div class="card bpane" data-pane="cycle" hidden>
+            <div class="h"><b>This billing cycle</b><span id="cycNote">—</span></div>
+            <div class="cyc"><i id="cycBar" style="width:0"></i></div><div class="cycl"><span id="cycFrom">—</span><span>today</span><span id="cycTo">—</span></div>
+            <div class="c-kv" id="cycKv"></div>
+          </div>
+          <div class="card bpane" data-pane="monthly" hidden>
+            <div class="h"><b>Monthly cost</b><span>Tesla usage × your PEC rates</span></div>
+            <svg class="mini" id="billChart" viewBox="0 0 310 130"></svg>
+            <div class="c-dl"><span class="c-acc-solar"><i></i>paid (est.)</span><span style="--acc:var(--c-fill-2)"><i></i>without solar + Powerwall</span></div>
+          </div>
         </div>
       </section>
 
-      <!-- ================= INSIGHTS ================= -->
-      <section class="view" id="v-ins">
-        <div class="hello"><div><h3>Insights</h3><p>From your real data</p></div><div class="wx"><b id="insToday">—</b>kWh today</div></div>
-        <div class="seg" id="insSeg"><button class="on" data-p="today">Today</button><button data-p="appl">Appliances</button><button data-p="plan">Planner</button><button data-p="home">Home</button></div>
-
-        <div class="panel on" id="ip-today">
-          <div class="card">
-            <div class="h"><b>Your day in loads</b><span>drag to spin · tap an hour</span></div>
-            <div class="ring3d" id="dayRing"><div class="readout" id="drRead"><b>—</b><small>loading…</small></div><div class="hint"></div></div>
-            <div class="modes" id="drModes"><button class="on" data-m="now">As built</button><button data-m="pool">Smarter pool</button><button data-m="panels">+8 panels</button></div>
-            <div class="legend" style="margin-top:10px"><span><i style="background:#6cc4ff"></i>Pool pump</span><span><i style="background:#ff9e66"></i>AC (est.)</span><span><i style="background:#8d93a8"></i>Everything else</span><span><i style="background:#ffc15e"></i>Solar</span></div>
-            <p id="drTxt">—</p>
-          </div>
-          <div class="sect">Worth knowing</div>
-          <div class="strip" id="alerts"></div>
+      <!-- ================= SYSTEMS (approved mockup al-ia v2, frames 9–13b): Home · Solar · Powerwall · Pool · AC ================= -->
+      <section class="view" id="v-sys">
+        <div class="hello">
+          <div><h3>Systems</h3><p><span class="sync" id="sysSync"></span><span id="sysSub">Home · today so far</span></p></div>
+          <div class="wx" id="sysFig"><b><span class="c-skel skel-in" style="width:46px;height:22px"></span></b><span id="sysFigL"></span></div>
+        </div>
+        <div class="c-seg sys c-acc-house" id="sysSeg" role="tablist" aria-label="Systems" style="--n:5;--i:0">
+          <button role="tab" data-seg="home" class="on" aria-selected="true" aria-controls="sp-home"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/></svg>Home</button>
+          <button role="tab" data-seg="solar" aria-selected="false" aria-controls="sp-solar"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>Solar</button>
+          <button role="tab" data-seg="powerwall" aria-selected="false" aria-controls="sp-powerwall"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="4.5" width="11" height="17" rx="3"/><path d="M10 2.5h4"/><path d="M9.5 17.5h5M9.5 14h5"/></svg>Powerwall</button>
+          <button role="tab" data-seg="pool" aria-selected="false" aria-controls="sp-pool"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8.5c1.6 0 1.6-1.6 3.2-1.6s1.6 1.6 3.2 1.6 1.6-1.6 3.2-1.6 1.6 1.6 3.2 1.6 1.6-1.6 3.2-1.6 1.6 1.6 3.2 1.6"/><path d="M2.5 13.5c1.6 0 1.6-1.6 3.2-1.6s1.6 1.6 3.2 1.6 1.6-1.6 3.2-1.6 1.6 1.6 3.2 1.6 1.6-1.6 3.2-1.6 1.6 1.6 3.2 1.6"/><path d="M2.5 18.5c1.6 0 1.6-1.6 3.2-1.6s1.6 1.6 3.2 1.6 1.6-1.6 3.2-1.6 1.6 1.6 3.2 1.6 1.6-1.6 3.2-1.6 1.6 1.6 3.2 1.6"/></svg>Pool</button>
+          <button role="tab" data-seg="ac" aria-selected="false" aria-controls="sp-ac"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5v19M3.8 7.2l16.4 9.6M20.2 7.2 3.8 16.8"/><path d="m9.5 4 2.5 2 2.5-2M9.5 20l2.5-2 2.5 2M4 10.5l3.2-.6L6 7M20 13.5l-3.2.6L18 17M4 13.5l3.2.6L6 17M20 10.5l-3.2-.6L18 7"/></svg>AC</button>
         </div>
 
-        <div class="panel" id="ip-appl">
-          <div class="apps" id="applStrip"></div>
-          <div id="applPool">
-          <div class="card"><div class="h"><b>Pool &amp; spa · live</b><span class="badge" id="poolBadge">connecting…</span></div>
-            <div class="ring3d pool3d" id="poolTwin"><div class="hud" id="poolHud">—</div></div>
-            <div class="circ" id="poolCirc" data-guest></div>
-            <div class="pc-grid" id="poolCtl" data-owner></div>
-            <div class="pc-row" id="poolBoost" data-owner></div>
-            <div class="two" id="poolStats"></div>
-            <p class="fine" id="poolNote"></p>
-          </div>
-          <div class="card" id="pwCard" data-owner hidden>
-            <div class="h"><b>Water</b><span class="badge" id="pwBadge">—</span></div>
-            <div class="pw-vals" id="pwVals" role="button" tabindex="0" aria-label="Water history"></div>
-            <div class="pw-line"><span id="pwLine">—</span><button class="pw-btn" id="pwLog">Log a test</button></div>
-            <p class="fine" id="pwNote" hidden></p>
-            <div id="pwOffer"></div>
-          </div>
-          <div class="card" id="poolSched" hidden>
-            <div class="h"><b>Turnover planner</b><span class="badge g" id="plMode">Autopilot</span></div>
-            <div id="plClear"></div>
-            <div class="pl-goal"><div class="pl-ring"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="9"/><circle id="plArc" cx="50" cy="50" r="42" fill="none" stroke="#6cc4ff" stroke-width="9" stroke-linecap="round"/></svg><div class="c"><div><b id="plMoved">—</b><small id="plOf"></small></div></div></div>
-              <div class="gt" id="plTxt"></div></div>
-            <div class="pl-day" id="plDay"></div>
-            <div class="pl-tlab"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>12a</span></div>
-            <div class="pl-list" id="plList"></div>
-            <button class="link" id="plEdit" data-owner>Edit schedule</button>
-            <div data-owner><div class="pc-lbl">Goal</div>
-              <div class="pc-rpm"><div class="bt">Turnovers a day<small id="plGal"></small></div><div class="stp"><button id="plGdn" aria-label="Fewer">−</button><b id="plGoal"></b><button id="plGup" aria-label="More">+</button></div></div>
-              <div class="pc-rpm"><div class="bt">Daily skim hour<small>High Speed at its saved speed</small></div><div class="stp"><button id="plSdn" aria-label="Less">−</button><b id="plSkim"></b><button id="plSup" aria-label="More">+</button></div></div></div>
-            <div class="pl-nums" id="plNums"></div>
-            <p class="fine" id="plNote" style="margin-top:10px"></p>
-            <div id="plLearn" data-owner></div>
-          </div>
-          <div class="card auto" id="poolAuto" hidden>
-            <div class="h"><b>Autopilot</b><span class="badge g" id="autoBadge" data-guest>Autopilot</span></div>
-            <div class="modes-row" id="autoMode" role="group" aria-label="Pool Autopilot"><button data-m="off">Off</button><button data-m="suggest">Suggest</button><button data-m="auto">Auto</button></div>
-            <div class="status" id="autoStatus"></div>
-            <div class="signals" id="autoSignals"></div>
-            <div class="wkhead"><span>Next 7 days</span><b id="autoTomorrow"></b></div>
-            <svg class="mini" viewBox="0 0 310 110" id="autoWeek"></svg>
-            <div class="legend" style="justify-content:flex-start"><span><i style="background:#6cc4ff"></i>Filter hours</span><span><i style="background:#ff7a66"></i>Skim boost</span><span><i style="background:rgba(255,193,94,.6)"></i>Sun forecast</span></div>
-            <div id="autoPending"></div>
-            <div class="rules"><span id="ruleGoal">goal: 3 turnovers</span><span>4–16 h/day</span><span>1,200–2,400 RPM</span><span>+1 h water ≥ 85°</span><span>under the solar curve</span><span>one change a day</span><span>+1 h after rain</span><span>+2 h heat wave</span><span>+1 h heavy use</span><span>−1 h below 70°F</span><span>freeze: hands off</span></div>
-            <div class="tline" id="autoLog"></div>
-          </div>
-          <div class="season" id="poolSeason" hidden></div>
-          <p class="fine" id="poolSeasonNote" hidden>kWh per day by season, the baseline Autopilot adjusts from each day’s data.</p>
-          </div>
-          <div id="applAc" hidden>
-            <div class="card" id="acComfortCard" data-owner hidden>
-              <div class="h"><b>Comfort</b><button class="ag-edit" id="ctEdit">Edit</button></div>
-              <div class="ag-two"><div><small>Day</small><b id="ctDay">—</b><span id="ctDaySub"></span></div><div><small>Night</small><b id="ctNight">—</b><span id="ctNightSub"></span></div></div>
-              <p class="ag-line" id="ctLine"></p>
-              <div class="ag-nudge"><button class="cold" id="ctCold"><i>❄</i> Too cold</button><button class="warm" id="ctWarm"><i>☀</i> Too warm</button></div>
+        <!-- Systems › Home (frame 9) -->
+        <div class="sys-page on" id="sp-home" role="tabpanel" aria-label="Home">
+          <div class="c-card flush" id="homeLive">
+            <div class="c-sys static c-acc-house" id="homeSys"><span class="c-skel" style="width:40px;height:40px;border-radius:12px"></span><div><div class="c-skel" style="width:60%;height:14px"></div><div class="c-skel" style="width:85%;height:10px;margin-top:8px"></div><div class="c-skel r" style="height:6px;margin-top:10px"></div></div><span></span></div>
+            <div class="sys-scene">
+              <div class="ring3d sys3d" id="dayRing"><div class="readout" id="drRead"><b>—</b><small>loading…</small></div><div class="hint"></div></div>
+              <div class="c-dl" id="drLeg"></div>
+              <div class="c-seg wide sm" id="drModes" style="--n:3;--i:0" role="group" aria-label="Day ring"><button class="on" data-m="now" aria-pressed="true">As built</button><button data-m="pool" aria-pressed="false">Smarter pool</button><button data-m="panels" aria-pressed="false">+8 panels</button></div>
+              <p class="c-fine" id="drTxt">—</p>
             </div>
-            <div class="card tstat" id="acTstat" data-owner hidden>
-              <div class="h"><b>Thermostat</b><span class="badge g" id="tsBadge">—</span></div>
-              <div class="dial"><button class="step" id="tsDown" aria-label="One degree cooler">−</button><div class="sp"><small id="tsLabel">Cool to</small><b id="tsVal">—</b><span id="tsLine">—</span></div><button class="step" id="tsUp" aria-label="One degree warmer">+</button></div>
-              <div class="seg2 wide" id="tsMode" role="group" aria-label="Thermostat mode"><button data-m="COOL">Cool</button><button data-m="HEAT">Heat</button><button data-m="HEATCOOL">Heat · Cool</button><button data-m="OFF">Off</button></div>
-              <div class="xtra"><button id="tsEco" aria-pressed="false"><i></i>Eco</button><button id="tsFan" aria-pressed="false"><i></i>Fan <small id="tsFanT">off</small></button></div>
-              <div id="tsHold"></div>
-              <div id="tsSuggest"></div>
-              <div id="tsLearn"></div>
+          </div>
+
+          <div class="c-card" id="egCard" data-owner hidden>
+            <div class="c-head"><h5>Where your energy goes</h5></div>
+            <div class="c-seg wide sm" id="egRange" style="--n:3;--i:0" role="group" aria-label="Range"><button data-r="week" class="on" aria-pressed="true">7 days</button><button data-r="today" aria-pressed="false">Today</button><button data-r="month" aria-pressed="false">30 days</button></div>
+            <div class="c-hero"><b id="egTotal">—</b><span id="egSub">kWh a day · last 7 days</span></div>
+            <div class="c-stack" id="egBar"></div>
+            <div class="c-parts" id="egParts"></div>
+            <p class="c-fine">Tap Always-on for the overnight baseline.</p>
+          </div>
+          <div class="c-card" id="nightCard" data-guest>
+            <div class="c-head"><h5>Overnight baseline</h5></div>
+            <div id="nightBox">
+              <div class="c-head" style="min-height:0"><span class="c-fig" id="nightSub" style="margin-left:0">1–5 AM average</span></div>
+              <svg class="mini" id="nightChart" viewBox="0 0 310 110"></svg>
+              <div class="c-dl" id="nightKey" hidden><span class="c-acc-grid"><i></i>Always-on</span><span class="c-acc-ac"><i></i>AC</span><span class="c-acc-pool"><i></i>Pool pump</span><span class="c-acc-mute"><i></i>Other / not split</span></div>
+              <div class="ob-sum" id="nightSum" hidden></div>
+              <p class="c-sum" id="nightTxt">—</p>
             </div>
-            <div class="card"><div class="h"><b>AC · thermal twin</b><span class="badge" id="acBadge">—</span></div>
-              <div class="ring3d pool3d" id="acTwin"><div class="hud" id="acHud">—</div><div class="tlab" id="acLab"></div></div>
-              <div class="scrub"><span id="acScrubT">—</span><input type="range" id="acScrub" min="0" max="24" step=".25" value="12"><small>drag through today's plan</small></div>
-              <div class="two" id="acStats"></div>
-              <div class="seg2 presence" id="acPresence"></div>
-              <div class="psrc" id="acPsrc" data-owner hidden></div>
-              <p class="fine" id="acNote" style="margin-top:8px"></p>
-            </div>
-            <div class="card" id="acLink" hidden><div class="h"><b>Link Nest</b><span>one-time</span></div><p id="acLinkTxt"></p><a class="primary" id="acLinkBtn" href="/auth/google">Sign in with Google</a></div>
-            <div class="card sched" id="acPlan" hidden>
-              <div class="h"><b>Today: Nest vs Solstice</b><button class="bandbtn" id="acBand" aria-label="Edit the comfort band">—</button></div>
-              <div class="comfort"><svg viewBox="0 0 353 170" id="acComfort"></svg></div>
-              <div class="legend" style="justify-content:flex-start"><span><i style="background:#ff9e66"></i>Outdoor</span><span><i style="background:rgba(255,255,255,.7)"></i>Indoor</span><span><i style="background:rgba(108,196,255,.6)"></i>Nest setpoint</span><span><i style="background:#4ef0a6"></i>Solstice plan</span><span><i style="background:rgba(255,193,94,.5)"></i>Solar</span></div>
-              <div class="deltas" id="acDeltas"></div>
-              <div class="reasons" id="acWhy"></div><div class="dots" id="acDots"></div>
-              <div class="kv" id="acSteps" style="display:none"></div>
-              <div id="acActions"></div>
-            </div>
-            <div class="card auto" id="acAuto" hidden>
-              <div class="h"><b>Autopilot</b><span class="badge g" id="acAutoBadge" data-guest>Autopilot</span></div>
-              <div class="modes-row" id="acMode" role="group" aria-label="AC Autopilot"><button data-m="off">Off</button><button data-m="suggest">Suggest</button><button data-m="auto">Auto</button></div>
-              <div class="status" id="acStatus"></div>
-              <div class="signals" id="acSignals"></div>
-              <div class="wkhead"><span>Next 7 days</span><b id="acTomorrow"></b></div>
-              <svg class="mini" viewBox="0 0 310 110" id="acWeek"></svg>
-              <div class="legend" style="justify-content:flex-start"><span><i style="background:#ff9e66"></i>High</span><span><i style="background:#4ef0a6"></i>Pre-cool depth</span></div>
-              <div class="rules"><span>comfort band</span><span>≤ 2° per step</span><span>pre-cool only on solar surplus</span><span>away target</span><span>night band</span><span>outage: hold coast</span><span>heat wave: start 11 AM</span><span>humidity ≥ 60%: no coast</span><span>heating: gentle only</span></div>
-              <div class="tline" id="acLog"></div>
-            </div>
+          </div>
+
+          <div class="c-card" id="acHeatCard">
+            <div class="c-head"><h5>Heat &amp; your AC</h5><span class="c-fig">80°F+ days</span></div>
+            <svg class="c-chart" id="acChart" viewBox="0 0 329 150" aria-label="Home kWh a day against the day's high, every 80°F+ day"></svg>
+            <p class="c-sum" id="acTxt">—</p>
+          </div>
+
+          <div class="c-card flush">
+            <div class="c-sys compact c-acc-solar" role="button" tabindex="0" id="planRow" aria-haspopup="dialog">
+              <span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/><circle cx="12" cy="12" r="9"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>What if you added…</b></div><div class="c-sys-l">+ panels · + Powerwalls · + usage</div></div><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></div>
+          </div>
+
+          <div class="c-card flush" id="learnCard" data-owner hidden>
+            <div class="c-head" style="padding:12px 16px 4px"><h5>How well Solstice knows your home</h5></div>
+            <p class="c-sum" id="lrHead" style="padding:0 16px 8px;margin:0"></p>
+            <div id="lrRows"></div>
+          </div>
+
+          <div class="c-card flush" id="tripsCard" data-owner hidden>
+            <div class="c-sys compact c-acc-vac" role="button" tabindex="0" id="tripsRow" aria-haspopup="dialog">
+              <span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15.5v-2l-7.5-4.5V4a1.5 1.5 0 0 0-3 0v5L3 13.5v2l7.5-2.2v4.4L8.5 19v1.5L12 19.5l3.5 1V19l-2-1.3v-4.4z"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Your trips</b></div><div class="c-sys-l" id="tripsLine">—</div></div><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></div>
+          </div>
+
+          <div class="c-card flush" id="alertsCard" hidden>
+            <div class="c-head" style="padding:12px 16px 4px"><h5>Worth knowing</h5><span class="c-fig" id="alertsFig"></span></div>
+            <div id="alerts"></div>
           </div>
         </div>
 
-        <div class="panel" id="ip-plan">
-          <div class="card" id="planner">
-            <div class="h"><b>What if you added…</b><span>the Day Ring morphs with these</span></div>
-            <div class="slider"><label>Solar panels <b id="aPv">+0</b></label><input type="range" id="rPv" min="0" max="20" step="2" value="8"><small id="aPvS">—</small></div>
-            <div class="slider"><label>Powerwalls <b id="aPw">+0</b></label><input type="range" id="rPw" min="0" max="2" step="1" value="0"><small id="aPwS">—</small></div>
-            <div class="slider"><label>New daily usage <b id="aUse">+0 kWh</b></label><input type="range" id="rUse" min="0" max="30" step="2" value="0"><small>EV, pool heater, heat pump… (added 5–11 PM)</small></div>
-            <div class="tiles" id="planTiles"></div>
-            <div class="rec" id="planRec">Calculating…</div>
-            <button class="link" id="planMore">Full comparison table</button>
-            <div class="cmp" id="cmp" hidden></div>
-            <p class="fine" id="planFine" hidden></p>
+        <!-- Systems › Solar (frame 10): the roof stays minimal (house, panels, Powerwalls) -->
+        <div class="sys-page" id="sp-solar" role="tabpanel" aria-label="Solar" hidden>
+          <div class="c-card flush" id="solarLive">
+            <div class="c-sys static c-acc-solar" id="solarSys"><span class="c-skel" style="width:40px;height:40px;border-radius:12px"></span><div><div class="c-skel" style="width:60%;height:14px"></div><div class="c-skel" style="width:85%;height:10px;margin-top:8px"></div><div class="c-skel r" style="height:6px;margin-top:10px"></div></div><span></span></div>
+            <div class="sys-scene">
+              <div class="c-seg wide sm c-acc-solar" id="roofSeg" style="--n:3;--i:0" role="group" aria-label="Roof overlay"><button class="on" data-r="out" aria-pressed="true">Output</button><button data-r="pp" id="roofPP" aria-pressed="false"><span>Per panel</span></button><button data-r="bars" id="roofBars" aria-pressed="false">Hour bars</button></div>
+              <div class="roof3d sys3d" id="roof"><div class="roofhud c-flab c-acc-solar" id="roofHud">—</div></div>
+              <div class="c-dl" id="roofOutKey"><span class="c-acc-solar"><i style="width:40px;background:linear-gradient(90deg,var(--c-fill-2),var(--solar))"></i>output 0 → peak</span><span class="c-fine" style="margin:0">drag to rotate</span></div>
+              <div class="c-dl ppk" id="roofPPKey"><span>vs median now</span><span>−15%</span><span class="dramp"></span><span>+10%</span><span>· ±5% no tint · tap a panel</span></div>
+              <div class="c-dl bl" id="roofBarsKey"><span class="c-acc-solar"><i></i>produced</span><span style="--acc:var(--text)"><i></i>expected from sunlight</span><span>hourly means</span></div>
+            </div>
           </div>
-          <div class="card"><div class="h"><b>Your system so far</b><span>installed Dec 2020</span></div><div class="rec" id="sysPay" style="margin-top:10px"></div></div>
+          <div class="c-tiles" id="solarTiles">
+            <div class="c-tile c-acc-solar"><div class="c-skel" style="width:70%;height:12px"></div><div class="c-skel" style="width:55%;height:30px;margin-top:10px"></div><div class="c-skel" style="height:30px;margin:10px -14px 0;border-radius:0"></div></div>
+            <div class="c-tile c-acc-solar"><div class="c-skel" style="width:70%;height:12px"></div><div class="c-skel" style="width:55%;height:30px;margin-top:10px"></div><div class="c-skel" style="height:30px;margin:10px -14px 0;border-radius:0"></div></div>
+          </div>
+          <div class="c-card" id="prCard">
+            <div class="c-head"><h5>Performance vs sunlight</h5><span class="c-fig">30 days</span></div>
+            <svg class="c-chart" id="prChart" viewBox="0 0 329 130" aria-label="Daily solar against what the day's sunlight should give"></svg>
+            <div class="c-dl"><span class="c-acc-solar"><i></i>produced</span><span style="--acc:var(--text)"><i></i>expected from sunlight</span><span class="c-acc-warn"><i></i>below the model</span></div>
+            <p class="c-sum" id="prTxt">—</p>
+            <div class="c-kv">
+              <span>Output at full sun · 30 days · heat-corrected</span><b id="wrNow">—</b>
+              <span>SunPower warranty floor · <span id="wrYear">year —</span></span><b id="wrFloor">—</b>
+              <span>AC floor for the full 25 years</span><b id="wrAc">—</b>
+            </div>
+          </div>
+          <div class="c-card c-disc c-acc-solar" id="panelHealth" hidden>
+            <div class="c-disc-h" role="button" tabindex="0" aria-expanded="false" aria-controls="phBody"><h5>Panel health</h5><span id="phBadge"></span><span class="c-fig" id="phFig">—</span><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></div>
+            <div class="c-sum" id="phSum">—</div>
+            <div class="c-disc-body ph" id="phBody" hidden></div>
+          </div>
+          <div class="c-card c-disc c-acc-solar" id="cleanCard">
+            <div class="c-disc-h" role="button" tabindex="0" aria-expanded="false" aria-controls="clBody"><h5>Cleaning check</h5><span class="c-badge" id="cleanBadge">—</span><span class="c-fig" id="cleanFig">—</span><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></div>
+            <div class="c-sum" id="cleanTxt">—</div>
+            <div class="c-disc-body" id="clBody" hidden>
+              <div class="cleanrow"><svg width="84" height="84" viewBox="0 0 84 84" id="cleanRing" aria-hidden="true"></svg>
+                <div class="c-kv" style="flex:1;margin:0">
+                  <span>Below clean · last 3 clear days</span><b id="clLoss">—</b>
+                  <span>Clean level</span><b id="clRef">—</b>
+                </div></div>
+              <div class="c-kv">
+                <span>Last rain of 5 mm or more</span><b id="clRain">—</b>
+                <span>Next rain of 5 mm or more</span><b id="clNext">—</b>
+                <span>Value of the gap</span><b id="clCost">—</b>
+              </div>
+              <svg id="clChart" viewBox="0 0 330 140" style="width:100%;margin-top:12px" hidden></svg>
+              <div class="c-dl" id="clKey" hidden><span class="c-acc-solar"><i></i>clear-day output per unit of sun</span><span class="c-acc-home"><i></i>rain ≥ 5 mm</span><span class="c-acc-batt"><i></i>clean level</span></div>
+              <div class="c-btns"><button class="c-btn line block" id="cleaned">I cleaned the panels</button></div>
+            </div>
+          </div>
         </div>
 
-        <div class="panel" id="ip-home">
-          <div class="card">
-            <div class="h"><b>Heat &amp; your AC</b><span>every 80°F+ day · real highs</span></div>
-            <svg class="mini" id="acChart" viewBox="0 0 310 170"></svg>
-            <p id="acTxt">—</p>
+        <!-- Systems › Powerwall (frame 11) -->
+        <div class="sys-page" id="sp-powerwall" role="tabpanel" aria-label="Powerwall" hidden>
+          <div class="c-card flush" id="pwLive">
+            <div class="c-sys static c-acc-batt" id="pwSys"><span class="c-skel" style="width:40px;height:40px;border-radius:12px"></span><div><div class="c-skel" style="width:60%;height:14px"></div><div class="c-skel" style="width:85%;height:10px;margin-top:8px"></div><div class="c-skel r" style="height:6px;margin-top:10px"></div></div><span></span></div>
+            <div class="sys-scene">
+              <div class="c-hero" style="margin-top:4px"><b id="pwHero"><span class="c-skel skel-in" style="width:64px;height:36px"></span></b><span id="pwHeroL"></span></div>
+              <div class="c-units" id="pwUnitBars"></div>
+              <div class="c-kv" style="margin-top:10px" id="pwKv"></div>
+              <p class="c-fine" id="pwSysModel"></p>
+            </div>
           </div>
-          <div class="card eg" id="egCard" data-owner hidden>
-            <div class="h"><b>Where your energy goes</b><span class="seg2" id="egRange" role="group" aria-label="Range"><button data-r="week" class="on">7 days</button><button data-r="today">Today</button><button data-r="month">30 days</button></span></div>
-            <div class="total"><b id="egTotal">—</b><span id="egSub">kWh a day · last 7 days</span></div>
-            <div class="bar" id="egBar"></div>
-            <div class="parts" id="egParts"></div>
+          <div class="c-tiles" id="pwTiles">
+            <div class="c-tile c-acc-batt"><div class="c-skel" style="width:70%;height:12px"></div><div class="c-skel" style="width:55%;height:30px;margin-top:10px"></div><div class="c-skel" style="height:30px;margin:10px -14px 0;border-radius:0"></div></div>
+            <div class="c-tile c-acc-warn"><div class="c-skel" style="width:70%;height:12px"></div><div class="c-skel" style="width:55%;height:30px;margin-top:10px"></div><div class="c-skel" style="height:30px;margin:10px -14px 0;border-radius:0"></div></div>
           </div>
-          <div class="card">
-            <div class="h"><b>Overnight baseline</b><span id="nightSub">1–5 AM average</span></div>
-            <svg class="mini" id="nightChart" viewBox="0 0 310 110"></svg>
-            <div class="ob-key" id="nightKey" hidden><span><i style="background:#c4a2ff"></i>Always-on</span><span><i style="background:#f4a46e"></i>AC</span><span><i style="background:#7cc4ff"></i>Pool pump</span><span><i style="background:rgba(255,255,255,.22)"></i>Other / not split</span></div>
-            <div class="ob-sum" id="nightSum" hidden></div>
-            <p id="nightTxt">—</p>
+          <div class="c-card flush" id="sysRules" data-owner>
+            <div class="c-head" style="padding:12px 16px 2px"><h5>Rules</h5><span class="c-fig" id="pwrFig">—</span></div>
+            <div id="pwrRows"><div class="c-sys static"><span class="c-skel" style="width:32px;height:32px;border-radius:10px"></span><div><div class="c-skel" style="width:60%;height:14px"></div><div class="c-skel" style="width:85%;height:10px;margin-top:8px"></div></div><span></span></div></div>
+            <div id="pwrScope"></div>
           </div>
-          <div class="card" id="spCard" data-owner hidden>
-            <div class="h"><b>Spare solar</b><span>last 12 months</span></div>
-            <div class="sp-big"><b id="spDays">—</b><span id="spSub"></span></div>
-            <div class="sp-bars" id="spBars"></div>
-            <div class="sp-now" id="spNow"></div>
-          </div>
-          <div class="card" id="bcCard" data-owner hidden>
-            <div class="h"><b>Powerwall capacity</b><span id="bcTag">measured</span></div>
-            <div class="bc-big"><b id="bcKwh">—</b><span id="bcSub"></span></div>
-            <div class="bc-meter"><i id="bcFill"></i><s style="left:70%"></s></div>
-            <div class="bc-lab"><span>0</span><em>70% warranty floor</em><span id="bcName">27 kWh</span></div>
+          <div id="sysOutageSlot"></div>
+          <div class="c-card c-acc-batt" id="bcCard" data-owner hidden>
+            <div class="c-head"><h5>Capacity</h5><span id="bcTag" style="margin-left:auto"></span></div>
+            <div class="c-hero"><b id="bcKwh">—</b><span id="bcSub"></span></div>
+            <div class="c-meter"><i id="bcFill" style="width:0"></i><s style="left:70%"></s></div>
+            <div class="c-meter-lab"><span style="left:0">0</span><span style="left:70%">70% floor</span><span style="left:100%" id="bcName">— kWh</span></div>
             <div class="bc-months" id="bcMonths"></div>
-            <p class="fine" id="bcTxt" style="margin-top:10px"></p>
+            <p class="c-fine" id="bcTxt"></p>
           </div>
-          <div class="card">
-            <div class="h"><b>Data health</b><span class="badge g" id="dhBadge">—</span></div>
-            <div id="dhList" style="margin-top:8px"></div>
+          <div class="c-card" id="spCard" data-owner hidden>
+            <div class="c-head"><h5>Spare solar</h5><span class="c-fig">last 12 months</span></div>
+            <div class="c-hero"><b id="spDays">—</b><span id="spSub"></span></div>
+            <svg class="c-chart" id="spBars" viewBox="0 0 329 116" aria-label="Days with spare solar, each month"></svg>
+            <p class="c-fine" id="spNow"></p>
           </div>
+        </div>
+
+        <!-- Systems › Pool (frames 12, 12b): Live → Controls → Pool Autopilot → Water tests -->
+        <div class="sys-page" id="sp-pool" role="tabpanel" aria-label="Pool" hidden>
+          <div class="c-card flush" id="poolLive">
+            <div class="c-sys static c-acc-pool" id="poolSys"><span class="c-skel" style="width:40px;height:40px;border-radius:12px"></span><div><div class="c-skel" style="width:60%;height:14px"></div><div class="c-skel" style="width:85%;height:10px;margin-top:8px"></div><div class="c-skel r" style="height:6px;margin-top:10px"></div></div><span></span></div>
+            <div class="sys-scene">
+              <div class="ring3d pool3d sys3d" id="poolTwin"><div class="hud" id="poolHud">—</div></div>
+              <div class="c-chips" id="poolCirc" data-guest></div>
+            </div>
+          </div>
+          <div class="c-tiles" id="poolTiles">
+            <div class="c-tile c-acc-pool"><div class="c-skel" style="width:70%;height:12px"></div><div class="c-skel" style="width:55%;height:30px;margin-top:10px"></div><div class="c-skel" style="height:30px;margin:10px -14px 0;border-radius:0"></div></div>
+            <div class="c-tile c-acc-pool"><div class="c-skel" style="width:70%;height:12px"></div><div class="c-skel" style="width:55%;height:30px;margin-top:10px"></div><div class="c-skel" style="height:30px;margin:10px -14px 0;border-radius:0"></div></div>
+          </div>
+          <div class="c-card" id="sysPoolCtl" data-owner>
+            <div class="c-head"><h5>Controls</h5><span id="poolBadge" style="margin-left:auto"></span></div>
+            <div id="poolEquip"></div>
+          </div>
+          <div class="c-card c-disc c-acc-batt" id="poolAuto" hidden>
+            <div class="c-disc-h" role="button" tabindex="0" aria-expanded="false" aria-controls="poolAutoBody"><h5>Pool Autopilot</h5><span id="autoBadge"></span><span class="c-fig" id="autoFig">—</span><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></div>
+            <div class="c-sum" id="autoSum">—</div>
+            <div class="c-disc-body" id="poolAutoBody" hidden>
+              <div id="autoMode" data-owner></div>
+              <p class="c-fine" id="autoStatus"></p>
+              <div id="plClear"></div>
+              <div id="autoPending"></div>
+              <div class="c-well">
+                <div style="display:flex;align-items:center;gap:12px"><div class="c-ring c-acc-pool" id="plRing"><svg viewBox="0 0 40 40"><circle class="t" cx="20" cy="20" r="16"/><circle class="v" id="plArc" cx="20" cy="20" r="16" stroke-dasharray="0 100.5"/></svg><b id="plMoved">—</b></div>
+                  <p class="c-sum" style="margin:0" id="plTxt">—</p></div>
+                <div class="c-acc-pool" style="margin-top:12px"><div class="c-plan" id="plDay" style="--now:0%"></div><div class="c-plan-lab"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>12a</span></div></div>
+                <div class="c-dl" id="plList"></div>
+              </div>
+              <div class="c-rows" style="margin:12px -16px -16px">
+                <div class="c-sys compact c-acc-pool" role="button" tabindex="0" data-row aria-expanded="false"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Schedule &amp; goal</b></div><div class="c-sys-l" id="plGoalLine">—</div></div><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></div>
+                <div class="c-inner" hidden>
+                  <div data-owner>
+                    <div class="c-stepper"><div>Turnovers a day<small id="plGal">goal</small></div><button class="c-step" id="plGdn" aria-label="Fewer turnovers">−</button><b id="plGoal">—</b><button class="c-step" id="plGup" aria-label="More turnovers">+</button></div>
+                    <div class="c-stepper"><div>Daily skim hour<small>High Speed at its saved speed</small></div><button class="c-step" id="plSdn" aria-label="Shorter skim">−</button><b id="plSkim">—</b><button class="c-step" id="plSup" aria-label="Longer skim">+</button></div>
+                    <div id="plGoalStage"></div>
+                    <div class="c-btns"><button class="c-btn line block" id="plEdit">Edit schedule</button></div>
+                    <p class="c-fine">Saving the schedule switches Auto to Suggest.</p>
+                  </div>
+                  <div class="pl-nums" id="plNums"></div>
+                  <div id="plLearn" data-owner></div>
+                  <p class="c-fine" id="plNote"></p>
+                  <div class="c-chips" id="poolSeason" hidden></div>
+                  <p class="c-fine" id="poolSeasonNote" hidden>kWh per day by season, the baseline Autopilot adjusts from each day’s data.</p>
+                  <div class="c-modeline c-acc-mute" id="plFilter"></div>
+                </div>
+                <div class="c-sys compact c-acc-solar" role="button" tabindex="0" data-row aria-expanded="false"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V4M4 20h16"/><path d="m7 15 4-4 3 3 5-6"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Why</b></div><div class="c-sys-l">6 signals · the next 7 days</div></div><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></div>
+                <div class="c-inner" hidden>
+                  <div class="c-gauge" id="autoSignals"></div>
+                  <div class="c-head" style="margin-top:14px"><h5 style="font-size:13px">Next 7 days</h5><span class="c-fig" id="autoTomorrow"></span></div>
+                  <svg class="c-chart" viewBox="0 0 310 110" id="autoWeek" aria-label="Pump hours planned for the next 7 days"></svg>
+                  <div class="c-dl"><span class="c-acc-pool"><i></i>filter hours</span><span class="c-acc-warn"><i></i>skim boost</span><span class="c-acc-solar"><i></i>sun forecast</span></div>
+                </div>
+                <div class="c-sys compact c-acc-grid" role="button" tabindex="0" data-row aria-expanded="false"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2.2 2.2L15.5 10"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Rules</b></div><div class="c-sys-l">11 limits</div></div><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></div>
+                <div class="c-inner" hidden>
+                  <div class="c-chips" style="margin-top:0"><span id="ruleGoal">goal: 3 turnovers</span><span>4–16 h/day</span><span>1,200–2,400 RPM</span><span>+1 h water ≥ 85°</span><span>under the solar curve</span><span>one change a day</span><span>+1 h after rain</span><span>+2 h heat wave</span><span>+1 h heavy use</span><span>−1 h below 70°F</span><span>freeze: hands off</span></div>
+                </div>
+                <div class="c-sys compact c-acc-mute" role="button" tabindex="0" id="autoLogRow" aria-haspopup="dialog"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Log</b></div><div class="c-sys-l" id="autoLogLine">opens the timeline</div></div><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></div>
+              </div>
+            </div>
+          </div>
+          <div class="c-card flush" id="pwCard" data-owner hidden>
+            <div class="c-sys compact c-acc-pool" role="button" tabindex="0" id="pwVals" aria-label="Water tests history"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5s-6 6.5-6 10.5a6 6 0 0 0 12 0c0-4-6-10.5-6-10.5z"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Water tests</b><span id="pwBadge"></span></div><div class="c-sys-l" id="pwLine">—</div></div><button class="c-btn sm soft c-acc-pool" id="pwLog">Log a test</button></div>
+            <p class="c-fine" id="pwNote" style="padding:0 16px 12px;margin:0" hidden></p>
+            <div id="pwOffer" style="padding:0 16px"></div>
+          </div>
+          <p class="c-fine" id="poolNote" style="padding:0 4px"></p>
+        </div>
+
+        <!-- Systems › AC (frames 13, 13b): Live → Thermostat → AC Autopilot -->
+        <div class="sys-page" id="sp-ac" role="tabpanel" aria-label="AC" hidden>
+          <div class="c-card flush" id="acLive">
+            <div class="c-sys static c-acc-ac" id="acSys"><span class="c-skel" style="width:40px;height:40px;border-radius:12px"></span><div><div class="c-skel" style="width:60%;height:14px"></div><div class="c-skel" style="width:85%;height:10px;margin-top:8px"></div><div class="c-skel r" style="height:6px;margin-top:10px"></div></div><span></span></div>
+            <div class="sys-scene">
+              <div class="ring3d pool3d sys3d" id="acTwin"><div class="hud" id="acHud">—</div><div class="tlab" id="acLab"></div></div>
+              <div class="c-scrub twin-row">
+                <button class="c-play" id="acPlay" aria-label="Play today's plan"><svg class="pl" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" fill="currentColor"/></svg><svg class="pa" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></svg></button>
+                <input type="range" id="acScrub" min="0" max="24" step=".25" value="12" aria-label="Time of day in today's plan">
+                <time class="tm" id="acScrubT">—</time>
+              </div>
+            </div>
+          </div>
+          <div class="c-tiles" id="acTiles">
+            <div class="c-tile c-acc-ac"><div class="c-skel" style="width:70%;height:12px"></div><div class="c-skel" style="width:55%;height:30px;margin-top:10px"></div><div class="c-skel" style="height:30px;margin:10px -14px 0;border-radius:0"></div></div>
+            <div class="c-tile c-acc-ac"><div class="c-skel" style="width:70%;height:12px"></div><div class="c-skel" style="width:55%;height:30px;margin-top:10px"></div><div class="c-skel" style="height:30px;margin:10px -14px 0;border-radius:0"></div></div>
+          </div>
+          <div class="c-card" id="acLink" hidden><div class="c-head"><h5>Link Nest</h5><span class="c-fig">one-time</span></div><p class="c-sum" id="acLinkTxt"></p><div class="c-btns"><a class="c-btn pri c-acc-ac block" id="acLinkBtn" href="/auth/google">Sign in with Google</a></div></div>
+          <div class="c-card" id="acTstat" data-owner hidden>
+            <div class="c-head"><h5>Thermostat</h5><span id="tsBadge" style="margin-left:auto"></span></div>
+            <div id="acPanel"></div>
+            <p class="c-fine" id="acPsrc" hidden></p>
+            <div id="tsSuggest"></div>
+            <div id="tsLearn"></div>
+          </div>
+          <div class="c-card c-disc c-acc-batt" id="acAuto" hidden>
+            <div class="c-disc-h" role="button" tabindex="0" aria-expanded="false" aria-controls="acAutoBody"><h5>AC Autopilot</h5><span id="acAutoBadge"></span><span class="c-fig" id="acFig">—</span><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></div>
+            <div class="c-sum" id="acSum">—</div>
+            <div class="c-disc-body" id="acAutoBody" hidden>
+              <div id="acMode" data-owner></div>
+              <p class="c-fine" id="acStatus"></p>
+              <div class="c-well" id="acPlan">
+                <div class="c-head"><h5>Today · Nest vs Solstice</h5></div>
+                <svg class="c-chart" viewBox="0 0 303 150" id="acComfort" aria-label="Today: outdoor, indoor, the Nest setpoint and Solstice's plan"></svg>
+              </div>
+              <div id="acTrim"></div>
+              <div class="c-rows" style="margin:12px -16px -16px">
+                <div class="c-sys compact c-acc-batt" role="button" tabindex="0" data-row aria-expanded="false"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Today’s plan</b></div><div class="c-sys-l" id="acPlanLine">—</div></div><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></div>
+                <div class="c-inner" hidden>
+                  <div class="c-steps c-acc-batt" id="acSteps"></div>
+                  <div class="pl-nums deltas4" id="acDeltas"></div>
+                  <div id="acActions"></div>
+                </div>
+                <div class="c-sys compact c-acc-solar" role="button" tabindex="0" data-row aria-expanded="false"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V4M4 20h16"/><path d="m7 15 4-4 3 3 5-6"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Why</b></div><div class="c-sys-l" id="acWhyLine">6 signals</div></div><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></div>
+                <div class="c-inner" hidden>
+                  <div class="c-gauge" id="acSignals"></div>
+                  <div class="c-head" style="margin-top:14px"><h5 style="font-size:13px">Next 7 days</h5><span class="c-fig" id="acTomorrow"></span></div>
+                  <svg class="c-chart" viewBox="0 0 303 112" id="acWeek" aria-label="The next 7 days' highs and pre-cool depth"></svg>
+                  <div id="acWhy"></div>
+                </div>
+                <div class="c-sys compact c-acc-grid" role="button" tabindex="0" data-row aria-expanded="false"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2.2 2.2L15.5 10"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Rules</b></div><div class="c-sys-l">9 limits</div></div><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></div>
+                <div class="c-inner" hidden>
+                  <div class="c-chips" style="margin-top:0"><span>comfort band</span><span>≤ 2° per step</span><span>pre-cool only on solar surplus</span><span>away target</span><span>night band</span><span>outage: hold coast</span><span>heat wave: start 11 AM</span><span>humidity ≥ 60%: no coast</span><span>heating: gentle only</span></div>
+                </div>
+                <div class="c-sys compact c-acc-mute" role="button" tabindex="0" id="acLogRow" aria-haspopup="dialog"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Log</b></div><div class="c-sys-l" id="acLogLine">opens the timeline</div></div><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></div>
+              </div>
+            </div>
+          </div>
+          <p class="c-fine" id="acNote" style="padding:0 4px"></p>
         </div>
       </section>
 
-      <!-- ================= SETTINGS ================= -->
+      <!-- ================= SETTINGS (approved mockup al-ia v2, frame 15) ================= -->
       <section class="view" id="v-set">
-        <div class="hello"><div><h3>Settings</h3><p><span data-owner>Solstice · your home, live</span><span data-guest id="setGuestSub">Shared by the owner</span></p></div></div>
-        <div class="sect" data-guest>Shared with you</div>
-        <div class="group" data-guest>
-          <div class="row" style="--c:#e6e8ee"><div class="ri">◐</div><div class="rt"><span id="sharedBy">Shared by the owner</span><small id="sharedExp">—</small></div></div>
-          <div class="row tap" style="--c:var(--out)" id="leaveRow" tabindex="0"><div class="ri">⇠</div><div class="rt">Leave<small>Forget this link on this device</small></div><div class="chev">›</div></div>
+        <div class="hello"><div><h3>Settings</h3><p><span class="sync" data-owner></span><span data-owner>Solstice · your home, live</span><span data-guest id="setGuestSub">Shared by the owner</span></p></div></div>
+        <div class="c-lab" data-guest>Shared with you</div>
+        <div class="c-card flush" data-guest style="margin-top:0">
+          <div class="c-sys compact static c-acc-house"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="m8.2 10.8 7.6-3.6M8.2 13.2l7.6 3.6"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b id="sharedBy">Shared by the owner</b></div><div class="c-sys-l" id="sharedExp">—</div></div><span></span></div>
+          <div class="c-sys compact c-acc-out" role="button" tabindex="0" id="leaveRow"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Leave</b></div><div class="c-sys-l">forget this link on this device</div></div><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></div>
         </div>
-        <div class="sect">Connections</div>
-        <div class="group">
-          <div class="row" style="--c:#e82127" data-owner><div class="ri">T</div><div class="rt">Tesla Fleet API<small id="setTesla">—</small><small id="setTeslaBk" style="color:var(--warn);display:none"></small></div><div class="rv" id="setTeslaV">—</div></div>
-          <div class="row" style="--c:var(--home)"><div class="ri">☁</div><div class="rt">Open-Meteo weather<small><span id="setZip">—</span> · tilt 27° · facing 244°</small></div><div class="rv" id="setWx">—</div></div>
-          <div class="row" style="--c:#6cc4ff"><div class="ri">≈</div><div class="rt">Pentair ScreenLogic<small id="setPool">pool &amp; spa</small></div><div class="rv" id="setPoolV">—</div></div>
-          <div class="row" style="--c:#ff9e66"><div class="ri">◐</div><div class="rt">Google Nest<small id="setNest">thermostat</small></div><div class="rv" id="setNestV">—</div></div>
-          <div class="row tap" style="--c:var(--solar)" data-addbill="1" tabindex="0"><div class="ri">$</div><div class="rt">PEC bills<small id="setBills">Add this month's bill</small></div><div class="chev">›</div></div>
-          <div class="row tap" style="--c:var(--grid)" id="openData" tabindex="0"><div class="ri">≡</div><div class="rt">All data<small>Raw live status and site info</small></div><div class="chev">›</div></div>
+        <div class="c-lab">Connections</div>
+        <div class="c-card flush" id="connCard" style="margin-top:0">
+          <div class="c-sys compact static"><span class="c-skel" style="width:32px;height:32px;border-radius:10px"></span><div><div class="c-skel" style="width:60%;height:14px"></div><div class="c-skel" style="width:85%;height:10px;margin-top:8px"></div></div><span></span></div>
         </div>
-        <div class="sect">Your system</div>
-        <div class="group" id="sysGroup"></div>
-        <div class="sect">Your data</div>
-        <div class="group">
-          <a class="row tap" style="--c:var(--home);color:inherit;text-decoration:none" href="/api/export.csv"><div class="ri">⇩</div><div class="rt">Export CSV<small>Every 5-minute reading</small></div><div class="chev">›</div></a>
-          <div class="row" style="--c:var(--grid)"><div class="ri">✦</div><div class="rt">Calm mode<small>Less motion; follows your system setting</small></div><div class="sw" id="calmSw"></div></div>
+        <div class="c-lab">Your system</div>
+        <div class="c-card flush" style="margin-top:0">
+          <div class="c-kv" id="sysGroup" style="padding:4px 16px"></div>
+          <div class="c-sys compact c-acc-batt" role="button" tabindex="0" id="reserveRow" data-owner><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="4.5" width="11" height="17" rx="3"/><path d="M10 2.5h4"/><path d="M9.5 17.5h5M9.5 14h5"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Backup reserve</b></div><div class="c-sys-l">set by Solstice’s rules</div></div><span class="c-end"><span class="c-num c-cap" id="reserveVal">—</span><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></span></div>
         </div>
-        <div class="sect" data-owner>Alerts · push <span class="nbadge">new</span></div>
-        <div class="group" data-owner>
-          <div class="row" style="--c:var(--home)" id="pushRow"><div class="ri">✉</div><div class="rt">Push to this device<small id="pushSt" class="st-off">Checking this device…</small></div><div class="sw" id="pushSw" role="switch" aria-checked="false" aria-label="Push to this device" tabindex="0"></div></div>
+        <div class="c-lab">Your data</div>
+        <div class="c-card flush" style="margin-top:0">
+          <a class="c-sys compact c-acc-home" href="/api/export.csv" style="color:inherit;text-decoration:none"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4.5 19.5h15"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Export CSV</b></div><div class="c-sys-l">every 5-minute reading</div></div><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></a>
+          <div class="c-sys compact c-acc-grid sw-row" role="switch" tabindex="0" aria-checked="false" id="calmSw"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Calm mode</b></div><div class="c-sys-l">less motion · follows your system</div></div><span class="c-sw"></span></div>
         </div>
-        <div class="sect" data-owner>Alerts · in app</div>
-        <div class="group" id="alertPrefs"></div>
-        <div class="group" id="alertPrefsNew" data-owner style="margin-top:10px"></div>
-        <div class="sect acct">Account</div>
-        <div class="group acct">
-          <div class="row" style="--c:var(--home)"><div class="ri">@</div><div class="rt"><span id="acctEmail">—</span><small>Signed in</small></div><button class="link" id="signOut" style="margin:0">Sign out</button></div>
+        <div class="c-lab" data-owner>Alerts</div>
+        <div class="c-card flush" data-owner style="margin-top:0" id="alertCard">
+          <div class="c-sys compact c-acc-home sw-row" role="switch" tabindex="0" aria-checked="false" aria-label="Push to this device" id="pushSw"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Push to this device</b><span id="pushNew"></span></div><div class="c-sys-l"><span id="pushSt" class="st-off">Checking this device…</span></div></div><span class="c-sw"></span></div>
+          <div id="alertPrefs"></div>
         </div>
-        <div class="sect" data-owner>Sharing</div>
-        <div class="group" data-owner>
-          <div class="row tap" style="--c:var(--home)" id="shareRow" tabindex="0"><div class="ri">⇗</div><div class="rt">Share this app</div><div class="rv" id="shareCount">—</div><div class="chev">›</div></div>
-          <div class="row" style="--c:#e6e8ee"><div class="ri">◐</div><div class="rt">Preview as a guest<small>see what they see</small></div><div class="sw" id="guestSw" role="switch" aria-checked="false" aria-label="Preview as a guest" tabindex="0"></div></div>
-          <div class="row tap" style="--c:var(--solar)" id="nameRow" tabindex="0"><div class="ri">@</div><div class="rt">Name shown on invites</div><div class="rv" id="nameVal">The owner</div><div class="chev">›</div></div>
-          <div class="row tap" style="--c:var(--grid)" id="devRow" tabindex="0"><div class="ri">▣</div><div class="rt"><span id="devN">Owner devices</span><small>sign out others</small></div><div class="chev">›</div></div>
+        <div class="c-lab acct">Account</div>
+        <div class="c-card flush acct" style="margin-top:0">
+          <div class="c-sys compact static c-acc-home"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b id="acctEmail">—</b></div><div class="c-sys-l">signed in</div></div><button class="c-btn sm line" id="signOut">Sign out</button></div>
         </div>
-        <div class="sect">Preview</div>
-        <div class="group">
-          <div class="row" style="--c:var(--out)"><div class="ri">⚡</div><div class="rt">Preview outage mode<small>What the app looks like when the grid goes down</small></div><div class="sw red" id="outSw"></div></div>
+        <div class="c-lab" data-owner>Sharing</div>
+        <div class="c-card flush" data-owner style="margin-top:0">
+          <div class="c-sys compact c-acc-home" role="button" tabindex="0" id="shareRow"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="m8.2 10.8 7.6-3.6M8.2 13.2l7.6 3.6"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Share this app</b></div><div class="c-sys-l" id="shareCount">—</div></div><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></div>
+          <div class="c-sys compact c-acc-house sw-row" role="switch" tabindex="0" aria-checked="false" aria-label="Preview as a guest" id="guestSw"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Preview as a guest</b></div><div class="c-sys-l">see what they see</div></div><span class="c-sw"></span></div>
+          <div class="c-sys compact c-acc-solar" role="button" tabindex="0" id="nameRow"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Name shown on invites</b></div><div class="c-sys-l" id="nameVal">The owner</div></div><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></div>
+          <div class="c-sys compact c-acc-grid" role="button" tabindex="0" id="devRow"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b id="devN">Owner devices</b></div><div class="c-sys-l">sign out others or this one</div></div><span class="c-chev"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></span></div>
+        </div>
+        <div class="c-lab">Preview</div>
+        <div class="c-card flush" style="margin-top:0">
+          <div class="c-sys compact c-acc-out sw-row" role="switch" tabindex="0" aria-checked="false" aria-label="Show the outage look (demo)" id="outSw"><span class="c-ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2.5 4.5 13.5H12l-1 8 8.5-11H12z"/></svg></span><div style="min-width:0"><div class="c-sys-top"><b>Show the outage look</b></div><div class="c-sys-l">demo · nothing is simulated</div></div><span class="c-sw"></span></div>
         </div>
       </section>
     </div>
 
-    <nav class="c-tabbar five" aria-label="Sections">
-      <button class="c-tab on" data-v="v-now"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2"/></svg>Now</button>
-      <button class="c-tab" data-v="v-hist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>History</button>
-      <button class="c-tab" data-v="v-roof"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18 7 6h14l-4 12z"/><path d="M5 12h14M10 6 8 18M15 6l-2 12"/></svg>Panels</button>
-      <button class="c-tab" data-v="v-ins"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 1.1 1 1.8V16h5v-.3c0-.7.4-1.4 1-1.8A6 6 0 0 0 12 3z"/></svg><span class="c-dot" id="insDot" hidden></span>Insights</button>
-      <button class="c-tab" data-v="v-set"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h9M17 6.5h3M4 12h3M11 12h9M4 17.5h11M19 17.5h1"/><circle cx="15" cy="6.5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17.5" r="2"/></svg>Settings</button>
+    <nav class="c-tabbar" aria-label="Sections">
+      <button class="c-tab on" data-v="v-now"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2"/></svg>Now</button>
+      <button class="c-tab" data-v="v-sys"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg><span class="c-dot" id="sysDot" hidden></span>Systems</button>
+      <button class="c-tab" data-v="v-hist"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>History</button>
+      <button class="c-tab" data-v="v-set"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6.5h9M17 6.5h3M4 12h3M11 12h9M4 17.5h11M19 17.5h1"/><circle cx="15" cy="6.5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17.5" r="2"/></svg>Settings</button>
     </nav>
 
     <div class="scrim" id="scrim"></div>

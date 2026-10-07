@@ -4,6 +4,8 @@
 import { $, toast } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { openClearUp } from './appliances.js';
+import { badge } from '../lib/conf.js';
+import { banner } from './csheet.js';
 
 const W = { data: null, timer: null };
 const FIELDS = [['fc', 'Free chlorine', 'ppm', .5, [0, 20], true], ['ph', 'pH', '', .1, [6.4, 8.6], true], ['cc', 'Combined chlorine', 'ppm · optional', .5, [0, 5]],
@@ -22,22 +24,21 @@ export function initWater(S, every) {
 }
 function draw(S) {
   const d = W.data; if (!d) return;
-  const t = d.last, st = d.status ?? {}, hint = k => k === 'fc' ? (d.fcMin > 1 ? `${d.fcMin}+ ppm` : 'ppm FC') : k === 'ph' ? '7.2–7.8' : k === 'ta' ? '80–120' : '30–50';   // short: one line at 393 px
+  const t = d.last, st = d.status ?? {};
   const off = t ? ['fc', 'ph', 'ta', 'cya'].filter(k => st[k] && st[k] !== 'ok').length : 0;
-  $('pwBadge').textContent = !t ? 'no tests yet' : off ? `${off} to watch` : 'in range'; $('pwBadge').className = 'badge ' + (!t ? 'n' : off ? 'a' : 'g');
-  $('pwVals').innerHTML = [['fc', 'Chlorine'], ['ph', 'pH'], ['ta', 'Alkalinity'], ['cya', 'CYA']].map(([k, l]) =>
-    `<div class="${t && t[k] != null ? st[k] ?? '' : ''}"><small>${l}</small><b>${t ? fmt(k, t[k]) : '—'}</b><span>${hint(k)}</span></div>`).join('');
+  // mockup al frame 12: one row (title, the in-range badge, one line with the latest values), Log a test at its end; the row opens the history
+  $('pwBadge').innerHTML = !t ? '' : off ? badge('estimated', `${off} to watch`) : badge('learned', 'in range');
   const water = d.waterF != null ? ` · water ${Math.round(d.waterF)}°` : '';
-  $('pwLine').innerHTML = t ? `${CLAR.find(c => c[0] === t.clarity)[1]} · tested <b>${ago(t.at)}</b>${water}${d.overdue ? ' · <b style="color:#ffc15e">due</b>' : ''}` : `Log your first test${water}`;
+  const vals = t ? [['fc', 'FC'], ['ph', 'pH'], ['ta', 'TA'], ['cya', 'CYA']].filter(([k]) => t[k] != null).map(([k, l]) => `${l} ${fmt(k, t[k])}`).join(' · ') : '';
+  $('pwLine').innerHTML = t ? `${CLAR.find(c => c[0] === t.clarity)[1]} · tested ${ago(t.at)}${d.overdue ? ' · <b style="color:var(--solar)">due</b>' : ''}${vals ? ` · ${vals}` : ''}` : `no tests yet${water}`;
   // tablets raise CYA: past 50, chlorine needs to run higher (the common guideline is at least ~7.5% of CYA)
   $('pwNote').hidden = !(d.cya != null && d.cya > 50);
   $('pwNote').textContent = d.cya > 50 ? `CYA ${d.cya}: tablets add stabilizer, so chlorine needs to run higher; the usual minimum is about ${d.fcMin} ppm at this level.` : '';
   // mockup aj frame 4: a hazy/cloudy/green test in the last 2 days offers the Clear-up (never starts it here)
   const cu = S.pool?.clearUp, offer = t && t.clarity !== 'clear' && Date.now() - t.at < 2 * 864e5 && !cu && S.pool?.clearUpRates?.length;
-  $('pwOffer').innerHTML = offer ? `<div class="rec learn"><b>${CLAR.find(c => c[0] === t.clarity)[1]} water logged</b><br>Start a Clear-up? Autopilot holds the plan while it runs and goes back to it afterwards.
-    <div class="row2"><button class="y" id="pwCu">Start Clear-up</button><button class="n" id="pwNo">Not now</button></div></div>` : '';
-  if (offer) { $('pwCu').onclick = () => openClearUp(S); $('pwNo').onclick = () => { $('pwOffer').innerHTML = ''; }; }
-  $('pwLog').onclick = () => openLog(S);
+  $('pwOffer').innerHTML = offer ? banner({ cls: 'blue', ic: 'pool', title: `${CLAR.find(c => c[0] === t.clarity)[1]} water logged`, line: 'Start a Clear-up? Autopilot holds the plan while it runs and goes back to it afterwards.', btns: [['Start Clear-up', 'cu'], ['Not now', 'no']] }) + '<div style="height:14px"></div>' : '';
+  if (offer) { $('pwOffer').querySelector('[data-b="cu"]').onclick = () => openClearUp(S); $('pwOffer').querySelector('[data-b="no"]').onclick = () => { $('pwOffer').innerHTML = ''; }; }
+  $('pwLog').onclick = e => { e.stopPropagation(); openLog(S); };
   $('pwVals').onclick = () => openHistory(S);
 }
 

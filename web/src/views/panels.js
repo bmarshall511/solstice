@@ -3,6 +3,8 @@ import { roofHours, sunSays } from '../lib/roofhours.js';
 import { api } from '../lib/api.js';
 import { WMO, WICON } from '../lib/weather.js';
 import { veil, esc } from '../lib/frost.js';
+import { badge } from '../lib/conf.js';
+import { segSet } from './csheet.js';
 import { kIndex, posOf, tint, rgba, tileStyle, deficit } from '../lib/panels.js';
 
 let cleanings = [];
@@ -10,8 +12,8 @@ async function loadCleanings(S) { cleanings = (await api.events().catch(() => []
 function drawCleanLog(S) {
   const last = cleanings[0];
   $('cleaned').outerHTML = last
-    ? `<div id="cleaned" class="kv" style="margin-top:12px"><span>Last cleaning logged</span><b>${niceDate(last.day, { month: 'short', day: 'numeric' })} <button class="link" id="undoClean" style="margin:0 0 0 8px;padding:4px 10px">Undo</button></b></div>`
-    : `<button class="link" id="cleaned">✓ I cleaned the panels</button>`;
+    ? `<div id="cleaned" class="c-modeline c-acc-batt" style="width:100%"><p><b>Cleaning logged</b> · ${niceDate(last.day, { month: 'short', day: 'numeric' })}</p><button class="c-btn sm line" id="undoClean">Undo</button></div>`
+    : `<button class="c-btn line block" id="cleaned">I cleaned the panels</button>`;
   if (last) $('undoClean').onclick = async () => { await api.deleteEvent(last.id); toast('↺', 'rgba(255,255,255,.12)', 'Cleaning removed', `The ${niceDate(last.day)} entry is gone.`); await loadCleanings(S); drawPerformance(S); loadSoiling(S); };
   else $('cleaned').onclick = async () => { await api.addEvent('cleaned', localDate()); toast('✓', 'rgba(78,240,166,.2)', 'Cleaning logged', 'The next 3 clear days set the new clean level. Tap Undo if that was a mistake.'); await loadCleanings(S); drawPerformance(S); loadSoiling(S); };
 }
@@ -21,15 +23,19 @@ export function drawPerformance(S) {
   const K = S.baselineK ?? S.yieldK; if (!K || !S.daily || !S.gtiByDate) return;
   const rows = S.daily.filter(d => d.date < localDate() && S.gtiByDate[d.date] != null).slice(-30);
   if (!rows.length) return;
-  const exp = r => K * S.gtiByDate[r.date], mx = Math.max(...rows.map(r => Math.max(r.solar, exp(r)))) * 1.08, bw = 290 / rows.length;
-  let o = '';
-  rows.forEach((r, i) => { const x = 14 + i * bw, h1 = r.solar / mx * 110, h2 = exp(r) / mx * 110, ratio = r.solar / exp(r), low = S.gtiByDate[r.date] > 2.5 && ratio < .9;
-    o += `<rect x="${x}" y="${120 - h2}" width="${bw - 2}" height="${h2}" rx="2" fill="rgba(255,255,255,.12)"/><rect x="${x + 1}" y="${120 - h1}" width="${bw - 4}" height="${h1}" rx="2" fill="${low ? '#ff7a66' : '#ffc15e'}"><title>${esc(r.date)}: ${r.solar.toFixed(1)} kWh · expected ${exp(r).toFixed(1)} (${Math.round(ratio * 100)}%)</title></rect>`;
-    if (i % 7 === 0) o += svgText(x + bw / 2, 136, niceDate(r.date), { anchor: 'middle', size: 9 }); });
+  const exp = r => K * S.gtiByDate[r.date], mx = Math.max(...rows.map(r => Math.max(r.solar, exp(r)))) * 1.08, bw = 327 / rows.length, H = 104, base = 112;
+  // mockup al frame 10: gradient bars, a white "expected" cap on each, the days below the weather model in the warning colour, one direct label
+  let o = `<defs><linearGradient id="prg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--solar)"/><stop offset="1" style="stop-color:var(--solar);stop-opacity:.2"/></linearGradient><linearGradient id="prw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--warn)"/><stop offset="1" style="stop-color:var(--warn);stop-opacity:.25"/></linearGradient></defs>`, firstLow = null;
+  rows.forEach((r, i) => { const x = 2 + i * bw, w = Math.max(2, bw - 3.9), h1 = r.solar / mx * H, y2 = base - exp(r) / mx * H, ratio = r.solar / exp(r), low = S.gtiByDate[r.date] > 2.5 && ratio < .9;
+    if (low && firstLow == null) firstLow = x + w / 2;
+    o += `<rect x="${x.toFixed(1)}" y="${(base - h1).toFixed(1)}" width="${w.toFixed(1)}" height="${h1.toFixed(1)}" rx="3" fill="url(#${low ? 'prw' : 'prg'})"><title>${esc(r.date)}: ${r.solar.toFixed(1)} kWh · expected ${exp(r).toFixed(1)} (${Math.round(ratio * 100)}%)</title></rect>`
+      + `<line x1="${(x - 1).toFixed(1)}" x2="${(x + w + 1).toFixed(1)}" y1="${y2.toFixed(1)}" y2="${y2.toFixed(1)}" style="stroke:var(--text)" stroke-opacity=".55" stroke-width="1.5" stroke-linecap="round"/>`; });
+  if (firstLow != null) o += `<text class="d" x="${Math.min(200, Math.max(2, firstLow - 20)).toFixed(0)}" y="8">↓ below the weather model</text>`;
+  o += `<text x="2" y="128">${niceDate(rows[0].date)}</text><text x="164" y="128" text-anchor="middle">${niceDate(rows[Math.floor(rows.length / 2)].date)}</text><text x="327" y="128" text-anchor="end">${niceDate(rows.at(-1).date)}</text>`;
   $('prChart').innerHTML = o;
   const clear = rows.filter(r => S.gtiByDate[r.date] > 4.5), ratio = clear.length ? clear.reduce((a, r) => a + r.solar / exp(r), 0) / clear.length : null;
   $('prTxt').innerHTML = ratio == null ? 'Not enough clear days yet to judge performance.'
-    : `On clear days over the last month, the panels made <b style="color:var(--text)">${Math.round(ratio * 100)}%</b> of what the same sunlight produced this time last year. ${ratio >= .95 ? "That's healthy, with no sign of lost output." : ratio >= .9 ? 'A little low. Worth watching.' : 'Noticeably low. Check the cleaning card below.'}`;
+    : `On clear days over the last month, the panels made <b>${Math.round(ratio * 100)}%</b> of what the same sunlight produced this time last year. ${ratio >= .95 ? "That's healthy, with no sign of lost output." : ratio >= .9 ? 'A little low. Worth watching.' : 'Noticeably low. Check the cleaning card below.'}`;
   drawWarranty(S);
 }
 
@@ -57,12 +63,12 @@ function drawCleaning(S) {
   const s = S.soiling; if (s === undefined) return;
   const loss = s?.lossPct ?? null, score = s?.score ?? 0;
   S.dust = { score: loss == null ? 0 : score, loss: loss == null ? null : loss / 100 };   // the Live roof's dust veil
-  const r = 34, C = 2 * Math.PI * r, col = s?.state === 'dusty' ? '#ffc15e' : s?.state === 'getting' ? '#ffc15e' : '#4ef0a6';
-  $('cleanRing').innerHTML = `<circle cx="42" cy="42" r="${r}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="7"/><circle cx="42" cy="42" r="${r}" fill="none" stroke="${col}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${C * score / 100} ${C}" transform="rotate(-90 42 42)"/>
-    <text x="42" y="44" text-anchor="middle" fill="#f2f4f8" font-size="20" font-family="Manrope" font-weight="300">${loss == null ? '—' : score}</text><text x="42" y="58" text-anchor="middle" fill="rgba(242,244,248,.5)" font-size="8.5" font-family="Manrope">dust score</text>`;
-  const st = s?.state ?? 'measuring';
-  $('cleanBadge').textContent = !s ? 'waiting' : st === 'dusty' ? 'Dusty' : st === 'getting' ? 'Getting dusty' : st === 'clean' ? 'Clean' : s.resetOn ? 'Clean' : 'measuring';
-  $('cleanBadge').className = 'badge' + (st === 'dusty' || st === 'getting' ? '' : ' g');
+  const r = 34, C = 2 * Math.PI * r, col = s?.state === 'dusty' || s?.state === 'getting' ? 'var(--solar)' : 'var(--batt)';
+  $('cleanRing').innerHTML = `<circle cx="42" cy="42" r="${r}" fill="none" style="stroke:var(--c-fill-2)" stroke-width="7"/><circle cx="42" cy="42" r="${r}" fill="none" style="stroke:${col}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${C * score / 100} ${C}" transform="rotate(-90 42 42)"/>
+    <text x="42" y="44" text-anchor="middle" style="fill:var(--text)" font-size="20" font-family="Manrope" font-weight="300">${loss == null ? '—' : score}</text><text x="42" y="58" text-anchor="middle" style="fill:var(--mute)" font-size="8.5" font-family="Manrope">dust score</text>`;
+  const st = s?.state ?? 'measuring', word = !s ? 'waiting' : st === 'dusty' ? 'Dusty' : st === 'getting' ? 'Getting dusty' : st === 'clean' ? 'Clean' : s.resetOn ? 'Clean' : 'measuring';
+  $('cleanBadge').outerHTML = badge(st === 'dusty' || st === 'getting' ? 'estimated' : word === 'Clean' ? 'learned' : 'unscored', word, 'id="cleanBadge"');
+  $('cleanFig').textContent = loss == null ? '—' : loss < .5 ? 'on par' : `${loss}%${pm(s)}`;
   $('clLoss').textContent = loss == null ? '—' : loss < .5 ? 'on par' : `−${loss}%`;
   $('clRef').textContent = !s ? '—' : s.ref ? `${span(s.ref.from, s.ref.to)}, after the ${s.ref.after === 'cleaning' ? 'cleaning' : s.ref.after === 'rain' ? 'rain' : 'first clear days'}` : `after ${3 - Math.min(2, s.clearSince)} more clear day${3 - s.clearSince === 1 ? '' : 's'}`;
   $('clRain').textContent = !s ? '—' : s.lastRain ? `${s.lastRain.daysAgo === 0 ? 'today' : `${s.lastRain.daysAgo} day${s.lastRain.daysAgo === 1 ? '' : 's'} ago`} · ${Math.round(s.lastRain.mm)} mm` : 'none in 3 months';
@@ -72,8 +78,8 @@ function drawCleaning(S) {
   $('cleanTxt').innerHTML = !s ? 'Solstice needs the weather history to compare against; it arrives with the nightly update.'
     : !s.ref ? `${washed} The next ${3 - Math.min(2, s.clearSince)} clear day${3 - s.clearSince === 1 ? '' : 's'} set the new clean level; after that each clear day is compared with it.`
     : loss == null ? `${washed} The clean level is set; a few more clear days and Solstice compares them with it.`
-    : st === 'dusty' ? `On clear days the panels are running about <b style="color:var(--text)">${loss}%${pm(s)} below</b> clean${s.kwhPerDay ? `, about ${s.kwhPerDay.toFixed(1)} kWh a day` : ''}. ${s.nextRain ? `About ${Math.round(s.nextRain.mm)} mm of rain is forecast ${new Date(`${s.nextRain.day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' })}, which should wash them; if it doesn't come, a rinse` : 'A rinse'} from the ground, early or late in the day, brings it back.`
-    : st === 'getting' ? `On clear days the panels are running about <b style="color:var(--text)">${loss}%${pm(s)} below</b> clean. Worth watching; rain of 5 mm or more usually brings it back.`
+    : st === 'dusty' ? `On clear days the panels are running about <b>${loss}%${pm(s)} below</b> clean${s.kwhPerDay ? `, about ${s.kwhPerDay.toFixed(1)} kWh a day` : ''}. ${s.nextRain ? `About ${Math.round(s.nextRain.mm)} mm of rain is forecast ${new Date(`${s.nextRain.day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' })}, which should wash them; if it doesn't come, a rinse` : 'A rinse'} from the ground, early or late in the day, brings it back.`
+    : st === 'getting' ? `On clear days the panels are running about <b>${loss}%${pm(s)} below</b> clean. Worth watching; rain of 5 mm or more usually brings it back.`
     : `The panels are producing what they did when clean for the same sunlight. No cleaning needed.`;
   drawCleanChart(s);
 }
@@ -86,21 +92,37 @@ function drawCleanChart(s) {
   let o = '';
   for (let v = Math.ceil(lo); v <= hi; v++) o += `<line x1="26" x2="322" y1="${Y(v)}" y2="${Y(v)}" stroke="rgba(255,255,255,.06)"/><text x="2" y="${Y(v) + 3}" fill="rgba(242,244,248,.45)" font-size="9" font-family="JetBrains Mono">${v}</text>`;
   for (let d = new Date(t0); d.getTime() <= t1; d.setUTCDate(d.getUTCDate() + 1)) if (d.getUTCDate() === 1) { const iso = d.toISOString().slice(0, 10); o += `<text x="${X(iso)}" y="134" fill="rgba(242,244,248,.45)" font-size="9" font-family="JetBrains Mono">${d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' })}</text>`; }
-  (s.rains ?? []).filter(r => r.day >= pts[0].day && r.day < localDate()).forEach(r => o += `<rect x="${X(r.day) - 1.5}" y="${112 - Math.min(40, r.mm)}" width="3" height="${Math.min(40, r.mm)}" fill="#6cc4ff" fill-opacity=".7"><title>${md(r.day)}: ${Math.round(r.mm)} mm</title></rect>`);
-  if (s.ref) o += `<line x1="${X(s.ref.from)}" x2="${X(pts.at(-1).day > s.ref.to ? pts.at(-1).day : s.ref.to)}" y1="${Y(s.ref.y)}" y2="${Y(s.ref.y)}" stroke="#4ef0a6" stroke-width="2"/>`;
-  pts.forEach(p => o += `<circle cx="${X(p.day)}" cy="${Y(p.y)}" r="3" fill="#ffd27a" fill-opacity=".9"><title>${md(p.day)}: ${p.y}</title></circle>`);
+  (s.rains ?? []).filter(r => r.day >= pts[0].day && r.day < localDate()).forEach(r => o += `<rect x="${X(r.day) - 1.5}" y="${112 - Math.min(40, r.mm)}" width="3" height="${Math.min(40, r.mm)}" style="fill:var(--home)" fill-opacity=".7"><title>${md(r.day)}: ${Math.round(r.mm)} mm</title></rect>`);
+  if (s.ref) o += `<line x1="${X(s.ref.from)}" x2="${X(pts.at(-1).day > s.ref.to ? pts.at(-1).day : s.ref.to)}" y1="${Y(s.ref.y)}" y2="${Y(s.ref.y)}" style="stroke:var(--batt)" stroke-width="2"/>`;
+  pts.forEach(p => o += `<circle cx="${X(p.day)}" cy="${Y(p.y)}" r="3" style="fill:var(--solar)" fill-opacity=".9"><title>${md(p.day)}: ${p.y}</title></circle>`);
   svg.innerHTML = o;
 }
 
-export function initPanels(S, roof) { loadCleanings(S).then(() => drawPerformance(S)); loadSoiling(S); initPerPanel(S, roof); }
+export function initPanels(S, roof) {
+  loadCleanings(S).then(() => drawPerformance(S)); loadSoiling(S); initPerPanel(S, roof);
+  // mockup al frame 10: Output · Per panel · Hour bars is one sliding segment (it was two chips)
+  $('roofSeg').onclick = e => { const b = e.target.closest('[data-r]'); if (!b || b.getAttribute('aria-disabled') === 'true') return; setRoof(S, roof, b.dataset.r); };
+  setRoof(S, roof, 'out');
+}
+function setRoof(S, roof, mode) {
+  segSet($('roofSeg'), mode, 'data-r');
+  const bars = mode === 'bars'; S.roofBars = bars; roof?.setBars(bars);
+  if ((mode === 'pp') !== ppOn) setOn(mode === 'pp');
+  $('roofBarsKey').classList.toggle('on', bars); $('roofOutKey').hidden = mode !== 'out';
+}
 
 /** Per-frame roof HUD text (the scene itself lives in scenes/roof.js). */
 export function roofHud(S, info, now) {
   const w = S.wx, i = w ? w.hourly.time.indexOf(`${localDate(now)}T${String(new Date(now).toLocaleString('en-US', { timeZone: 'America/Chicago', hour: '2-digit', hourCycle: 'h23' })).padStart(2, '0')}:00`) : -1;
   const cc = i >= 0 ? w.hourly.cloud_cover[i] : null, code = i >= 0 ? w.hourly.weather_code[i] : 0, temp = i >= 0 ? w.hourly.temperature_2m[i] : null;
   const hours = roofHours(S.today, w, S.yieldK, localDate(now)), ss = sunSays(hours, localHour(now), S.live?.solarKw);   // mockup p-roof-veil
-  const say = !ss ? '' : ss.flat ? `<br><span class="x">flat-topping</span> at the microinverters' 9.45 kW` : `<br>sun says ${ss.sunKw.toFixed(1)} kW · panels <span class="x">${ss.panelKw.toFixed(1)} kW</span> (${ss.pct}%)`;
-  $('roofHud').innerHTML = `${now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} · ${info.el > 0 ? `☀ ${info.el.toFixed(0)}° up, ${info.az.toFixed(0)}°` : '☾ sun down'}<br>${WICON(code, info.el > 0)} ${WMO(code)}${cc != null ? ` · ${cc}% cloud` : ''}${temp != null ? ` · ${Math.round(temp)}°` : ''}${info.el > 0 ? `<br>sun hits the panels at ${Math.round(info.inc)}°` : ''}${say}${ppHud()}`;
+  S.roofInfo = { el: info.el, az: info.az, inc: info.inc, ss };
+  // mockup al frame 10: one glass call-out (component 13 .c-flab): the time and the sun's angle, the output now, then the weather and the model
+  const t = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }), kw = S.live?.solarKw;
+  const head = info.el > 0 ? `${t} · sun hits the panels at ${Math.round(info.inc)}°` : `${t} · sun down`;
+  const big = `${kw != null ? kw.toFixed(1) : '—'}<i>kW</i>${ss && !ss.flat ? ` · ${ss.pct}%` : ''}`;
+  const say = !ss ? '' : ss.flat ? `<br><span class="x">flat-topping</span> at the microinverters' 9.45 kW` : `<br>sun says ${ss.sunKw.toFixed(1)} kW · panels <span class="x">${ss.panelKw.toFixed(1)} kW</span>`;
+  $('roofHud').innerHTML = `<small>${head}</small><b>${big}</b><em>${info.el > 0 ? `${info.el.toFixed(0)}° up, ${info.az.toFixed(0)}° · ` : ''}${WICON(code, info.el > 0)} ${WMO(code)}${cc != null ? ` · ${cc}% cloud` : ''}${temp != null ? ` · ${Math.round(temp)}°` : ''}${say}${ppHud()}</em>`;
   return { cc: cc == null ? .1 : cc / 100, code, hours };
 }
 
@@ -108,7 +130,7 @@ export function roofHud(S, info, now) {
  * Per panel (approved mockup u-panels): the Live roof's "Per panel" chip, tint layer, HUD line and pinned readout, and the Panel
  * health card between Performance vs sunlight and Cleaning check. Data: GET /api/pvs/panels (by roof position; guests get it too).
  * ================================================================================================================================ */
-let PD = null, layer = null, ppOn = false, selId = null, pendingSel = new URLSearchParams(location.search).get('panel');
+let PD = null, layer = null, ppOn = false, phMore = false, selId = null, pendingSel = new URLSearchParams(location.search).get('panel');
 const clock = ms => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
 const byId = id => PD?.panels.find(p => p.id === id) ?? null;
 const pAt = k => { const { row, col } = posOf(k); return byId(`r${row}c${col}`); };
@@ -117,9 +139,8 @@ const f = (v, d) => v == null ? '—' : Number(v).toFixed(d);
 function initPerPanel(S, roof) {
   layer = roof?.perPanel ?? null;
   if (layer) layer.onPick = k => select(k == null ? null : pAt(k)?.id ?? null);
-  $('roofPP').onclick = () => setOn(!ppOn);
-  $('panelHealth').addEventListener('click', e => { const t = e.target.closest('[data-show]'); if (t) showOnRoof(t.dataset.show); });
-  const load = () => api.pvsPanels().then(d => { PD = d; applyPanels(); }).catch(e => { console.warn('pvs/panels', e.message); });
+  $('phBody').addEventListener('click', e => { const t = e.target.closest('[data-show]'); if (t) showOnRoof(t.dataset.show); });
+  const load = () => api.pvsPanels().then(d => { PD = S.pvs = d; applyPanels(); }).catch(e => { console.warn('pvs/panels', e.message); });
   load(); setInterval(load, 5 * 60_000);
 }
 
@@ -131,17 +152,19 @@ function ppHud() {
 }
 
 function setOn(on) {
-  ppOn = !!on; const b = $('roofPP');
-  b.classList.toggle('on', ppOn); b.setAttribute('aria-pressed', ppOn); $('roofPPKey').classList.toggle('on', ppOn);
+  ppOn = !!on;
+  if (ppOn && $('roofSeg').querySelector('.on')?.dataset.r !== 'pp') { segSet($('roofSeg'), 'pp', 'data-r'); $('roofBarsKey').classList.remove('on'); $('roofOutKey').hidden = true; }
+  if (!ppOn && $('roofSeg').querySelector('.on')?.dataset.r === 'pp') { segSet($('roofSeg'), 'out', 'data-r'); $('roofOutKey').hidden = false; }
+  $('roofPPKey').classList.toggle('on', ppOn);
   layer?.setOn(ppOn); if (!ppOn) select(null);
 }
 
 function applyPanels() {
   const has = !!PD?.panels?.length;
-  $('roofPP').hidden = !has; $('panelHealth').hidden = !has;
+  const b = $('roofPP'), off = !has || PD.sunDown; $('panelHealth').hidden = !has;
+  // no per-panel data, or the sun down (array median under 20 W): the segment's Per panel greys out and says so
+  b.setAttribute('aria-disabled', String(off)); b.style.opacity = off ? .45 : ''; b.querySelector('span').textContent = has && PD.sunDown ? 'sun down' : 'Per panel';
   if (!has) { setOn(false); return; }
-  // sun down (array median under 20 W): the chip greys out and says so
-  const b = $('roofPP'); b.disabled = PD.sunDown; b.querySelector('span').textContent = PD.sunDown ? 'sun down' : 'Per panel';
   if (PD.sunDown && ppOn && selId == null) setOn(false);
   const ratios = Array(30).fill(null), flags = Array(30).fill(false);
   for (const p of PD.panels) { const k = kIndex(p.row, p.col); ratios[k] = p.pctNow == null ? null : p.pctNow / 100; flags[k] = p.flagged; }
@@ -153,9 +176,9 @@ function applyPanels() {
 
 function select(id) {
   const p = id ? byId(id) : null; selId = p ? p.id : null;
-  document.querySelectorAll('#panelHealth .tile.sel').forEach(t => t.classList.remove('sel'));
+  document.querySelectorAll('#phBody .tile.sel').forEach(t => t.classList.remove('sel'));
   if (!p) { layer?.select(null); return; }
-  $('panelHealth').querySelector(`.tile[data-show="${p.id}"]`)?.classList.add('sel');
+  $('phBody').querySelector(`.tile[data-show="${p.id}"]`)?.classList.add('sel');
   layer?.select(kIndex(p.row, p.col)); layer?.setReadout(readout(p));
 }
 
@@ -164,7 +187,7 @@ function showOnRoof(id, smooth = true) {
   if (!ppOn) setOn(true);
   select(id);
   const sc = $('screen'), roofEl = $('roof');
-  if (sc && roofEl && $('v-roof')?.classList.contains('on')) sc.scrollTo({ top: roofEl.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 60, behavior: smooth ? 'smooth' : 'auto' });
+  if (sc && roofEl && $('v-sys')?.classList.contains('on') && !$('sp-solar').hidden) sc.scrollTo({ top: roofEl.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 60, behavior: smooth ? 'smooth' : 'auto' });
 }
 
 /** The Chicago UTC offset at an instant, as "-05:00". */
@@ -195,7 +218,7 @@ function readout(p) {
 
 /** The Panel health card (frames 3 and 4). */
 function drawHealth() {
-  const el = $('panelHealth'), D = PD, flagged = D.anomalies ?? [], miss = D.notReporting ?? [];
+  const el = $('phBody'), D = PD, flagged = D.anomalies ?? [], miss = D.notReporting ?? [];
   const med = D.totals.medianKwh, time = clock(Date.parse(D.at)), exp = D.layout.expected;
   const sub = flagged.length ? `today · ${niceDate(D.date)}, ${time} · ${D.reporting} of ${exp} reporting` : `today · ${time}`;
   let rows = '';
@@ -233,13 +256,19 @@ function drawHealth() {
     ? `<div class="nr"><i></i><div><b>Relay last heard ${clock(Date.parse(D.relay.heardAt ?? D.relay.lastPoll))}</b><small>No per-panel readings for ${D.relay.silentMin ?? Math.round(D.relay.ageS / 60)} min of daylight. ${esc(D.relay.note ?? 'The Mac running the PVS relay may be asleep or off the network')}; no single panel is to blame.</small></div></div>`
     : miss.map(m => { const due = m.pushAt && Date.parse(m.pushAt) > Date.parse(D.at);
       return `<div class="nr"><i></i><div><b>${esc(m.name)} · no reading for ${m.silentMin} min</b><small>${m.at ? `Last seen ${clock(Date.parse(m.at))} at ${f(m.lastKw, 2)} kW, with ${f(m.kwh, 2)} kWh so far. ` : 'No reading today. '}Its neighbours are still producing, so this is the panel's microinverter or its link to the PVS, not the relay.${m.pushAt ? (due ? ` If it is still silent at ${clock(Date.parse(m.pushAt))}, a Panel fault push goes out.` : ` A Panel fault push went out at ${clock(Date.parse(m.pushAt))}.`) : ''}</small></div></div>`; }).join('');
-  el.innerHTML = `<div class="h"><b>Panel health</b>${flagged.length ? `<span class="badge">${flagged.length} to check</span>` : `<span>${sub}</span>`}</div>
-    ${flagged.length ? `<p class="fine" style="margin-top:4px">${sub}</p>` : ''}
+  // mockup al frame 10: a disclosure. Header: the flags badge and "reporting / expected"; one line: the spread; opened: the grid, any
+  // flagged panel, then "Lowest three" opens the rest (the totals, the lowest three, silent panels, the source line)
+  $('phBadge').innerHTML = flagged.length ? badge('estimated', `${flagged.length} to check`) : badge('learned', 'no flags');
+  $('phFig').textContent = `${D.reporting} / ${exp}`;
+  $('phSum').textContent = D.totals.spread ? `Array today: spread ${Math.round(D.totals.spread.loPct)}%–${Math.round(D.totals.spread.hiPct)}% of the panel average` : sub;
+  el.innerHTML = `${flagged.length ? `<p class="c-fine" style="margin-top:0">${sub}</p>` : ''}
     <div class="gridw"><span></span><div class="edge"><span>ridge</span><span>kWh today</span></div>${rows}<div class="cn">${Array.from({ length: 10 }, (_, i) => `<span>${i + 1}</span>`).join('')}</div>
       <span></span><div class="edge"><span>eave · north</span><span>south</span></div></div>
     <div class="legend"><span>vs median panel</span><span>−15%</span><span class="dramp"></span><span>+10%</span>${D.panels.some(p => !p.reporting) ? '<span><i class="hx"></i>no reading</span>' : ''}${flagged.length ? '<span><i class="rx"></i>flagged</span>' : ''}</div>
     ${flagged.map(flagHtml).join('')}
-    <div class="kv">
+    <div class="c-btns"><button class="c-btn line block" id="phMore" aria-expanded="${phMore}">${phMore ? 'Fewer details' : 'Lowest three'}</button></div>
+    <div id="phMoreBody"${phMore ? '' : ' hidden'}>
+    <div class="c-kv">
       <span>Array today · ${D.reporting} of ${exp}</span><b>${f(D.totals.kwh, 1)} kWh</b>
       <span>Median panel</span><b>${f(med, 2)} kWh</b>
       <span>Spread, lowest → highest</span><b>${D.totals.spread ? `${Math.round(D.totals.spread.loPct)}% → ${Math.round(D.totals.spread.hiPct)}%` : '—'}</b>
@@ -247,6 +276,7 @@ function drawHealth() {
     </div>
     <div class="sub">Lowest three</div>${D.lowest.map(loRow).join('')}
     ${nrHtml}
-    <p class="fine" style="margin-top:12px">${D.since ? `Since ${niceDate(D.since)} · per-panel data starts the day the PVS relay was installed (${D.days} day${D.days === 1 ? '' : 's'} so far). ` : ''}Tap a tile to find it on the Live roof.</p>`;
+    <p class="c-fine">${D.since ? `Since ${niceDate(D.since)} · per-panel data starts the day the PVS relay was installed (${D.days} day${D.days === 1 ? '' : 's'} so far). ` : ''}Tap a tile to find it on the Live roof.</p></div>`;
+  $('phMore').onclick = () => { phMore = !phMore; drawHealth(); };
   if (selId) el.querySelector(`.tile[data-show="${selId}"]`)?.classList.add('sel');
 }

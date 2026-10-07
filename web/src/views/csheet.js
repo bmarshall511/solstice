@@ -5,6 +5,7 @@
 import { $ } from '../lib/util.js';
 import { icon } from '../lib/icons.js';
 import { esc } from '../lib/conf.js';
+import { sparkPaths } from '../lib/nowui.js';
 
 export const closeSheet = () => $('phone').classList.remove('open');
 /** Draw `html` as the sheet's body and open it (a redraw keeps the scroll position). */
@@ -46,5 +47,38 @@ export function keyActivate(root = document) {
   root.addEventListener('keydown', e => {
     const t = e.target; if ((e.key !== 'Enter' && e.key !== ' ') || !t.matches?.('[role=button]:not(button)')) return;
     e.preventDefault(); t.click();
+  });
+}
+
+/** A metric tile (component 1): label (+ badge), value and unit, an optional note line, a delta or note chip, a 7-value sparkline. */
+export function tileHtml({ id = '', acc, k, v, unit = '', note = '', chip = null, spark = null, badge = '' }) {
+  const sp = spark ? sparkPaths(spark) : null, gid = `sg-${id || Math.random().toString(36).slice(2, 8)}`;
+  return `<div class="c-tile ${acc}"${id ? ` id="${id}"` : ''}><div class="c-tile-k">${k}${badge}</div><div class="c-tile-v"><b>${v}</b>${unit ? `<small>${unit}</small>` : ''}</div>${note ? `<div class="c-tile-n">${note}</div>` : ''}${chip ? `<span class="c-delta" data-t="${chip.t ?? 'flat'}">${chip.text}</span>` : ''}${sp
+    ? `<svg class="c-spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:currentColor;stop-opacity:.38"/><stop offset="1" style="stop-color:currentColor;stop-opacity:0"/></linearGradient></defs><path d="${sp.area}" fill="url(#${gid})"/><path d="${sp.line}" fill="none" stroke="currentColor" stroke-width="1.7" vector-effect="non-scaling-stroke" stroke-linecap="round"/></svg>`
+    : '<span class="c-spark"></span>'}</div>`;
+}
+/** A 24-hour plan strip (12a–12a) with its blocks, write ticks and the now tick; `lab` adds the hour labels under it. */
+export const planStrip = (nowP, blocks = [], ticks = [], lab = false) => `<div class="c-plan" style="--now:${nowP}%">${blocks.map(b => `<i class="${b.cls ?? ''}" style="left:${b.left}%;width:${b.width}%"></i>`).join('')}${ticks.map(x => `<u style="left:${x}%"></u>`).join('')}<s></s></div>${lab ? '<div class="c-plan-lab"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>12a</span></div>' : ''}`;
+/** A system card's top (component 2, static): icon, title, mode pill, live value, line and an optional strip. */
+export const sysTop = ({ ic, title, mode = '', value = '', line = '', plan = '' }) =>
+  `<span class="c-ic">${icon(ic)}</span><div style="min-width:0"><div class="c-sys-top"><b>${title}</b>${mode}${value !== '' ? `<span class="c-sys-v">${value}</span>` : ''}</div>${line ? `<div class="c-sys-l">${line}</div>` : ''}${plan}</div><span></span>`;
+/** A segment's sliding pill follows its `on` button. */
+export function segSet(el, v, attr = 'data-v') {
+  if (!el) return; const bs = [...el.querySelectorAll(`[${attr}]`)], i = Math.max(0, bs.findIndex(b => b.getAttribute(attr) === v));
+  el.style.setProperty('--i', i); bs.forEach((b, k) => { b.classList.toggle('on', k === i); b.setAttribute('aria-pressed', String(k === i)); });
+}
+/**
+ * Disclosure cards and their rows (component 6), by delegation under `root`: a `.c-disc-h` opens its card's `.c-disc-body`; a row
+ * `[data-row]` inside `.c-rows` opens the `.c-inner` right after it. Cards marked `data-own` handle their own header.
+ */
+export function wireDisclosures(root) {
+  root.addEventListener('click', e => {
+    const h = e.target.closest('.c-disc-h');
+    if (h && !e.target.closest('button,a,input')) { const card = h.closest('.c-disc'); if (!card || card.hasAttribute('data-own')) return;
+      const open = !card.classList.contains('expanded'); card.classList.toggle('expanded', open); h.setAttribute('aria-expanded', String(open));
+      const body = card.querySelector(':scope > .c-disc-body'); if (body) body.hidden = !open; card.dispatchEvent(new CustomEvent('disc', { detail: open })); return; }
+    const r = e.target.closest('.c-rows > [data-row]');
+    if (r && !e.target.closest('button:not([data-row]),a,input')) { const inner = r.nextElementSibling; if (!inner?.classList.contains('c-inner')) return;
+      const open = !r.classList.contains('c-open'); r.classList.toggle('c-open', open); inner.classList.toggle('c-open', open); inner.hidden = !open; r.setAttribute('aria-expanded', String(open)); }
   });
 }

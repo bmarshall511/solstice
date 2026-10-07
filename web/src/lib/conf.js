@@ -21,6 +21,17 @@ export function confChip(tier, model, style = '') {
   return text == null ? '' : `<span class="conf" data-t="${TIERS[tier]}"${style ? ` style="${style}"` : ''}>${esc(text)}</span>`;
 }
 
+/* Mockup al frame 18: the one badge component, `.c-badge[data-t]`. measured → m, learned → l, estimated and model → e, learning →
+   e (an estimate still being scored), unscored and dormant → u (the dashed outline), plus live, simulation (sim) and new. */
+export const BADGE_T = { measured: 'm', learned: 'l', estimated: 'e', model: 'e', learning: 'e', unscored: 'u', dormant: 'u', live: 'live', simulation: 'sim', new: 'new' };
+/** `<span class="c-badge" data-t="l">±11%</span>` from a confidence tier (the text as confChip picks it), or '' for no tier. */
+export function cBadge(tier, model, extra = '') {
+  const text = confText(tier, model);
+  return text == null ? '' : `<span class="c-badge" data-t="${BADGE_T[tier]}"${extra ? ` ${extra}` : ''}>${esc(text)}</span>`;
+}
+/** A badge for a fixed word: `badge('simulation')`, `badge('live', 'Live')`, `badge('', '4 in 12 months')` (the neutral look). */
+export const badge = (t, text = t, extra = '') => `<span class="c-badge"${Object.hasOwn(BADGE_T, t) ? ` data-t="${BADGE_T[t]}"` : ''}${extra ? ` ${extra}` : ''}>${esc(text)}</span>`;
+
 /** The Next 48 hours header ("forecast · solar ±11% · home ±14% · battery ±5 pts at 6 h") from /api/profile's conf;
  *  null when the profile carried no conf (the header keeps its own text). */
 export function fc48Header(conf, models) {
