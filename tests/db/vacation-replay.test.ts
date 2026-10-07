@@ -8,13 +8,13 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { q, kv, migrate } from '../../server/src/db.js';
 import { TRIP_WH } from '../fixtures/trip-replay.js';
-import { tripReport, buildReport, type Report } from '../../server/src/vacation/report.js';
+import { tripReport, buildReport, houseModel, type Report } from '../../server/src/vacation/report.js';
 import { createTrip, endTrip, liveTrip, guestsPaused, tripAway } from '../../server/src/vacation/trip.js';
 import { poolTripDay } from '../../server/src/vacation/pool.js';
 import { tripPlanDay } from '../../server/src/appliances/autopilot.js';
 import { POOL_DEFAULTS, powerModel } from '../../server/src/appliances/pool.js';
 import { presenceFor } from '../../server/src/appliances/presence.js';
-import { localAt, addDays, localDay } from '../../server/src/tesla/client.js';
+import { localAt, addDays, localDay, rfc3339 } from '../../server/src/tesla/client.js';
 
 const S = 's', DAY0 = '2027-06-01', T0 = localAt(DAY0, 0), END = localAt(addDays(DAY0, 3), 0), MIN = 60_000;
 const BELL = [0, 0, 0, 0, 0, 0, 0, .1, .3, .5, .7, .8, .9, .9, .8, .7, .5, .3, .1, 0, 0, 0, 0, 0];
@@ -25,6 +25,8 @@ const temps = () => { const t: Record<string, number> = {};
   for (let d = -31; d < 4; d++) for (let h = 0; h < 24; h++) t[`${addDays(DAY0, d)}T${String(h).padStart(2, '0')}`] = 80.5 + 10.5 * Math.sin((h - 9) / 24 * 2 * Math.PI);
   return t; };
 let report: Report;
+/** houseModel's answer for VR-5 with the code before the per-hour bucketing (2026-10-07), to the last bit. */
+const PINNED = { model: { k: .125, delta: 6.5, days: 30 }, homeFit: { a: 35.97, b: .02, n: 15 }, homeBase: .52 };
 
 beforeAll(async () => {
   await migrate();
@@ -98,5 +100,23 @@ describe('the revert on return', () => {
     expect(await guestsPaused(now + 23 * 3600e3)).toBe(true);
     expect(await guestsPaused(now + 25 * 3600e3)).toBe(false);
     expect(await kv.get('s:vacation:snooze')).toBeUndefined();
+  });
+});
+
+describe('the house model', () => {
+  it('VR-5 its output is pinned on a synthetic 30 days across the fall-back day (the hourly setpoints bucketed once, 2026-10-07)', async () => {
+    // a deterministic month: hourly temperatures, then 5-minute Nest readings with setpoints 74–79.5 °F (a tenth missing) and the AC
+    // cooling more often the further the hour is above the setpoint; 2026-11-01 (the fall-back day, 01:xx twice) is 25 h long
+    let seed = 7; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+    const at = localAt('2026-11-15', 0), from = localAt('2026-10-16', 0), temps: Record<string, number> = {}, fitNest: Array<{ ts: string; day: string; hvac: string; cool_f: number | null }> = [];
+    const days = Array.from({ length: 30 }, (_, i) => addDays('2026-10-16', i));
+    days.forEach((d, i) => { for (let h = 0; h < 24; h++) temps[`${d}T${String(h).padStart(2, '0')}`] = 68 + (i % 7) * 2 + 14 * Math.sin((h - 9) / 24 * 2 * Math.PI) + (rnd() - .5) * 4; });
+    for (let t = from; t < at; t += 5 * MIN) {
+      const stamp = rfc3339(new Date(t)), day = stamp.slice(0, 10), h = Number(stamp.slice(11, 13)), sp = 74 + Math.floor(rnd() * 6) + (h >= 22 || h < 6 ? .5 : 0);
+      fitNest.push({ ts: String(t), day, hvac: rnd() < (temps[`${day}T${stamp.slice(11, 13)}`] - sp + 2) / 12 ? 'COOLING' : 'OFF', cool_f: rnd() < .1 ? null : sp });
+    }
+    const fitEnergy = days.slice(-15).map((day, i) => ({ day, kwh: 30 + i * .7 + rnd() * 3, n: 288 }));
+    const m = await houseModel('hm', at, temps, 2.6, { fitNest, fitEnergy, before: [{ v: .52 }, { v: .48 }, { v: .61 }] });
+    expect({ model: m.model, homeFit: m.homeFit && { a: m.homeFit.a, b: m.homeFit.b, n: m.homeFit.n }, homeBase: m.homeBase }).toEqual(PINNED);
   });
 });

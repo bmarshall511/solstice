@@ -1,6 +1,6 @@
 // Pool power and flow model (design §8, cases 1–5). Pure: the db, ScreenLogic and Nest are globally mocked.
 import { describe, it, expect } from 'vitest';
-import { powerModel, gpmAt, hourlyRpm, dayKwh, quarterRpm, quarterWh, scheduledQuarters, quarterOf, meanByQuarter } from '../../server/src/appliances/pool.js';
+import { powerModel, gpmAt, hourlyRpm, dayKwh, quarterRpm, quarterWh, scheduledQuarters, quarterOf, meanByQuarter, pumpRunning } from '../../server/src/appliances/pool.js';
 
 const W0 = powerModel([]);
 const W1 = powerModel([{ rpm: 1500, watts: 153 }, { rpm: 1800, watts: 287 }]);
@@ -139,5 +139,13 @@ describe('15-minute integration (owner question 23)', () => {
     const m = meanByQuarter([{ ts: at('2026-07-15T15:01:00Z'), watts: 150 }, { ts: at('2026-07-15T15:09:00Z'), watts: 160 }, { ts: at('2026-07-15T15:20:00Z'), watts: 0 }]);
     expect(m).toHaveLength(96);
     expect([m[39], m[40], m[41], m[42]]).toEqual([null, 155, 0, null]);
+  });
+});
+
+describe('pumpRunning', () => {
+  it('a run needs isRunning with RPM and watts above 0 (the IntelliFlo says isRunning at 0 RPM / 0 W at night); null-safe', () => {
+    expect(pumpRunning({ running: true, rpm: 1750, watts: 240 })).toBe(true);
+    expect([{ running: true, rpm: 0, watts: 0 }, { running: true, rpm: 1750, watts: 0 }, { running: true, rpm: 0, watts: 240 }, { running: false, rpm: 1500, watts: 153 },
+      { running: true, rpm: null, watts: null }, null, undefined].map(pumpRunning)).toEqual([false, false, false, false, false, false, false]);
   });
 });

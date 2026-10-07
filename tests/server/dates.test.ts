@@ -27,6 +27,22 @@ describe.each(['UTC', 'America/Chicago'])('under TZ=%s', tz => {
   it('22: rfc3339 in another zone', () => {
     expect(rfc3339(at('2026-09-24T05:00:00Z'), 'UTC')).toBe('2026-09-24T05:00:00+00:00');
   });
+  it('22: the cached formatter writes what a fresh Intl.DateTimeFormat per call did, every 5 min over both DST days, zones interleaved', () => {
+    // the formatter is built once per zone (2026-10-07: one per call made the trip estimate take ~12 s); this is the old per-call code
+    const fresh = (date: Date, timeZone = 'America/Chicago') => {
+      const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        .formatToParts(date).map(x => [x.type, x.value]));
+      const local = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second), off = Math.round((local - date.getTime()) / 60000), a = Math.abs(off);
+      return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}${off >= 0 ? '+' : '-'}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`;
+    };
+    for (const [a, b] of [['2026-03-07T18:00:00Z', '2026-03-09T18:00:00Z'], ['2026-10-31T18:00:00Z', '2026-11-02T18:00:00Z']])
+      for (let t = Date.parse(a); t < Date.parse(b); t += 5 * 60_000 + 1_001) {
+        const d = new Date(t);
+        expect(rfc3339(d)).toBe(fresh(d));
+        expect(rfc3339(d, 'Asia/Kolkata')).toBe(fresh(d, 'Asia/Kolkata'));   // another zone in between keeps its own formatter
+        expect(rfc3339(d, 'UTC')).toBe(fresh(d, 'UTC'));
+      }
+  });
 
   it('23: localMidnight', () => {
     const iso = (d: string) => localMidnight(d).toISOString();
@@ -45,6 +61,12 @@ describe.each(['UTC', 'America/Chicago'])('under TZ=%s', tz => {
   it('23: localDay rolls over at Chicago midnight, not UTC midnight', () => {
     expect(localDay(at('2026-09-25T04:59:00Z'))).toBe('2026-09-24');
     expect(localDay(at('2026-09-25T05:00:00Z'))).toBe('2026-09-25');
+  });
+  it('23: localDay across the DST days rolls over at that night\'s Chicago midnight', () => {
+    expect([localDay(at('2026-03-08T05:59:59Z')), localDay(at('2026-03-08T06:00:00Z'))]).toEqual(['2026-03-07', '2026-03-08']);   // CST midnight
+    expect([localDay(at('2026-03-09T04:59:59Z')), localDay(at('2026-03-09T05:00:00Z'))]).toEqual(['2026-03-08', '2026-03-09']);   // CDT midnight
+    expect([localDay(at('2026-11-01T04:59:59Z')), localDay(at('2026-11-01T05:00:00Z'))]).toEqual(['2026-10-31', '2026-11-01']);
+    expect([localDay(at('2026-11-02T05:59:59Z')), localDay(at('2026-11-02T06:00:00Z'))]).toEqual(['2026-11-01', '2026-11-02']);   // 25 h later
   });
 
   it('24: addDays', () => {

@@ -5,6 +5,9 @@ import { config } from './config.js';
 import { teslaFor, rfc3339, localDay, addDays, dayWindow, type EnergyBucket } from './tesla/client.js';
 
 const n = (v: unknown) => (typeof v === 'number' ? v : 0);
+/** A live_status field Tesla didn't send is stored as NULL, not 0, so "unknown" never reads as "none" (an empty battery, no load). */
+const nul = (v: unknown) => (typeof v === 'number' ? v : null);
+export const LIVE_EMPTY = 'Tesla live_status came back empty (no grid status, power or charge); not stored';
 const hourOf = (ts: string) => +ts.slice(11, 13);
 
 /** Tesla's per-path energy for each bucket, Wh: `energy` column → calendar_history field. This site has no generator, so those paths are left out. */
@@ -32,9 +35,11 @@ export async function refreshLive(siteId: string, maxAgeMs = config.liveMaxAgeMs
   const last = await one<{ ts: string }>('SELECT ts FROM readings WHERE site_id = $1 ORDER BY ts DESC LIMIT 1', [siteId]);
   if (last && Date.now() - Number(last.ts) < maxAgeMs) return false;
   const s = await teslaFor((await siteAccount(siteId)).tesla_account_id).liveStatus(siteId);
-  const ts = Date.parse(s.timestamp) || Date.now();
+  const ts = Date.parse(s.timestamp) || Date.now(), nums = [s.solar_power, s.battery_power, s.grid_power, s.load_power, s.percentage_charged];
+  // a payload with no grid status and none of the power/charge fields (seen 2026-10-07 08:25) read as "grid down at 0%": not stored, kept for Data health
+  if (!s.grid_status && nums.every(v => typeof v !== 'number')) { await kv.set(`${siteId}:error:live`, { at: Date.now(), message: LIVE_EMPTY }); throw new Error(LIVE_EMPTY); }
   await q(`INSERT INTO readings VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (site_id, ts) DO NOTHING`,
-    [siteId, ts, n(s.solar_power), n(s.battery_power), n(s.grid_power), n(s.load_power), n(s.percentage_charged), String(s.grid_status ?? ''), String(s.island_status ?? ''), !!s.storm_mode_active]);
+    [siteId, ts, ...nums.map(nul), String(s.grid_status ?? ''), String(s.island_status ?? ''), !!s.storm_mode_active]);
   await kv.set(`${siteId}:lastLive`, Date.now());
   return true;
 }

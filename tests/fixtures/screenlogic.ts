@@ -37,9 +37,9 @@ export function poolSnapshot(at: number, o: { on?: number[]; rpm?: number; watts
  * responses (pump id 1 at 1500 RPM / 153 W; Pool 10:00–19:00, High Speed 14:00–15:00) and throws on any method that is not a
  * `get…Async` read, so a write can never slip through. `calls` records each call with the netTimeout in force when it was made.
  */
-export function readOnlyUnit() {
+export function readOnlyUnit(extra: Record<string, unknown> = {}) {
   const calls: Array<{ path: string; netTimeout: unknown }> = [];
-  const raw: Record<string, unknown> = {
+  const raw: Record<string, unknown> = { ...extra,
     getVersionAsync: { version: 'POOL: 0.0 Build 000.0 Rel' },
     'equipment.getEquipmentStateAsync': { airTemp: 85, freezeMode: 0, circuitArray: [{ id: 6, state: 1 }, { id: 8, state: 0 }],
       bodies: [{ id: 1, currentTemp: 88, setPoint: 0, heatMode: 0, heatStatus: 0 }] },
@@ -55,11 +55,14 @@ export function readOnlyUnit() {
   const node = (path: string): any => new Proxy(() => {}, {
     get: (_t, k) => typeof k === 'symbol' || k === 'then' ? undefined : path === '' && k === 'netTimeout' ? state.netTimeout : node(path ? `${path}.${k}` : k),
     set: (_t, k, v) => { if (path === '' && k === 'netTimeout') { state.netTimeout = v; return true; } throw new Error(`read-only session: set ${String(k)}`); },
-    apply: async () => {
+    apply: async (_t, _this, args: unknown[]) => {
       calls.push({ path, netTimeout: state.netTimeout });
       if (!/(^|\.)get[A-Z]\w*Async$/.test(path)) throw new Error(`read-only session: ${path} is not a read`);
-      if (!(path in raw)) throw new Error(`read-only session: no fake answer for ${path}`);
-      return JSON.parse(JSON.stringify(raw[path]));
+      // schedule type 1 (run-once) answers from its own key, or an empty list: readPool asks for both types
+      const key = path === 'schedule.getScheduleDataAsync' && args[0] === 1 ? 'schedule.getScheduleDataAsync:1' : path;
+      if (key === 'schedule.getScheduleDataAsync:1' && !(key in raw)) return { data: [] };
+      if (!(key in raw)) throw new Error(`read-only session: no fake answer for ${path}`);
+      return JSON.parse(JSON.stringify(raw[key]));
     },
   });
   const conn = node('');

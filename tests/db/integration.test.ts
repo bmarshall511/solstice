@@ -9,7 +9,8 @@ import { cronTick } from '../../server/src/appliances/sampling.js';
 import { acDetail, acTick } from '../../server/src/appliances/ac.js';
 import { readPool, writePoolPlan } from '../../server/src/appliances/screenlogic.js';
 import { readNest, setCool } from '../../server/src/appliances/nest.js';
-import { syncSite, saveEnergyRows } from '../../server/src/sync.js';
+import { syncSite, saveEnergyRows, refreshLive, LIVE_EMPTY } from '../../server/src/sync.js';
+import { gridWatch } from '../../server/src/gridwatch.js';
 import { teslaFor, localDay } from '../../server/src/tesla/client.js';
 import { saveBill, parsePecText } from '../../server/src/bills.js';
 import { runLearn } from '../../server/src/learn/nightly.js';
@@ -367,6 +368,22 @@ describe('syncSite with a fake Tesla client', () => {
     expect(await one(`SELECT COUNT(*)::int n FROM readings WHERE site_id = 'sync'`)).toEqual({ n: 1 });
     expect(await kv.get('sync:error:lastBackups')).toEqual({ at: NOW, message: 'Tesla /api/1/energy_sites/sync/calendar_history → HTTP 504:' });
     expect(await q(`SELECT ts, duration_s FROM backup_events WHERE site_id = 'sync'`)).toEqual([{ ts: '2026-08-01T14:00:00-05:00', duration_s: 300 }]);
+  });
+
+  it('a live_status with only a timestamp is not stored (no outage at 0%); the error goes to Data health; missing fields are NULL, not 0', async () => {
+    await addSite('empty-live', siteInfo('2026-09-25'));
+    tesla.liveStatus.mockResolvedValueOnce({ timestamp: new Date().toISOString() } as any);
+    const r = await syncSite('empty-live');
+    expect(r.errors).toContain(`live: ${LIVE_EMPTY}`);
+    expect(await one(`SELECT COUNT(*)::int n FROM readings WHERE site_id = 'empty-live'`)).toEqual({ n: 0 });
+    expect(await kv.get('empty-live:error:live')).toEqual({ at: NOW, message: LIVE_EMPTY });
+    expect(await gridWatch('empty-live', NOW, async () => ({ hours: 1, hoursNoAc: 2, drawKw: 1 }))).toEqual({ skipped: 'no fresh reading' });
+    // a grid status with no charge or load: stored, the missing numbers NULL
+    const { percentage_charged, load_power, ...partial } = liveStatus(new Date().toISOString());
+    tesla.liveStatus.mockResolvedValueOnce(partial as any);
+    await refreshLive('empty-live');
+    expect(await one(`SELECT solar_w, battery_w, load_w, soc, grid_status FROM readings WHERE site_id = 'empty-live'`)).toEqual({ solar_w: 0, battery_w: 1200, load_w: null, soc: null, grid_status: 'Active' });
+    expect([percentage_charged, load_power]).toEqual([64, 1200]);
   });
 
   it('fetches nothing when everything is fresh', async () => {

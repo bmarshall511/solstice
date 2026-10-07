@@ -104,10 +104,12 @@ async function run(steps: Record<string, Step>) {
 export const fiveMinuteSteps: Record<string, (siteId: string, now: number) => Promise<unknown>> = {
   storm: stormWatch, ercot: (id, now) => ercotWatch(id, now),
 };
-export const nightlySteps: Record<string, (siteId: string, now: number) => Promise<unknown>> = {
+/** `o.deadline` (epoch ms): when the nightly cron must be done (app.ts: 55 s after it started); a long step skips itself near it. */
+export type NightlyOpts = { deadline?: number };
+export const nightlySteps: Record<string, (siteId: string, now: number, o: NightlyOpts) => Promise<unknown>> = {
   billDue: billDueCheck, anomalies: notifyAnomalies,
 };
 export const fiveMinuteWatch = (siteId: string, now = Date.now()) => run(Object.fromEntries(Object.entries(fiveMinuteSteps).map(([k, f]) => [k, () => f(siteId, now)])));
-export const nightlyWatch = (siteId: string, now = Date.now()) => run(Object.fromEntries(Object.entries(nightlySteps).map(([k, f]) => [k, () => f(siteId, now)])));
+export const nightlyWatch = (siteId: string, now = Date.now(), o: NightlyOpts = {}) => run(Object.fromEntries(Object.entries(nightlySteps).map(([k, f]) => [k, () => f(siteId, now, o)])));
 /** The sites the crons act for. */
 export const cronSites = async () => (await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL')).map(s => s.id);

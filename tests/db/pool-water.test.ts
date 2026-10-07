@@ -33,4 +33,12 @@ describe('pool water log (PGlite)', () => {
     await deleteTest(S, t2.id);
     expect((await poolWater(S, D('2026-09-26', '10:00'))).last?.fc).toBe(3);
   });
+  it('PW-3 pump hours leave out isRunning reads at 0 RPM / 0 W (the IntelliFlo at night, seen 2026-10-07)', async () => {
+    const Z = 'pw0', day = '2026-09-22';
+    for (let h = 0; h < 24; h++) for (const m of ['05', 20, 35, 50]) {
+      const on = h >= 10 && h < 19;   // 10:00–19:00 at 1500 RPM; every other read says running at 0 RPM / 0 W
+      await q(`INSERT INTO pool_readings (site_id, ts, day, hour, running, watts, rpm) VALUES ($1, $2, $3, $4, true, $5, $6)`, [Z, D(day, `${String(h).padStart(2, '0')}:${m}`), day, h, on ? 300 : 0, on ? 1500 : 0]);
+    }
+    expect((await poolWater(Z, D('2026-09-23'))).pumpHours[day]).toBe(9);   // not 24
+  });
 });

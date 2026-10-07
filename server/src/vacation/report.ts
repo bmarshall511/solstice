@@ -146,7 +146,10 @@ export async function houseModel(siteId: string, at: number, temps: Hourly, acKw
   const byDay = new Map<string, Array<{ ts: number; hvac: string; coolF: number | null }>>();
   for (const x of r.fitNest) if (!other.has(x.day)) (byDay.get(x.day) ?? byDay.set(x.day, []).get(x.day)!).push({ ts: Number(x.ts), hvac: x.hvac, coolF: x.cool_f });
   const fitDays = [...byDay].filter(([, rows]) => rows.length >= 60).map(([day, rows]) => {
-    const sp = (h: number) => { const xs = rows.filter(y => +rfc3339(new Date(y.ts)).slice(11, 13) === h && y.coolF != null).map(y => y.coolF!); return xs.length ? xs.reduce((a, v) => a + v, 0) / xs.length : 77; };
+    // each setpoint into its Chicago hour once, summed in reading order (filtering the day 24 times, rfc3339 per reading, took seconds)
+    const sum: number[] = Array(24).fill(0), cnt: number[] = Array(24).fill(0);
+    for (const y of rows) if (y.coolF != null) { const h = +rfc3339(new Date(y.ts)).slice(11, 13); if (h < 24) { sum[h] += y.coolF; cnt[h]++; } }
+    const sp = (h: number) => cnt[h] ? sum[h] / cnt[h] : 77;
     return { acKwh: acKwh(rows, rows.at(-1)!.ts + 300_000, acKw), hours: Array.from({ length: 24 }, (_, h) => ({ t: temps[`${day}T${String(h).padStart(2, '0')}`] ?? null, sp: sp(h) })) };
   });
   const model = fitAcModel(fitDays) ?? { k: DEFAULT_K, delta: DEFAULT_DELTA, days: 0 };

@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import { kv, migrate } from '../../server/src/db.js';
 import { autopilot } from '../../server/src/appliances/autopilot.js';
-import { startClearUp, extendClearUp, endClearUp, finishClearUpIfDue, activeClearUp, clearUpError, poolRunAfter, powerModel, POOL_DEFAULTS, scheduleError, saveSchedule, rebaseline } from '../../server/src/appliances/pool.js';
+import { startClearUp, extendClearUp, endClearUp, finishClearUpIfDue, activeClearUp, clearUpError, poolRunAfter, powerModel, POOL_DEFAULTS, scheduleError, saveSchedule, rebaseline, applyPlan, writingKey } from '../../server/src/appliances/pool.js';
 import { readPool, writePoolPlan } from '../../server/src/appliances/screenlogic.js';
 import { forecastDays } from '../fixtures/forecast.js';
 import { poolSnapshot, CIRCUITS } from '../fixtures/screenlogic.js';
@@ -110,5 +110,39 @@ describe('schedule editor (frame 7)', () => {
     const a = await autopilot('pa', { settings: { ...POOL_DEFAULTS, autopilot: 'auto' }, mode: 'auto', W: powerModel([]), rate: null, names: NAMES, snap, waterTemp: 80, currentHours: 9, act: true });
     expect(a.mode).toBe('auto');
     expect(writePoolPlan).toHaveBeenCalledTimes(1);                                              // the planner's plan goes on
+  });
+});
+
+describe('an unfinished Solstice write (audit 10b, C-02/C-03)', () => {
+  const run = (id: string, snap = poolSnapshot(Date.now())) => autopilot(id, { settings: { ...POOL_DEFAULTS, autopilot: 'auto' }, mode: 'auto', W: powerModel([]), rate: null, names: NAMES, snap, waterTemp: 80, currentHours: 9, act: true });
+  it('UW-1 applyPlan records its intent before the controller is touched and clears it once the write succeeded', async () => {
+    const plan = (await autopilot('uw', { settings: POOL_DEFAULTS, mode: 'auto', W: powerModel([]), rate: null, names: NAMES, snap: null, waterTemp: 80, currentHours: 9, act: false })).tomorrow.plan;
+    vi.mocked(writePoolPlan).mockImplementationOnce(async () => { throw new Error('ScreenLogic: timed out after the add'); });
+    await expect(applyPlan('uw', plan, poolSnapshot(Date.now()), POOL_DEFAULTS)).rejects.toThrow('timed out');
+    expect(await kv.get<any>(writingKey('uw'))).toMatchObject({ what: 'plan', schedules: plan.schedules.map(s => ({ circuitId: s.circuitId, start: s.start, stop: s.stop, rpm: s.rpm })) });
+    expect(await kv.get('uw:pool:applied')).toBeFalsy();                                           // nothing recorded as applied
+    await applyPlan('uw', plan, poolSnapshot(Date.now()), POOL_DEFAULTS);
+    expect(await kv.get(writingKey('uw'))).toBeFalsy();
+    expect(await kv.get('uw:pool:applied')).toBeTruthy();
+  });
+  it('UW-2 the evening run after a cut-off write keeps Auto, says so, and writes the plan again instead of calling it an outside edit', async () => {
+    await kv.set('settings:owner', { pool: { autopilot: 'auto' } });
+    // the controller shows the half-written mix (old programs still there), and pool:applied is the old plan: without the intent this flips to Suggest (SE-3)
+    await kv.set('uw2:pool:applied', { at: 0, plan: { schedules: [{ circuitId: 6, start: 420, stop: 1140, rpm: 1750 }] }, removed: [], added: [] });
+    await kv.set(writingKey('uw2'), { at: Date.now() - 864e5, what: 'plan', schedules: [{ circuitId: 6, start: 480, stop: 1200, rpm: 1750 }] });
+    vi.mocked(writePoolPlan).mockClear();
+    const a = await run('uw2');
+    expect(a.mode).toBe('auto');
+    expect((await kv.get<any>('settings:owner')).pool.autopilot).toBe('auto');
+    expect(a.log.some(l => l.delta === 'retry' && l.text.startsWith('The last schedule write didn’t finish'))).toBe(true);
+    expect(a.log.some(l => l.text.startsWith('The pump schedule was changed outside Solstice'))).toBe(false);
+    expect(writePoolPlan).toHaveBeenCalledTimes(1);                                              // the plan goes on again
+    expect(await kv.get(writingKey('uw2'))).toBeFalsy();                                         // and the intent is cleared by the successful write
+  });
+  it('UW-3 with no unfinished write, an outside edit still moves Autopilot to Suggest (SE-3 unchanged)', async () => {
+    await kv.set('settings:owner', { pool: { autopilot: 'auto' } });
+    await kv.set('uw3:pool:applied', { at: 0, plan: { schedules: [{ circuitId: 6, start: 420, stop: 1140, rpm: 1750 }] }, removed: [], added: [] });
+    const a = await run('uw3');
+    expect(a.mode).toBe('suggest');
   });
 });

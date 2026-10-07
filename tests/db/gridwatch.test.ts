@@ -2,7 +2,8 @@
 // subscriptions (so alerts are stored, nothing is sent). An outage from 15:42 to 21:52 CDT on 2026-10-15.
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { q, kv, migrate } from '../../server/src/db.js';
-import { gridWatch, hoursText, isDown } from '../../server/src/gridwatch.js';
+import { gridWatch, hoursText, isDown, outageEstimate } from '../../server/src/gridwatch.js';
+import { outageDetail } from '../../server/src/outage.js';
 
 const T = (hm: string) => Date.parse(`2026-10-15T${hm}:00-05:00`);
 const EST = async () => ({ hours: 9, hoursNoAc: 12, drawKw: 2.1 });
@@ -54,5 +55,29 @@ describe('grid alerts', () => {
     await read('s', '10:10', { up: false, soc: 27 });
     await gridWatch('s', T('10:11'), EST);   // low: still sent
     expect((await alerts('s')).map(a => a.kind)).toEqual(['gridLow']);
+  });
+  /** A reading straight into the table, any field null. */
+  const raw = (site: string, hm: string, o: { grid: string | null; island: string | null; soc: number | null; load: number | null }) =>
+    q(`INSERT INTO readings (site_id, ts, solar_w, battery_w, grid_w, load_w, soc, grid_status, island_status) VALUES ($1, $2, 0, 0, 0, $3, $4, $5, $6)`, [site, T(hm), o.load, o.soc, o.grid, o.island]);
+  it('GW-7 a missing or empty grid status is unknown, never down; an explicit off-grid island still is', () => {
+    expect([isDown({ grid_status: '', island_status: '' }), isDown({ grid_status: null, island_status: null }), isDown({ grid_status: '', island_status: 'off_grid' }),
+      isDown({ grid_status: 'Inactive', island_status: '' })]).toEqual([false, false, true, true]);
+  });
+  it('GW-8 the 2026-10-07 08:25 reading (grid status \'\', 0%, 0 W) starts no outage, and one mid-outage does not end it', async () => {
+    await raw('e', '08:25', { grid: '', island: '', soc: 0, load: 0 });
+    expect(await gridWatch('e', T('08:26'), EST)).toEqual({ skipped: 'no grid status' });
+    expect(await kv.get('e:grid:outage')).toBeUndefined();
+    await read('e', '08:30', { up: false, soc: 70 });
+    expect(await gridWatch('e', T('08:31'), EST)).toMatchObject({ event: 'down', since: T('08:25') });   // the first reading after the last one with the grid up
+    await raw('e', '08:35', { grid: '', island: '', soc: 0, load: 0 });
+    expect(await gridWatch('e', T('08:36'), EST)).toEqual({ skipped: 'no grid status' });
+    expect((await alerts('e')).map(a => a.title)).toEqual(['Grid down · on Powerwalls']);           // no "Grid is back"
+  });
+  it('GW-9 an islanded reading with no charge says "?%", and the real estimate gives no hours for an unknown charge', async () => {
+    await raw('u', '09:00', { grid: 'Inactive', island: 'off_grid', soc: null, load: null });
+    const e = await outageEstimate('u'), d = await outageDetail('u');
+    expect([e.hours, d.soc, d.scenarios.asis.backupH]).toEqual([null, null, null]);   // unknown, not 0% and "under 1 h"
+    expect(await gridWatch('u', T('09:01'), outageEstimate)).toMatchObject({ event: 'down', since: T('09:00') });
+    expect((await alerts('u'))[0].body).toBe('Since 9:00 AM. Powerwalls ?%. Tap for the outage view.');
   });
 });

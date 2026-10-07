@@ -11,6 +11,8 @@ export type PoolSnapshot = {
   pump: { id: number; name: string; running: boolean; watts: number; rpm: number; gpm: number | null; minRpm: number; maxRpm: number; primingRpm: number;
     circuits: Array<{ circuitId: number; speed: number; isRpm: boolean }> } | null;
   schedules: PoolSchedule[];
+  /** The controller's run-once (egg-timer) schedules, type 1; absent on snapshots from before they were read. */
+  runOnce?: PoolSchedule[];
 };
 
 export const configured = () => !!(process.env.SCREENLOGIC_SYSTEM && process.env.SCREENLOGIC_PASSWORD);
@@ -35,8 +37,10 @@ export async function withUnit<T>(fn: (c: UnitConnection) => Promise<T>): Promis
 export async function readPool(run: typeof withUnit = withUnit): Promise<PoolSnapshot> {
   return run(async c => {
     (c as any).netTimeout = 8000;
-    const [ver, st, ctl, cfg, sched] = await Promise.all([c.getVersionAsync(), c.equipment.getEquipmentStateAsync(), c.equipment.getControllerConfigAsync(),
-      c.equipment.getEquipmentConfigurationAsync(), c.schedule.getScheduleDataAsync(0)]);
+    // schedule type 0: the recurring programs; type 1: run-once (egg-timer) schedules, so a run Solstice didn't plan can be explained
+    const [ver, st, ctl, cfg, sched, once] = await Promise.all([c.getVersionAsync(), c.equipment.getEquipmentStateAsync(), c.equipment.getControllerConfigAsync(),
+      c.equipment.getEquipmentConfigurationAsync(), c.schedule.getScheduleDataAsync(0), c.schedule.getScheduleDataAsync(1).catch(() => ({ data: [] }))]);
+    const toSched = (e: any): PoolSchedule => ({ id: e.scheduleId, circuitId: e.circuitId, start: hhmm(e.startTime), stop: hhmm(e.stopTime), dayMask: e.dayMask, flags: e.flags, heatCmd: e.heatCmd, heatSetPoint: e.heatSetPoint });
     const on = new Map(st.circuitArray.map((x: any) => [x.id, !!x.state]));
     const circuits = ctl.circuitArray.map((x: any) => ({ id: x.circuitId, name: x.name, on: on.get(x.circuitId) ?? false, freeze: !!x.freeze, function: x.function }));
     let pump: PoolSnapshot['pump'] = null;
@@ -51,7 +55,8 @@ export async function readPool(run: typeof withUnit = withUnit): Promise<PoolSna
     }
     return { at: Date.now(), version: ver.version, airTemp: st.airTemp, freezeMode: !!st.freezeMode,
       bodies: st.bodies.map((b: any) => ({ id: b.id, temp: b.currentTemp, setPoint: b.setPoint, heatMode: b.heatMode, heating: !!b.heatStatus })),
-      circuits, pump, schedules: sched.data.map((e: any) => ({ id: e.scheduleId, circuitId: e.circuitId, start: hhmm(e.startTime), stop: hhmm(e.stopTime), dayMask: e.dayMask, flags: e.flags, heatCmd: e.heatCmd, heatSetPoint: e.heatSetPoint })) };
+      // this firmware answers the run-once query with the recurring list as well (seen 2026-10-07), so only ids absent from it count as run-once
+      circuits, pump, schedules: sched.data.map(toSched), runOnce: ((once as any)?.data ?? []).filter((e: any) => !sched.data.some((r: any) => r.scheduleId === e.scheduleId)).map(toSched) };
   });
 }
 

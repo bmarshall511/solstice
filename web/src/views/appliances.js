@@ -158,12 +158,12 @@ function drawPoolLearning(S) {
 function openPoolChanges(S) {
   const c = S.pool.changes, p = c.patterns, dt = ms => new Date(ms).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' }).replace(',', '');
   const dots = (n, need) => `<div class="ae-dots">${Array.from({ length: need }, (_, i) => `<i class="${i < n ? 'on' : 'need'}"></i>`).join('')}</div>`;
-  const what = r => r.kind === 'boost' ? `Boost for ${r.minutes >= 60 ? `${Math.round(r.minutes / 30) / 2} h` : `${r.minutes} min`}` : r.kind === 'run' ? `Pool on for ${r.minutes >= 60 ? `${Math.round(r.minutes / 30) / 2} h` : `${r.minutes} min`}` : 'Pump running outside the schedule';
+  const what = r => r.kind === 'boost' ? `Boost for ${r.minutes >= 60 ? `${Math.round(r.minutes / 30) / 2} h` : `${r.minutes} min`}` : r.kind === 'run' ? `Pool on for ${r.minutes >= 60 ? `${Math.round(r.minutes / 30) / 2} h` : `${r.minutes} min`}` : r.kind === 'runOnce' ? 'Run-once schedule on the controller' : 'Pump running outside the schedule';
   $('sheetBody').innerHTML = `<div class="shead"><h4>Your changes</h4><button class="x" id="pchX" aria-label="Close">✕</button></div>
     <p class="sub">Pool · last 7 days</p>
     ${p.skim && p.skim.days >= 2 ? `<div class="ae-pat"><div class="t">Boosts around ${hr12(p.skim.hour)}<span>${Math.min(p.skim.days, p.skim.need)} of ${p.skim.need}</span></div><p>Toward moving the daily skim hour there.</p>${dots(p.skim.days, p.skim.need)}</div>` : ''}
     ${p.goal.days >= 2 ? `<div class="ae-pat"><div class="t">Extra pump time<span>${Math.min(p.goal.days, p.goal.need)} of ${p.goal.need}</span></div><p>Days with an hour or more beyond the plan (about ${Math.round(p.goal.extraMin / 30) / 2} h). Toward raising the goal.</p>${dots(p.goal.days, p.goal.need)}</div>` : ''}
-    <div class="ae-chg">${c.recent.map(r => `<div><em>${dt(r.at)}</em><b>${what(r)}</b><span>${r.kind === 'outside' ? 'seen' : 'app'}</span></div>`).join('')}</div>
+    <div class="ae-chg">${c.recent.map(r => `<div><em>${dt(r.at)}</em><b>${what(r)}</b><span>${r.kind === 'outside' || r.kind === 'runOnce' ? 'seen' : 'app'}</span></div>`).join('')}</div>
     <p class="fine" style="margin-top:12px">After the same kind of change on 4 of 7 days, Solstice suggests a change to the planner. It never changes it by itself.</p>`;
   $('pchX').onclick = () => $('phone').classList.remove('open');
   $('phone').classList.add('open');

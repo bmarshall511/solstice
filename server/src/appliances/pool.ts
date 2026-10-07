@@ -25,6 +25,10 @@ const WATER_BY_MONTH = [55, 57, 62, 70, 78, 84, 88, 88, 84, 75, 65, 58];
 /** Meteorological season of a 0-based month: 0 Dec–Feb, 1 Mar–May, 2 Jun–Aug, 3 Sep–Nov. */
 const seasonOf = (m: number) => Math.floor((m + 1) % 12 / 3);
 export const FREEZE_CIRCUIT = 132; // ScreenLogic's virtual "freeze protection" pump circuit
+/** Whether a pump reading is a run: the IntelliFlo reports isRunning with 0 RPM and 0 W at night (seen 2026-10-07 00:05 and 02:05), which is not. pool_readings keeps the raw values. */
+export const pumpRunning = (p: { running?: boolean | null; rpm?: number | null; watts?: number | null } | null | undefined) => !!p?.running && Number(p.rpm) > 0 && Number(p.watts) > 0;
+/** pumpRunning as a pool_readings predicate (a NULL rpm or watts is not a run). */
+export const PUMP_RUNNING_SQL = '(running AND rpm > 0 AND watts > 0)';
 
 /* ---------- power and flow models ---------- */
 /**
@@ -449,13 +453,20 @@ async function guardedWrite(siteId: string, what: string, opts: Parameters<typeo
   catch (e) { if (e instanceof GuardRefusal) await logPool(siteId, `Refused ${what}: ${e.reason}`, 'refused'); throw e; }
 }
 
+/** A Solstice write that did not finish (kv `pool:writing`): set before the controller is touched, cleared when the write succeeded. */
+export const writingKey = (siteId: string) => `${siteId}:pool:writing`;
+export type PoolWriting = { at: number; what: string; schedules: Array<{ circuitId: number; start: number; stop: number; rpm: number }> };
 export async function applyPlan(siteId: string, plan: Plan, snap: PoolSnapshot, settings: PoolSettings) {
   if (!snap.pump) throw new Error('No pump found on the controller');
   const w = planWrite(plan, snap, settings), replace = w.replaceCircuits;
+  // the intent first: a write cut off part-way (a timeout, Vercel's limit) leaves old and new programs on the controller, which the
+  // evening run must read as its own unfinished work and write again, never as an edit made outside Solstice (audit 10b, C-03)
+  await kv.set(writingKey(siteId), { at: Date.now(), what: 'plan', schedules: plan.schedules.map(s => ({ circuitId: s.circuitId, start: s.start, stop: s.stop, rpm: s.rpm })) } satisfies PoolWriting);
   const r = await guardedWrite(siteId, 'a pool schedule write', w);
   const record = { at: Date.now(), plan: { start: plan.start, stop: plan.stop, boostAt: plan.boostAt, rpm: plan.rpm, boostHours: plan.boostHours, schedules: plan.schedules }, removed: r.removed, added: r.added,
     previousSpeeds: snap.pump.circuits.filter(c => replace.includes(c.circuitId)) };
   await kv.set(`${siteId}:pool:applied`, record);
+  await kv.set(writingKey(siteId), null as any);
   await kv.set(`${siteId}:pool:last`, null as any);
   return record;
 }

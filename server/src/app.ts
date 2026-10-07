@@ -34,7 +34,7 @@ import { outageDetail } from './outage.js';
 
 import { alertRoutes, notify } from './notify.js';
 import { ercotNow, fiveMinuteWatch, nightlyWatch, cronSites, fiveMinuteSteps, nightlySteps } from './watch.js';
-import { gridWatch } from './gridwatch.js';
+import { gridWatch, isDown } from './gridwatch.js';
 import { poolChanges, dismissPoolSuggestion } from './appliances/poolLearn.js';
 import { pruneOld } from './retention.js';
 import { refreshCapacity, capacityOf, modelKwh, type Capacity } from './capacity.js';
@@ -236,7 +236,7 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
 
   // learning layer (server/src/learn/nightly.ts): score yesterday's predictions, trims, anomalies, today's predictions; skips what won't fit by 55 s
   for (const s of sites) out[`learn:${s.id}`] = await runLearn(s.id, { deadline: t0 + 55_000 }).catch(e => ({ error: e.message }));
-  for (const s of sites) out[`watch:${s.id}`] = await nightlyWatch(s.id);   // watch.ts: bill due and the other nightly alert checks
+  for (const s of sites) out[`watch:${s.id}`] = await nightlyWatch(s.id, Date.now(), { deadline: t0 + 55_000 });   // watch.ts: bill due and the other nightly alert checks
   // raw per-panel readings older than 90 days go, after the learning layer has written the day's per-panel figures (pvs.ts)
   out.pvsPrune = Date.now() - t0 < 55_000 ? await prunePvs().catch(e => ({ error: e.message })) : { skipped: 'out of time; tomorrow night' };
   await kv.set(SYNC_DONE_KEY, Date.now());   // the 5-minute watchdog (below) alerts when this is more than 26 h old
@@ -308,7 +308,7 @@ app.get('/api/now', wrap(async (req, res) => {
   let liveError: string | null = null;
   await refreshLive(id).catch(e => { liveError = e.message; });
   const r = await one('SELECT * FROM readings WHERE site_id = $1 ORDER BY ts DESC LIMIT 1', [id]);
-  const down = (x: any) => !!x && (x.grid_status !== 'Active' || /off_grid/.test(x.island_status ?? ''));
+  const down = (x: any) => !!x && isDown(x);   // a missing or empty grid status is unknown, not an outage
   let outage: { active: boolean; since?: number } = { active: false };
   if (down(r)) {
     const up = await one<{ ts: string }>(`SELECT ts FROM readings WHERE site_id = $1 AND grid_status = 'Active' AND island_status NOT LIKE '%off_grid%' ORDER BY ts DESC LIMIT 1`, [id]);
@@ -316,7 +316,7 @@ app.get('/api/now', wrap(async (req, res) => {
     outage = { active: true, since: Number(start?.ts) };
   }
   const lastLive = await kv.get<number>(`${id}:lastLive`), lastHistory = await kv.get<number>(`${id}:lastHistory`);
-  const errors = Object.fromEntries(await Promise.all(['siteInfo', 'lastHistory', 'lastBackups'].map(async k => [k, await kv.get(`${id}:error:${k}`) ?? null])));
+  const errors = Object.fromEntries(await Promise.all(['siteInfo', 'lastHistory', 'lastBackups', 'live'].map(async k => [k, await kv.get(`${id}:error:${k}`) ?? null])));
   res.json({
     reading: r && { ts: Number(r.ts), solarKw: r.solar_w / 1000, homeKw: r.load_w / 1000, batteryKw: r.battery_w / 1000, gridKw: r.grid_w / 1000, soc: r.soc,
       gridStatus: r.grid_status, islandStatus: r.island_status, stormActive: !!r.storm_mode_active },
@@ -739,8 +739,12 @@ fiveMinuteSteps.grid = gridWatch;
 fiveMinuteSteps.vacation = (id, now) => vacationWatch(id, now, (sid, text) => finishTrip(sid, 'home', Date.now(), text));   // mockup ak: trip alerts, "Looks like you're away"
 tripHooks.end.held = (id, trip, now) => heldSummary(id, trip, now);   // the pushes held during the trip, as one summary
 // the trip report (frame 6): built by the nightly job once the trip has ended (its energy is in), pushed from 7:00 the next morning
-nightlySteps.tripReport = async id => {
+/** The trip report needs this long (the house model's fit; ~12 s before 2026-10-07); with less left before the deadline it waits a night. */
+export const TRIP_REPORT_MIN_MS = 15_000;
+nightlySteps.tripReport = async (id, _now, o) => {
   const trips = await endedWithoutReport(id); if (!trips.length) return { none: true };
+  // like pvsPrune: out of time tonight → skipped and said so; endedWithoutReport keeps a trip for 7 days, so the next night builds it
+  if (o.deadline != null && o.deadline - Date.now() < TRIP_REPORT_MIN_MS) return { skipped: 'out of time; tomorrow night', trips: trips.map(t => t.id) };
   const s = await ownerSettings(), learned = await learnAcKw(id), pool = await poolDetail(id, s, await rateFor(id)).catch(() => null);
   const deps = { acKw: acKwFor(learned.coolKw, await acSlope(id)), poolNormalKwhDay: pool?.plan?.kwhPerDay ?? null, uv: pool?.settings?.uv ?? true };
   const out: unknown[] = []; for (const t of trips) out.push(await tripReport(id, t, deps).then(r => ({ trip: t.id, usedKwh: r.usedKwh }))); return out;
