@@ -137,7 +137,7 @@ body.out .orbtxt p b{color:var(--solar)}
 .mini{display:block;width:100%;margin-top:6px}
 
 /* 3D production landscape */
-.land{position:relative;height:320px;margin:10px -16px 0;touch-action:pan-y}
+.land{position:relative;height:320px;margin:10px -16px 0;touch-action:pan-y;overflow:hidden}   /* the 3D axis labels (CSS2D) can poke past the card edge at 393 px */
 .land canvas{display:block}
 .landtip{margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(0,0,0,.28);border:1px solid var(--glass-b);font:12px "JetBrains Mono";color:var(--dim);min-height:40px;line-height:1.5}
 .landtip b{color:var(--solar);font-weight:500}
