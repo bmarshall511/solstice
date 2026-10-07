@@ -228,5 +228,14 @@ describe('learning layer routes (owner-only)', () => {
   it('/api/profile carries the 48-hour forecast’s confidence next to the profile it is built on', async () => {
     const p = await (await get('/api/profile')).json();
     expect(p.conf).toEqual({ 'fc48.solar': 'learned', 'fc48.home': 'unscored', 'fc48.soc': 'unscored' });
+    expect(p.correction).toEqual({ solar: {}, home: {} });
+  });
+  it('/api/profile: B2-2 bias factors once a band has 7 scored days in the last 30', async () => {
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+    const days = Array.from({ length: 7 }, (_, i) => new Date(Date.parse(day + 'T12:00:00Z') - (i + 1) * 864e5).toISOString().slice(0, 10));
+    for (const d of days) await q(`INSERT INTO daily_metrics (site_id, day, metric, value) VALUES ('s', $1, 'score:fc48.home:err@h25-48', 3), ('s', $1, 'score:fc48.home:den@h25-48', 30)
+      ON CONFLICT (site_id, day, metric) DO UPDATE SET value = excluded.value`, [d]);
+    expect((await (await get('/api/profile')).json()).correction).toEqual({ solar: {}, home: { 'h25-48': .909 } });
+    await q(`DELETE FROM daily_metrics WHERE site_id = 's' AND metric LIKE 'score:fc48.home:%@h25-48'`);
   });
 });

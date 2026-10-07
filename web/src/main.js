@@ -60,6 +60,7 @@ async function loadHistory() {
   S.profile = Array.from({ length: 24 }, (_, h) => profile.hours.find(x => x.hour === h)?.home ?? 2);
   S.fcConf = profile.conf ?? null;   // r-learning: the 48-hour forecast's confidence tiers
   S.profileScale = profile.scale ?? {};   // mockup ah: each day's home total from its forecast high
+  S.fcCorrection = profile.correction ?? null;   // B2-2: the 48-hour road shows the forecast with its 30-day bias divided out
   computeModel();
   [drawSocHeat, drawRecords, drawOutages, drawBills, drawOvernight, drawAC, drawPerformance, drawAlerts, drawSettings, renderStatic, renderWeather].forEach(f => safe(f)(S));
   if (isOn('v-hist')) drawHistoryChart(S);

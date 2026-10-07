@@ -15,6 +15,7 @@ import { acSavings, controlDecision, CONTROL_EVERY, trimFor, applyTrim, precoolO
 import { pumpRules, acOverrunRule, solarStepRule, alwaysOnRule, dataGapRules, type MetricsByDay, type RuleCtx, type OpenAnomaly } from '../../server/src/learn/rules.js';
 import { scoreDay, scoreMetrics, poolActual, runDayPair } from '../../server/src/learn/nightly.js';
 import { forecast48, learnYield } from '../../server/src/learn/forecast48.js';
+import { biasFactors } from '../../server/src/learn/bias.js';
 // @ts-ignore: the browser module is plain JS without types; the twin must match it
 import * as web from '../../web/src/lib/model.js';
 import { sunPeak } from '../fixtures/forecast.js';
@@ -407,10 +408,49 @@ describe('forecast48.ts is the browser’s model, line for line', () => {
     const o = { w, startDate: '2026-09-25', startHour, soc0, yieldK: 8.2, profile, capKwh: 27, maxKw: 10, reservePct: 20 };
     expect(forecast48(o)).toEqual(web.forecast48(o));
   });
+  it('with a bias correction too (B2-2)', () => {
+    const o = { w, startDate: '2026-09-25', startHour: 5, soc0: 62, yieldK: 8.2, profile, capKwh: 27, maxKw: 10, reservePct: 20,
+      correction: { solar: { 'h7-24': .9, 'h25-48': 1.2 }, home: { 'h25-48': .8 } } };
+    expect(forecast48(o)).toEqual(web.forecast48(o));
+  });
   it('learnYield matches too', () => {
     const daily = [50, 60, 70, 80, 90, 1, 30].map((solar, i) => ({ date: addDays('2026-09-01', i), solar }));
     const g = Object.fromEntries(daily.map((d, i) => [d.date, [10, 10, 9, 11, 10, 10, 2][i]]));
     expect(learnYield(daily, g)).toBe(web.learnYield(daily, g));
     expect(learnYield([], {})).toBe(web.learnYield([], {}));
+  });
+});
+
+/* ------------------------------------------------------------------ B2-2: bias feedback */
+describe('B2-2: the 30-day bias per horizon band divided out of the shown 48-hour forecast', () => {
+  const day = (i: number) => addDays('2026-09-01', i);
+  const rows = (model: string, b: string, n: number, err: number, den: number) => Array.from({ length: n }, (_, i) => [
+    { day: day(i), metric: `score:${model}:err@${b}`, value: err }, { day: day(i), metric: `score:${model}:den@${b}`, value: den }]).flat();
+  it('a band with 7 scored days gets 1 ÷ (1 + bias); fewer than 7 gets none', () => {
+    const f = biasFactors([...rows('fc48.solar', 'h25-48', 7, 4, 40), ...rows('fc48.solar', 'h7-24', 6, 4, 40), ...rows('fc48.home', 'h7-24', 10, -3, 30)]);
+    expect(f).toEqual({ solar: { 'h25-48': .909 }, home: { 'h7-24': 1.111 } });
+  });
+  it('the factor is clamped to ±25%', () => {
+    expect(biasFactors([...rows('fc48.solar', 'h7-24', 8, 30, 40), ...rows('fc48.home', 'h25-48', 8, -20, 40)])).toEqual({ solar: { 'h7-24': .75 }, home: { 'h25-48': 1.25 } });
+  });
+  const time = Array.from({ length: 72 }, (_, i) => `${addDays('2026-09-25', Math.floor(i / 24))}T${String(i % 24).padStart(2, '0')}:00`);
+  const w = { hourly: { time, global_tilted_irradiance: time.map(t => { const h = +t.slice(11, 13); return h >= 7 && h <= 19 ? 600 : 0; }) } };
+  const o = { w, startDate: '2026-09-25', startHour: 5, soc0: 50, yieldK: 8, profile: Array(24).fill(1.5), capKwh: 27, maxKw: 10, reservePct: 20 };
+  it('biased history → corrected forecast: today (scored in h7-24) and tomorrow (h25-48) each take their band’s factor; the raw stays alongside', () => {
+    const correction = biasFactors([...rows('fc48.solar', 'h7-24', 7, 4, 40), ...rows('fc48.solar', 'h25-48', 7, 8, 40), ...rows('fc48.home', 'h25-48', 7, -6, 30)]);
+    expect(correction).toEqual({ solar: { 'h7-24': .909, 'h25-48': .833 }, home: { 'h25-48': 1.25 } });
+    const raw = forecast48(o).points, fc = forecast48({ ...o, correction }).points;
+    const at = (t: string) => fc.find(p => p.t === t)!, rawAt = (t: string) => raw.find(p => p.t === t)!;
+    expect(at('2026-09-25T12:00').s).toBeCloseTo(rawAt('2026-09-25T12:00').s * .909, 10);
+    expect(at('2026-09-25T12:00').h).toBe(1.5);
+    expect(at('2026-09-26T12:00').s).toBeCloseTo(rawAt('2026-09-26T12:00').s * .833, 10);
+    expect(at('2026-09-26T20:00').h).toBeCloseTo(1.875, 10);
+    expect(at('2026-09-27T03:00').h).toBeCloseTo(1.875, 10);              // the partial third day reads as day-ahead too
+    // scoring uses the raw forecast: the corrected points carry it, equal to what the nightly logs (forecast48 without a correction)
+    expect(fc.map(p => [p.rs, p.rh])).toEqual(raw.map(p => [p.s, p.h]));
+    expect(raw[0]).not.toHaveProperty('rs');
+  });
+  it('no factors, no change', () => {
+    expect(forecast48({ ...o, correction: { solar: {}, home: {} } }).points.map(p => [p.s, p.h, p.soc])).toEqual(forecast48(o).points.map(p => [p.s, p.h, p.soc]));
   });
 });

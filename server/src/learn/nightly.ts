@@ -365,7 +365,8 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
   /* ---------- predict: today's 48-hour forecast, tonight's always-on load, the billing-cycle projection ---------- */
   await step('predict', async () => {
     const preds: Prediction[] = [];
-    // 48-hour forecast: the browser's model (forecast48.ts twin) on the same inputs the Now tab uses
+    // 48-hour forecast: the browser's model (forecast48.ts twin) on the same inputs the Now tab uses. Logged RAW, without the
+    // B2-2 bias correction the road shows (learn/bias.ts), so the scores judge the model and never their own feedback
     const fc = fc48Inputs(d.wx, d.energyDaily, d.energyHourly.filter(r => !d.trips.has(r.day)), d.soeHourly, today, d.trips);   // mockup ak: trip days aren't at-home days
     if (!fc.ready) waiting.push(`fc48: ${fc.why}`);
     else {

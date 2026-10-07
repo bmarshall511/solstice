@@ -39,6 +39,7 @@ import { poolChanges, dismissPoolSuggestion } from './appliances/poolLearn.js';
 import { pruneOld } from './retention.js';
 import { refreshCapacity, capacityOf, modelKwh, type Capacity } from './capacity.js';
 import { homeForecast } from './learn/homeModel.js';
+import { fc48Correction } from './learn/bias.js';
 import { soilingFor, soilingNightly } from './soiling.js';
 import { poolWater, addTest, deleteTest, testError, poolTestReminder } from './appliances/poolTests.js';
 import { spareWatch, spareHistory } from './spare.js';
@@ -383,7 +384,8 @@ app.get('/api/profile', wrap(async (req, res) => {
   res.json({ days, hours: await q(`SELECT hour::int, (SUM(h) FILTER (WHERE NOT (day = ANY($5::text[]))) / 1000.0 / GREATEST(1, $4 - cardinality($5::text[])))::float8 home, (SUM(s) / 1000.0 / $4)::float8 solar
     FROM (SELECT day, hour, ${hourWh('home_wh')} h, ${hourWh('solar_wh')} s FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day, hour) x GROUP BY hour ORDER BY hour`, [site(req), from, to, days, trips]),
     conf: await confidenceMap(site(req), ['fc48.solar', 'fc48.home', 'fc48.soc']),   // learning layer: trust in the 48-hour forecast built on this profile
-    scale: (await homeForecast(site(req)).catch(() => null))?.scale ?? {} }); // mockup ah: each day's total from its forecast high (learn/homeModel.ts)
+    scale: (await homeForecast(site(req)).catch(() => null))?.scale ?? {},   // mockup ah: each day's total from its forecast high (learn/homeModel.ts)
+    correction: await fc48Correction(site(req)) }); // B2-2: the 30-day bias per horizon band the 48-hour road divides out (learn/bias.ts)
 }));
 
 app.get('/api/grid-days', wrap(async (req, res) => {

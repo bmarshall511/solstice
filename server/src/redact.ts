@@ -192,7 +192,8 @@ export const GUEST_GET: ReadonlyMap<string, View> = new Map<string, View>([
   ['/api/day', hourlyDay],
   ['/api/daily', view([{ date: true, ...kwh, socMin: true, socMax: true }])],
   ['/api/monthly', view([{ month: true, days: true, ...kwh }])],
-  ['/api/profile', view({ days: true, hours: [{ hour: true, home: true, solar: true }], conf: { 'fc48.solar': true, 'fc48.home': true, 'fc48.soc': true }, scale: true })],
+  ['/api/profile', view({ days: true, hours: [{ hour: true, home: true, solar: true }], conf: { 'fc48.solar': true, 'fc48.home': true, 'fc48.soc': true }, scale: true,
+    correction: { solar: { 'h1-6': true, 'h7-24': true, 'h25-48': true }, home: { 'h1-6': true, 'h7-24': true, 'h25-48': true } } })],   // B2-2: bias factors, no personal data
   ['/api/grid-days', view({ dates: true, solar: true, soc: true })],
   // mockup ai: the Cleaning check card; the $ figure is the owner's (from the bill), never a guest's
   ['/api/soiling', b => b == null ? null : pick(b, { state: true, lossPct: true, score: true, kwhPerDay: true, ref: { from: true, to: true, y: true, after: true }, now: true, resetOn: true, resetBy: true,
