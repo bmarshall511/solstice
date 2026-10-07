@@ -55,7 +55,8 @@ export async function readPool(run: typeof withUnit = withUnit): Promise<PoolSna
     }
     return { at: Date.now(), version: ver.version, airTemp: st.airTemp, freezeMode: !!st.freezeMode,
       bodies: st.bodies.map((b: any) => ({ id: b.id, temp: b.currentTemp, setPoint: b.setPoint, heatMode: b.heatMode, heating: !!b.heatStatus })),
-      circuits, pump, schedules: sched.data.map(toSched), runOnce: ((once as any)?.data ?? []).map(toSched) };
+      // this firmware answers the run-once query with the recurring list as well (seen 2026-10-07), so only ids absent from it count as run-once
+      circuits, pump, schedules: sched.data.map(toSched), runOnce: ((once as any)?.data ?? []).filter((e: any) => !sched.data.some((r: any) => r.scheduleId === e.scheduleId)).map(toSched) };
   });
 }
 

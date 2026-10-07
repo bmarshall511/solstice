@@ -378,6 +378,12 @@ describe('no path reaches a real device', () => {
     expect(unit.calls.map(c => c.path).sort()).toEqual(['equipment.getControllerConfigAsync', 'equipment.getEquipmentConfigurationAsync',
       'equipment.getEquipmentStateAsync', 'getVersionAsync', 'pump.getPumpStatusAsync', 'schedule.getScheduleDataAsync', 'schedule.getScheduleDataAsync']);   // recurring (0) and run-once (1)
     expect(snap.runOnce).toEqual([]);                                     // none set on the fake controller
+    // the real controller answered the run-once query with its recurring programs (2026-10-07): those ids are not run-once schedules
+    const unit2 = readOnlyUnit({ 'schedule.getScheduleDataAsync:1': { data: [
+      { scheduleId: 1, circuitId: 6, startTime: '1000', stopTime: '1900', dayMask: 127, flags: 0, heatCmd: 4, heatSetPoint: 70 },
+      { scheduleId: 9, circuitId: 6, startTime: '0530', stopTime: '0700', dayMask: 0, flags: 0, heatCmd: 4, heatSetPoint: 70 }] } });
+    const snap2 = await real.readPool(unit2.run as any);
+    expect(snap2.runOnce).toEqual([expect.objectContaining({ id: 9, circuitId: 6, start: 330, stop: 420 })]);
     expect(unit.calls.every(c => c.netTimeout === 8000)).toBe(true);
     expect(snap.pump).toMatchObject({ id: 1, running: true, watts: 153, rpm: 1500, gpm: null });
     expect(snap.schedules.map(s => [s.circuitId, s.start, s.stop])).toEqual([[6, 600, 1140], [8, 840, 900]]);

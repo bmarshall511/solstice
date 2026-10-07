@@ -37,9 +37,9 @@ export function poolSnapshot(at: number, o: { on?: number[]; rpm?: number; watts
  * responses (pump id 1 at 1500 RPM / 153 W; Pool 10:00–19:00, High Speed 14:00–15:00) and throws on any method that is not a
  * `get…Async` read, so a write can never slip through. `calls` records each call with the netTimeout in force when it was made.
  */
-export function readOnlyUnit() {
+export function readOnlyUnit(extra: Record<string, unknown> = {}) {
   const calls: Array<{ path: string; netTimeout: unknown }> = [];
-  const raw: Record<string, unknown> = {
+  const raw: Record<string, unknown> = { ...extra,
     getVersionAsync: { version: 'POOL: 0.0 Build 000.0 Rel' },
     'equipment.getEquipmentStateAsync': { airTemp: 85, freezeMode: 0, circuitArray: [{ id: 6, state: 1 }, { id: 8, state: 0 }],
       bodies: [{ id: 1, currentTemp: 88, setPoint: 0, heatMode: 0, heatStatus: 0 }] },
