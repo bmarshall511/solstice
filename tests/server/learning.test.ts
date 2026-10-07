@@ -12,7 +12,7 @@ import { pickInputs, logPrediction, forgetWritten } from '../../server/src/learn
 import { confidence, badge, acDormancy, whyText } from '../../server/src/learn/confidence.js';
 import { acSavings, controlDecision, CONTROL_EVERY, trimFor, applyTrim, precoolOutcome, measuredSavings, windowKwh, COOLING_HOURS,
   type ControlState, type PrecoolDay, type AcDay } from '../../server/src/learn/ac.js';
-import { pumpRules, acOverrunRule, solarStepRule, alwaysOnRule, dataGapRules, type MetricsByDay, type RuleCtx, type OpenAnomaly } from '../../server/src/learn/rules.js';
+import { pumpRules, acOverrunRule, solarStepRule, alwaysOnRule, dataGapRules, pvsDriftRule, inflatedRule, socJumpRule, meterGapRule, INFLATED_WH, type MetricsByDay, type RuleCtx, type OpenAnomaly } from '../../server/src/learn/rules.js';
 import { scoreDay, scoreMetrics, poolActual, runDayPair, modelVersions } from '../../server/src/learn/nightly.js';
 import { forecast48, learnYield } from '../../server/src/learn/forecast48.js';
 import { biasFactors } from '../../server/src/learn/bias.js';
@@ -518,5 +518,49 @@ describe('B2-9: the AC savings models go dormant, and every model says why', () 
     expect(forecastSurplus(sun(.9), 11, 16, 3)).toBe(true);           // .9 × 7.56 = 6.8 kW ≥ 3 + 1.5
     expect(forecastSurplus(sun(.5), 11, 16, 3)).toBe(false);          // 3.8 kW at best: the house and the AC take it all
     expect(forecastSurplus(undefined, 11, 16, 3)).toBe(true);         // no hourly sun: unchanged behaviour
+  });
+});
+
+/* ------------------------------------------------------------------ B2-12: data-quality rules */
+describe('B2-12: data-quality cross-checks', () => {
+  // 60 days; PVS reads 2% under Tesla on a usual day
+  const pvs = (tail: number[], polls = (_: number) => 100) => ctx((_, i) => {
+    const tesla = 40, k = i - (60 - tail.length), r = k >= 0 ? tail[k] : .98;
+    return { 'solar.kwh': tesla, 'pvs.array_kwh': tesla * r, 'pvs.polls': polls(i) };
+  });
+  it('(a) PVS vs Tesla: more than 4% off the 30-day median ratio on 3 of 4 full days fires; 3% doesn\'t; back within 4% for 3 days clears', () => {
+    const v = pvsDriftRule(pvs([.92, .92, .98, .92]));                       // 6% under the usual 2% gap on 3 of 4
+    expect(v).toMatchObject({ kind: 'data.pvs_drift', state: 'fire', severity: 'info', detail: { title: 'Panels and Tesla disagree on solar', expected: 2, measured: 8, persisted: '3 of the last 4 covered days' } });
+    expect(v.detail.body).toBe(`Panels (PVS) 36.8 kWh vs Tesla 40 kWh on ${new Date(DAYS[59] + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' })}, 8% apart (usually 2%). One of the two meters may be drifting, or a panel isn't reporting.`);
+    expect(pvsDriftRule(pvs([.95, .95, .95, .95])).state).toBe('clear');      // 3% off: within the band
+    expect(pvsDriftRule(pvs([.92, .92, .98, .98])).state).toBe('hold');
+    // a day the relay went quiet (half the usual polls) is not compared: three short days leave only one drifting covered day
+    expect(pvsDriftRule(pvs([.92, .92, .92, .98], i => i >= 56 && i <= 58 ? 50 : 100)).state).not.toBe('fire');
+    expect(pvsDriftRule(ctx(() => ({ 'solar.kwh': 40 }))).state).toBe('wait');
+  });
+  it('(b) inflated solar buckets on 3 of the last 7 days fire (info); none for 3 days clears; the threshold is 9.45 kW + 5% over 5 minutes', () => {
+    expect(INFLATED_WH).toBeCloseTo(826.875, 6);
+    const inf = (tail: number[]) => ctx((_, i) => ({ 'energy.inflated': i >= 60 - tail.length ? tail[i - (60 - tail.length)] : 0 }));
+    expect(inflatedRule(inf([0, 1, 0, 2, 0, 1, 0]))).toMatchObject({ kind: 'data.solar_inflated', state: 'fire', severity: 'info', detail: { measured: 4, persisted: '3 of the last 7 days' } });
+    expect(inflatedRule(inf([3, 1, 2, 0, 0, 0, 0])).state).toBe('fire');
+    expect(inflatedRule(inf([0, 0, 0, 1, 0, 0, 0])).state).toBe('clear');
+    expect(inflatedRule(inf([0, 0, 0, 0, 1, 1, 0])).state).toBe('hold');
+  });
+  it('(c) a battery-% jump without energy yesterday fires; three clean days clear it', () => {
+    const j = (tail: number[]) => ctx((_, i) => i >= 60 - tail.length ? { 'soe.jumps': tail[i - (60 - tail.length)] } : {});
+    expect(socJumpRule(j([0, 0, 2]))).toMatchObject({ kind: 'data.soc_jump', state: 'fire', severity: 'info', detail: { measured: 2 } });
+    expect(socJumpRule(j([1, 0, 0])).state).toBe('hold');
+    expect(socJumpRule(j([0, 0, 0])).state).toBe('clear');
+    expect(socJumpRule(j([])).state).toBe('wait');
+  });
+  it('(d) the meter-vs-Tesla gap: a slope over 1 point a bill across the last 6 bills fires; under 0.5 clears; fewer than 3 waits', () => {
+    const gaps = (v: number[]) => ctx(() => ({}), { billGaps: v.map((g, i) => ({ to: `2026-0${i + 1}-10`, gapPct: g })) });
+    const v = meterGapRule(gaps([1, 2.5, 4, 6]));
+    expect(v).toMatchObject({ kind: 'data.meter_drift', state: 'fire', severity: 'warn', detail: { measured: 1.65 } });
+    expect(v.detail.body).toContain('went from +1% to +6% over 4 bills (about 1.7 points a bill)');
+    expect(meterGapRule(gaps([2, 1.8, 2.3, 2.1, 2.2, 1.9])).state).toBe('clear');
+    expect(meterGapRule(gaps([0, .7, 1.4, 2.1])).state).toBe('hold');              // 0.7 a bill
+    expect(meterGapRule(gaps([-10, 2, 2, 2, 2, 2, 2])).state).toBe('clear');         // only the last 6 count: an old outlier doesn't make a trend
+    expect(meterGapRule(gaps([1, 5])).state).toBe('wait');
   });
 });

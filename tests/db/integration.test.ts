@@ -687,8 +687,13 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
     expect(await one(`SELECT COUNT(*)::int n FROM model_scores WHERE site_id = $1`, [S])).toEqual({ n: 24 }); // 8 models × 3 windows
     expect(r.tiers).toMatchObject({ 'fc48.solar': 'learning', 'ac.shifted': 'measured', 'ac.eveningAvoided': 'measured' });
     // budget: a fixed number of round trips, no per-model or per-row queries
-    expect(r.queries).toBeLessThanOrEqual(30);
-    expect(queries).toBeLessThanOrEqual(34);   // mockup ah: + the pool days already marked extra; mockup ak: + the trip days; B2-3: + clearing a rescored day's old score rows; B2-5: + the always-on nights (3); B2-8: + wx:hilo and the year's daily totals (2)
+    expect(r.queries).toBeLessThanOrEqual(31);
+    expect(queries).toBeLessThanOrEqual(35);   // mockup ah: + the pool days already marked extra; mockup ak: + the trip days; B2-3: + clearing a rescored day's old score rows; B2-5: + the always-on nights (3); B2-8: + wx:hilo and the year's daily totals (2); B2-12: + the battery-% jumps
+    // B2-12: the data-quality metrics. The seeded charge climbs 2 points an hour and falls from 86% to 40% at midnight with no energy
+    // through the Powerwalls: one jump on each day that starts after a seeded day
+    expect([await metric('2026-09-22', 'soe.jumps'), await metric('2026-09-23', 'soe.jumps'), await metric('2026-09-24', 'soe.jumps')]).toEqual([0, 1, 1]);
+    expect(await metric('2026-09-23', 'energy.inflated')).toBe(0);
+    expect(await kv.get(`${S}:data:inflated`)).toEqual({ at: RUN, total: 0, days: {} });
     expect(r.ms).toBeLessThan(5000);
     console.info(`[learning] nightly job on seeded data: ${queries} PGlite round trips (${r.queries} counted by the job), ${r.ms} ms`);
   });
@@ -702,8 +707,9 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
 
   it('opens the anomalies that fire (a short energy day, the pump drawing less), and today’s predictions are logged', async () => {
     const open = await q<{ kind: string; day: string; severity: string; detail: any }>(`SELECT kind, day, severity, detail FROM anomalies WHERE site_id = $1 AND resolved_at IS NULL ORDER BY kind`, [S]);
-    expect(open.map(a => [a.kind, a.day, a.severity])).toEqual([['data.gap.energy', '2026-09-24', 'warn'], ['pump.below_baseline@1500', '2026-09-24', 'warn']]);
-    expect(open[1].detail).toMatchObject({ expected: 150, measured: 125, action: 'filter_cleaned', persisted: '3 of the last 3 covered days' });
+    // B2-12 (deliberate): the seed's midnight drop from 86% to 40% with no energy through the Powerwalls is a battery-% jump
+    expect(open.map(a => [a.kind, a.day, a.severity])).toEqual([['data.gap.energy', '2026-09-24', 'warn'], ['data.soc_jump', '2026-09-24', 'info'], ['pump.below_baseline@1500', '2026-09-24', 'warn']]);
+    expect(open[2].detail).toMatchObject({ expected: 150, measured: 125, action: 'filter_cleaned', persisted: '3 of the last 3 covered days' });
     const p = await q<{ model: string; n: number }>(`SELECT model, COUNT(*)::int n FROM predictions WHERE site_id = $1 AND made_at = $2 GROUP BY model ORDER BY model`, [S, RUN]);
     expect(p).toEqual([{ model: 'bill.cycleImport', n: 1 }, { model: 'fc48.home', n: 48 }, { model: 'fc48.soc', n: 48 }, { model: 'fc48.solar', n: 48 }, { model: 'home.alwaysOn', n: 1 }]);
     const first = await one<{ target_day: string; target_hour: number; inputs: any }>(`SELECT target_day, target_hour, inputs FROM predictions WHERE site_id = $1 AND model = 'fc48.soc' AND made_at = $2 AND horizon = 1`, [S, RUN]);
@@ -712,7 +718,7 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
       .toEqual({ target_day: '2026-10-10', horizon: 15, predicted: 44.6, inputs: { from: '2026-09-10', to: '2026-10-10', elapsedDays: 15, importSoFar: 21.6, exportSoFar: 0, version: 1 } });
     expect(await one(`SELECT target_day, predicted FROM predictions WHERE site_id = $1 AND model = 'home.alwaysOn' AND made_at = $2`, [S, RUN])).toEqual({ target_day: '2026-09-26', predicted: .48 });
     const last = await kv.get<any>(`${S}:learn:last`);
-    expect(last).toMatchObject({ at: RUN, predicted: 146, anomalies: { opened: ['pump.below_baseline@1500', 'data.gap.energy'], resolved: [], open: 2 } });
+    expect(last).toMatchObject({ at: RUN, predicted: 146, anomalies: { opened: ['pump.below_baseline@1500', 'data.gap.energy', 'data.soc_jump'], resolved: [], open: 3 } });   // B2-12: + the jump
     // B2-4 (deliberate update: the nightly used to log '−30 min' here): the trim's line waits for the plan that applies it
     expect((await kv.get<any[]>(`${S}:learn:log`))?.map(e => e.delta)).toEqual(expect.arrayContaining(['measured', 'warn']));
     expect((await kv.get<any[]>(`${S}:learn:log`))?.map(e => e.delta)).not.toContain('−30 min');
@@ -766,7 +772,7 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
     const r = await runLearn(S, { now: RUN + 60_000 });
     expect([r.errors, r.predicted, r.anomalies.opened, r.anomalies.resolved]).toEqual([[], 0, [], ['data.gap.energy']]);
     const rows = await q<{ kind: string; open: boolean }>(`SELECT kind, resolved_at IS NULL AS open FROM anomalies WHERE site_id = $1 ORDER BY kind`, [S]);
-    expect(rows).toEqual([{ kind: 'data.gap.energy', open: false }, { kind: 'pump.below_baseline@1500', open: true }]);
+    expect(rows).toEqual([{ kind: 'data.gap.energy', open: false }, { kind: 'data.soc_jump', open: true }, { kind: 'pump.below_baseline@1500', open: true }]);   // B2-12: + the seed's jump
     expect(await metric('2026-09-24', 'energy.buckets')).toBe(288);
     expect(await metric('2026-09-23', 'score:fc48.solar:ape')).toBeCloseTo((.1 + 1 / 40.32) / 2, 6);
     expect(await metric('2026-09-24', 'score:fc48.solar:ape')).toBeUndefined();   // complete now, but its only run reached one hour

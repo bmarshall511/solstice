@@ -58,6 +58,7 @@ import { tripPlanDay } from './appliances/autopilot.js';
 import { confidenceMap } from './learn/confidence.js';
 import { patchSettings, changedKeys, PREV_KEY } from './settings.js';
 import { ledger, cronHealth, cronWatch, markOf } from './cronLedger.js';
+import { INFLATED_WH } from './learn/rules.js';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -347,8 +348,11 @@ app.get('/api/day', wrap(async (req, res) => {
   const b = await q(`SELECT ts, solar_wh, home_wh, import_wh, export_wh, charge_wh, discharge_wh FROM energy WHERE site_id = $1 AND day = $2 ORDER BY epoch`, [id, date]);
   const s = await q(`SELECT ts, soe FROM soe WHERE site_id = $1 AND day = $2 ORDER BY epoch`, [id, date]);
   const t = (ts: string) => +ts.slice(11, 13) + +ts.slice(14, 16) / 60;
+  // B2-12 (b): the day's peaks leave out solar buckets above the inverter limit (Tesla's bucket inflation, not output)
+  const ok = b.filter(x => !(x.solar_wh > INFLATED_WH));
   res.json({ date,
     buckets: b.map(x => ({ t: t(x.ts), solar: r2(x.solar_wh * 12 / 1000), home: r2(x.home_wh * 12 / 1000), grid: r2((x.import_wh - x.export_wh) * 12 / 1000), battery: r2((x.discharge_wh - x.charge_wh) * 12 / 1000) })),
+    peaks: { solarKw: r2(Math.max(0, ...ok.map(x => x.solar_wh * 12 / 1000))), homeKw: r2(Math.max(0, ...b.map(x => x.home_wh * 12 / 1000))), inflated: b.length - ok.length },
     soe: s.map(x => ({ t: t(x.ts), soc: x.soe })),
     totals: await one(`SELECT ${kwhCols} FROM energy WHERE site_id = $1 AND day = $2`, [id, date]) });
 }));

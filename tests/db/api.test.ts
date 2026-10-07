@@ -101,6 +101,15 @@ describe('data routes', () => {
     expect({ ...d.buckets[0], t: undefined }).toEqual({ t: undefined, solar: 6, home: 4.44, grid: -0.9, battery: -0.66 });
     expect(d.soe).toEqual([]);
     expect(d.totals).toEqual({ solar: .5, home: .37, import: .03, export: .1, charge: .11, discharge: .05 });
+    expect(d.peaks).toEqual({ solarKw: 6, homeKw: 4.44, inflated: 0 });   // B2-12
+  });
+  it('B2-12 /api/day peaks leave out a solar bucket above the 9.45 kW inverter limit (Tesla bucket inflation)', async () => {
+    const at = (m: number) => `2026-09-20T12:${String(m).padStart(2, '0')}:00-05:00`;
+    await saveEnergyRows('s', [0, 5, 10].map((m, i) => ({ ts: at(m), epoch: Date.parse(at(m)), day: '2026-09-20', hour: 12, solar: [700, 900, 760][i], home: 200, imp: 0, exp: 0, chg: 0, dis: 0 })));
+    const d = await (await get('/api/day?date=2026-09-20')).json();
+    expect(d.buckets.map((b: any) => b.solar)).toEqual([8.4, 10.8, 9.12]);                      // the buckets are shown as stored
+    expect(d.peaks).toEqual({ solarKw: 9.12, homeKw: 2.4, inflated: 1 });                         // 10.8 kW is not a peak the array can make
+    await q(`DELETE FROM energy WHERE day = '2026-09-20'`);
   });
 
   it('POST /api/events accepts filter_cleaned (B2-6, audit L-02: the pool card\'s "I cleaned the filter" button got a 400)', async () => {

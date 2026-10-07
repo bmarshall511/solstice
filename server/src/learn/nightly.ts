@@ -20,7 +20,7 @@ import { confidence, type Tier } from './confidence.js';
 import { forecast48, learnYield } from './forecast48.js';
 import { homePoints, modelFor, dayScales, forecastDays, fitYear, yearPoints, wxHiLo, clearUpDays, homeSlopesKey, YEAR_DAYS, type HomeSlopes, type Temp } from './homeModel.js';
 import { measuredSavings, trimFor, ranPrecool, learnAcKey, TRIM_WINDOW_DAYS, type AcDay, type PrecoolDay, type LearnAc, type TrimRecord } from './ac.js';
-import { evaluateRules, type MetricsByDay, type OpenAnomaly, type Verdict } from './rules.js';
+import { evaluateRules, INFLATED_WH, type MetricsByDay, type OpenAnomaly, type Verdict } from './rules.js';
 import { wxGti, gtiByDay, tempsOf, type Wx } from './wx.js';
 import { panelMetrics, LAYOUT_KEY, type Layout } from '../panels.js';
 import { tripDays } from '../vacation/trip.js';
@@ -28,6 +28,8 @@ import { alwaysOnKw } from '../breakdown.js';
 
 /** The metrics an empty house would teach the at-home rules wrong (mockup ak): left out of the rules and the always-on prediction on trip days. */
 export const TRIP_METRICS = ['home.alwaysOn_kw', 'home.overnight_kw', 'home.kwh', 'ac.runtime_min', 'ac.degree_hours', 'ac.cool_f', 'ac.overnight_min'];
+/** B2-12 (c): a battery-% jump: more than 10 points between readings with under 0.3 kWh net through the Powerwalls. */
+export const SOC_JUMP_PTS = 10, SOC_JUMP_WH = 300;
 export const LOOKBACK_DAYS = 60, SCORE_DAYS = 3, RETAIN_DAYS = 400, ALWAYS_ON_NIGHTS = 7, ALWAYS_ON_MIN = 5;
 export type LogEntry = { at: number; day: string; text: string; delta?: string };
 export type LearnRun = { at: number; ms: number; queries: number; scored: string[]; predicted: number; waiting: string[];
@@ -120,7 +122,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
   learnStats.queries = 0;
   const steps: LearnRun['steps'] = {}, errors: string[] = [], waiting: string[] = [], log: LogEntry[] = [];
   const scored = new Set<string>(), tiers: Record<string, Tier> = {}, anomalies = { opened: [] as string[], resolved: [] as string[], open: 0 };
-  let ac: AcStep | null = null, pump: PumpBase | null = null, trim: TrimRecord | null = null, predicted = 0;
+  let ac: AcStep | null = null, pump: PumpBase | null = null, trim: TrimRecord | null = null, predicted = 0, bills: Awaited<ReturnType<typeof listBills>> | null = null;
   const step = async <T>(name: string, fn: () => Promise<T>, fallback: T): Promise<T> => {
     if (o.deadline && Date.now() > o.deadline) { steps[name] = { ms: 0, error: 'skipped: out of time' }; errors.push(`${name}: skipped`); return fallback; }
     const s = performance.now(), ms = () => Math.round(performance.now() - s);
@@ -136,10 +138,11 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     // one round trip each, sent together (Neon's HTTP driver runs them in parallel; PGlite queues them)
     const [kvRows, energyDaily, energyHourly, soeHourly, nestHourly, pool, extraRows, preds] = await Promise.all([
       lq<{ key: string; value: any }>(`SELECT key, value FROM kv WHERE key = ANY($1::text[])`, [Object.values(keys)]),
-      lq<{ day: string; solar: number; home: number; imp: number; exp: number; buckets: number; overnight_kw: number | null; overnight_n: number }>(
+      lq<{ day: string; solar: number; home: number; imp: number; exp: number; buckets: number; overnight_kw: number | null; overnight_n: number; inflated: number }>(
         `SELECT day, (SUM(solar_wh) / 1000.0)::float8 solar, (SUM(home_wh) / 1000.0)::float8 home, (SUM(import_wh) / 1000.0)::float8 imp, (SUM(export_wh) / 1000.0)::float8 exp,
-           COUNT(*)::int buckets, (SUM(home_wh) FILTER (WHERE hour BETWEEN 1 AND 4) / 1000.0 / NULLIF(COUNT(*) FILTER (WHERE hour BETWEEN 1 AND 4) * 5 / 60.0, 0))::float8 overnight_kw, COUNT(*) FILTER (WHERE hour BETWEEN 1 AND 4)::int overnight_n
-         FROM energy WHERE site_id = $1 AND day >= $2 AND day <= $3 GROUP BY day`, [siteId, from, today]),
+           COUNT(*)::int buckets, (SUM(home_wh) FILTER (WHERE hour BETWEEN 1 AND 4) / 1000.0 / NULLIF(COUNT(*) FILTER (WHERE hour BETWEEN 1 AND 4) * 5 / 60.0, 0))::float8 overnight_kw, COUNT(*) FILTER (WHERE hour BETWEEN 1 AND 4)::int overnight_n,
+           COUNT(*) FILTER (WHERE solar_wh > $4)::int inflated
+         FROM energy WHERE site_id = $1 AND day >= $2 AND day <= $3 GROUP BY day`, [siteId, from, today, INFLATED_WH]),   // inflated: B2-12 (b)
       lq<{ day: string; hour: number; solar: number; home: number; n: number }>(
         `SELECT day, hour::int, (${hourWh('solar_wh')} / 1000.0)::float8 solar, (${hourWh('home_wh')} / 1000.0)::float8 home, COUNT(*)::int n FROM energy WHERE site_id = $1 AND day >= $2 GROUP BY day, hour`,   // one hour's kWh even for the repeated 01:00 (db.ts hourWh)
         [siteId, addDays(today, -15)]),
@@ -227,10 +230,17 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     const past = (day: string) => day >= from && day < today;
     for (const r of d.energyDaily) if (past(r.day)) {
       put(r.day, 'solar.kwh', r.solar); put(r.day, 'home.kwh', r.home); put(r.day, 'import.kwh', r.imp); put(r.day, 'export.kwh', r.exp); put(r.day, 'energy.buckets', r.buckets);
+      put(r.day, 'energy.inflated', r.inflated);   // B2-12 (b): solar buckets over the inverter limit
       if (r.overnight_n >= 46) put(r.day, 'home.overnight_kw', r.overnight_kw);
     }
     const soeN = new Map<string, number>(); for (const r of d.soeHourly) soeN.set(r.day, (soeN.get(r.day) ?? 0) + r.n);
     for (const [day, n] of soeN) if (past(day)) put(day, 'soe.n', n);
+    // B2-12 (c): battery % jumps of more than 10 points between consecutive readings (≤ 30 min apart) with under 0.3 kWh in or out
+    const jumps = new Map((await lq<{ day: string; n: number }>(`WITH s AS (SELECT day, epoch, soe, LAG(soe) OVER w p, LAG(epoch) OVER w pe FROM soe WHERE site_id = $1 AND day >= $2 WINDOW w AS (ORDER BY epoch))
+      SELECT s.day, COUNT(*)::int n FROM s WHERE s.p IS NOT NULL AND ABS(s.soe - s.p) > $3 AND s.epoch - s.pe <= 1800000
+        AND ABS(COALESCE((SELECT SUM(COALESCE(e.charge_wh, 0) - COALESCE(e.discharge_wh, 0)) FROM energy e WHERE e.site_id = $1 AND e.epoch >= s.pe AND e.epoch < s.epoch), 0)) < $4
+      GROUP BY s.day`, [siteId, addDays(today, -7), SOC_JUMP_PTS, SOC_JUMP_WH])).map(r => [r.day, r.n]));
+    for (const [day] of soeN) if (past(day) && day >= addDays(today, -7)) put(day, 'soe.jumps', jumps.get(day) ?? 0);
     const temps = new Map<string, number>(); // 'YYYY-MM-DD|H' → outdoor °F
     if (d.wx) {
       d.wx.hourly.time.forEach((t, i) => { const v = d.wx!.hourly.temperature_2m[i]; if (v != null) temps.set(`${t.slice(0, 10)}|${+t.slice(11, 13)}`, v); });
@@ -373,7 +383,16 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     for (const day of d.trips) { const m = metrics.get(day); if (m) for (const k of TRIP_METRICS) delete m[k]; }
     const open = new Map((await lq<OpenAnomaly>(`SELECT id::int id, kind, day, severity, detail FROM anomalies WHERE site_id = $1 AND resolved_at IS NULL`, [siteId])).map(a => [a.kind, a]));
     const days = Array.from({ length: LOOKBACK_DAYS }, (_, i) => addDays(from, i)).filter(x => x < today);
-    const verdicts = evaluateRules({ days, m: metrics, open, pumpBaseline: pump?.baseline ?? {}, expectedBuckets });
+    // B2-12 (d): each bill's meter-vs-Tesla import gap, for the bills Tesla covered (one query; the bills are kept for the predict step)
+    learnStats.queries++; bills = await listBills(siteId);
+    const recentBills = [...bills].sort((a, b) => a.period.to.localeCompare(b.period.to)).slice(-6);
+    const billGaps = recentBills.length >= 3 ? (await lq<{ f: string; t: string; imp: number | null; days: number }>(
+      `SELECT b.f, b.t, (SUM(e.import_wh) / 1000.0)::float8 imp, COUNT(DISTINCT e.day)::int days FROM unnest($2::text[], $3::text[]) b(f, t)
+       LEFT JOIN energy e ON e.site_id = $1 AND e.day >= b.f AND e.day < b.t GROUP BY b.f, b.t`, [siteId, recentBills.map(b => b.period.from), recentBills.map(b => b.period.to)]))
+      .flatMap(r => { const bill = recentBills.find(b => b.period.from === r.f && b.period.to === r.t)!;
+        return r.imp != null && bill.deliveredKwh > 0 && r.days >= .9 * bill.period.days ? [{ to: r.t, gapPct: (r.imp - bill.deliveredKwh) / bill.deliveredKwh * 100 }] : []; })
+      .sort((a, b) => a.to.localeCompare(b.to)) : [];
+    const verdicts = evaluateRules({ days, m: metrics, open, pumpBaseline: pump?.baseline ?? {}, expectedBuckets, billGaps });
     const fire = verdicts.filter(v => v.state === 'fire'), toOpen = fire.filter(v => !open.has(v.kind)), toUpdate = fire.filter(v => open.has(v.kind));
     const toResolve = verdicts.filter(v => v.state === 'clear' && open.has(v.kind));
     for (const v of verdicts) if (v.state === 'wait') waiting.push(`${v.kind}: ${v.detail.body}`);
@@ -415,8 +434,8 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     if (nights.length >= ALWAYS_ON_MIN) preds.push({ model: 'home.alwaysOn', day: addDays(today, 1), value: round(median(nights), 3), inputs: { nights: nights.length, acKw: round(kw, 2) } });
     else waiting.push(`home.alwaysOn: ${nights.length} of ${ALWAYS_ON_MIN} nights with thermostat readings`);
     // the billing cycle since the newest bill: what History › Bills projects (kWh bought × 31 ÷ days elapsed), in kWh only
-    learnStats.queries++; // listBills: one query
-    const bills = await listBills(siteId), last = bills.reduce<typeof bills[number] | null>((a, b) => !a || b.period.to > a.period.to ? b : a, null);
+    if (!bills) { learnStats.queries++; bills = await listBills(siteId); }   // listBills: one query, unless the rules step already read them
+    const last = bills.reduce<typeof bills[number] | null>((a, b) => !a || b.period.to > a.period.to ? b : a, null);
     if (last) {
       const f = last.period.to, end = addDays(f, 30), el = Math.max(1, (Date.parse(today) - Date.parse(f)) / 864e5);
       const soFar = d.energyDaily.filter(r => r.day >= f && r.day <= today), imp = soFar.reduce((a, r) => a + r.imp, 0), exp = soFar.reduce((a, r) => a + r.exp, 0);
@@ -439,6 +458,9 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
       if (ac) writes.push([keys.ac, ac.record]);
       if (d && pump) writes.push([keys.pump, pump]);
       if (homeSlopes) writes.push([keys.home, homeSlopes]);
+      // B2-12 (b): the inflated solar buckets of the last 30 days, flagged for the peaks and the Data health check
+      if (d) { const inf = d.energyDaily.filter(r => r.day < today && r.day >= addDays(today, -30) && r.inflated > 0);
+        writes.push([`${siteId}:data:inflated`, { at: now, total: inf.reduce((a, r) => a + r.inflated, 0), days: Object.fromEntries(inf.map(r => [r.day, r.inflated])) }]); }
       if (!errors.length) writes.push([`${siteId}:error:learn`, null]);   // a clean run clears the last error, in the same write (orchestrator O-10)
       out.ms = Math.round(performance.now() - t0); out.queries = learnStats.queries + 1;
       await lq(`INSERT INTO kv (key, value) SELECT * FROM unnest($1::text[], $2::jsonb[]) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,

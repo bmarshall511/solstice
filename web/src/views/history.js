@@ -28,7 +28,8 @@ async function drawDay(S) {
   svg.innerHTML = o;
   $('hleg').innerHTML = `<span><i style="background:var(--solar)"></i>Solar kW</span><span><i style="background:var(--home)"></i>Home kW</span><span><i style="background:var(--batt)"></i>Battery %</span>`;
   const rate = S.tariff?.importRateAllIn;
-  $('hstats').innerHTML = stat('Solar', t.solar, `peak ${Math.max(0, ...B.map(b => b.solar)).toFixed(1)} kW`) + stat('Home', t.home, `peak ${Math.max(0, ...B.map(b => b.home)).toFixed(1)} kW`) +
+  // B2-12: the server's peaks leave out Tesla's inflated solar buckets (a guest's hourly view has none)
+  $('hstats').innerHTML = stat('Solar', t.solar, `peak ${(d.peaks?.solarKw ?? Math.max(0, ...B.map(b => b.solar))).toFixed(1)} kW`) + stat('Home', t.home, `peak ${(d.peaks?.homeKw ?? Math.max(0, ...B.map(b => b.home))).toFixed(1)} kW`) +
     stat('Bought from PEC', t.import, S.guest ? `≈ ${veil('$•.••')}` : rate != null ? `≈ $${((t.import ?? 0) * rate).toFixed(2)}` : 'rate unknown') + stat('Powerwall', t.discharge, `out · ${(t.charge ?? 0).toFixed(1)} in`);
 }
 const stat = (label, v, sub) => `<div class="stat"><span>${label}</span><b>${v == null ? '—' : v >= 1000 ? (v / 1000).toFixed(1) + '<small>MWh</small>' : v.toFixed(1) + '<small>kWh</small>'}</b><em>${sub}</em></div>`;
