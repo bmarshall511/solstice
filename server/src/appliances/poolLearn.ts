@@ -10,7 +10,7 @@ import { kv } from '../db.js';
 import { localDay, addDays, rfc3339 } from '../tesla/client.js';
 
 export type YouRun = { at: number; day: string; hour: number; id: number; minutes: number; boost: boolean };
-export type OutsideRun = { at: number; day: string; hour: number };
+export type OutsideRun = { at: number; day: string; hour: number; source?: 'runOnce' };   // runOnce: a run-once schedule on the controller, not a person
 export type PoolSuggestion = { key: string; kind: 'skim' | 'goal'; days: number; of: 7; hour?: number; from?: number | null; to?: number; extraMin?: number };
 const youKey = (s: string) => `${s}:pool:youRuns`, outKey = (s: string) => `${s}:pool:outsideRuns`, dismissKey = (s: string) => `${s}:pool:suggestDismissed`;
 export const NEED_DAYS = 4, EXTRA_MIN = 60, GOAL_STEP = .5, GOAL_MAX = 4;
@@ -29,13 +29,13 @@ export async function endYouRun(siteId: string, id: number, now = Date.now()) {
   if (!r) return; r.minutes = Math.max(1, Math.round((now - r.at) / 60_000)); await kv.set(youKey(siteId), runs);
 }
 /** An hourly read outside the schedule found the pump running (sampling.ts), unless Solstice itself explains it. */
-export async function noteOutsideRun(siteId: string, now = Date.now()) {
+export async function noteOutsideRun(siteId: string, now = Date.now(), o: { runOnce?: boolean } = {}) {
   const [cu, spare, until] = await Promise.all([kv.get<{ until: number } | null>(`${siteId}:pool:clearup`), kv.get<{ until: number } | null>(`${siteId}:pool:spare`), kv.get<Record<string, number>>(`${siteId}:pool:until`)]);
   if ((cu && cu.until > now) || (spare && spare.until > now) || Object.values(until ?? {}).some(t => t > now)) return false;
-  // Vacation mode: during a trip it was a pool service or the panel, not you; it goes in the trip's log, not the learning
-  const trip = await awayNow(siteId, now); if (trip) { await tripOutsideRun(siteId, trip, now); return false; }
+  // Vacation mode: during a trip it was a pool service or the panel (or a run-once schedule on the controller), not you; it goes in the trip's log, not the learning
+  const trip = await awayNow(siteId, now); if (trip) { await tripOutsideRun(siteId, trip, now, o); return false; }
   const runs = await kv.get<OutsideRun[]>(outKey(siteId)) ?? [];
-  runs.unshift({ at: now, ...at(now) }); await kv.set(outKey(siteId), runs.slice(0, 200));
+  runs.unshift({ at: now, ...at(now), ...(o.runOnce ? { source: 'runOnce' as const } : {}) }); await kv.set(outKey(siteId), runs.slice(0, 200));
   return true;
 }
 
@@ -58,7 +58,7 @@ export async function poolChanges(siteId: string, o: { goal: number; skimAt: num
   if (skim && skim.days >= NEED_DAYS && skim.hour !== o.skimAt && fresh(`skim:${skim.hour}`)) suggestions.push({ key: `skim:${skim.hour}`, kind: 'skim', days: skim.days, of: 7, hour: skim.hour, from: o.skimAt });
   const to = Math.min(GOAL_MAX, o.goal + GOAL_STEP);
   if (goalDays >= NEED_DAYS && to > o.goal && fresh(`goal:${to}`)) suggestions.push({ key: `goal:${to}`, kind: 'goal', days: goalDays, of: 7, to, extraMin });
-  const recent = [...you.map(r => ({ at: r.at, kind: r.boost ? 'boost' as const : 'run' as const, minutes: r.minutes })), ...out.map(r => ({ at: r.at, kind: 'outside' as const, minutes: 60 }))].sort((a, b) => b.at - a.at);
+  const recent = [...you.map(r => ({ at: r.at, kind: r.boost ? 'boost' as const : 'run' as const, minutes: r.minutes })), ...out.map(r => ({ at: r.at, kind: r.source === 'runOnce' ? 'runOnce' as const : 'outside' as const, minutes: 60 }))].sort((a, b) => b.at - a.at);
   return { recent, patterns: { skim: skim ? { ...skim, need: NEED_DAYS } : null, goal: { days: goalDays, need: NEED_DAYS, extraMin } }, suggestions };
 }
 export async function dismissPoolSuggestion(siteId: string, key: string, now = Date.now()) {

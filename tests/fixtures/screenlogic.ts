@@ -55,11 +55,14 @@ export function readOnlyUnit() {
   const node = (path: string): any => new Proxy(() => {}, {
     get: (_t, k) => typeof k === 'symbol' || k === 'then' ? undefined : path === '' && k === 'netTimeout' ? state.netTimeout : node(path ? `${path}.${k}` : k),
     set: (_t, k, v) => { if (path === '' && k === 'netTimeout') { state.netTimeout = v; return true; } throw new Error(`read-only session: set ${String(k)}`); },
-    apply: async () => {
+    apply: async (_t, _this, args: unknown[]) => {
       calls.push({ path, netTimeout: state.netTimeout });
       if (!/(^|\.)get[A-Z]\w*Async$/.test(path)) throw new Error(`read-only session: ${path} is not a read`);
-      if (!(path in raw)) throw new Error(`read-only session: no fake answer for ${path}`);
-      return JSON.parse(JSON.stringify(raw[path]));
+      // schedule type 1 (run-once) answers from its own key, or an empty list: readPool asks for both types
+      const key = path === 'schedule.getScheduleDataAsync' && args[0] === 1 ? 'schedule.getScheduleDataAsync:1' : path;
+      if (key === 'schedule.getScheduleDataAsync:1' && !(key in raw)) return { data: [] };
+      if (!(key in raw)) throw new Error(`read-only session: no fake answer for ${path}`);
+      return JSON.parse(JSON.stringify(raw[key]));
     },
   });
   const conn = node('');

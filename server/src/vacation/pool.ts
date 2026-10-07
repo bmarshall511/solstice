@@ -51,11 +51,18 @@ export async function cloudyWater(siteId: string): Promise<string | null> {
 /** Whether a trip is under way now (for the spare-solar pause and outside runs). */
 export const awayNow = async (siteId: string, now = Date.now()) => { const t = await liveTrip(siteId); return isAway(t, now) ? t : null; };
 /** A pump run outside the plan during a trip: one line in the trip's log per hour (it is not counted as your run). */
-export async function tripOutsideRun(siteId: string, trip: Trip, now = Date.now()) {
+export async function tripOutsideRun(siteId: string, trip: Trip, now = Date.now(), o: { runOnce?: boolean } = {}) {
   const hourKey = `${siteId}:vacation:outsideRun`, h = Math.floor(now / 3600_000);
   if (await kv.get<number>(hourKey) === h) return;
   await kv.set(hourKey, h);
   const clock = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }).format(new Date(now));
+  // a run-once (egg-timer) schedule on the controller is named as the cause; otherwise a pool service or the panel
+  if (o.runOnce) {
+    await logTrip(trip.id, { at: now, text: `A run-once schedule on the controller ran the pump at ${clock}`, delta: 'pool' });
+    await notify(siteId, 'vacation', 'The pool pump ran on a controller schedule', `Seen running at ${clock} on a run-once schedule set on the panel, not Solstice's plan.`, { trip: trip.id },
+      { key: `vac:poolpanel:${trip.id}:${localDay(new Date(now))}`, now, url: '/?go=v-ins&p=appl' });
+    return;
+  }
   await logTrip(trip.id, { at: now, text: `The pump ran outside the plan at ${clock} (a pool service, or the panel)`, delta: 'pool' });
   await notify(siteId, 'vacation', 'The pool pump was started outside the plan', `Seen running at ${clock}. A pool service visit, or someone at the panel.`, { trip: trip.id },
     { key: `vac:poolpanel:${trip.id}:${localDay(new Date(now))}`, now, url: '/?go=v-ins&p=appl' });

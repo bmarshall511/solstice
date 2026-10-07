@@ -96,10 +96,25 @@ const poolPlan = { month: true, waterTemp: true, turnovers: true, goal: true, rp
 const autopilot = { mode: true, nextRunAt: true, pending: true, filterHours: true, filterCleanedOn: true,
   signals: { waterTemp: true, sunKwhM2: true, sunPct: true, high: true, heatDays: true, rainPct: true, rainMm: true, rainYesterdayMm: true, useDays: true, pollen: true },
   tomorrow: { date: true, plan: poolPlan, why: true }, week: [{ date: true, hours: true, boost: true, sunKwhM2: true, rainPct: true, high: true }], log: [log] } as const;
+/**
+ * A guest's view of Pool Autopilot never shows a trip (audit 10b, S-01): trip days show the plan as if the owner were home
+ * (`ifHome` / `tomorrowIfHome` from autopilot.ts), and reasons or log lines that name the trip are dropped.
+ */
+const guestAutopilot = (a: any) => {
+  if (!isObject(a)) return a === undefined ? undefined : null;
+  if ('error' in a) return { error: UNAVAILABLE };
+  const g = pick(a, autopilot) as any;
+  if (isObject(a.tomorrowIfHome)) g.tomorrow = pick(a.tomorrowIfHome, autopilot.tomorrow);
+  if (Array.isArray(a.week)) g.week = a.week.map((w: any) => { const p = pick(w, autopilot.week[0]) as any; return isObject(w?.ifHome) ? { ...p, hours: w.ifHome.hours, boost: w.ifHome.boost } : p; });
+  if (isObject(g.tomorrow) && Array.isArray(g.tomorrow.why)) g.tomorrow.why = g.tomorrow.why.filter(noPresence);
+  if (Array.isArray(g.log)) g.log = g.log.filter((x: any) => noPresence(x?.text));
+  return g;
+};
 const POOL: Rule = {
   id: true, name: true, linked: true, error: fixed(POOL_ERROR),
-  autopilot: (a: any) => (isObject(a) && 'error' in a ? { error: UNAVAILABLE } : pick(a, autopilot)),
-  pending: { date: true, plan: poolPlan, why: true },
+  autopilot: guestAutopilot,
+  // a suggested plan whose reasons name a trip is withheld from guests altogether
+  pending: (p: any) => (isObject(p) && Array.isArray(p.why) && !p.why.every(noPresence) ? null : pick(p, { date: true, plan: poolPlan, why: true })),
   extras: { hourlyToday: true, todayKwh: true, nowW: true, uvW: true, lightReadings30d: true },
   spaSession: { spaGallons: true, spaTemp: true, spaSet: true, riseF: true, heatMinutes: true, propaneGal: true, pumpWattsAtSpa: true, blowerWatts: true, electricUsdPerHour: 'veil' },
   settings: { gallons: true, spaGallons: true, designGpm: true, filterRpm: true, boostRpm: true, uv: true, autopilot: true, turnoverGoal: true, skimHours: true, boostCircuit: true },
@@ -116,8 +131,8 @@ const POOL: Rule = {
   applied: { at: true },
   conf: { kwhPerDay: true },   // learning layer: the confidence tier of the kWh/day figures
 };
-/** Log lines and reasons that mention presence ("marked away", "until you mark Home") never reach a guest. */
-const noPresence = (v: unknown) => (typeof v === 'string' ? !/\b(away|home)\b/i.test(v) : true);
+/** Log lines and reasons that mention presence ("marked away", "until you mark Home") or a trip ("Vacation: …", "trip plan") never reach a guest. */
+const noPresence = (v: unknown) => (typeof v === 'string' ? !/\b(away|home|vacation|trip)\b/i.test(v) : true);
 const AC: Rule = {
   id: true, name: true, configured: true, linked: true, error: fixed(UNAVAILABLE),
   settings: { band: { homeLo: true, homeHi: true, nightLo: true, nightHi: true }, awayF: true, nightFrom: true, nightTo: true, precoolDepth: true,

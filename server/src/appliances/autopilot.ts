@@ -2,7 +2,7 @@
 // with guardrails. In "suggest" mode it stores the plan for the owner to approve; in "auto" it writes it to ScreenLogic itself.
 import { q, kv } from '../db.js';
 import { localDay, addDays } from '../tesla/client.js';
-import { planFor, applyPlan, planWrite, setPoolAutopilot, programKey, rebaseline, PUMP_HOURS_MAX, PUMP_HOURS_MIN, type Plan, type PoolSettings } from './pool.js';
+import { planFor, applyPlan, planWrite, setPoolAutopilot, programKey, rebaseline, writingKey, PUMP_HOURS_MAX, PUMP_HOURS_MIN, type Plan, type PoolSettings, type PoolWriting } from './pool.js';
 import type { PoolSnapshot } from './screenlogic.js';
 import { siteLocation } from '../site.js';
 import { guardPoolWrite } from './guards.js';
@@ -69,23 +69,32 @@ export function tripPlanDay(o: { day: Daily; prev?: Daily; heatDays: number; wat
   return { plan: planFor({ ...args, force: { hours: Math.min(PUMP_HOURS_MAX, base.hours + 1), boost: 1 } }), why };
 }
 
-export type AutopilotState = { mode: Mode; nextRunAt: string; signals: Signals; tomorrow: { date: string; plan: Plan; why: string[] }; week: Array<{ date: string; hours: number; boost: number; sunKwhM2: number; rainPct: number; high: number; trip?: boolean }>; pending: boolean; log: Array<{ at: number; day: string; text: string; delta?: string }>; filterHours: number; filterCleanedOn: string | null };
+export type AutopilotState = { mode: Mode; nextRunAt: string; signals: Signals; tomorrow: { date: string; plan: Plan; why: string[] };
+  /** Guests never learn about a trip: a trip day also carries the plan as if the owner were home (`ifHome`, and `tomorrowIfHome` when tomorrow is one); redact.ts shows those instead. */
+  tomorrowIfHome: { date: string; plan: Plan; why: string[] } | null;
+  week: Array<{ date: string; hours: number; boost: number; sunKwhM2: number; rainPct: number; high: number; trip?: boolean; ifHome?: { hours: number; boost: number } }>;
+  pending: boolean; log: Array<{ at: number; day: string; text: string; delta?: string }>; filterHours: number; filterCleanedOn: string | null };
 
 export async function autopilot(siteId: string, o: { settings: PoolSettings; mode: Mode; W: (r: number) => number; rate: number | null; names: Map<number, string>; snap: PoolSnapshot | null; waterTemp: number; currentHours: number; act: boolean }): Promise<AutopilotState> {
   const days = await forecast(), today = localDay(), ti = days.findIndex(d => d.date === today);
   const use = await useDays(siteId), pollen = pollenFor(Number(today.slice(5, 7)) - 1); // Chicago month, not the host's
   const heatDaysAt = (i: number) => { let n = 0; for (let k = i; k >= 0 && days[k].high >= 95; k--) n++; return n; };
   const yesterdayUsed = !!(await q(`SELECT 1 FROM pool_readings WHERE site_id = $1 AND day = $2 AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(circuits) c WHERE c = ANY(array['1','2','3','4','7'])) LIMIT 1`, [siteId, addDays(today, -1)])).length;
-  const week = [], plans: Array<ReturnType<typeof planDay>> = [];
+  const week: AutopilotState['week'] = [], plans: Array<ReturnType<typeof planDay>> = [], homes: Array<ReturnType<typeof planDay> | null> = [];
   // Vacation mode: trip days get the trip plan, unless the last water test wasn't clear (then the normal plan, and why)
   const trip = await liveTrip(siteId), cloudy = trip ? await cloudyWater(siteId) : null;
   for (let i = ti + 1; i < Math.min(days.length, ti + 8); i++) {
     const tripDay = poolTripDay(trip, days[i].date), args = { day: days[i], prev: days[i - 1], heatDays: heatDaysAt(i), waterTemp: o.waterTemp, settings: o.settings, W: o.W, rate: o.rate, names: o.names };
     const p = tripDay && !cloudy ? tripPlanDay(args) : planDay({ ...args, useYesterday: i === ti + 1 && yesterdayUsed && !tripDay, pollen });
     if (tripDay && cloudy) p.why.unshift(`Vacation: the trip plan waits because your last water test said ${cloudy}`);
-    plans.push(p); week.push({ date: days[i].date, hours: p.plan.hours, boost: p.plan.boostHours, sunKwhM2: Math.round(days[i].sunKwhM2 * 10) / 10, rainPct: days[i].rainPct, high: Math.round(days[i].high), ...(tripDay ? { trip: true } : {}) });
+    // the plan as if nobody were travelling, for the guest view (a trip must never show; audit 10b S-01)
+    const home = tripDay ? planDay({ ...args, useYesterday: false, pollen }) : null;
+    plans.push(p); homes.push(home);
+    week.push({ date: days[i].date, hours: p.plan.hours, boost: p.plan.boostHours, sunKwhM2: Math.round(days[i].sunKwhM2 * 10) / 10, rainPct: days[i].rainPct, high: Math.round(days[i].high),
+      ...(tripDay ? { trip: true, ifHome: { hours: home!.plan.hours, boost: home!.plan.boostHours } } : {}) });
   }
   const tmr = days[ti + 1], tomorrow = { date: tmr.date, plan: plans[0].plan, why: plans[0].why };
+  const tomorrowIfHome = homes[0] ? { date: tmr.date, plan: homes[0].plan, why: homes[0].why } : null;
   const signals: Signals = { waterTemp: o.waterTemp, sunKwhM2: Math.round(tmr.sunKwhM2 * 10) / 10, sunPct: Math.round(Math.min(1, tmr.sunKwhM2 / 8) * 100), high: Math.round(tmr.high), heatDays: heatDaysAt(ti + 1), rainPct: tmr.rainPct, rainMm: tmr.rainMm, rainYesterdayMm: days[ti - 1]?.rainMm ?? 0, useDays: use, pollen };
   if (o.act) await logPoolPlan(siteId, { mode: o.mode, date: tomorrow.date, plan: tomorrow.plan, signals, settings: o.settings }); // learning layer: tomorrow's kWh
   const log = await kv.get<AutopilotState['log']>(`${siteId}:pool:autolog`) ?? [];
@@ -97,7 +106,11 @@ export async function autopilot(siteId: string, o: { settings: PoolSettings; mod
   // frame 7: an edit made outside Solstice (the Pentair app) is kept. In Auto, programs on the controller that differ in time from the
   // last write mean someone changed them: Autopilot moves to Suggest, makes that schedule the baseline, and offers its plan instead
   let mode = o.mode;
-  if (o.act && mode === 'auto' && o.snap && !held) {
+  // a Solstice write that was cut off (pool.ts writingKey) left old and new programs on the controller: that is unfinished work to redo,
+  // not an outside edit, so the mode stays and the plan is written again below (audit 10b, C-02/C-03)
+  const writing = o.act ? await kv.get<PoolWriting | null>(writingKey(siteId)) : null;
+  if (writing && o.act && o.snap && !held) { log.unshift({ at: Date.now(), day: today, text: 'The last schedule write didn’t finish, so Solstice writes the plan again', delta: 'retry' }); await kv.set(`${siteId}:pool:autolog`, log.slice(0, 30)); }
+  if (o.act && mode === 'auto' && o.snap && !held && !writing) {
     const applied = await kv.get<any>(`${siteId}:pool:applied`), managed = [o.settings.poolCircuit, o.settings.boostCircuit];
     if (applied?.plan?.schedules && programKey(o.snap.schedules, managed) !== programKey(applied.plan.schedules, managed)) {
       mode = 'suggest'; await setPoolAutopilot('suggest'); await rebaseline(siteId, o.snap, o.settings, 'controller');
@@ -109,7 +122,7 @@ export async function autopilot(siteId: string, o: { settings: PoolSettings; mod
     const applied = await kv.get<any>(`${siteId}:pool:applied`);
     // the same programs (circuit, start, stop and speed) as the last write: nothing to send (records from before the planner carry them too)
     const key = (xs: Array<{ circuitId: number; start: number; stop: number; rpm: number }> = []) => JSON.stringify(xs.map(x => [x.circuitId, x.start, x.stop, x.rpm]));
-    const same = !!applied && key(applied.plan.schedules) === key(tomorrow.plan.schedules);
+    const same = !writing && !!applied && key(applied.plan.schedules) === key(tomorrow.plan.schedules);   // an unfinished write is never "the same"
     if (!same) {
       // the safety guard checks the exact write first (managed pump circuits only, never freeze/spa/lights/heater, RPM in range)
       const write = mode === 'auto' && o.snap.pump ? planWrite(tomorrow.plan, o.snap, o.settings) : null, g = write ? guardPoolWrite(write, write.guard) : null;
@@ -120,5 +133,5 @@ export async function autopilot(siteId: string, o: { settings: PoolSettings; mod
     }
   } else pending = !!(await kv.get(`${siteId}:pool:pending`));
   const next = new Date(); next.setUTCHours(1, 15, 0, 0); if (next.getTime() < Date.now()) next.setUTCDate(next.getUTCDate() + 1);
-  return { mode, nextRunAt: next.toISOString(), signals, tomorrow, week, pending, log, filterHours: Math.round(daysSince * o.currentHours), filterCleanedOn: cleaned[0]?.day ?? null };
+  return { mode, nextRunAt: next.toISOString(), signals, tomorrow, tomorrowIfHome, week, pending, log, filterHours: Math.round(daysSince * o.currentHours), filterCleanedOn: cleaned[0]?.day ?? null };
 }

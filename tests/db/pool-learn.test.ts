@@ -16,6 +16,10 @@ describe('pool learning', () => {
     await kv.set('o:pool:clearup', null); await kv.set('o:pool:spare', { until: NOW + 600e3 }); expect(await noteOutsideRun('o', NOW)).toBe(false);
     await kv.set('o:pool:spare', { until: 0 }); await kv.set('o:pool:until', { 8: NOW + 600e3 }); expect(await noteOutsideRun('o', NOW)).toBe(false);
     await kv.set('o:pool:until', {}); expect(await noteOutsideRun('o', NOW)).toBe(true);
+    // a run covered by a run-once schedule on the controller is kept apart from a person's run (shown as "Run-once schedule on the controller")
+    expect(await noteOutsideRun('o', NOW + 3600e3, { runOnce: true })).toBe(true);
+    const kinds = (await poolChanges('o', { goal: 3, skimAt: null }, NOW + 3600e3)).recent.map(r => r.kind);
+    expect(kinds).toEqual(['runOnce', 'outside']);
   });
   it('PL-2 boosts around 4 PM on 4 of 7 days suggest moving the skim hour; not once it is there; "Not now" hides it 14 days', async () => {
     for (const d of ['01', '02', '04', '05']) await noteYouRun('s', { id: 8, minutes: 60, boost: true }, T(d, d === '02' ? '15:30' : '16:10'));

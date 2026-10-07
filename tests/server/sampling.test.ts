@@ -245,6 +245,22 @@ describe('Q18 pool reads: every 15 min of scheduled pump hours at :05/:20/:35/:5
     expect(H.store.get('s:pool:outsideRuns')).toHaveLength(1);           // and, with no trip, to the pool's learning as before
   });
 
+  it('a run covered by a run-once (egg-timer) schedule on the controller is recorded as such, not as somebody at the panel; during a trip the trip hears which', async () => {
+    vi.mocked(tripOutsideRun).mockClear();
+    const once = [{ id: 9, circuitId: 6, start: 5 * 60 + 30, stop: 7 * 60, dayMask: 0, flags: 0, heatCmd: 4, heatSetPoint: 70 }];   // Pool 05:30–07:00 once
+    H.S.read = async () => ({ ...poolSnapshot(H.S.now, { schedules: CURRENT, running: true, rpm: 1750, watts: 240 }), runOnce: once });
+    H.S.now = at('2026-10-07 05:05') + 3_000; await poolTick('s', at('2026-10-07 05:05'));   // the first read: the schedule comes from this snapshot
+    expect(H.store.get('s:pool:outsideRuns')).toBeUndefined();                                 // 05:05 is outside the run-once window, and no schedule was known yet
+    H.S.now = at('2026-10-07 06:05') + 3_000; await poolTick('s', at('2026-10-07 06:05'));
+    expect(H.store.get('s:pool:outsideRuns')).toMatchObject([{ source: 'runOnce' }]);
+    H.S.trip = { id: 7 };
+    H.S.now = at('2026-10-08 03:05') + 3_000; await poolTick('s', at('2026-10-08 03:05'));   // 03:05: the run-once window doesn't cover it
+    expect(vi.mocked(tripOutsideRun).mock.calls[0][3]).toEqual({ runOnce: false });
+    H.S.now = at('2026-10-08 06:05') + 3_000; await poolTick('s', at('2026-10-08 06:05'));
+    expect(vi.mocked(tripOutsideRun).mock.calls[1][3]).toEqual({ runOnce: true });
+    H.S.trip = null;
+  });
+
   it('right after Autopilot applied a plan (pool:last cleared) the applied plan’s schedule is used', async () => {
     H.store.set('s:pool:last', null);
     H.store.set('s:pool:applied', { plan: { schedules: CURRENT.map(({ circuitId, start, stop }) => ({ circuitId, start, stop })) } });
@@ -360,7 +376,8 @@ describe('no path reaches a real device', () => {
     const unit = readOnlyUnit();
     const snap = await real.readPool(unit.run as any);
     expect(unit.calls.map(c => c.path).sort()).toEqual(['equipment.getControllerConfigAsync', 'equipment.getEquipmentConfigurationAsync',
-      'equipment.getEquipmentStateAsync', 'getVersionAsync', 'pump.getPumpStatusAsync', 'schedule.getScheduleDataAsync']);
+      'equipment.getEquipmentStateAsync', 'getVersionAsync', 'pump.getPumpStatusAsync', 'schedule.getScheduleDataAsync', 'schedule.getScheduleDataAsync']);   // recurring (0) and run-once (1)
+    expect(snap.runOnce).toEqual([]);                                     // none set on the fake controller
     expect(unit.calls.every(c => c.netTimeout === 8000)).toBe(true);
     expect(snap.pump).toMatchObject({ id: 1, running: true, watts: 153, rpm: 1500, gpm: null });
     expect(snap.schedules.map(s => [s.circuitId, s.start, s.stop])).toEqual([[6, 600, 1140], [8, 840, 900]]);

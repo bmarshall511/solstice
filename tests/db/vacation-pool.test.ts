@@ -69,6 +69,12 @@ describe('Pool Autopilot during a trip', () => {
     const log = (await liveTrip('s'))!.data.log!.map(l => l.text);
     expect(log.filter(x => x.startsWith('The pump ran outside the plan'))).toHaveLength(1);
     expect(t.id).toBeGreaterThan(0);
+    // a run-once schedule on the controller is named as the cause (audit 10b, Q3): its own log line and a calmer push
+    expect(await noteOutsideRun('s', now + 864e5, { runOnce: true })).toBe(false);   // the next day: the push is deduped per day
+    const log2 = (await liveTrip('s'))!.data.log!.map(l => l.text);
+    expect(log2.filter(x => x.startsWith('A run-once schedule on the controller ran the pump'))).toHaveLength(1);
+    const titles = (await q<{ title: string }>(`SELECT title FROM alerts WHERE site_id = 's' AND kind = 'vacation' ORDER BY id`)).map(r => r.title);
+    expect(titles).toContain('The pool pump ran on a controller schedule');
   });
   it('VP-5 the departure check', () => {
     const snap = poolSnapshot(Date.now(), { on: [6, 3, 1, 2] });

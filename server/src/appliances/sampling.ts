@@ -116,7 +116,12 @@ export async function poolTick(siteId: string, now: number) {
     // mockup ae: the pump running in a quarter-hour the schedule doesn't cover was started outside Solstice (the hourly reads see it)
     // the controller's own freeze protection runs the pump outside the schedule on cold nights: that is not somebody's run (Vacation audit, §7)
     // isRunning with 0 RPM and 0 W (the IntelliFlo at night) is not a run (pumpRunning)
-    if (pumpRunning(snap.pump) && !snap.freezeMode && sched && !scheduledQuarters(sched)[Math.floor(chicago(now).minute / POOL_READ_MIN)]) await noteOutsideRun(siteId, now);
+    if (pumpRunning(snap.pump) && !snap.freezeMode && sched && !scheduledQuarters(sched)[Math.floor(chicago(now).minute / POOL_READ_MIN)]) {
+      // a run-once (egg-timer) schedule on the controller covering this minute for a pump circuit explains the run: it is not someone at the panel
+      const m = chicago(now).minute, pumpCircuits = new Set((snap.pump?.circuits ?? []).map(c => c.circuitId));
+      const runOnce = (snap.runOnce ?? []).some(s => pumpCircuits.has(s.circuitId) && (s.start <= s.stop ? m >= s.start && m < s.stop : m >= s.start || m < s.stop));
+      await noteOutsideRun(siteId, now, { runOnce });
+    }
     return { read: true, at: snap.at, running: snap.pump?.running ?? null, rpm: snap.pump?.rpm ?? null, watts: snap.pump?.watts ?? null };
   } catch (e: any) {
     console.warn(`[solstice] cron pool read failed for ${siteId}, skipped until the next due quarter-hour: ${e?.message ?? e}`);
