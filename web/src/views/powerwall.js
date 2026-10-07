@@ -6,6 +6,7 @@ import { api } from '../lib/api.js';
 import { esc } from '../lib/conf.js';
 import { rulesMode } from '../lib/digest.js';
 import { clock, dayOf, when } from '../lib/presence.js';
+import { RULE, EXPORT, MODE, val, limits, pwResultText } from '../lib/pwrules.js';
 
 const MARKUP = `<div class="card pwr" id="pwr" data-owner>
   <div class="h"><b>Powerwall rules</b><span class="badge g" id="pwrBadge">—</span></div>
@@ -16,20 +17,8 @@ const MARKUP = `<div class="card pwr" id="pwr" data-owner>
   <div class="tline" id="pwrLog"></div>
 </div>`;
 
-export const RULE = {
-  reserve: { title: 'Reserve for tonight', sub: 'how much to keep for an outage overnight', skip: 'Not tonight' },
-  storm: { title: 'Storm Watch prep', sub: 'fill the Powerwalls before bad weather', skip: 'Skip' },
-  export: { title: 'Export rule', sub: 'what the Powerwalls may send to PEC' },
-};
-export const EXPORT = { battery_ok: 'Everything', pv_only: 'Solar only', never: 'Never' };
-export const MODE = { autonomous: 'Time-Based Control', self_consumption: 'Self-Powered', backup: 'Backup-only' };
+export { RULE, EXPORT, MODE, val, limits };
 const code = v => `<code style="font:11px 'JetBrains Mono'">${esc(v)}</code>`;
-export const val = (command, v) => v == null ? '—' : command === 'grid_import_export' ? (EXPORT[v] ?? String(v)) : `${v}%`;
-export const limits = (id, floor) => ({
-  reserve: ['10–100%', 'one change an hour', 'never below 20% in a storm', `not below your ${floor}% floor`],
-  storm: ['100% for a Warning or active Storm Watch', '50% for a Watch', 'back to the old reserve after', 'one change an hour'],
-  export: ['battery_ok ↔ pv_only only', 'never "never"', 'mode never changed', 'one change an hour'],
-})[id];
 const teslaSteps = (id, v) => id === 'export' ? `In the Tesla app: Powerwall › Settings › Energy Exports › ${v === 'pv_only' ? 'Solar' : 'Everything'}.`
   : `In the Tesla app: Powerwall › Settings › Backup Reserve › ${v}%.`;
 const autoWhen = { reserve: 'at the 5 PM check', storm: 'on the next 5-minute check', export: 'with tonight’s sync' };
@@ -41,9 +30,7 @@ export const skip = (id, v) => { try { localStorage.setItem(skipKey(id, v), '1')
 
 /** One log row as the "last" line and the log timeline read it. */
 function logText(l, withRule) {
-  const v = val(l.command, l.value), at = clock(l.at), who = l.result === 'sent' ? (l.source === 'owner' ? 'you applied' : 'auto') : '';
-  const t = { sent: `set ${v} at ${at}`, suggested: `suggested ${v} · not applied`, refused: `${v} refused: ${l.reason ?? ''}`, scope_missing: `${v} not sent: energy_cmds missing`,
-    unchanged: `no change: ${l.reason ?? ''}`, error: `${v} failed: ${l.reason ?? ''}`, no_account: 'not sent: no Tesla account' }[l.result] ?? `${l.result} ${v}`;
+  const who = l.result === 'sent' ? (l.source === 'owner' ? 'you applied' : 'auto') : '', t = pwResultText(l, clock(l.at));
   return withRule ? `${esc(RULE[l.rule]?.title ?? l.rule ?? l.command)} · ${esc(t)}${who ? ` <em>${who}</em>` : ''}` : esc(t.charAt(0).toUpperCase() + t.slice(1) + (who ? ` (${who})` : '') + '.');
 }
 const day = at => niceDate(dayOf(at));
