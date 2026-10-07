@@ -10,7 +10,7 @@ import { guardCoolSetpoint, explainRefusal, GuardRefusal } from './guards.js';
 import { acSavings, learnedPlan, bandMid, type AppliedTrim } from '../learn/ac.js';
 import { median } from '../learn/models.js';
 import type { Tier } from '../learn/confidence.js';
-import { presenceFor } from './presence.js';
+import { presenceFor, PRESENCE_FIXED } from './presence.js';
 import { changed, ours, holdUntil, holdOver, morningAfter, getHold, setHold, lastSent, SAME_F, type Hold, type HoldBy } from './hold.js';
 import { SPARE_SOC } from '../spare.js';
 
@@ -380,7 +380,7 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
   // cap can't flip the plan back and forth during the day (it used to re-plan every 5 minutes).
   const inputs = await dayInputs(siteId, today, { high: days[ti]?.high ?? 90, sunKwhM2: days[ti]?.sunKwhM2 ?? 5, hourlySun: days[ti]?.hourlySun ?? Array(24).fill(0), humidity: st?.humidity ?? null });
   const plan = await learnedPlan(siteId, { date: today, ...inputs, settings, acKw: learned.coolKw, slope, rate },
-    planFor, learned.coolKw ?? (slope ? Math.max(2, Math.min(5, slope * 1.3)) : 3.4));
+    planFor, learned.coolKw ?? (slope ? Math.max(2, Math.min(5, slope * 1.3)) : 3.4), { readOnly: !!settingsAll[PRESENCE_FIXED as any] });
   const hold = await observeHold(siteId, fresh ? prev : null, st, plan, settings, presence);
   const week = days.slice(ti, ti + 7).map(d => { const p = planFor({ date: d.date, high: d.high, sunKwhM2: d.sunKwhM2, hourlySun: d.hourlySun, settings, acKw: learned.coolKw, slope, rate, humidity: null }); return { date: d.date, high: Math.round(d.high), sunKwhM2: Math.round(d.sunKwhM2 * 10) / 10, precool: p.precool, depth: p.precool ? settings.precoolDepth : 0, shiftedKwh: p.shiftedKwh, eveningAvoidedKwh: p.eveningAvoidedKwh, precoolFrom: p.precoolFrom, precoolTo: p.precoolTo, coastFrom: p.coastFrom, coastTo: p.coastTo }; });
   const applied = await kv.get<AcRecord>(`${siteId}:ac:plan`) ?? null;
@@ -408,6 +408,12 @@ export async function acTick(siteId: string, settingsAll: Record<string, any>, r
   const d = await acDetail(siteId, settingsAll, rate, slope, { fresh: true });
   if (!d.linked || !d.state) return { sampled: false };
   if (d.hold) return { sampled: true, applied: !!d.applied?.approved, held: true };   // hold.ts: a manual change is in force; skip the plan
+  // Nest refuses a setpoint while Eco is on, so nothing is sent until Eco is off (it used to try, and fail, every 5 minutes). Logged once a day.
+  if (d.state.eco) {
+    const text = 'Nest is in Eco, so Autopilot sends nothing until Eco is off';
+    if (d.log[0]?.text !== text || d.log[0]?.day !== localDay()) await logAc(siteId, text, 'eco');
+    return { sampled: true, applied: false, eco: true };
+  }
   const s = d.settings, plan = d.plan, h = hourNow(), planStep = stepAt(plan, h);
   let rec: AcRecord | null = d.applied;
   if (!rec) {

@@ -181,8 +181,8 @@ describe('crons keep their bearer check and need no cookie', () => {
     await db.kv.set('ercot', { at: Date.now(), data: { condition: 'normal', title: 'Normal', note: null, eea: 0, demandMw: 1, capacityMw: 2, at: 'x' } }); // the watch reads the cache, never ercot.com
     const nest = await call('/api/cron/nest', { headers: auth }).finally(() => vi.useRealTimers());
     expect(nest.status).toBe(200);
-    // the sampling tick, then the alert watch (server/src/watch.ts), read-only
-    expect(await nest.json()).toEqual({ s: { nest: { skipped: 'nest not linked' }, pool: { skipped: 'pool not configured' } },
+    // the Vacation-mode lifecycle (no trip), the sampling tick, then the alert watch (server/src/watch.ts), read-only
+    expect(await nest.json()).toEqual({ s: { nest: { skipped: 'nest not linked' }, pool: { skipped: 'pool not configured' } }, vacation: { s: { trip: null, phase: null } },
       watch: { s: expect.objectContaining({ storm: { alerts: 0, stormWatchActive: false, notified: 0 }, ercot: { level: 'normal' } }) } });
     for (const headers of [{ authorization: 'Bearer wrong' }, {}] as Array<Record<string, string>>) {
       const r = await call('/api/cron/sync', { headers });

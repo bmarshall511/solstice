@@ -449,6 +449,14 @@ describe('write paths call the guard (fake ScreenLogic session, fake SDM, in-mem
       const log = await acLog();
       if (text) expect(log[0].text).toBe(text); else expect(log).toEqual([]);
     });
+    it('111b Nest in Eco: nothing is sent, and the log says why once a day (Vacation audit §7)', async () => {
+      (H.nestState as any).eco = true;
+      try {
+        await tick(); vi.setSystemTime(NOW + 5 * MIN); await tick();
+        expect(setCool).not.toHaveBeenCalled(); expect(H.sdm).toHaveLength(0);
+        expect(await acLog()).toEqual([expect.objectContaining({ text: 'Nest is in Eco, so Autopilot sends nothing until Eco is off', delta: 'eco' })]);
+      } finally { (H.nestState as any).eco = false; }
+    });
     it('111 heating mode is left alone (no attempt, nothing logged)', async () => {
       H.nestState.mode = 'HEAT';
       await tick();
