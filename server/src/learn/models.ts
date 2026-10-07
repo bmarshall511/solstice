@@ -54,7 +54,8 @@ export const MODELS: Record<ModelId, ModelDef> = {
     help: 'needs control days: 1 in 5 hot, sunny days holds the comfort band so pre-cool days can be compared' },
   'ac.eveningAvoided': { ...base, id: 'ac.eveningAvoided', label: 'AC evening kWh avoided', unit: 'kWh', floor: 1, need: 10, ceiling: .6, kind: 'estimate', inputs: AC,
     help: 'needs control days: 1 in 5 hot, sunny days holds the comfort band so pre-cool days can be compared' },
-  'bill.cycleImport': { ...base, id: 'bill.cycleImport', label: 'Billing-cycle kWh bought', unit: 'kWh', floor: 50, need: 3, ceiling: .25,
+  // v2: B2-14's projection (complete days only, from the day after the bill, over the bill's own period length)
+  'bill.cycleImport': { ...base, id: 'bill.cycleImport', label: 'Billing-cycle kWh bought', unit: 'kWh', floor: 50, need: 3, ceiling: .25, version: 2,
     window: '365d', staleDays: 45, freshDays: 35, inputs: ['from', 'to', 'elapsedDays', 'importSoFar', 'exportSoFar'],
     help: 'needs a parsed bill and a few finished billing cycles' },
   // v2: the 2026-10-05 fix (median of the last 7 nights with thermostat data); v1 predictions sat near 3.7 kW.

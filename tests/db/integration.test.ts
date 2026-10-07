@@ -715,7 +715,9 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
     const first = await one<{ target_day: string; target_hour: number; inputs: any }>(`SELECT target_day, target_hour, inputs FROM predictions WHERE site_id = $1 AND model = 'fc48.soc' AND made_at = $2 AND horizon = 1`, [S, RUN]);
     expect(first).toEqual({ target_day: '2026-09-25', target_hour: 6, inputs: { k: 1, yieldK: 7.68, soc0: 50, capKwh: 27, maxKw: 10, reservePct: 20, startHour: 5, version: 1 } });   // B2-3: version
     expect(await one(`SELECT target_day, horizon, predicted, inputs FROM predictions WHERE site_id = $1 AND model = 'bill.cycleImport' AND made_at = $2`, [S, RUN]))
-      .toEqual({ target_day: '2026-10-10', horizon: 15, predicted: 44.6, inputs: { from: '2026-09-10', to: '2026-10-10', elapsedDays: 15, importSoFar: 21.6, exportSoFar: 0, version: 1 } });
+      // B2-14 (deliberate): the cycle runs from the day after the bill (9/10) for the bill's 31 days, complete days only (14 by 9/25),
+      // version 2; the seed buys the same 1.44 kWh every day, so the projection stays 44.6
+      .toEqual({ target_day: '2026-10-11', horizon: 16, predicted: 44.6, inputs: { from: '2026-09-11', to: '2026-10-11', elapsedDays: 14, importSoFar: 20.2, exportSoFar: 0, version: 2 } });
     expect(await one(`SELECT target_day, predicted FROM predictions WHERE site_id = $1 AND model = 'home.alwaysOn' AND made_at = $2`, [S, RUN])).toEqual({ target_day: '2026-09-26', predicted: .48 });
     const last = await kv.get<any>(`${S}:learn:last`);
     expect(last).toMatchObject({ at: RUN, predicted: 146, anomalies: { opened: ['pump.below_baseline@1500', 'data.gap.energy', 'data.soc_jump'], resolved: [], open: 3 } });   // B2-12: + the jump

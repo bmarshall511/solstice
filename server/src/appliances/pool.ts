@@ -193,13 +193,19 @@ const solarProfile = async (siteId: string) => {
   const out = Array(24).fill(0); rows.forEach(r => out[r.hour] = r.kw); return out;
 };
 
+/**
+ * B2-14 (audit L-33): how long a reading's circuits (lights, blower) and UV state hold: until the next reading, at most 60 minutes. The
+ * cron reads every 15 minutes in pump hours and hourly otherwise (sampling.ts), so the old 10-minute cap counted lights on 20:00–23:00
+ * outside pump hours as 30 minutes of 3 hours.
+ */
+export const CIRCUIT_HOLD_MS = 60 * 60_000;
 /* ---------- History → "Where every kWh went": pool kWh over a range of days (database only) ---------- */
 /** One local day of a range: its 15-minute slices elapsed (96 for a past day) and its elapsed and full length (23, 24 or 25 h). */
 export type DaySpan = { day: string; quarters: number; elapsedMs: number; lengthMs: number };
 /**
  * Pool kWh for the History flows card, from the model behind the Pool card's "today": each day in 15-minute steps, the pump's measured
  * watts where a reading exists for the quarter-hour and the stored schedule × power curve otherwise, plus the UV lamp while the pump runs
- * and the other circuits (blower, lights) from readings, each holding until the next for at most 10 min. Database only: the programs come
+ * and the other circuits (blower, lights) from readings, each holding until the next for at most 60 min (B2-14). Database only: the programs come
  * from the last stored snapshot (or the applied plan while the snapshot is cleared), never from a ScreenLogic read.
  * Past quarter-hours come from that day's own readings (filledQuarters); days with no read at all take the read days' average.
  * `source`: 'readings' when days with readings make up at least 80% of the range, 'schedule' otherwise,
@@ -227,7 +233,7 @@ export async function poolKwhBetween(siteId: string, spans: DaySpan[], settingsA
     const measured = rd.length ? filledQuarters(meanByQuarter(rd.map(r => ({ ts: Number(r.ts), watts: r.running ? Number(r.watts) : 0 }))), s.quarters, k === spans.length - 1 && s.quarters < 96) : Array(96).fill(null);
     const runs = slices.slice(0, s.quarters).filter((r, i) => (measured[i] ?? r) > 0).length;
     let d = quarterWh(prof, W, measured).slice(0, s.quarters).reduce((a, v) => a + v, 0) + (settings.uv ? runs * UV_W / 4 : 0);
-    for (let i = 1; i < rd.length; i++) d += (rd[i - 1].circuits ?? []).reduce((a, c) => a + (settings.loads[String(c)] ?? 0), 0) * Math.min(600_000, Number(rd[i].ts) - Number(rd[i - 1].ts)) / 3600_000;
+    for (let i = 1; i < rd.length; i++) d += (rd[i - 1].circuits ?? []).reduce((a, c) => a + (settings.loads[String(c)] ?? 0), 0) * Math.min(CIRCUIT_HOLD_MS, Number(rd[i].ts) - Number(rd[i - 1].ts)) / 3600_000;
     wh += d; if (rd.length) { readMs += s.elapsedMs; dayWh.push(d); }
   });
   if (unreadMs && readMs) wh += dayWh.reduce((a, v) => a + v, 0) / readMs * unreadMs;   // days without a single read: the read days' average rate
@@ -251,10 +257,10 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   const { speeds, schedules: pumpSched } = pumpSchedules(snap);
   const current = pumpSched.map(s => ({ ...s, rpm: speeds.get(s.circuitId) ?? 0, name: names.get(s.circuitId) ?? `Circuit ${s.circuitId}` }));
   const prof = hourlyRpm(current, speeds), kwh = dayKwh(prof, W) + (settings.uv ? hoursOn(prof) * UV_W / 1000 : 0);
-  // the other circuits (blower, lights) and the UV lamp: integrated from readings taken while the app was open (gaps capped at 10 min)
+  // the other circuits (blower, lights) and the UV lamp: integrated from the readings, each holding until the next (gaps capped at 60 min, B2-14)
   const rd = await q<{ ts: string; hour: number; running: boolean; circuits: number[] }>(`SELECT ts::text, hour::int, running, circuits FROM pool_readings WHERE site_id = $1 AND day = $2 ORDER BY ts`, [siteId, localDay()]);
   const extraHourly = Array(24).fill(0); let extraKwh = 0, readUvKwh = 0;
-  for (let i = 1; i < rd.length; i++) { const dtH = Math.min(600_000, Number(rd[i].ts) - Number(rd[i - 1].ts)) / 3600_000, uvW = rd[i - 1].running && settings.uv ? UV_W : 0; const w = (rd[i - 1].circuits ?? []).reduce((a, c) => a + (settings.loads[String(c)] ?? 0), 0) + uvW; extraHourly[rd[i - 1].hour] += w * dtH / 1000; extraKwh += w * dtH / 1000; readUvKwh += uvW * dtH / 1000; }
+  for (let i = 1; i < rd.length; i++) { const dtH = Math.min(CIRCUIT_HOLD_MS, Number(rd[i].ts) - Number(rd[i - 1].ts)) / 3600_000, uvW = rd[i - 1].running && settings.uv ? UV_W : 0; const w = (rd[i - 1].circuits ?? []).reduce((a, c) => a + (settings.loads[String(c)] ?? 0), 0) + uvW; extraHourly[rd[i - 1].hour] += w * dtH / 1000; extraKwh += w * dtH / 1000; readUvKwh += uvW * dtH / 1000; }
   const extraNowW = snap ? snap.circuits.filter(c => c.on).reduce((a, c) => a + (settings.loads[String(c.id)] ?? 0), 0) + (snap.pump?.running && settings.uv ? UV_W : 0) : 0;
   const lightH = await q<{ h: number }>(`SELECT COUNT(*)::int h FROM pool_readings WHERE site_id = $1 AND day >= $2 AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(circuits) c WHERE c = ANY(array['3','4']))`, [siteId, addDays(localDay(), -30)]);
   const waterTemp = snap?.bodies[0]?.temp ?? WATER_BY_MONTH[month];

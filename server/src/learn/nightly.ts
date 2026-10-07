@@ -433,14 +433,12 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
       .slice(0, ALWAYS_ON_NIGHTS).map(m => m!['home.alwaysOn_kw']);
     if (nights.length >= ALWAYS_ON_MIN) preds.push({ model: 'home.alwaysOn', day: addDays(today, 1), value: round(median(nights), 3), inputs: { nights: nights.length, acKw: round(kw, 2) } });
     else waiting.push(`home.alwaysOn: ${nights.length} of ${ALWAYS_ON_MIN} nights with thermostat readings`);
-    // the billing cycle since the newest bill: what History › Bills projects (kWh bought × 31 ÷ days elapsed), in kWh only
+    // the billing cycle since the newest bill, in kWh only (cycleProjection, B2-14)
     if (!bills) { learnStats.queries++; bills = await listBills(siteId); }   // listBills: one query, unless the rules step already read them
     const last = bills.reduce<typeof bills[number] | null>((a, b) => !a || b.period.to > a.period.to ? b : a, null);
     if (last) {
-      const f = last.period.to, end = addDays(f, 30), el = Math.max(1, (Date.parse(today) - Date.parse(f)) / 864e5);
-      const soFar = d.energyDaily.filter(r => r.day >= f && r.day <= today), imp = soFar.reduce((a, r) => a + r.imp, 0), exp = soFar.reduce((a, r) => a + r.exp, 0);
-      if (today <= end) preds.push({ model: 'bill.cycleImport', day: end, horizon: Math.round((Date.parse(end) - Date.parse(today)) / 864e5), value: round(imp * 31 / el, 1),
-        inputs: { from: f, to: end, elapsedDays: el, importSoFar: round(imp, 1), exportSoFar: round(exp, 1) } });
+      const p = cycleProjection(last.period, d.energyDaily, today);
+      if ('why' in p) waiting.push(`bill.cycleImport: ${p.why}`); else preds.push(p);
     } else waiting.push('bill.cycleImport: no bill parsed');
     predicted = await logPrediction(siteId, preds, { now });
   }, undefined);
@@ -469,6 +467,21 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     if (errors.length) await kv.set(`${siteId}:error:learn`, { at: now, message: errors.join('; ') }).catch(() => {});
     return out;
   }
+}
+
+/**
+ * The billing-cycle projection (bill.cycleImport): kWh bought so far × the cycle's days ÷ the days complete. B2-14 (audit L-23, D15):
+ * the cycle starts the day after the bill's last day, only complete days count (today's partial day and the old cycle's last day used
+ * to: on day 1 that read +21%), and it is as long as the parsed bill's period (it was always 31 days).
+ */
+export function cycleProjection(period: { to: string; days: number }, daily: ReadonlyArray<{ day: string; imp: number; exp: number }>, today: string): Prediction | { why: string } {
+  const len = period.days > 0 ? period.days : 31, start = addDays(period.to, 1), end = addDays(period.to, len);
+  const el = Math.round((Date.parse(today) - Date.parse(start)) / 864e5);
+  if (el < 1) return { why: 'the cycle has no complete day yet' };
+  if (today > end) return { why: 'the cycle has ended; waiting for its bill' };
+  const soFar = daily.filter(r => r.day >= start && r.day < today), imp = soFar.reduce((a, r) => a + r.imp, 0), exp = soFar.reduce((a, r) => a + r.exp, 0);
+  return { model: 'bill.cycleImport', day: end, horizon: Math.round((Date.parse(end) - Date.parse(today)) / 864e5), value: round(imp * len / el, 1),
+    inputs: { from: start, to: end, elapsedDays: el, importSoFar: round(imp, 1), exportSoFar: round(exp, 1) } };
 }
 
 /** B2-3: each model's current version and the first nightly day it ran (kv `<site>:learn:versions`), for "re-learning since". */
