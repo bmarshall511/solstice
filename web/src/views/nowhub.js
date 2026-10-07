@@ -97,7 +97,7 @@ function candidates(S) {
   if (S.billDue) out.push({ kind: 'bill', cls: 'plain', ic: 'bill', title: `Your ${esc(S.billDue.month)} PEC bill should be ready`, line: `${esc(S.billDue.period)} · add it to check against Tesla`, btns: [['Add it', 'bill']] });
   // 7 · the weekly digest (plain)
   const dg = digestBanner();
-  if (dg) out.push({ kind: 'digest', cls: 'plain', ic: 'chart', title: `Your week · ${dg.week}`, line: dg.lead, btns: [['See the week', 'dg-open'], ['Dismiss', 'dg-dismiss']] });
+  if (dg) out.push({ kind: 'digest', cls: 'plain', ic: 'chart', title: `Your week · ${esc(dg.week.replace(/^Week \d+ · /, '').replace(/(Mon|Tue|Wed|Thu|Fri|Sat|Sun) /g, ''))}`, line: dg.lead, btns: [['See the week', 'dg-open'], ['Dismiss', 'dg-dismiss']] });
   return out;
 }
 let slotKey = '';
