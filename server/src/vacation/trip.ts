@@ -175,3 +175,11 @@ export async function tripTick(siteId: string, now = Date.now()): Promise<{ trip
   if (t.state === 'active' && t.startedAt != null && now - t.startedAt >= MAX_TRIP_MS) return { trip: await endTrip(siteId, 'cap', now), capped: true };
   return { trip: t };
 }
+
+/** Guest links rest while a trip is under way (a planned one whose leave time has come counts) and for 24 h after it ends (owner, Q14). */
+export const GUEST_RESUME_MS = 864e5;
+export async function guestsPaused(now = Date.now()) {
+  return !!(await one(`SELECT 1 FROM trips WHERE (state IN ('planned', 'active') AND leave_at <= $1) OR (state = 'ended' AND ended_at > $2) LIMIT 1`, [now, now - GUEST_RESUME_MS]));
+}
+/** Whether this site has a trip under way now (one query). */
+export const tripAway = async (siteId: string, now = Date.now()) => isAway(await liveTrip(siteId), now);

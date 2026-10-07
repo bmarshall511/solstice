@@ -20,7 +20,7 @@ import { fc48Inputs } from './learn/nightly.js';
 import { stormNow, type StormNow } from './watch.js';
 import { notify } from './notify.js';
 import { RESERVE_MIN, RESERVE_MAX, RESERVE_STORM_MIN } from './appliances/guards.js';
-import { liveTrip, isAway } from './vacation/trip.js';
+import { liveTrip, isAway, tripDays } from './vacation/trip.js';
 import { setBackupReserve, setGridExportRule, teslaScopes, logPowerwall, type CommandKind, type CommandResult, type CommandSource } from './tesla/commands.js';
 
 export const PW_RULES = ['reserve', 'storm', 'export'] as const;
@@ -101,7 +101,8 @@ async function reservePoints(siteId: string, info: any, now: number): Promise<Fc
     q<{ day: string; hour: number; home: number }>(`SELECT day, hour::int, (${hourWh('home_wh')} / 1000.0)::float8 home FROM energy WHERE site_id = $1 AND day >= $2 GROUP BY day, hour`, [siteId, addDays(today, -15)]),
     q<{ day: string; hour: number; last: number; at: number }>(`SELECT day, hour::int, ((ARRAY_AGG(soe ORDER BY epoch DESC))[1])::float8 last, MAX(epoch)::float8 at FROM soe WHERE site_id = $1 AND day >= $2 GROUP BY day, hour`, [siteId, addDays(today, -9)]),
   ]);
-  const fc = fc48Inputs(w, daily, hourly, soe, today); if (!fc.ready) return null;
+  const trips = await tripDays(siteId, addDays(today, -15), today, now);   // mockup ak: trip days aren't at-home days
+  const fc = fc48Inputs(w, daily, hourly.filter(r => !trips.has(r.day)), soe, today, trips); if (!fc.ready) return null;
   const capKwh = (info.nameplate_energy ?? 0) / 1000 || 27, maxKw = (info.nameplate_power ?? 0) / 1000 || 10;
   return forecast48({ w: fc.w, startDate: today, startHour: +rfc3339(new Date(now)).slice(11, 13), soc0: fc.soc0, yieldK: fc.yieldK, profile: fc.profile, capKwh, maxKw, reservePct: info.backup_reserve_percent ?? DEFAULT_FLOOR, dayScale: fc.dayScale }).points;
 }

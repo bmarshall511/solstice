@@ -4,6 +4,7 @@
 // big loads (runs of 15 min or more at least 3 kW above that base once the AC's own draw is taken out; only the energy above the base
 // counts). What is left is "everything else". Only days with Nest readings are split: without them the AC can't be told apart. Big loads
 // are labelled "looks like" a water heater, dryer or oven: whole-home data can't tell those apart.
+import { tripDays } from './vacation/trip.js';
 import { q, kv } from './db.js';
 import { localDay, addDays } from './tesla/client.js';
 import { daySpans } from './flows.js';
@@ -160,7 +161,8 @@ export async function alwaysOnTrend(siteId: string, now = Date.now()) {
  * has come back within 0.15 kW (kv `<site>:alwaysOn:alerted`).
  */
 export async function alwaysOnWatch(siteId: string, now = Date.now()) {
-  const today = localDay(new Date(now)), nights = (await nightBases(siteId, addDays(today, -34))).filter(n => n.day < today).map(n => ({ day: n.day, kw: Number(n.kw) }));
+  const today = localDay(new Date(now)), trips = await tripDays(siteId, addDays(today, -34), today, now);   // mockup ak: trip nights are not the house's base
+  const nights = (await nightBases(siteId, addDays(today, -34))).filter(n => n.day < today && !trips.has(n.day)).map(n => ({ day: n.day, kw: Number(n.kw) }));
   if (nights.length < 20) return { skipped: 'too few nights' };
   const last3 = nights.slice(-3), prior = nights.slice(-33, -3).map(n => n.kw).sort((a, b) => a - b), med = prior[Math.floor(prior.length / 2)];
   const key = `${siteId}:alwaysOn:alerted`, alerted = !!(await kv.get<boolean>(key)), latest = last3[last3.length - 1].kw;

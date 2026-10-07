@@ -9,6 +9,8 @@ import { localAt, addDays } from '../tesla/client.js';
 import { forbiddenCircuit } from '../appliances/guards.js';
 import type { PoolSnapshot } from '../appliances/screenlogic.js';
 import { logTrip, liveTrip, isAway, type Trip } from './trip.js';
+import { notify } from '../notify.js';
+import { localDay } from '../tesla/client.js';
 
 export const TRIP_GOAL = 1, TRIP_GOAL_WARM = 1.5, WARM_WATER_F = 80, HOT_WATER_F = 88, HEAT_WAVE_DAYS = 3;
 
@@ -55,4 +57,6 @@ export async function tripOutsideRun(siteId: string, trip: Trip, now = Date.now(
   await kv.set(hourKey, h);
   const clock = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }).format(new Date(now));
   await logTrip(trip.id, { at: now, text: `The pump ran outside the plan at ${clock} (a pool service, or the panel)`, delta: 'pool' });
+  await notify(siteId, 'vacation', 'The pool pump was started outside the plan', `Seen running at ${clock}. A pool service visit, or someone at the panel.`, { trip: trip.id },
+    { key: `vac:poolpanel:${trip.id}:${localDay(new Date(now))}`, now, url: '/?go=v-ins&p=appl' });
 }

@@ -3,6 +3,7 @@
 // No accounts: a link is a capability. Only the SHA-256 of the token is stored, so the plaintext exists once, in the owner's
 // create response. Revoking is a row update and takes effect on the guest's next request. Revoked and expired links stay in
 // the owner's list for 30 days, then are pruned (row deletes only; the table is never dropped or rewritten, rule 6).
+import { guestsPaused } from './vacation/trip.js';
 import { randomBytes, createHash } from 'node:crypto';
 import type { Request } from 'express';
 import { q, one } from './db.js';
@@ -67,7 +68,11 @@ export type ShareLookup = { id: string; state: ShareState; expiresAt: string | n
 export async function findShare(token: string): Promise<ShareLookup | null> {
   if (!token || token.length > 200) return null;
   const r = await one(`SELECT id, expires_at, ${STATE_SQL} AS state FROM access_tokens WHERE token_hash = $1`, [sha(token)]);
-  return r ? { id: r.id, state: r.state, expiresAt: iso(r.expires_at) } : null;
+  if (!r) return null;
+  // Vacation mode (mockup ak): during a trip and for 24 h after it, a live link answers exactly as a turned-off one, so a guest can never
+  // learn the house is empty; the link itself is untouched and opens again afterwards
+  const state: ShareState = r.state === 'active' && await guestsPaused() ? 'revoked' : r.state;
+  return { id: r.id, state, expiresAt: iso(r.expires_at) };
 }
 
 /** Open a link. A live one bumps opened_count, last_opened_at and last_ua (the device family only). */
