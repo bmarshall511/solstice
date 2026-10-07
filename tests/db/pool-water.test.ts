@@ -41,4 +41,14 @@ describe('pool water log (PGlite)', () => {
     }
     expect((await poolWater(Z, D('2026-09-23'))).pumpHours[day]).toBe(9);   // not 24
   });
+  it('PW-4 a read whose pump status failed is not stored, so it is not counted in pump hours (code review C-09)', async () => {
+    const { recordReading } = await import('../../server/src/appliances/pool.js');
+    const { poolSnapshot } = await import('../fixtures/screenlogic.js');
+    const Z = 'pwu', day = '2026-09-22';
+    for (let h = 10; h < 19; h++) await q(`INSERT INTO pool_readings (site_id, ts, day, hour, running, watts, rpm) VALUES ($1, $2, $3, $4, true, 300, 1500)`, [Z, D(day, `${h}:05`), day, h]);
+    const s = poolSnapshot(D(day, '12:20')); s.pump = { ...s.pump!, running: null, watts: null, rpm: null, status: 'unknown' };
+    await recordReading(Z, s);
+    expect(await q(`SELECT ts FROM pool_readings WHERE site_id = $1 AND ts = $2`, [Z, D(day, '12:20')])).toEqual([]);
+    expect((await poolWater(Z, D('2026-09-23'))).pumpHours[day]).toBe(2.3);   // the 9 known quarter-hours, nothing for the unknown one
+  });
 });

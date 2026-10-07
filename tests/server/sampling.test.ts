@@ -489,3 +489,47 @@ describe('C-01: a ScreenLogic session has one overall deadline', () => {
       .toEqual({ s: { nest: { every: 5, tick: { sampled: true } }, pool: { read: false, error: 'database hiccup' } } });
   });
 });
+
+/* ---------------------------------------------------------------- C-09: a failed pump-status read is unknown, not "off" */
+describe('C-09: a failed pump-status read', () => {
+  const real = () => vi.importActual<typeof import('../../server/src/appliances/screenlogic.js')>('../../server/src/appliances/screenlogic.js');
+  /** The read-only fake, with the pump-status request timing out. */
+  const noStatus = () => {
+    const unit = readOnlyUnit();
+    const conn = new Proxy(unit.conn, { get: (t, k) => k === 'pump' ? { getPumpStatusAsync: async () => { throw new Error('time out waiting for pump status'); } } : t[k] });
+    return { run: async <T>(fn: (c: any) => Promise<T>) => fn(conn) };
+  };
+  const unknownSnap = (at: number) => { const s = poolSnapshot(at, { schedules: CURRENT }); s.pump = { ...s.pump!, running: null, watts: null, rpm: null, status: 'unknown' }; return s; };
+
+  it('readPool marks the pump unknown with running, watts and rpm null; the circuits come from the configuration', async () => {
+    const sl = await real();
+    const snap = await sl.readPool(noStatus().run as any);
+    expect(snap.pump).toMatchObject({ id: 1, status: 'unknown', running: null, watts: null, rpm: null, gpm: null });
+    expect((await sl.readPool(readOnlyUnit().run as any)).pump).not.toHaveProperty('status');   // a good read has none
+  });
+  it('pumpRunning: unknown is never a run', async () => {
+    const { pumpRunning } = await import('../../server/src/appliances/pool.js');
+    expect(pumpRunning({ running: true, rpm: 1500, watts: 150, status: 'unknown' })).toBe(false);
+    expect(pumpRunning({ running: null, rpm: null, watts: null })).toBe(false);
+    expect(pumpRunning({ running: true, rpm: 1500, watts: 150 })).toBe(true);
+  });
+  it('poolTick in pump hours: no pool_readings row, the time is kept, pool:last still updates', async () => {
+    H.store.set('s:pool:last', poolSnapshot(at('2026-09-26 09:30'), { schedules: CURRENT }));
+    H.S.now = at('2026-09-26 10:05:02'); H.S.read = async () => unknownSnap(H.S.now);
+    expect(await poolTick('s', at('2026-09-26 10:05'))).toEqual({ read: true, at: H.S.now, running: null, rpm: null, watts: null });
+    expect(H.readings).toHaveLength(0);
+    expect(H.store.get('s:pool:statusUnknownAt')).toBe(H.S.now);
+    expect((H.store.get('s:pool:last') as any).pump.status).toBe('unknown');
+  });
+  it('poolTick outside pump hours: an unknown read is not an outside run', async () => {
+    vi.mocked(tripOutsideRun).mockClear();
+    H.store.set('s:pool:last', poolSnapshot(at('2026-09-26 05:30'), { schedules: CURRENT }));
+    H.S.read = async () => { const s = unknownSnap(H.S.now); s.pump!.running = true; return s; };   // even with a stray flag
+    H.S.trip = { id: 1 }; H.S.now = at('2026-09-26 06:05:02');
+    expect(await poolTick('s', at('2026-09-26 06:05'))).toMatchObject({ read: true });
+    expect(tripOutsideRun).not.toHaveBeenCalled();                       // no trip push
+    H.S.trip = null; H.S.now = at('2026-09-26 07:05:02');
+    expect(await poolTick('s', at('2026-09-26 07:05'))).toMatchObject({ read: true });
+    expect(H.store.get('s:pool:outsideRuns')).toBeUndefined();           // nor the pool's learning
+  });
+});

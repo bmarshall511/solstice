@@ -26,7 +26,8 @@ const WATER_BY_MONTH = [55, 57, 62, 70, 78, 84, 88, 88, 84, 75, 65, 58];
 const seasonOf = (m: number) => Math.floor((m + 1) % 12 / 3);
 export const FREEZE_CIRCUIT = 132; // ScreenLogic's virtual "freeze protection" pump circuit
 /** Whether a pump reading is a run: the IntelliFlo reports isRunning with 0 RPM and 0 W at night (seen 2026-10-07 00:05 and 02:05), which is not. pool_readings keeps the raw values. */
-export const pumpRunning = (p: { running?: boolean | null; rpm?: number | null; watts?: number | null } | null | undefined) => !!p?.running && Number(p.rpm) > 0 && Number(p.watts) > 0;
+export const pumpRunning = (p: { running?: boolean | null; rpm?: number | null; watts?: number | null; status?: 'unknown' } | null | undefined) =>
+  p?.status !== 'unknown' && !!p?.running && Number(p.rpm) > 0 && Number(p.watts) > 0;   // a failed status read is not a run (code review C-09)
 /** pumpRunning as a pool_readings predicate (a NULL rpm or watts is not a run). */
 export const PUMP_RUNNING_SQL = '(running AND rpm > 0 AND watts > 0)';
 
@@ -130,8 +131,15 @@ export function planFor(o: { waterTemp: number; solarKw: number[]; settings: Poo
 }
 
 /* ---------- storage ---------- */
+/** Kept for Data health and debugging: when a pump-status read last failed (the reading was not stored). */
+export const statusUnknownKey = (siteId: string) => `${siteId}:pool:statusUnknownAt`;
 export async function recordReading(siteId: string, snap: PoolSnapshot) {
   if (!snap.pump) return;
+  // a failed pump-status read stores no row: running/watts/rpm are NOT NULL, and "off" would cut the day's water and kWh, pump hours,
+  // and count toward Vacation mode's "the pump didn't run" (code review C-09); the snapshot still updates pool:last
+  if (snap.pump.status === 'unknown' || snap.pump.running == null || snap.pump.watts == null || snap.pump.rpm == null) {
+    await kv.set(statusUnknownKey(siteId), snap.at); await kv.set(`${siteId}:pool:last`, snap); return;
+  }
   const d = new Date(snap.at), day = localDay(d);
   await q(`INSERT INTO pool_readings (site_id, ts, day, hour, running, watts, rpm, water_temp, air_temp, circuits) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING`,
     [siteId, snap.at, day, Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }).format(d)) % 24, snap.pump.running, snap.pump.watts, snap.pump.rpm,

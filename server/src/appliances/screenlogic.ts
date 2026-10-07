@@ -8,8 +8,9 @@ export type PoolSnapshot = {
   at: number; version: string; airTemp: number; freezeMode: boolean;
   bodies: Array<{ id: number; temp: number; setPoint: number; heatMode: number; heating: boolean }>;
   circuits: Array<{ id: number; name: string; on: boolean; freeze: boolean; function: number }>;
-  pump: { id: number; name: string; running: boolean; watts: number; rpm: number; gpm: number | null; minRpm: number; maxRpm: number; primingRpm: number;
-    circuits: Array<{ circuitId: number; speed: number; isRpm: boolean }> } | null;
+  /** `status: 'unknown'` (absent on older snapshots): the pump-status request failed, so running, watts and rpm are null, not "off" (code review C-09). */
+  pump: { id: number; name: string; running: boolean | null; watts: number | null; rpm: number | null; gpm: number | null; minRpm: number; maxRpm: number; primingRpm: number;
+    circuits: Array<{ circuitId: number; speed: number; isRpm: boolean }>; status?: 'unknown' } | null;
   schedules: PoolSchedule[];
   /** The controller's run-once (egg-timer) schedules, type 1; absent on snapshots from before they were read. */
   runOnce?: PoolSchedule[];
@@ -78,11 +79,13 @@ export async function readPool(run: typeof withUnit = withUnit, deadlineMs = REA
     const p0 = (cfg as any).pumps?.find((p: any) => p.type);
     if (p0) {
       // pump ids are 1-based on this firmware (0 times out)
+      // a failed status request is "unknown", never "pump off" (code review C-09): it used to be stored as 0 W, 0 RPM, not running
       const s = await c.pump.getPumpStatusAsync(p0.id).catch(() => null) as any;
-      pump = { id: p0.id, name: p0.name, running: !!s?.isRunning, watts: s?.pumpWatts ?? 0, rpm: s?.pumpRPMs ?? 0, gpm: s && s.pumpGPMs !== 255 ? s.pumpGPMs : null,
+      pump = { id: p0.id, name: p0.name, running: s ? !!s.isRunning : null, watts: s ? s.pumpWatts ?? 0 : null, rpm: s ? s.pumpRPMs ?? 0 : null, gpm: s && s.pumpGPMs !== 255 ? s.pumpGPMs : null,
         minRpm: p0.minSpeed, maxRpm: p0.maxSpeed, primingRpm: p0.primingSpeed,
         circuits: (s?.pumpCircuits ?? p0.circuits.map((x: any) => ({ circuitId: x.circuit, speed: x.speed, isRPMs: x.units === 0 })))
-          .filter((x: any) => x.circuitId).map((x: any) => ({ circuitId: x.circuitId, speed: x.speed, isRpm: !!x.isRPMs })) };
+          .filter((x: any) => x.circuitId).map((x: any) => ({ circuitId: x.circuitId, speed: x.speed, isRpm: !!x.isRPMs })),
+        ...(s ? {} : { status: 'unknown' as const }) };
     }
     return { at: Date.now(), version: ver.version, airTemp: st.airTemp, freezeMode: !!st.freezeMode,
       bodies: st.bodies.map((b: any) => ({ id: b.id, temp: b.currentTemp, setPoint: b.setPoint, heatMode: b.heatMode, heating: !!b.heatStatus })),

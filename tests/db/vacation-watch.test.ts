@@ -65,6 +65,17 @@ describe('during a trip', () => {
     expect(await vacationWatch(S, NOW + 10 * MIN)).toMatchObject({ offline: true });
   });
 
+  it('VW-2b two scheduled reads whose pump status failed are unknown: no "the pool pump didn\'t run" (code review C-09)', async () => {
+    const { recordReading } = await import('../../server/src/appliances/pool.js');
+    await trip();
+    const unknown = (at: number) => { const s = poolSnapshot(at, { schedules: [{ id: 1, circuitId: 6, start: 600, stop: 1140, dayMask: 127, flags: 0, heatCmd: 4, heatSetPoint: 70 }] });
+      s.pump = { ...s.pump!, running: null, watts: null, rpm: null, status: 'unknown' }; return s; };
+    for (const t of [NOW - 20 * MIN, NOW - 5 * MIN]) await recordReading(S, unknown(t));
+    expect(await q('SELECT 1 FROM pool_readings')).toEqual([]);
+    expect(await vacationWatch(S, NOW)).not.toHaveProperty('pump');
+    expect((await alerts()).filter(a => a.title === 'The pool pump didn’t run')).toEqual([]);
+  });
+
   it('VW-3 somebody at the thermostat: asked while away, not once allowed; near the arrival time it is you', async () => {
     const t = await trip(), ended: string[] = [], end = async (_s: string, text: string) => { ended.push(text); };
     await kv.set('s:ac:hold', { at: NOW - 2 * MIN, by: 'wall', mode: 'COOL', coolF: 74, heatF: null, until: NOW + 2 * H, why: '' });
