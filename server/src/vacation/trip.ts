@@ -183,3 +183,7 @@ export async function guestsPaused(now = Date.now()) {
 }
 /** Whether this site has a trip under way now (one query). */
 export const tripAway = async (siteId: string, now = Date.now()) => isAway(await liveTrip(siteId), now);
+/** Trips that ended in the last 7 days and have no report yet (the nightly job builds it), and the newest ended one (for its push). */
+export async function endedWithoutReport(siteId: string, now = Date.now()): Promise<Trip[]> {
+  return (await q<Row>(`SELECT ${COLS} FROM trips WHERE site_id = $1 AND state = 'ended' AND ended_at > $2 AND NOT (data ? 'report') ORDER BY ended_at`, [siteId, now - 7 * 864e5])).map(toTrip);
+}

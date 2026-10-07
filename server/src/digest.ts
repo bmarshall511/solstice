@@ -5,6 +5,7 @@
 //   Monday 07:00 Chicago   maybeWeeklyDigest (from the 5-minute and nightly crons; a kv marker makes it once per week) stores the
 //                          week in `digests` and sends one `digest` alert
 //   GET /api/digest?week=  a week ('2026-W39' or any date in it; default: the last complete week), stored or built on the fly
+import { tripsBetween } from './vacation/trip.js';
 import type { Express, Request, Response, NextFunction } from 'express';
 import { q, one } from './db.js';
 import { localDay, addDays, localMidnight } from './tesla/client.js';
@@ -47,6 +48,8 @@ export type Digest = {
   };
   anomalies: { open: number; openedThisWeek: number; items: Array<{ kind: string; title: string; severity: string; day: string }> };
   confidence: Record<ModelId, Tier>;
+  /** Mockup ak: trips that touched the week ("Away Thu–Sun · 71 kWh"); kWh once the trip's report is built. */
+  trips?: Array<{ from: number; to: number | null; usedKwh: number | null }>;
 };
 
 const r1 = (v: number) => Math.round(v * 10) / 10;
@@ -97,6 +100,7 @@ export async function buildDigest(siteId: string, monday: string, now = Date.now
     anomalies: { open: open.length, openedThisWeek: anomalies.filter(a => a.day >= from && a.day <= to).length,
       items: open.slice(0, 8).map(a => ({ kind: a.kind, title: String(a.detail?.title ?? a.kind), severity: a.severity, day: a.day })) },
     confidence,
+    trips: (await tripsBetween(siteId, from, to)).map(t => ({ from: t.startedAt!, to: t.endedAt, usedKwh: (t.data.report as { usedKwh?: number } | undefined)?.usedKwh ?? null })),
   };
 }
 
