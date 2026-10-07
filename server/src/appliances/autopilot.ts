@@ -7,6 +7,8 @@ import type { PoolSnapshot } from './screenlogic.js';
 import { siteLocation } from '../site.js';
 import { guardPoolWrite } from './guards.js';
 import { logPoolPlan } from '../learn/hooks.js';
+import { liveTrip } from '../vacation/trip.js';
+import { poolTripDay, tripGoal, cloudyWater } from '../vacation/pool.js';
 
 export type Mode = 'off' | 'suggest' | 'auto';
 type Daily = { date: string; high: number; rainMm: number; rainPct: number; sunKwhM2: number; hourlySun: number[] };
@@ -54,7 +56,20 @@ export function planDay(o: { day: Daily; prev?: Daily; heatDays: number; useYest
   return { plan, why };
 }
 
-export type AutopilotState = { mode: Mode; nextRunAt: string; signals: Signals; tomorrow: { date: string; plan: Plan; why: string[] }; week: Array<{ date: string; hours: number; boost: number; sunKwhM2: number; rainPct: number; high: number }>; pending: boolean; log: Array<{ at: number; day: string; text: string; delta?: string }>; filterHours: number; filterCleanedOn: string | null };
+/**
+ * A Vacation-mode trip day (mockup ak; vacation/pool.ts): the trip's turnover goal on the sunniest hours, no daily skim, and the rain
+ * rule's extra hour and skim after heavy rain. Nobody swims and nobody's home, so the use, pollen and hot-water hours don't apply.
+ */
+export function tripPlanDay(o: { day: Daily; prev?: Daily; heatDays: number; waterTemp: number; settings: PoolSettings; W: (r: number) => number; rate: number | null; names: Map<number, string> }) {
+  const g = tripGoal(o.waterTemp, o.heatDays), why = [...g.why], settings = { ...o.settings, turnoverGoal: g.goal, skimHours: 0 };
+  const args = { waterTemp: o.waterTemp, solarKw: o.day.hourlySun.map(v => v * 9.45 * .8), settings, W: o.W, rate: o.rate, month: Number(o.day.date.slice(5, 7)) - 1, names: o.names };
+  const base = planFor(args), rainy = (o.prev?.rainMm ?? 0) >= 5 || (o.day.rainMm >= 5 && o.day.rainPct >= 60);
+  if (!rainy) return { plan: base, why };
+  why.push(`+1 h and a skim boost: ${(o.prev?.rainMm ?? 0) >= 5 ? 'rain yesterday' : 'rain likely'} brings debris`);
+  return { plan: planFor({ ...args, force: { hours: Math.min(PUMP_HOURS_MAX, base.hours + 1), boost: 1 } }), why };
+}
+
+export type AutopilotState = { mode: Mode; nextRunAt: string; signals: Signals; tomorrow: { date: string; plan: Plan; why: string[] }; week: Array<{ date: string; hours: number; boost: number; sunKwhM2: number; rainPct: number; high: number; trip?: boolean }>; pending: boolean; log: Array<{ at: number; day: string; text: string; delta?: string }>; filterHours: number; filterCleanedOn: string | null };
 
 export async function autopilot(siteId: string, o: { settings: PoolSettings; mode: Mode; W: (r: number) => number; rate: number | null; names: Map<number, string>; snap: PoolSnapshot | null; waterTemp: number; currentHours: number; act: boolean }): Promise<AutopilotState> {
   const days = await forecast(), today = localDay(), ti = days.findIndex(d => d.date === today);
@@ -62,9 +77,13 @@ export async function autopilot(siteId: string, o: { settings: PoolSettings; mod
   const heatDaysAt = (i: number) => { let n = 0; for (let k = i; k >= 0 && days[k].high >= 95; k--) n++; return n; };
   const yesterdayUsed = !!(await q(`SELECT 1 FROM pool_readings WHERE site_id = $1 AND day = $2 AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(circuits) c WHERE c = ANY(array['1','2','3','4','7'])) LIMIT 1`, [siteId, addDays(today, -1)])).length;
   const week = [], plans: Array<ReturnType<typeof planDay>> = [];
+  // Vacation mode: trip days get the trip plan, unless the last water test wasn't clear (then the normal plan, and why)
+  const trip = await liveTrip(siteId), cloudy = trip ? await cloudyWater(siteId) : null;
   for (let i = ti + 1; i < Math.min(days.length, ti + 8); i++) {
-    const p = planDay({ day: days[i], prev: days[i - 1], heatDays: heatDaysAt(i), useYesterday: i === ti + 1 && yesterdayUsed, waterTemp: o.waterTemp, settings: o.settings, W: o.W, rate: o.rate, names: o.names, pollen });
-    plans.push(p); week.push({ date: days[i].date, hours: p.plan.hours, boost: p.plan.boostHours, sunKwhM2: Math.round(days[i].sunKwhM2 * 10) / 10, rainPct: days[i].rainPct, high: Math.round(days[i].high) });
+    const tripDay = poolTripDay(trip, days[i].date), args = { day: days[i], prev: days[i - 1], heatDays: heatDaysAt(i), waterTemp: o.waterTemp, settings: o.settings, W: o.W, rate: o.rate, names: o.names };
+    const p = tripDay && !cloudy ? tripPlanDay(args) : planDay({ ...args, useYesterday: i === ti + 1 && yesterdayUsed && !tripDay, pollen });
+    if (tripDay && cloudy) p.why.unshift(`Vacation: the trip plan waits because your last water test said ${cloudy}`);
+    plans.push(p); week.push({ date: days[i].date, hours: p.plan.hours, boost: p.plan.boostHours, sunKwhM2: Math.round(days[i].sunKwhM2 * 10) / 10, rainPct: days[i].rainPct, high: Math.round(days[i].high), ...(tripDay ? { trip: true } : {}) });
   }
   const tmr = days[ti + 1], tomorrow = { date: tmr.date, plan: plans[0].plan, why: plans[0].why };
   const signals: Signals = { waterTemp: o.waterTemp, sunKwhM2: Math.round(tmr.sunKwhM2 * 10) / 10, sunPct: Math.round(Math.min(1, tmr.sunKwhM2 / 8) * 100), high: Math.round(tmr.high), heatDays: heatDaysAt(ti + 1), rainPct: tmr.rainPct, rainMm: tmr.rainMm, rainYesterdayMm: days[ti - 1]?.rainMm ?? 0, useDays: use, pollen };

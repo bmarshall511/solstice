@@ -20,6 +20,7 @@ import { fc48Inputs } from './learn/nightly.js';
 import { stormNow, type StormNow } from './watch.js';
 import { notify } from './notify.js';
 import { RESERVE_MIN, RESERVE_MAX, RESERVE_STORM_MIN } from './appliances/guards.js';
+import { liveTrip, isAway } from './vacation/trip.js';
 import { setBackupReserve, setGridExportRule, teslaScopes, logPowerwall, type CommandKind, type CommandResult, type CommandSource } from './tesla/commands.js';
 
 export const PW_RULES = ['reserve', 'storm', 'export'] as const;
@@ -141,13 +142,23 @@ export async function applySuggestion(siteId: string, s: Suggestion & { revert?:
  */
 export async function evaluatePowerwall(siteId: string, settings: Record<string, any>, rules: readonly PwRule[], now = Date.now()) {
   const modes = ruleModes(settings), out: Record<string, unknown> = {};
+  // Vacation mode (mockup ak): while a trip is under way the storm rule raises without waiting for a tap (raises only; the way back was
+  // already automatic), and the reserve rule rests: it plans from an occupied house, and the owner chose to keep 20% while away
+  const away = isAway(await liveTrip(siteId), now);
   for (const rule of rules) {
     const mode = modes[rule];
     if (mode === 'off') { out[rule] = { mode }; continue; }
+    if (away && rule === 'reserve') { out[rule] = { mode, skipped: 'vacation' }; continue; }
     const s = await suggest(siteId, rule, settings, now);
     await kv.set(`${siteId}:pw:suggest:${rule}`, { ...s, at: now });
     if (s.action !== 'set') { out[rule] = { mode, action: s.action }; continue; }
     if (mode === 'auto') { const r = await applySuggestion(siteId, s, 'auto', now); out[rule] = { mode, action: 'set', value: s.value, result: r.result, reason: r.reason }; continue; }
+    if (away && rule === 'storm' && (s as Suggestion & { revert?: string }).revert === 'store') {
+      const r = await applySuggestion(siteId, s, 'auto', now);
+      if (r.ok) await notify(siteId, 'storm', `${s.value === 100 ? 'Storm warning' : 'Storm watch'} · reserve raised to ${s.value}%`, `Your trip rule raised it without waiting. It goes back to ${s.current}% when the ${s.value === 100 ? 'warning' : 'watch'} ends.`,
+        { rule, value: s.value, trip: true }, { key: `pw:storm:trip:${s.value}:${localDay(new Date(now))}`, now, url: '/?go=v-now' });
+      out[rule] = { mode, action: 'set', value: s.value, result: r.result, reason: r.reason, trip: true }; continue;
+    }
     // Suggest still asks before a storm raise, but the way back is automatic (owner, Q10 of docs/audit-2026-10.md): a raise that was
     // applied has stored its revert, and once the storm has passed that revert is sent without waiting for a tap
     if (rule === 'storm' && (s as Suggestion & { revert?: string }).revert === 'clear') {
@@ -188,7 +199,8 @@ export function powerwallRoutes(app: Express) {
     const rules = await Promise.all(PW_RULES.map(async r => ({ id: r, label: RULE_LABELS[r], mode: modes[r],
       suggestion: await suggest(id, r, settings).catch(e => ({ rule: r, action: 'wait', command: r === 'export' ? 'grid_import_export' : 'backup', value: null, current: null, reason: `Could not evaluate: ${(e as Error).message}` })),
       last: log.find(l => l.rule === r && l.result !== 'suggested') ?? null })));
-    res.json({ scope: { energyCmds: scope.energyCmds, relink: scope.relink }, floorPct: reserveFloor(settings), rules, log });
+    const trip = await liveTrip(id), away = isAway(trip);
+    res.json({ scope: { energyCmds: scope.energyCmds, relink: scope.relink }, floorPct: reserveFloor(settings), rules, log, trip: away ? { backAt: trip!.backAt } : null });
   }));
   app.post('/api/powerwall/rules/:id', express.json({ limit: '2kb' }), wrap(async (req, res) => {
     const id = String(req.params.id), mode = String(req.body?.mode ?? '');

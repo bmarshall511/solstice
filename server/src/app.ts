@@ -16,8 +16,9 @@ import { SOLAR, warrantedDcPct, systemYear } from './system.js';
 import { siteLocation, exactLocation } from './site.js';
 import { currentTariff, netEnergyCost, NO_TARIFF } from './tariff.js';
 import { appliances, comingSoon } from './appliances/index.js';
+import { powerModel, measuredPoints } from './appliances/pool.js';
 import { poolDetail, applyPlan, restorePrevious, poolCommand, PoolUnavailable, goalPatchError, scheduleError, saveSchedule, rebaseline, POOL_DEFAULTS, activeClearUp, startClearUp, extendClearUp, endClearUp, finishClearUpIfDue, clearUpError, CLEARUP_DAYS_MAX } from './appliances/pool.js';
-import { readPool } from './appliances/screenlogic.js';
+import { readPool, configured as poolConfigured } from './appliances/screenlogic.js';
 import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, patchedAc, suggestionPatch, dismissSuggestion, recordNest, observeHold } from './appliances/ac.js';
 import { oidcError, eventOf, seenEvent, applyTraits, isSettingEvent } from './appliances/nestEvents.js';
 import { applianceDay } from './appliances/day.js';
@@ -45,7 +46,8 @@ import { presenceRoutes, setPresence } from './appliances/presence.js';
 import { powerwallRoutes, powerwallTick, powerwallNightly } from './powerwall.js';
 import { runLearn } from './learn/nightly.js';
 import { learnRouter } from './learn/api.js';
-import { vacationRoutes, vacationTick, finishTrip, tripHooks } from './vacation/index.js';
+import { vacationRoutes, vacationTick, finishTrip, tripHooks, departure } from './vacation/index.js';
+import { leftOn, cloudyWater } from './vacation/pool.js';
 import { liveTrip, patchTripData } from './vacation/trip.js';
 import { freshTripAc, tripAcEnd } from './vacation/ac.js';
 import { confidenceMap } from './learn/confidence.js';
@@ -696,6 +698,16 @@ presenceRoutes(app, async id => { const rec = await kv.get<any>(`${id}:ac:plan`)
   const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; return acTick(id, settings, await rateFor(id), await acSlope(id)); });
 /* ---------- Vacation mode (vacation/; mockup ak): GET/POST/PATCH /api/vacation, POST /api/vacation/end; owner-only ---------- */
 vacationRoutes(app);
+// "Before you go" (frame 1): read-only. The pool's last reading (a fresh one when it is over 10 minutes old), the last water test, a
+// Clear-up, and the thermostat as last read; "Turn off" on the sheet is the owner's own pool command (POST /api/appliances/pool/command)
+departure.check = async id => {
+  const s = await ownerSettings(), pool = { ...POOL_DEFAULTS, ...(s.pool ?? {}) };
+  let snap = await kv.get<any>(`${id}:pool:last`) ?? null;
+  if (poolConfigured() && (!snap || Date.now() - snap.at > 10 * 60_000)) snap = await poolDetail(id, s, await rateFor(id), { fresh: true }).then(d => d.snapshot).catch(() => snap);
+  const W = powerModel(await measuredPoints(id)), nest = await kv.get<NestState>('nest:last');
+  return { pool: { linked: !!snap, leftOn: leftOn(snap, pool.loads, W), water: await cloudyWater(id), clearUp: !!(await activeClearUp(id)), autopilot: pool.autopilot },
+    nest: nestConfigured() ? { linked: !!nest, eco: !!nest?.eco, mode: nest?.mode ?? null, autopilot: { ...AC_DEFAULTS, ...(s.ac ?? {}) }.autopilot } : null };
+};
 // the AC's part: remember the setpoints the trip starts from, then the first trip step at once; at the end, heat put back and the plan resumes
 const ownerSettings = async () => await kv.get<Record<string, any>>('settings:owner') ?? {};
 tripHooks.start.ac = async (id, trip) => { await patchTripData(trip.id, { ac: freshTripAc(await kv.get<NestState>('nest:last') ?? null) });

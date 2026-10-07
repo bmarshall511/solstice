@@ -5,6 +5,7 @@
 //   POST /api/vacation                 {leaveAt, backAt?, detected?, checklist?, macHome?}: plan a trip (or start it, leaving now)
 //   PATCH /api/vacation                {leaveAt?, backAt?}: change the dates (the leave time only before it starts)
 //   POST /api/vacation/end             end it ("I'm home"), or cancel one that hasn't started
+//   GET  /api/vacation/check           "Before you go": the pool circuits left on, the water, a Clear-up, the thermostat (reads only)
 // Owner-only: none is in redact.ts GUEST_GET, so the gate answers 401 to a guest (a guest must never learn the house is empty).
 import express, { type Express, type Request, type Response, type NextFunction } from 'express';
 import { liveTrip, lastEnded, createTrip, updateTrip, endTrip, tripTick, tripPhase, logTrip, parseTripBody, parsePatch, TripConflict, type Trip, type TripEndedBy } from './trip.js';
@@ -47,6 +48,9 @@ export async function vacationState(siteId: string, now = Date.now()) {
   return { now, trip, phase: tripPhase(trip, now), last: last ? { id: last.id, leaveAt: last.leaveAt, backAt: last.backAt, startedAt: last.startedAt, endedAt: last.endedAt, endedBy: last.endedBy, report: last.data.report ?? null } : null };
 }
 
+/** Injected by app.ts: the departure check (vacation/pool.ts leftOn, the water and the thermostat), read-only. */
+export const departure: { check: ((siteId: string) => Promise<unknown>) | null } = { check: null };
+
 const wrap = (fn: (req: Request, res: Response) => Promise<unknown>) => (req: Request, res: Response, next: NextFunction) => fn(req, res).catch(next);
 /** Mounted by app.ts after requireSite (owner-only through the gate). */
 export function vacationRoutes(app: Express) {
@@ -68,6 +72,8 @@ export function vacationRoutes(app: Express) {
     await updateTrip(t.id, v, now);
     res.json(await vacationState(req.siteId!));
   }));
+  /** The sheet's "Before you go": what is left on at the pool, the water, a Clear-up, the thermostat (reads only). */
+  app.get('/api/vacation/check', wrap(async (req, res) => res.json(departure.check ? await departure.check(req.siteId!) : {})));
   app.post('/api/vacation/end', wrap(async (req, res) => {
     if (!(await liveTrip(req.siteId!))) return res.status(409).json({ error: 'No trip is planned or under way' });
     await finishTrip(req.siteId!, 'you');

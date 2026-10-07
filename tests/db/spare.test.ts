@@ -70,6 +70,17 @@ describe('spare solar', () => {
     expect(await spareWatch('f', T('13:40'), fakeWrite)).toEqual({ skipped: 'clear-up' });
     expect(writes).toEqual([]);
   });
+  it('SP-7 Vacation mode: no speed-up during a trip; one under way ends at its next check', async () => {
+    await q(`INSERT INTO trips (site_id, leave_at, back_at, state, started_at) VALUES ('t', $1, $2, 'active', $1)`, [T('08:00'), T('18:00', '2026-10-09')]);
+    await kv.set('t:pool:last', poolSnapshot(T('13:35'), { schedules: SCHED }));
+    for (const hm of ['13:30', '13:35']) await read('t', hm, { soc: 98, gridW: -2300 });
+    expect(await spareWatch('t', T('13:40'), fakeWrite)).toEqual({ spare: true, skipped: 'vacation' });
+    expect(writes).toEqual([]);
+    await kv.set('t:pool:spare', { since: T('13:00'), until: T('14:00'), lastStart: T('13:00') });   // started just before the trip
+    await kv.set('t:pool:last', poolSnapshot(T('13:35'), { schedules: SCHED, on: [6, 8] }));
+    expect(await spareWatch('t', T('13:40'), fakeWrite)).toMatchObject({ ended: true });
+    expect(writes).toEqual([{ kind: 'circuit', id: 8, on: false }]);
+  });
   it('SP-6 the card: days with spare solar (95%+ or over 2 kWh out) and kWh out, by month', async () => {
     await q(`INSERT INTO energy (site_id, ts, epoch, day, hour, export_wh) VALUES ('h', '2026-03-10T12:00:00-05:00', 1, '2026-03-10', 12, 3000), ('h', '2026-03-11T12:00:00-05:00', 2, '2026-03-11', 12, 500), ('h', '2026-07-01T12:00:00-05:00', 3, '2026-07-01', 12, 100)`);
     await q(`INSERT INTO soe (site_id, ts, epoch, day, hour, soe) VALUES ('h', '2026-03-11T12:00:00-05:00', 2, '2026-03-11', 12, 99)`);

@@ -5,6 +5,7 @@
 //   skim  boosts you start within an hour of the same time of day → move the planner's daily skim hour there
 //   goal  an hour or more of extra pump time a day → raise the turnover goal by half a turnover
 // Clear-up days, Autopilot's spare-solar speed-ups and your own app runs are never counted as "outside".
+import { awayNow, tripOutsideRun } from '../vacation/pool.js';
 import { kv } from '../db.js';
 import { localDay, addDays, rfc3339 } from '../tesla/client.js';
 
@@ -31,6 +32,8 @@ export async function endYouRun(siteId: string, id: number, now = Date.now()) {
 export async function noteOutsideRun(siteId: string, now = Date.now()) {
   const [cu, spare, until] = await Promise.all([kv.get<{ until: number } | null>(`${siteId}:pool:clearup`), kv.get<{ until: number } | null>(`${siteId}:pool:spare`), kv.get<Record<string, number>>(`${siteId}:pool:until`)]);
   if ((cu && cu.until > now) || (spare && spare.until > now) || Object.values(until ?? {}).some(t => t > now)) return false;
+  // Vacation mode: during a trip it was a pool service or the panel, not you; it goes in the trip's log, not the learning
+  const trip = await awayNow(siteId, now); if (trip) { await tripOutsideRun(siteId, trip, now); return false; }
   const runs = await kv.get<OutsideRun[]>(outKey(siteId)) ?? [];
   runs.unshift({ at: now, ...at(now) }); await kv.set(outKey(siteId), runs.slice(0, 200));
   return true;
