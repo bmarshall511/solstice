@@ -16,16 +16,16 @@ const MARKUP = `<div class="card pwr" id="pwr" data-owner>
   <div class="tline" id="pwrLog"></div>
 </div>`;
 
-const RULE = {
+export const RULE = {
   reserve: { title: 'Reserve for tonight', sub: 'how much to keep for an outage overnight', skip: 'Not tonight' },
   storm: { title: 'Storm Watch prep', sub: 'fill the Powerwalls before bad weather', skip: 'Skip' },
   export: { title: 'Export rule', sub: 'what the Powerwalls may send to PEC' },
 };
-const EXPORT = { battery_ok: 'Everything', pv_only: 'Solar only', never: 'Never' };
-const MODE = { autonomous: 'Time-Based Control', self_consumption: 'Self-Powered', backup: 'Backup-only' };
+export const EXPORT = { battery_ok: 'Everything', pv_only: 'Solar only', never: 'Never' };
+export const MODE = { autonomous: 'Time-Based Control', self_consumption: 'Self-Powered', backup: 'Backup-only' };
 const code = v => `<code style="font:11px 'JetBrains Mono'">${esc(v)}</code>`;
-const val = (command, v) => v == null ? '—' : command === 'grid_import_export' ? (EXPORT[v] ?? String(v)) : `${v}%`;
-const limits = (id, floor) => ({
+export const val = (command, v) => v == null ? '—' : command === 'grid_import_export' ? (EXPORT[v] ?? String(v)) : `${v}%`;
+export const limits = (id, floor) => ({
   reserve: ['10–100%', 'one change an hour', 'never below 20% in a storm', `not below your ${floor}% floor`],
   storm: ['100% for a Warning or active Storm Watch', '50% for a Watch', 'back to the old reserve after', 'one change an hour'],
   export: ['battery_ok ↔ pv_only only', 'never "never"', 'mode never changed', 'one change an hour'],
@@ -36,8 +36,8 @@ const autoWhen = { reserve: 'at the 5 PM check', storm: 'on the next 5-minute ch
 
 /* skipping a suggestion is this device's own note: it hides that value for today, nothing is sent */
 const skipKey = (id, v) => `solstice:pwskip:${id}:${v}:${dayOf(Date.now())}`;
-const skipped = (id, v) => { try { return localStorage.getItem(skipKey(id, v)) === '1'; } catch { return false; } };
-const skip = (id, v) => { try { localStorage.setItem(skipKey(id, v), '1'); } catch { /* storage off */ } };
+export const skipped = (id, v) => { try { return localStorage.getItem(skipKey(id, v)) === '1'; } catch { return false; } };
+export const skip = (id, v) => { try { localStorage.setItem(skipKey(id, v), '1'); } catch { /* storage off */ } };
 
 /** One log row as the "last" line and the log timeline read it. */
 function logText(l, withRule) {
@@ -88,29 +88,38 @@ export function drawPowerwallRules(S) {
   $('pwrRules').onclick = async e => {
     const el = e.target.closest('button'); if (!el) return;
     const ruleEl = el.closest('.rule'), id = ruleEl?.dataset.rule, r = P.rules.find(x => x.id === id); if (!r) return;
-    if (el.dataset.m) {
-      const m = el.dataset.m; if (m === r.mode) return;
-      if (m === 'auto' && !cmds) return alert('Auto needs Tesla’s energy commands permission (energy_cmds). Re-connect Tesla first.');
-      if (m === 'auto' && !confirm(`Let Solstice make the ${RULE[id].title.toLowerCase()} change itself?\n\nLimits: ${limits(id, P.floorPct).join(' · ')}.\n\nEvery change is logged, and the operating mode and grid charging are never changed.`)) return;
-      await api.pwRuleMode(id, m).catch(err => alert(err.message)); return loadPowerwallRules(S);
-    }
-    if (el.dataset.skip) { skip(id, r.suggestion?.value); return drawPowerwallRules(S); }
-    if (el.dataset.apply) {
-      if (!cmds) return;
-      const s = r.suggestion, q = s.command === 'grid_import_export' ? `Set the grid export rule to ${EXPORT[s.value] ?? s.value} (${s.value})?` : `Set the backup reserve to ${s.value}%?`;
-      if (!confirm(`${q}\n\n${s.reason}\n\nOnly this setting changes, at most once an hour. The old value is kept in the Powerwall log.`)) return;
-      el.textContent = 'Applying…';
-      try { await api.pwApply(id); toast('✓', 'rgba(78,240,166,.2)', `${RULE[id].title}: ${val(s.command, s.value)}`, 'Sent to your Powerwalls.'); }
-      catch { toast('!', 'rgba(255,90,78,.25)', 'Not applied', 'The Powerwall log says why.'); }
-      return loadPowerwallRules(S);
-    }
+    if (el.dataset.m) return setRuleMode(S, id, el.dataset.m);
+    if (el.dataset.skip) { skip(id, r.suggestion?.value); S.redrawNow?.(); return drawPowerwallRules(S); }
+    if (el.dataset.apply) return applyRule(S, id, el);
   };
+}
+
+/** A rule's mode (the card's and the Now sheet's): Auto asks first and needs energy_cmds. Resolves true when it was sent. */
+export async function setRuleMode(S, id, m) {
+  const P = S.pwRules, r = P?.rules.find(x => x.id === id), cmds = !!P?.scope?.energyCmds; if (!r || m === r.mode) return false;
+  if (m === 'auto' && !cmds) { alert('Auto needs Tesla’s energy commands permission (energy_cmds). Re-connect Tesla first.'); return false; }
+  if (m === 'auto' && !confirm(`Let Solstice make the ${RULE[id].title.toLowerCase()} change itself?\n\nLimits: ${limits(id, P.floorPct).join(' · ')}.\n\nEvery change is logged, and the operating mode and grid charging are never changed.`)) return false;
+  await api.pwRuleMode(id, m).catch(err => alert(err.message)); await loadPowerwallRules(S); return true;
+}
+/** Apply a waiting suggestion (after the same confirm as before). */
+export async function applyRule(S, id, btn) {
+  const P = S.pwRules, r = P?.rules.find(x => x.id === id); if (!r || !P.scope?.energyCmds) return;
+  const s = r.suggestion, q = s.command === 'grid_import_export' ? `Set the grid export rule to ${EXPORT[s.value] ?? s.value} (${s.value})?` : `Set the backup reserve to ${s.value}%?`;
+  if (!confirm(`${q}\n\n${s.reason}\n\nOnly this setting changes, at most once an hour. The old value is kept in the Powerwall log.`)) return;
+  if (btn) btn.textContent = 'Applying…';
+  try { await api.pwApply(id); toast('✓', 'rgba(78,240,166,.2)', `${RULE[id].title}: ${val(s.command, s.value)}`, 'Sent to your Powerwalls.'); }
+  catch { toast('!', 'rgba(255,90,78,.25)', 'Not applied', 'The Powerwall log says why.'); }
+  return loadPowerwallRules(S);
+}
+/** The first suggestion waiting for the owner (a rule in Suggest with a change to make, not skipped today), or null. */
+export function waitingSuggestion(P) {
+  return P?.rules.find(r => RULE[r.id] && r.mode === 'suggest' && r.suggestion?.action === 'set' && !skipped(r.id, r.suggestion.value)) ?? null;
 }
 
 export async function loadPowerwallRules(S) {
   if (S.guest || !$('pwr')) return;
   S.pwRules = await api.pwRules();
-  drawPowerwallRules(S);
+  drawPowerwallRules(S); S.redrawNow?.();
 }
 
 /** Put the card directly below Outage readiness (views/outage.js mounts that first card on Insights › Home). */

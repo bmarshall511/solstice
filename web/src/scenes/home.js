@@ -409,7 +409,7 @@ export function createHomeView(host, mode = 'flow', opts = {}) {
   if (!twin) return view;
 
   /* ---------------- 'flow' view: the whole-home twin (mockup k-home-twin) ---------------- */
-  const EX = H.ex, card = host.closest('.card'), abort = new AbortController(), on = (el, ev, fn) => el?.addEventListener(ev, fn, { signal: abort.signal });
+  const EX = H.ex, card = host.closest('.card, .c-card'), abort = new AbortController(), on = (el, ev, fn) => el?.addEventListener(ev, fn, { signal: abort.signal });
   const q = s => card?.querySelector(s);
   const noteEl = q('.h span'), hud = host.querySelector('.twinhud'), range = q('.twin-row input'), tm = q('.twin-row .tm'), playB = q('.twin-row .play'), liveB = q('.twin-row .livep');
   const [chipP, chipA, chipB] = card ? card.querySelectorAll('.circ span') : [], tip = q('.landtip');
@@ -418,10 +418,10 @@ export function createHomeView(host, mode = 'flow', opts = {}) {
   let vis = false;
   const io = new IntersectionObserver(es => { vis = es[es.length - 1].intersectionRatio >= .1; }, { threshold: [0, .1, .5] }); io.observe(host);
 
-  // labels with leaders, and the replay HUD
+  // labels with leaders, and the replay HUD (k-<key> gives each glass chip its accent, mockup al)
   const els = {}, leads = {}, meta = {};
   for (const k of KEYS) {
-    const el = document.createElement('div'); el.className = 'hlbl' + (k === 'pool' || k === 'ac' ? ' link' : ''); el.innerHTML = `<small>${NAMES[k]}</small><b>—</b>`; el.style.visibility = 'hidden'; host.appendChild(el);
+    const el = document.createElement('div'); el.className = `hlbl k-${k}` + (k === 'pool' || k === 'ac' ? ' link' : ''); el.innerHTML = `<small>${NAMES[k]}</small><b>—</b>`; el.style.visibility = 'hidden'; host.appendChild(el);
     const l = document.createElement('div'); l.className = 'hlead'; l.style.visibility = 'hidden'; host.appendChild(l); els[k] = el; leads[k] = l; meta[k] = { html: null, w: 60, h: 34, dirty: true, edge: '' }; // hidden until the first layout
   }
   // POOL and AC open Insights → Appliances with that appliance selected. A link only: nothing here changes the pool or the thermostat.
@@ -566,7 +566,7 @@ export function createHomeView(host, mode = 'flow', opts = {}) {
     put(noteEl, 'textContent', st.mode === 'live' ? (d.out ? 'islanded · grid offline' : `live · ${new Date(c.r.ts ?? Date.now()).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`) : `replay · ${fmt(h)}`);
     put(tm, 'textContent', fmt(h)); if (range && !st.dragging) { const rv = String(h); if (range._v !== rv) { range._v = rv; range.value = rv; } }
     const pct = (st.now / 24 * 100).toFixed(1); if (range && range._pct !== pct) { range._pct = pct; range.style.background = `linear-gradient(90deg,rgba(255,255,255,.3) 0 ${pct}%,rgba(255,255,255,.08) ${pct}% 100%)`; }
-    tog(liveB, 'on', st.mode === 'live'); put(playB, 'textContent', st.playing ? '❚❚' : '▶'); playB?.setAttribute('aria-label', st.playing ? 'Pause' : 'Play the day');
+    tog(liveB, 'on', st.mode === 'live'); tog(playB, 'playing', st.playing); playB?.setAttribute('aria-label', st.playing ? 'Pause' : 'Play the day');
     tog(host, 'nodata', d.nodata);
     for (const k of KEYS) { const html = labelHtml(k, d); if (meta[k].html !== html) { meta[k].html = html; els[k].innerHTML = html; meta[k].dirty = true; } }
     tog(els.grid, 'off', !d.nodata && d.out);

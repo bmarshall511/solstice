@@ -1,5 +1,6 @@
-// Now: the Monday "Your week" card between the status chips and the orb (approved mockup mockups/t-enhancements.html frame 1).
-// Shown while the digest alert for the last complete week is unread; ✕ marks it read. Owner-only: a guest never loads it.
+// The Monday "Your week" digest (approved mockup mockups/t-enhancements.html frame 1). Since mockup al (v2) it is the lowest banner in
+// Now's banner slot (views/nowhub.js); "See the week" opens this card in the sheet. Shown while the digest alert for the last complete
+// week is unread; Dismiss (or ✕) marks it read. Owner-only: a guest never loads it.
 import { $, niceDate, toast } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { esc } from '../lib/conf.js';
@@ -14,11 +15,17 @@ const tripLines = d => (d.trips ?? []).map(t => `<div style="--c:var(--vac)"><i>
 const apHtml = lines => lines.map(([i, c, b, t]) => `<div style="--c:${c}"><i>${i}</i><span><b>${esc(b)}</b> ${esc(t)}</span></div>`).join('');
 const modes = S => ({ pool: S.pool?.autopilot?.mode, ac: S.ac?.settings?.autopilot, powerwall: S.pwRules ? rulesMode(Object.fromEntries(S.pwRules.rules.map(r => [r.id, r.mode]))) : null });
 
+/** The banner's words while the digest is unread, else null (views/nowhub.js). */
+export const digestBanner = () => cur && alertId != null ? { week: weekLabel(cur), lead: leadHtml(cur) } : null;
+/** Dismiss: the alert is read, the banner goes. */
+export async function dismissDigest(S) { const id = alertId; cur = prev = null; alertId = null; S.redrawNow?.(); if (id != null) await api.readAlert(id).catch(() => {}); }
+/** "See the week": the card in the sheet. */
+export function openDigest(S) { if (!cur) return; showing = 'cur'; draw(S); $('phone').classList.add('open'); }
 function draw(S) {
-  const box = $('digestNow'), d = showing === 'cur' ? cur : prev; if (!box || !d) return;
+  const box = $('sheetBody'), d = showing === 'cur' ? cur : prev; if (!box || !d) return;
   const vs = showing === 'cur' ? 'last wk' : `wk ${+String(d.week).split('-W')[1] - 1}`, anom = anomalyHtml(d);
-  box.innerHTML = `<div class="card dg" id="digest">
-      <div class="h"><b>Your week</b><span style="display:flex;align-items:center;gap:8px"><span class="badge g">new</span><button class="x" id="dgX" aria-label="Dismiss until next Monday">✕</button></span></div>
+  box.innerHTML = `<div class="shead"><h4>Your week</h4><button class="x" id="dgShut" aria-label="Close">✕</button></div><div class="dg sheetdg" id="digest">
+      <div class="h"><span class="badge g">new</span><button class="link" id="dgX" style="margin:0;padding:6px 12px">Dismiss until next Monday</button></div>
       <div class="wk">${weekLabel(d)}</div>
       <p class="lead">${leadHtml(d)}</p>
       <div class="share"><i style="width:${d.totals?.sunsharePct ?? 0}%"></i></div>
@@ -35,7 +42,8 @@ function draw(S) {
         <button class="link" id="permBtn">Turn on</button>
       </div>
     </div>`;
-  $('dgX').onclick = async () => { box.innerHTML = ''; if (alertId != null) await api.readAlert(alertId).catch(() => {}); };
+  $('dgShut').onclick = () => $('phone').classList.remove('open');
+  $('dgX').onclick = () => { $('phone').classList.remove('open'); dismissDigest(S); };
   $('dgPrev').onclick = async () => {
     if (showing === 'cur' && !prev) prev = await api.digest(prevWeekDate(cur)).catch(e => { toast('!', 'rgba(255,90,78,.25)', 'Couldn’t load last week', e.message); return null; });
     if (showing === 'cur' && !prev) return;
@@ -80,12 +88,12 @@ function openWeek(d) {
 
 /** Load the week and decide whether the card shows (every few minutes from main.js; a guest never calls it). */
 export async function loadDigest(S) {
-  if (S.guest || !$('digestNow')) return;
+  if (S.guest) return;
   const [d, feed] = await Promise.all([api.digest(), api.alerts(30)]);
   const alert = feed.alerts.find(x => x.kind === 'digest' && x.data?.week === d.week && !x.readAt);
-  if (!alert) { cur = prev = null; alertId = null; $('digestNow').innerHTML = ''; return; }
+  if (!alert) { const had = !!cur; cur = prev = null; alertId = null; if (had) S.redrawNow?.(); return; }
   if (cur?.week !== d.week) { prev = null; showing = 'cur'; }
   cur = d; alertId = alert.id;
   if (!S.pwRules) S.pwRules = await api.pwRules().catch(() => null);
-  draw(S);
+  S.redrawNow?.();
 }

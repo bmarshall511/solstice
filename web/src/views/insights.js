@@ -249,19 +249,26 @@ export function cronRows(c, now = Date.now()) {
   if (c.pool) out.push({ label: 'Pool plan', ok: c.pool.ok && now - c.pool.at < 26 * 3600e3, v: `${clk(c.pool.at)} ${c.pool.ok ? '✓' : '· failed'}` });
   return out;
 }
-export function drawHealth(S, status) {
-  const h = S.now?.health ?? {}, row = (ok, label, v) => `<div class="health"><i style="${ok ? '' : 'background:var(--warn);box-shadow:0 0 8px var(--warn)'}"></i>${label}<b>${v}</b></div>`;
+/** The Data health rows ({ ok, label, v } with v as HTML) and the issue count: the Insights › Home card and the Now Conditions sheet
+ *  (mockup al frame 4) both draw these. */
+export function healthRows(S, status) {
+  const h = S.now?.health ?? {}, row = (ok, label, v) => ({ ok, label, v });
   const errs = Object.entries(h.errors ?? {}).filter(([k, e]) => k !== 'lastBackups' && e && Date.now() - e.at < 30 * 60_000);
   const bk = backupError(S), code = httpCode(bk), p = S.pool, a = S.ac;
   const poolOk = !!p?.linked && !p.error, nestOk = !!a?.linked && !a.error, crons = cronRows(h.crons);
-  $('dhList').innerHTML = row(!h.stale, 'Tesla live status', h.lastLive ? ago(h.lastLive) : '—') + row(true, 'Energy history (5-min)', h.lastHistory ? ago(h.lastHistory) : '—') +
-    row(!bk, 'Backup history (Tesla)', bk ? `${code ? code + ' · ' : ''}retrying` : 'ok') +
-    row(!!status, 'History stored', status ? `${status.backfill.daysDone} days` : '—') + row(!!S.wx, 'Open-Meteo weather', S.wx ? 'live' : '—') + row(!!S.ercot, 'ERCOT grid status', S.ercot ? esc(S.ercot.condition) : '—') +
-    row(poolOk, 'ScreenLogic', p?.snapshot?.at ? ago(p.snapshot.at) : p?.error ? 'read failed' : p ? 'not linked' : '—') +
-    row(nestOk, 'Nest', a?.state?.at ? ago(a.state.at) : a?.error ? 'read failed' : a ? (a.configured ? 'not linked' : 'not set up') : '—') +
-    crons.map(c => row(c.ok, c.label, c.v)).join('') +
-    errs.map(([k, e]) => row(false, `${esc(k)} error`, esc(String(e.message ?? '').slice(0, 40)))).join('');
+  const rows = [row(!h.stale, 'Tesla live status', h.lastLive ? ago(h.lastLive) : '—'), row(true, 'Energy history (5-min)', h.lastHistory ? ago(h.lastHistory) : '—'),
+    row(!bk, 'Backup history (Tesla)', bk ? `${code ? code + ' · ' : ''}retrying` : 'ok'),
+    row(!!status, 'History stored', status ? `${status.backfill.daysDone} days` : '—'), row(!!S.wx, 'Open-Meteo weather', S.wx ? 'live' : '—'), row(!!S.ercot, 'ERCOT grid status', S.ercot ? esc(S.ercot.condition) : '—'),
+    row(poolOk, 'ScreenLogic', p?.snapshot?.at ? ago(p.snapshot.at) : p?.error ? 'read failed' : p ? 'not linked' : '—'),
+    row(nestOk, 'Nest', a?.state?.at ? ago(a.state.at) : a?.error ? 'read failed' : a ? (a.configured ? 'not linked' : 'not set up') : '—'),
+    ...crons.map(c => row(c.ok, c.label, c.v)),
+    ...errs.map(([k, e]) => row(false, `${esc(k)} error`, esc(String(e.message ?? '').slice(0, 40))))];
   // issues: what used to turn the badge to "check" (Tesla stale, recent errors), plus the backup history, ScreenLogic and Nest once loaded
-  const n = (h.stale ? 1 : 0) + errs.length + (bk ? 1 : 0) + (p && !poolOk ? 1 : 0) + (a && !nestOk && (a.configured || a.error) ? 1 : 0) + crons.filter(c => !c.ok).length;
+  const issues = (h.stale ? 1 : 0) + errs.length + (bk ? 1 : 0) + (p && !poolOk ? 1 : 0) + (a && !nestOk && (a.configured || a.error) ? 1 : 0) + crons.filter(c => !c.ok).length;
+  return { rows, issues };
+}
+export function drawHealth(S, status) {
+  const { rows, issues: n } = healthRows(S, status);
+  $('dhList').innerHTML = rows.map(r => `<div class="health"><i style="${r.ok ? '' : 'background:var(--warn);box-shadow:0 0 8px var(--warn)'}"></i>${r.label}<b>${r.v}</b></div>`).join('');
   $('dhBadge').textContent = n ? `${n} issue${n === 1 ? '' : 's'}` : 'all good'; $('dhBadge').className = 'badge' + (n ? '' : ' g');
 }
