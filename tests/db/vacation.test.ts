@@ -135,6 +135,19 @@ describe('the sheet\'s routes', () => {
   });
 });
 
+describe('the nightly trip report', () => {
+  it('VAC-8 with under 15 s left before the cron\'s 55 s deadline the report waits a night (said in the output); with time it is built', async () => {
+    const W = await import('../../server/src/watch.js'), now = Date.now();
+    const [{ id }] = await db.q<{ id: number }>(`INSERT INTO trips (site_id, leave_at, back_at, state, started_at, ended_at, ended_by) VALUES ('s', $1, $2, 'ended', $1, $2, 'you') RETURNING id`, [now - 3 * D, now - D / 2]);
+    const late = await W.nightlyWatch('s', now, { deadline: Date.now() + 14_000 });
+    expect(late.tripReport).toEqual({ skipped: 'out of time; tomorrow night', trips: [id] });
+    expect((await T.endedWithoutReport('s')).map(t => t.id)).toEqual([id]);            // still owed: the next night picks it up
+    expect(await W.nightlySteps.tripReport('s', now, { deadline: Date.now() + 40_000 })).toEqual([{ trip: id, usedKwh: expect.any(Number) }]);
+    expect(await T.endedWithoutReport('s')).toEqual([]);
+    expect(await W.nightlySteps.tripReport('s', now, {})).toEqual({ none: true });   // no deadline (a direct call): nothing left to build
+  });
+});
+
 describe('the learning layer', () => {
   it('VAC-6 /api/profile: home use is the average at-home day, trip days left out; solar keeps every day', async () => {
     const { localDay, addDays, localAt } = await import('../../server/src/tesla/client.js');

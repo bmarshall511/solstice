@@ -236,7 +236,7 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
 
   // learning layer (server/src/learn/nightly.ts): score yesterday's predictions, trims, anomalies, today's predictions; skips what won't fit by 55 s
   for (const s of sites) out[`learn:${s.id}`] = await runLearn(s.id, { deadline: t0 + 55_000 }).catch(e => ({ error: e.message }));
-  for (const s of sites) out[`watch:${s.id}`] = await nightlyWatch(s.id);   // watch.ts: bill due and the other nightly alert checks
+  for (const s of sites) out[`watch:${s.id}`] = await nightlyWatch(s.id, Date.now(), { deadline: t0 + 55_000 });   // watch.ts: bill due and the other nightly alert checks
   // raw per-panel readings older than 90 days go, after the learning layer has written the day's per-panel figures (pvs.ts)
   out.pvsPrune = Date.now() - t0 < 55_000 ? await prunePvs().catch(e => ({ error: e.message })) : { skipped: 'out of time; tomorrow night' };
   await kv.set(SYNC_DONE_KEY, Date.now());   // the 5-minute watchdog (below) alerts when this is more than 26 h old
@@ -739,8 +739,12 @@ fiveMinuteSteps.grid = gridWatch;
 fiveMinuteSteps.vacation = (id, now) => vacationWatch(id, now, (sid, text) => finishTrip(sid, 'home', Date.now(), text));   // mockup ak: trip alerts, "Looks like you're away"
 tripHooks.end.held = (id, trip, now) => heldSummary(id, trip, now);   // the pushes held during the trip, as one summary
 // the trip report (frame 6): built by the nightly job once the trip has ended (its energy is in), pushed from 7:00 the next morning
-nightlySteps.tripReport = async id => {
+/** The trip report needs this long (the house model's fit; ~12 s before 2026-10-07); with less left before the deadline it waits a night. */
+export const TRIP_REPORT_MIN_MS = 15_000;
+nightlySteps.tripReport = async (id, _now, o) => {
   const trips = await endedWithoutReport(id); if (!trips.length) return { none: true };
+  // like pvsPrune: out of time tonight → skipped and said so; endedWithoutReport keeps a trip for 7 days, so the next night builds it
+  if (o.deadline != null && o.deadline - Date.now() < TRIP_REPORT_MIN_MS) return { skipped: 'out of time; tomorrow night', trips: trips.map(t => t.id) };
   const s = await ownerSettings(), learned = await learnAcKw(id), pool = await poolDetail(id, s, await rateFor(id)).catch(() => null);
   const deps = { acKw: acKwFor(learned.coolKw, await acSlope(id)), poolNormalKwhDay: pool?.plan?.kwhPerDay ?? null, uv: pool?.settings?.uv ?? true };
   const out: unknown[] = []; for (const t of trips) out.push(await tripReport(id, t, deps).then(r => ({ trip: t.id, usedKwh: r.usedKwh }))); return out;

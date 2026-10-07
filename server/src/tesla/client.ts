@@ -36,10 +36,12 @@ export function teslaFor(accountId: number) {
   };
 }
 
+/** One formatter per time zone, built once: a new Intl.DateTimeFormat per call made rfc3339 30–60× slower (the trip estimate took ~12 s). */
+const FMT = new Map<string, Intl.DateTimeFormat>();
+const fmtFor = (timeZone: string) => FMT.get(timeZone) ?? FMT.set(timeZone, new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })).get(timeZone)!;
 /** RFC3339 timestamp with the site's UTC offset, e.g. 2026-09-24T00:00:00-05:00 */
 export function rfc3339(date: Date, timeZone = config.timeZone): string {
-  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    .formatToParts(date).map(x => [x.type, x.value]));
+  const p = Object.fromEntries(fmtFor(timeZone).formatToParts(date).map(x => [x.type, x.value]));
   const local = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second), off = Math.round((local - date.getTime()) / 60000), a = Math.abs(off);
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}${off >= 0 ? '+' : '-'}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`;
 }
