@@ -5,7 +5,7 @@ import { $, niceDate, toast } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { esc } from '../lib/conf.js';
 import { rulesMode } from '../lib/digest.js';
-import { clock, dayOf } from '../lib/presence.js';
+import { clock, dayOf, when } from '../lib/presence.js';
 
 const MARKUP = `<div class="card pwr" id="pwr" data-owner>
   <div class="h"><b>Powerwall rules</b><span class="badge g" id="pwrBadge">—</span></div>
@@ -77,7 +77,7 @@ export function drawPowerwallRules(S) {
   $('pwrRules').innerHTML = P.rules.filter(r => RULE[r.id]).map(r => {
     const last = P.log.find(l => l.rule === r.id);
     return `<div class="rule" data-rule="${r.id}">
-      <div class="rh"><b>${RULE[r.id].title}<small>${RULE[r.id].sub}</small></b><span class="seg2">${['off', 'suggest', 'auto'].map(m => `<button data-m="${m}" class="${r.mode === m ? 'on' : ''}"${m === 'auto' && !cmds ? ' style="opacity:.35"' : ''}>${{ off: 'Off', suggest: 'Suggest', auto: 'Auto' }[m]}</button>`).join('')}</span></div>
+      <div class="rh"><b>${RULE[r.id].title}<small>${r.id === 'storm' && P.trip && r.mode === 'suggest' ? `Suggest · acts on its own ${P.trip.backAt ? `until ${esc(when(P.trip.backAt))} ` : ''}(trip)` : RULE[r.id].sub}</small></b><span class="seg2">${['off', 'suggest', 'auto'].map(m => `<button data-m="${m}" class="${r.mode === m ? 'on' : ''}"${m === 'auto' && !cmds ? ' style="opacity:.35"' : ''}>${{ off: 'Off', suggest: 'Suggest', auto: 'Auto' }[m]}</button>`).join('')}</span></div>
       ${recHtml(r, cmds, P.floorPct)}
       <div class="last"><span>${last ? day(last.at) : '—'}</span><p>${last ? logText(last, false) : 'Never changed by Solstice.'}</p></div>
       <div class="rules">${limits(r.id, P.floorPct).map(x => `<span>${esc(x)}</span>`).join('')}</div>

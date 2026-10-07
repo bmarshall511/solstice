@@ -120,6 +120,21 @@ describe('the trip routes', () => {
   });
 });
 
+describe('the sheet\'s routes', () => {
+  it('VAC-7 the estimate (frame 2) and the past trips; bad dates refused', async () => {
+    const leaveAt = Date.now() + 864e5, backAt = leaveAt + 3 * 864e5;
+    const r = await call(`/api/vacation/estimate?leaveAt=${leaveAt}&backAt=${backAt}`);
+    expect(r.status).toBe(200);
+    const e = await r.json();
+    expect(e).toMatchObject({ days: 3, open: false, conf: 'estimated', model: { k: .095, delta: 9, days: 0, fromLastTrip: false } });
+    expect(e.perDay.empty).toBeGreaterThanOrEqual(e.perDay.vacation);                  // 85° instead of Eco's 82° (no weather here: equal)
+    expect(e.saving.totalKwh).toBeCloseTo(e.total.empty - e.total.vacation, 0);
+    expect((await call(`/api/vacation/estimate?leaveAt=${leaveAt}&backAt=${leaveAt - 1}`)).status).toBe(400);
+    expect((await call(`/api/vacation/estimate?leaveAt=x`)).status).toBe(400);
+    expect(await (await call('/api/vacation/trips')).json()).toEqual([]);
+  });
+});
+
 describe('the learning layer', () => {
   it('VAC-6 /api/profile: home use is the average at-home day, trip days left out; solar keeps every day', async () => {
     const { localDay, addDays, localAt } = await import('../../server/src/tesla/client.js');

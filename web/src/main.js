@@ -23,6 +23,7 @@ import { fillGuestBill } from './views/guest.js';
 import { initShare, applyRole, refreshSharing, showGate, markWelcome, pendingWelcome, ensurePreviewChrome } from './views/share.js';
 import { loadDigest } from './views/digest.js';
 import { mountPowerwallRules, loadPowerwallRules, drawPowerwallRules } from './views/powerwall.js';
+import { initVacation, drawNow as drawVacation } from './views/vacation.js';
 
 /* Owner link (https://<app>/#owner=<OWNER_KEY>) or share link (https://<app>/#s=<token>): take the secret and strip it from
    the address bar before anything else in this module runs, so it never lingers in history or bookmarks. boot() trades it
@@ -44,7 +45,7 @@ async function loadNow() {
   api.day(localDate()).then(d => { S.today = d; safe(drawDayRing)(); }).catch(() => {});
   if (!S.live || (S.now.reading && S.now.reading.ts >= S.live.ts)) S.live = S.now.reading;
   updateOutage();
-  safe(renderStatic)(S); safe(drawPowerwallRules)(S);
+  safe(renderStatic)(S); safe(drawPowerwallRules)(S); if (S.vac) safe(drawVacation)(S);
 }
 
 async function loadHistory() {
@@ -231,7 +232,7 @@ const dayRing = createDayRing($('dayRing'), (h, d) => {
 });
 /** Settings › Connections and Data health follow the latest sync, pool and Nest reads (health waits for its first /api/status). */
 const refreshStatus = () => { safe(drawConnections)(S); if ('status' in S) safe(drawHealth)(S, S.status); };
-S.ringMode = 'now'; S.onPool = () => { safe(drawDayRing)(); refreshStatus(); }; S.onAc = () => { safe(drawDayRing)(); refreshStatus(); };
+S.ringMode = 'now'; S.onPool = () => { safe(drawDayRing)(); refreshStatus(); }; S.onAc = () => { safe(drawDayRing)(); refreshStatus(); if (S.vac) safe(drawVacation)(S); };
 $('drModes').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.ringMode = b.dataset.m; document.querySelectorAll('#drModes button').forEach(x => x.classList.toggle('on', x === b)); drawDayRing(); };
 /** Today's hourly loads: pool from the schedule model, AC from the heat model, the rest from Tesla's home load. */
 function drawDayRing() {
@@ -417,6 +418,7 @@ async function boot() {
   every(5 * 60_000, loadExternal);
   every(60_000, () => isOn('v-now') ? loadApplDay() : Promise.resolve());   // the Now twin's day (self-limited to every 5 min)
   if (!S.guest) { every(5 * 60_000, () => loadDigest(S)); every(5 * 60_000, () => loadPowerwallRules(S)); }   // t-enhancements (owner-only routes)
+  if (!S.guest && !S.asGuest) initVacation(S, every);   // mockup ak: the Vacation chip, banner, sheet and report (owner-only routes)
   // a tapped push opens /?go=<view>[&p=<Insights panel>] (web/public/sw.js)
   const goV = params.get('go'), goP = params.get('p');
   if (goV && /^v-(now|hist|roof|ins|set)$/.test(goV)) { go(goV); if (goV === 'v-ins' && /^(today|appl|plan|home)$/.test(goP ?? '')) $('insSeg').querySelector(`[data-p="${goP}"]`)?.click(); history.replaceState(null, '', location.pathname); }

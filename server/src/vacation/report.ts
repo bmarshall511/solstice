@@ -125,34 +125,51 @@ export async function hourlyTemps(from: number, to: number, fetcher: typeof fetc
   j?.hourly?.time?.forEach((t: string, i: number) => { const v = j.hourly.temperature_2m[i]; if (v != null) out[t.slice(0, 13)] = v; });
   return out;
 }
+type FitRows = { fitNest: Array<{ ts: string; day: string; hvac: string; cool_f: number | null }>; fitEnergy: Array<{ day: string; kwh: number; n: number }>; before: Array<{ v: number }> };
+/** The rows the house model fits on: Nest readings and daily home kWh before `at`, and the always-on nights of the 14 days before it. */
+async function fitRows(siteId: string, at: number): Promise<FitRows> {
+  const [fitNest, fitEnergy, before] = await Promise.all([
+    q<{ ts: string; day: string; hvac: string; cool_f: number | null }>(`SELECT ts::text, day, hvac, cool_f FROM nest_readings WHERE site_id = $1 AND ts >= $2 AND ts < $3 ORDER BY ts`, [siteId, at - 30 * 864e5, at]),
+    q<{ day: string; kwh: number; n: number }>(`SELECT day, (SUM(home_wh) / 1000.0)::float8 kwh, COUNT(*)::int n FROM energy WHERE site_id = $1 AND epoch >= $2 AND epoch < $3 GROUP BY day`, [siteId, at - 15 * 864e5, at]),
+    q<{ v: number }>(`SELECT value::float8 v FROM daily_metrics WHERE site_id = $1 AND metric = 'home.alwaysOn_kw' AND day >= $2 AND day < $3`, [siteId, addDays(localDay(new Date(at)), -14), localDay(new Date(at))]),
+  ]);
+  return { fitNest, fitEnergy, before };
+}
+/**
+ * This house's own model as of `at`, from the 30 days before it (other trips' days left out): the AC's degree-hour model, the home model
+ * (kWh against the day's high) and the always-on at home (the median of the nightly figures), plus each day's high from `temps`.
+ */
+export async function houseModel(siteId: string, at: number, temps: Hourly, acKw: number, rows?: FitRows) {
+  const r = rows ?? await fitRows(siteId, at), fitFrom = at - 30 * 864e5;
+  const highs: Record<string, number> = {}; for (const [h, v] of Object.entries(temps)) { const d = h.slice(0, 10); highs[d] = Math.max(highs[d] ?? -Infinity, v); }
+  const other = tripDaysOf(await tripsBetween(siteId, localDay(new Date(fitFrom)), localDay(new Date(at))), localDay(new Date(fitFrom)), localDay(new Date(at)));
+  const byDay = new Map<string, Array<{ ts: number; hvac: string; coolF: number | null }>>();
+  for (const x of r.fitNest) if (!other.has(x.day)) (byDay.get(x.day) ?? byDay.set(x.day, []).get(x.day)!).push({ ts: Number(x.ts), hvac: x.hvac, coolF: x.cool_f });
+  const fitDays = [...byDay].filter(([, rows]) => rows.length >= 60).map(([day, rows]) => {
+    const sp = (h: number) => { const xs = rows.filter(y => +rfc3339(new Date(y.ts)).slice(11, 13) === h && y.coolF != null).map(y => y.coolF!); return xs.length ? xs.reduce((a, v) => a + v, 0) / xs.length : 77; };
+    return { acKwh: acKwh(rows, rows.at(-1)!.ts + 300_000, acKw), hours: Array.from({ length: 24 }, (_, h) => ({ t: temps[`${day}T${String(h).padStart(2, '0')}`] ?? null, sp: sp(h) })) };
+  });
+  const model = fitAcModel(fitDays) ?? { k: DEFAULT_K, delta: DEFAULT_DELTA, days: 0 };
+  const pts: HomePoint[] = r.fitEnergy.filter(x => x.n >= 276 && highs[x.day] != null && !other.has(x.day)).map(x => ({ day: x.day, high: highs[x.day], kwh: x.kwh }));
+  const homeFit = fitHome(pts), homeBase = r.before.length ? [...r.before.map(b => b.v)].sort((a, b) => a - b)[Math.floor(r.before.length / 2)] : null;
+  return { model, homeFit, homeBase, highs };
+}
+
 /**
  * Build and store a trip's report. `deps` come from app.ts: the learned AC draw, the pool's normal kWh a day, whether the UV lamp runs,
  * and (for tests) the hourly temperatures.
  */
 export async function tripReport(siteId: string, trip: Trip, deps: { acKw: number; poolNormalKwhDay: number | null; uv: boolean; temps?: Hourly }) {
-  const from = trip.startedAt ?? trip.leaveAt, to = trip.endedAt ?? Date.now(), fitFrom = from - 30 * 864e5;
-  const [energy, nest, pool, fitNest, fitEnergy, alerts, before] = await Promise.all([
+  const from = trip.startedAt ?? trip.leaveAt, to = trip.endedAt ?? Date.now(), fitFrom = from - 30 * 864e5;   // the model fits on the 30 days before
+  const [energy, nest, pool, alerts, rows] = await Promise.all([
     q<{ epoch: string; home_wh: number | null }>(`SELECT epoch::text, home_wh FROM energy WHERE site_id = $1 AND epoch >= $2 AND epoch < $3`, [siteId, from, to]),
     q<{ ts: string; hvac: string; cool_f: number | null }>(`SELECT ts::text, hvac, cool_f FROM nest_readings WHERE site_id = $1 AND ts >= $2 AND ts < $3 ORDER BY ts`, [siteId, from, to]),
     q<{ ts: string; running: boolean; watts: number }>(`SELECT ts::text, running, watts FROM pool_readings WHERE site_id = $1 AND ts >= $2 AND ts < $3 ORDER BY ts`, [siteId, from, to]),
-    q<{ ts: string; day: string; hvac: string; cool_f: number | null }>(`SELECT ts::text, day, hvac, cool_f FROM nest_readings WHERE site_id = $1 AND ts >= $2 AND ts < $3 ORDER BY ts`, [siteId, fitFrom, from]),
-    q<{ day: string; kwh: number; n: number }>(`SELECT day, (SUM(home_wh) / 1000.0)::float8 kwh, COUNT(*)::int n FROM energy WHERE site_id = $1 AND epoch >= $2 AND epoch < $3 GROUP BY day`, [siteId, from - 15 * 864e5, from]),
     q<{ n: number }>(`SELECT COUNT(*)::int n FROM alerts WHERE site_id = $1 AND kind = 'vacation' AND created_at >= $2 AND created_at < $3`, [siteId, new Date(from).toISOString(), new Date(to).toISOString()]),
-    q<{ v: number }>(`SELECT value::float8 v FROM daily_metrics WHERE site_id = $1 AND metric = 'home.alwaysOn_kw' AND day >= $2 AND day < $3`, [siteId, addDays(localDay(new Date(from)), -14), localDay(new Date(from))]),
+    fitRows(siteId, from),
   ]);
   const temps = deps.temps ?? await hourlyTemps(fitFrom, to);
-  const highs: Record<string, number> = {}; for (const [h, v] of Object.entries(temps)) { const d = h.slice(0, 10); highs[d] = Math.max(highs[d] ?? -Infinity, v); }
-  // the AC model on the 30 days before the trip, other trips' days left out
-  const other = tripDaysOf(await tripsBetween(siteId, localDay(new Date(fitFrom)), localDay(new Date(from))), localDay(new Date(fitFrom)), localDay(new Date(from)));
-  const byDay = new Map<string, Array<{ ts: number; hvac: string; coolF: number | null }>>();
-  for (const r of fitNest) if (!other.has(r.day)) (byDay.get(r.day) ?? byDay.set(r.day, []).get(r.day)!).push({ ts: Number(r.ts), hvac: r.hvac, coolF: r.cool_f });
-  const fitDays = [...byDay].filter(([, rows]) => rows.length >= 60).map(([day, rows]) => {
-    const sp = (h: number) => { const xs = rows.filter(r => +rfc3339(new Date(r.ts)).slice(11, 13) === h && r.coolF != null).map(r => r.coolF!); return xs.length ? xs.reduce((a, v) => a + v, 0) / xs.length : 77; };
-    return { acKwh: acKwh(rows, rows.at(-1)!.ts + 300_000, deps.acKw), hours: Array.from({ length: 24 }, (_, h) => ({ t: temps[`${day}T${String(h).padStart(2, '0')}`] ?? null, sp: sp(h) })) };
-  });
-  const model = fitAcModel(fitDays) ?? { k: DEFAULT_K, delta: DEFAULT_DELTA, days: 0 };
-  const pts: HomePoint[] = fitEnergy.filter(r => r.n >= 276 && highs[r.day] != null && !other.has(r.day)).map(r => ({ day: r.day, high: highs[r.day], kwh: r.kwh }));
-  const fit = fitHome(pts), homeBase = before.length ? [...before.map(b => b.v)].sort((a, b) => a - b)[Math.floor(before.length / 2)] : null;
+  const { model, homeFit: fit, homeBase, highs } = await houseModel(siteId, from, temps, deps.acKw, rows);
   const report = buildReport({ from, to, energy: energy.map(e => ({ epoch: Number(e.epoch), homeWh: Number(e.home_wh ?? 0) })), nest: nest.map(n => ({ ts: Number(n.ts), hvac: n.hvac, coolF: n.cool_f })),
     pool: pool.map(p => ({ ts: Number(p.ts), running: p.running, watts: Number(p.watts) })), acKw: deps.acKw, uv: deps.uv, temps, model, poolNormalKwhDay: deps.poolNormalKwhDay,
     homeFit: fit, highs, homeBaseKw: homeBase, trip, alerts: alerts[0]?.n ?? 0 });
@@ -168,4 +185,36 @@ export async function reportPush(siteId: string, trip: Trip, now = Date.now()) {
   const res = await notify(siteId, 'vacation', 'Your trip report', `${r.usedKwh} kWh over ${r.days} days, against about ${r.emptyKwh} empty without Vacation mode${r.homeKwh != null ? ` and ${r.homeKwh} if you'd been home` : ''}.`,
     { report: trip.id }, { key: `vac:report:${trip.id}`, windowH: 24 * 30, now, url: '/?go=v-now&trip=report' });
   return { notified: res.stored };
+}
+
+/* ---------- the estimate on the Vacation sheet (frame 2) ---------- */
+/** Measured on this house's past trip (Phase 1 audit): the always-on away, a night's water-heater burst, and the small loads, a day. */
+export const AWAY_BASE_KW = .47, WH_KWH_DAY = 1.3, SMALL_KWH_DAY = 2;
+/**
+ * A trip's estimate before it starts, per day and in total: "a day at home" (the home model at each day's forecast high), "empty, without
+ * Vacation mode" (the away base, a water-heater burst and small loads, the AC at Nest Eco's 82° and the pool's normal plan) and "with
+ * Vacation mode" (the same with the AC holding 85° and the trip pool plan). Days past the forecast take the last 7 days' hours.
+ * The away base and loads come from the last trip's report when there is one.
+ */
+export async function estimateTrip(siteId: string, o: { leaveAt: number; backAt: number | null; acKw: number; poolNormalKwhDay: number | null; poolTripKwhDay: number | null; temps?: Hourly; now?: number }) {
+  const now = o.now ?? Date.now(), from = Math.max(o.leaveAt, now), to = o.backAt ?? from + 7 * 864e5, temps = o.temps ?? await hourlyTemps(now - 31 * 864e5, now);
+  const { model, homeFit, highs } = await houseModel(siteId, now, temps, o.acKw);
+  const last = (await q<{ report: Report | null }>(`SELECT data->'report' report FROM trips WHERE site_id = $1 AND state = 'ended' AND data ? 'report' ORDER BY ended_at DESC LIMIT 1`, [siteId]))[0]?.report ?? null;
+  const base = last?.awayBaseKw ?? AWAY_BASE_KW, lastDays = last?.days || 1;
+  const wh = last ? (last.parts.find(p => p.id === 'waterHeater')?.used ?? 0) / lastDays : WH_KWH_DAY, small = last ? (last.parts.find(p => p.id === 'else')?.used ?? 0) / lastDays : SMALL_KWH_DAY;
+  // the typical hour of the last 7 days, for days past the forecast
+  const typical = Array.from({ length: 24 }, (_, h) => { const xs = Object.entries(temps).filter(([k]) => +k.slice(11, 13) === h && Date.parse(`${k.slice(0, 10)}T12:00:00Z`) > now - 8 * 864e5).map(([, v]) => v); return xs.length ? xs.reduce((a, v) => a + v, 0) / xs.length : null; });
+  const t: Hourly = { ...temps };
+  for (let x = Math.floor(from / 3600_000) * 3600_000; x < to; x += 3600_000) { const k = hourKey(x); if (t[k] == null && typical[+k.slice(11, 13)] != null) t[k] = typical[+k.slice(11, 13)]!; }
+  const days = (to - from) / 864e5, acEmpty = modelAcKwh(t, from, to, () => ECO_COOL_F, model), acTrip = modelAcKwh(t, from, to, () => 85, model);
+  const fixed = (base * 24 + wh + small) * days, poolEmpty = (o.poolNormalKwhDay ?? 0) * days, poolTrip = (o.poolTripKwhDay ?? o.poolNormalKwhDay ?? 0) * days;
+  let home: number | null = null;
+  if (homeFit) { home = 0; for (let d = localDay(new Date(from)); d <= localDay(new Date(to - 1)); d = addDays(d, 1)) {
+    const a = localAt(d, 0), b = localAt(addDays(d, 1), 0), frac = Math.max(0, (Math.min(to, b) - Math.max(from, a)) / (b - a)), high = highs[d] ?? Math.max(...Object.entries(t).filter(([k]) => k.startsWith(d)).map(([, v]) => v), -Infinity);
+    if (Number.isFinite(high)) home += homeKwh(homeFit, high) * frac; } }
+  const empty = fixed + acEmpty + poolEmpty, vacation = fixed + acTrip + poolTrip, per = (v: number) => r1(v / days);
+  return { days: r1(days), open: o.backAt == null, perDay: { home: home != null ? per(home) : null, empty: per(empty), vacation: per(vacation) },
+    total: { home: home != null ? r1(home) : null, empty: r1(empty), vacation: r1(vacation) },
+    saving: { acPerDay: per(acEmpty - acTrip), poolPerDay: per(poolEmpty - poolTrip), totalKwh: r1(empty - vacation) },
+    model: { ...model, fromLastTrip: !!last }, conf: 'estimated' as const };
 }

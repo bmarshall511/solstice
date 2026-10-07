@@ -44,11 +44,14 @@ export function drawAc(S) {
     <div class="stat"><small>AC draw · ${esc(source)}</small><b>${d.learned.acKw.toFixed(1)} kW${d.learned.samples ? ` · ${d.learned.samples} steps` : ''}</b></div><div class="stat"><small>Indoor · humidity</small><b>${st?.indoorF ?? '—'}° · ${st?.humidity ?? '—'}%</b></div>`;
   // t-enhancements frame 4: the control lights the presence in force (manual, then Nest Home/Away Assist); Away opens "Away until…"
   const pr = d.presence ?? { state: d.settings.presence, source: 'manual', since: null, until: null }, lit = pr.state ?? d.settings.presence;
-  $('acPresence').innerHTML = `<button class="${lit === 'home' ? 'on' : ''}" data-p="home">Home</button><button class="${lit === 'away' ? 'on' : ''}" data-p="away">${lit === 'away' && pr.source === 'manual' && pr.until ? awayButton(pr.until) : `Away · ${d.settings.awayF}°`}</button>`;
+  // mockup ak frame 7: during a trip the Away side reads "Vacation · 85°" (the trip's hold now), and Home is "I'm home"
+  const vac = pr.source === 'vacation', vacF = d.vacation?.now?.coolF ?? d.vacation?.holdF ?? 85;
+  $('acPresence').innerHTML = `<button class="${lit === 'home' ? 'on' : ''}" data-p="home">Home</button><button class="${lit === 'away' ? `on${vac ? ' vacon' : ''}` : ''}" data-p="away">${vac ? `Vacation · ${Math.round(vacF)}°` : lit === 'away' && pr.source === 'manual' && pr.until ? awayButton(pr.until) : `Away · ${d.settings.awayF}°`}</button>`;
   $('acPresence').onclick = async e => { const b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.p === 'away' && !S.guest) return openAway(S);
+    if (b.dataset.p === 'away' && !S.guest) return vac ? S.openVacation?.() : openAway(S);
     if (b.dataset.p === lit) return;
-    if (b.dataset.p === 'home' && !confirm('Mark the house Home?\n\nThe AC plan goes back to your home band, so the thermostat may change now.')) return;   // mockup ac
+    if (b.dataset.p === 'home' && !confirm(vac ? 'End Vacation mode?\n\nThe AC goes back to your comfort plan, the pool to its normal plan at the next evening run, and guest links come back in 24 h.'
+      : 'Mark the house Home?\n\nThe AC plan goes back to your home band, so the thermostat may change now.')) return;   // mockup ac
     await api.acSettings({ presence: b.dataset.p }).catch(err => alert(err.message)); await loadAc(S); };
   const src = presenceLine(pr); $('acPsrc').hidden = !src; $('acPsrc').innerHTML = src ? `<i></i><span>${src}</span>` : '';
   $('acNote').innerHTML = `${esc(d.equipment.airHandler)} · ${esc(d.equipment.heat)} · ${esc(d.equipment.outdoor)}. AC power is ${source === 'measured' ? 'measured from the step in Tesla’s home load when Nest starts and stops cooling' : 'estimated from your heat model until Nest has been sampled for a few days'}.${d.error ? ` <span style="color:var(--warn)">Last read failed: ${esc(d.error)}</span>` : ''}`;
@@ -325,7 +328,7 @@ function openFan(S) {
 
 let timer;
 /** Started by main.js once the role is known (and again when it changes); every 3 minutes while the tab is visible. */
-export function initAc(S) { stop(timer); timer = every(3 * 60_000, () => loadAc(S)); }
+export function initAc(S) { stop(timer); timer = every(3 * 60_000, () => loadAc(S)); S.reloadAc = () => loadAc(S); }
 // a failed refresh keeps the last good plan and reading, with the failure in the card's note, instead of showing "Not set up"
 async function loadAc(S) { S.ac = await api.ac().catch(e => S.ac?.plan ? { ...S.ac, error: e.message } : { error: e.message, configured: false, linked: false }); if (S.ac.plan) drawAc(S); else { $('acBadge').textContent = 'Not set up'; $('acLink').hidden = false; $('acLinkTxt').textContent = S.ac.error ?? 'Nest is not configured.'; } S.onAc?.(); }
 
@@ -334,6 +337,7 @@ const NEST_SAYS = pr => `<b>Nest says Away</b>${pr.since ? ` since ${when(pr.sin
 /** The line under the control: Nest's Away, or the return time the owner set. Null when there is nothing to say. */
 function presenceLine(pr) {
   if (pr.state !== 'away') return null;
+  if (pr.source === 'vacation') return `<b>Vacation mode</b>${pr.until ? ` · back ${when(pr.until)}` : ''}`;
   if (pr.source === 'nest') return `${NEST_SAYS(pr)}. Tap Away to add a return time, or Home if you are here.`;
   if (pr.source === 'manual' && pr.until) return `<b>Away until ${when(pr.until)}</b>${pr.since ? ` · you set it at ${when(pr.since)}` : ''}`;
   return null;
@@ -349,6 +353,7 @@ function openAway(S) {
     <p class="sub">When should Solstice expect you back? It switches to Home at that time on its own, so a forgotten button never leaves the house warm.</p>
     ${pr.state === 'away' && pr.source === 'nest' ? `<div class="psrc" style="margin-top:10px"><i></i><span>${NEST_SAYS(pr)}</span></div>` : ''}
     <div class="aw-pre" id="awPre">
+      ${S.openVacation ? '<button class="awvac" id="awVac"><span class="rd"></span><span class="rt">Vacation…<small>dates, pool, Powerwalls and alerts too</small></span></button>' : ''}
       ${pre.map(p => `<button data-t="${p.id}"><span class="rd"></span><span class="rt">${p.title}<small>${p.sub}</small></span></button>`).join('')}
       <div class="awb" role="button" tabindex="0" data-t="pick"><span class="rd"></span><span class="rt">Pick a time<small>up to 14 days ahead</small></span><span class="aw-pick"><input type="text" id="awPickT" readonly tabindex="-1" aria-hidden="true"><input type="datetime-local" id="awPick" aria-label="Return time" value="${pickDefault}"></span></div>
     </div>
@@ -369,6 +374,7 @@ function openAway(S) {
     $('awAc').textContent = lines.ac; $('awPool').textContent = lines.pool;
     $('awGo').textContent = open ? 'Away' : ok ? `Away until ${untilLabel(at, Date.now())}` : 'Away until…'; $('awGo').disabled = !ok; $('awGo').style.opacity = ok ? '' : .5;
   };
+  if ($('awVac')) $('awVac').onclick = () => { $('phone').classList.remove('open'); setTimeout(() => S.openVacation(), 80); };   // mockup ak frame 7
   $('awPre').onclick = e => { const b = e.target.closest('[data-t]'); if (!b) return; sel = b.dataset.t; if (sel !== 'pick') at = pre.find(p => p.id === sel).at; draw();
     if (sel === 'pick' && e.target !== pick) try { pick.showPicker?.(); } catch { /* not allowed here */ } };
   pick.oninput = pick.onchange = () => { sel = 'pick'; draw(); };

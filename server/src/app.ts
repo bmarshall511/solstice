@@ -52,7 +52,8 @@ import { leftOn, cloudyWater } from './vacation/pool.js';
 import { liveTrip, patchTripData, tripDays, endedWithoutReport, lastEnded } from './vacation/trip.js';
 import { freshTripAc, tripAcEnd } from './vacation/ac.js';
 import { vacationWatch, heldSummary } from './vacation/watch.js';
-import { tripReport, reportPush } from './vacation/report.js';
+import { tripReport, reportPush, estimateTrip } from './vacation/report.js';
+import { tripPlanDay } from './appliances/autopilot.js';
 import { confidenceMap } from './learn/confidence.js';
 
 export const app = express();
@@ -714,6 +715,13 @@ departure.check = async id => {
   const W = powerModel(await measuredPoints(id)), nest = await kv.get<NestState>('nest:last');
   return { pool: { linked: !!snap, leftOn: leftOn(snap, pool.loads, W), water: await cloudyWater(id), clearUp: !!(await activeClearUp(id)), autopilot: pool.autopilot },
     nest: nestConfigured() ? { linked: !!nest, eco: !!nest?.eco, mode: nest?.mode ?? null, autopilot: { ...AC_DEFAULTS, ...(s.ac ?? {}) }.autopilot } : null };
+};
+// frame 2's estimate: this house's models, the pool's normal plan and the trip plan for the next day at today's water temperature
+departure.estimate = async (id, leaveAt, backAt) => {
+  const s = await ownerSettings(), learned = await learnAcKw(id), pool = await poolDetail(id, s, await rateFor(id)).catch(() => null);
+  const days = await kv.get<{ days: any[] }>('pool:forecast'), day = days?.days?.find(d => d.date === localDay(new Date(Math.max(leaveAt, Date.now()) + 864e5))) ?? days?.days?.at(-1);
+  const trip = pool && day ? tripPlanDay({ day, heatDays: 0, waterTemp: pool.live?.waterTemp ?? pool.plan.waterTemp, settings: pool.settings, W: powerModel(await measuredPoints(id)), rate: null, names: new Map() }) : null;
+  return estimateTrip(id, { leaveAt, backAt, acKw: acKwFor(learned.coolKw, await acSlope(id)), poolNormalKwhDay: pool?.plan?.kwhPerDay ?? null, poolTripKwhDay: trip?.plan.kwhPerDay ?? null });
 };
 // the AC's part: remember the setpoints the trip starts from, then the first trip step at once; at the end, heat put back and the plan resumes
 const ownerSettings = async () => await kv.get<Record<string, any>>('settings:owner') ?? {};
