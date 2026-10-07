@@ -42,7 +42,8 @@ const written = new Set<string>();
 const keyOf = (siteId: string, p: Prediction) => `${siteId}|${p.model}|${p.day}|${p.hour ?? -1}|${p.horizon ?? 0}`;
 
 /**
- * Log one or more predictions in a single INSERT … ON CONFLICT DO NOTHING. Non-finite values are skipped.
+ * Log one or more predictions in a single INSERT … ON CONFLICT DO NOTHING. Non-finite values are skipped. Every row's inputs
+ * carry the model's current `version` (B2-3, models.ts), set here so no caller can forget it.
  * `once`: skip keys this instance already wrote (for request paths such as the AC plan, which is recomputed on every read).
  * Returns the number of rows inserted.
  */
@@ -54,7 +55,7 @@ export async function logPrediction(siteId: string, preds: Prediction | Predicti
     SELECT $1, * FROM unnest($2::text[], $3::text[], $4::smallint[], $5::smallint[], $6::float8[], $7::text[], $8::bigint[], $9::jsonb[])
     ON CONFLICT (site_id, model, target_day, target_hour, horizon) DO NOTHING RETURNING id`,
     [siteId, list.map(p => p.model), list.map(p => p.day), list.map(p => p.hour ?? -1), list.map(p => p.horizon ?? 0), list.map(p => p.value),
-      list.map(p => MODELS[p.model].unit), list.map(p => p.madeAt ?? now), list.map(p => JSON.stringify(pickInputs(p.model, p.inputs)))]);
+      list.map(p => MODELS[p.model].unit), list.map(p => p.madeAt ?? now), list.map(p => JSON.stringify({ ...pickInputs(p.model, p.inputs), version: MODELS[p.model].version }))]);
   if (o.once) for (const p of list) written.add(keyOf(siteId, p));
   return rows.length;
 }

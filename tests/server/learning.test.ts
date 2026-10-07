@@ -7,13 +7,13 @@ import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import { q } from '../../server/src/db.js';
 import { planFor, AC_DEFAULTS, type AcPlan, type AcSettings } from '../../server/src/appliances/ac.js';
 import { guardCoolSetpoint, AUTOPILOT_OFF } from '../../server/src/appliances/guards.js';
-import { MODELS, MODEL_IDS, FORBIDDEN_KEY, type ModelDef } from '../../server/src/learn/models.js';
+import { MODELS, MODEL_IDS, FORBIDDEN_KEY, versionOf, type ModelDef } from '../../server/src/learn/models.js';
 import { pickInputs, logPrediction, forgetWritten } from '../../server/src/learn/store.js';
 import { confidence, badge } from '../../server/src/learn/confidence.js';
 import { acSavings, controlDecision, CONTROL_EVERY, trimFor, applyTrim, precoolOutcome, measuredSavings, windowKwh, COOLING_HOURS,
   type ControlState, type PrecoolDay, type AcDay } from '../../server/src/learn/ac.js';
 import { pumpRules, acOverrunRule, solarStepRule, alwaysOnRule, dataGapRules, type MetricsByDay, type RuleCtx, type OpenAnomaly } from '../../server/src/learn/rules.js';
-import { scoreDay, scoreMetrics, poolActual, runDayPair } from '../../server/src/learn/nightly.js';
+import { scoreDay, scoreMetrics, poolActual, runDayPair, modelVersions } from '../../server/src/learn/nightly.js';
 import { forecast48, learnYield } from '../../server/src/learn/forecast48.js';
 import { biasFactors } from '../../server/src/learn/bias.js';
 // @ts-ignore: the browser module is plain JS without types; the twin must match it
@@ -50,7 +50,8 @@ describe('prediction logging', () => {
     expect(q).toHaveBeenCalledTimes(1);
     const [sql, params] = vi.mocked(q).mock.calls[0];
     expect(sql).toContain('ON CONFLICT (site_id, model, target_day, target_hour, horizon) DO NOTHING');
-    expect(params).toEqual(['s', ['fc48.solar', 'home.alwaysOn'], ['2026-09-25', '2026-09-26'], [13, -1], [8, 0], [4.2, .52], ['kWh', 'kW'], [1000, 1000], ['{"k":8}', '{}']]);
+    // B2-3: every row carries its model's version (deliberate update: inputs used to be '{"k":8}' and '{}')
+    expect(params).toEqual(['s', ['fc48.solar', 'home.alwaysOn'], ['2026-09-25', '2026-09-26'], [13, -1], [8, 0], [4.2, .52], ['kWh', 'kW'], [1000, 1000], ['{"k":8,"version":2}', '{"version":2}']]);
   });
   it('`once` writes a key at most once per instance (the AC plan is recomputed on every read)', async () => {
     vi.mocked(q).mockResolvedValue([{ id: 1 }]);
@@ -73,7 +74,7 @@ describe('scoring arithmetic', () => {
     expect(s.n).toBe(3);
     expect(s.bands['h25-48']).toEqual({ abs: 4, err: 4, ape: .1, den: 40, n: 1 });
     expect(s.bands['h7-24'].abs).toBeCloseTo(1.25, 10); expect(s.bands['h7-24'].err).toBeCloseTo(-.75, 10); expect(s.bands['h7-24'].ape).toBeCloseTo(.275, 10);
-    expect(scoreMetrics('fc48.solar', s).map(m => m[0])).toEqual(['score:fc48.solar:pred', 'score:fc48.solar:actual', 'score:fc48.solar:err', 'score:fc48.solar:abs',
+    expect(scoreMetrics('fc48.solar', s).map(m => m[0])).toEqual(['score:fc48.solar:v', 'score:fc48.solar:pred', 'score:fc48.solar:actual', 'score:fc48.solar:err', 'score:fc48.solar:abs',
       'score:fc48.solar:den', 'score:fc48.solar:n', 'score:fc48.solar:ape',
       'score:fc48.solar:abs@h25-48', 'score:fc48.solar:err@h25-48', 'score:fc48.solar:den@h25-48', 'score:fc48.solar:n@h25-48', 'score:fc48.solar:ape@h25-48',
       'score:fc48.solar:abs@h7-24', 'score:fc48.solar:err@h7-24', 'score:fc48.solar:den@h7-24', 'score:fc48.solar:n@h7-24', 'score:fc48.solar:ape@h7-24']);
@@ -424,11 +425,15 @@ describe('forecast48.ts is the browser’s model, line for line', () => {
 /* ------------------------------------------------------------------ B2-2: bias feedback */
 describe('B2-2: the 30-day bias per horizon band divided out of the shown 48-hour forecast', () => {
   const day = (i: number) => addDays('2026-09-01', i);
-  const rows = (model: string, b: string, n: number, err: number, den: number) => Array.from({ length: n }, (_, i) => [
+  const rows = (model: string, b: string, n: number, err: number, den: number, v = 2) => Array.from({ length: n }, (_, i) => [{ day: day(i), metric: `score:${model}:v`, value: v },
     { day: day(i), metric: `score:${model}:err@${b}`, value: err }, { day: day(i), metric: `score:${model}:den@${b}`, value: den }]).flat();
   it('a band with 7 scored days gets 1 ÷ (1 + bias); fewer than 7 gets none', () => {
     const f = biasFactors([...rows('fc48.solar', 'h25-48', 7, 4, 40), ...rows('fc48.solar', 'h7-24', 6, 4, 40), ...rows('fc48.home', 'h7-24', 10, -3, 30)]);
     expect(f).toEqual({ solar: { 'h25-48': .909 }, home: { 'h7-24': 1.111 } });
+  });
+  it('B2-3: days an older model version scored don’t count toward the 7', () => {
+    expect(biasFactors(rows('fc48.solar', 'h25-48', 7, 4, 40, 1))).toEqual({ solar: {}, home: {} });
+    expect(biasFactors(rows('fc48.solar', 'h25-48', 7, 4, 40).filter(r => !r.metric.endsWith(':v')))).toEqual({ solar: {}, home: {} });   // no v = version 1
   });
   it('the factor is clamped to ±25%', () => {
     expect(biasFactors([...rows('fc48.solar', 'h7-24', 8, 30, 40), ...rows('fc48.home', 'h25-48', 8, -20, 40)])).toEqual({ solar: { 'h7-24': .75 }, home: { 'h25-48': 1.25 } });
@@ -452,5 +457,20 @@ describe('B2-2: the 30-day bias per horizon band divided out of the shown 48-hou
   });
   it('no factors, no change', () => {
     expect(forecast48({ ...o, correction: { solar: {}, home: {} } }).points.map(p => [p.s, p.h, p.soc])).toEqual(forecast48(o).points.map(p => [p.s, p.h, p.soc]));
+  });
+});
+
+/* ------------------------------------------------------------------ B2-3: model versions */
+describe('B2-3: model versions', () => {
+  it('every model has a version; a missing one reads as 1; home.alwaysOn and the daily-total forecasts are at 2', () => {
+    for (const id of MODEL_IDS) expect(Number.isInteger(MODELS[id].version) && MODELS[id].version >= 1, id).toBe(true);
+    expect([versionOf(undefined), versionOf(null), versionOf(2), versionOf('3')]).toEqual([1, 1, 2, 3]);
+    expect([MODELS['home.alwaysOn'].version, MODELS['fc48.solar'].version, MODELS['fc48.home'].version, MODELS['pool.kwhDay'].version]).toEqual([2, 2, 2, 1]);
+  });
+  it('the versions record keeps the day a version first ran, and restarts it when the version changes', () => {
+    const first = modelVersions(undefined, '2026-10-07');
+    expect(first['home.alwaysOn']).toEqual({ version: 2, since: '2026-10-07' });
+    expect(modelVersions(first, '2026-10-09')['home.alwaysOn']).toEqual({ version: 2, since: '2026-10-07' });
+    expect(modelVersions({ ...first, 'home.alwaysOn': { version: 1, since: '2026-09-25' } }, '2026-10-09')['home.alwaysOn']).toEqual({ version: 2, since: '2026-10-09' });
   });
 });

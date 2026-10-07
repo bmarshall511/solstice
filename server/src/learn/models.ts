@@ -25,17 +25,24 @@ export type ModelDef = {
   inputs: readonly string[];
   /** What would make it better, for the model report while it is learning or unscored. */
   help: string;
+  /**
+   * B2-3 (verify M-5): the model's version. Predictions store it in `inputs.version` (none = 1), each scored day stores it as
+   * 'score:<model>:v' (none = 1), and the nightly scoring and the rolling scores only count the current version, so a fix is
+   * never judged on the rows its predecessor made. Bump it whenever a change makes the old predictions or old scores wrong.
+   */
+  version: number;
 };
 
 const FC48 = ['k', 'yieldK', 'soc0', 'capKwh', 'maxKw', 'reservePct', 'startHour', 'profile', 'gti'] as const;
 const AC = ['high', 'sunKwhM2', 'humidity', 'precool', 'control', 'depth', 'mid', 'from', 'to', 'coastFrom', 'coastTo', 'coastF', 'acKw', 'slope', 'kPerDegH', 'trim'] as const;
-const base = { abs: false, window: '30d' as Window, staleDays: 14, freshDays: 3, kind: 'scored' as const };
+const base = { abs: false, window: '30d' as Window, staleDays: 14, freshDays: 3, kind: 'scored' as const, version: 1 };
 
 export const MODELS: Record<ModelId, ModelDef> = {
-  // fc48.solar / fc48.home are scored on daily totals, one pair per (day, run) (B2-1), so the floor is a day's kWh, not an hour's
-  'fc48.solar': { ...base, id: 'fc48.solar', label: 'Next 48 h solar', unit: 'kWh', floor: 1, need: 14, ceiling: .4, inputs: FC48,
+  // fc48.solar / fc48.home are scored on daily totals, one pair per (day, run) (B2-1), so the floor is a day's kWh, not an hour's.
+  // v2: B2-1's daily-total scores (v1 days hold hourly errors and doubled totals)
+  'fc48.solar': { ...base, id: 'fc48.solar', label: 'Next 48 h solar', unit: 'kWh', floor: 1, need: 14, ceiling: .4, inputs: FC48, version: 2,
     help: 'needs a few more days of forecasts scored against what the panels made' },
-  'fc48.home': { ...base, id: 'fc48.home', label: 'Next 48 h home use', unit: 'kWh', floor: 1, need: 14, ceiling: .4, inputs: FC48,
+  'fc48.home': { ...base, id: 'fc48.home', label: 'Next 48 h home use', unit: 'kWh', floor: 1, need: 14, ceiling: .4, inputs: FC48, version: 2,
     help: 'needs a few more days of forecasts scored against what the house used' },
   'fc48.soc': { ...base, id: 'fc48.soc', label: 'Next 48 h battery %', unit: 'pts', abs: true, floor: 0, need: 14, ceiling: 20, inputs: FC48,
     help: 'needs a few more days of forecasts scored against the Powerwall charge' },
@@ -49,10 +56,13 @@ export const MODELS: Record<ModelId, ModelDef> = {
   'bill.cycleImport': { ...base, id: 'bill.cycleImport', label: 'Billing-cycle kWh bought', unit: 'kWh', floor: 50, need: 3, ceiling: .25,
     window: '365d', staleDays: 45, freshDays: 35, inputs: ['from', 'to', 'elapsedDays', 'importSoFar', 'exportSoFar'],
     help: 'needs a parsed bill and a few finished billing cycles' },
-  'home.alwaysOn': { ...base, id: 'home.alwaysOn', label: 'Always-on load (1–5 AM)', unit: 'kW', floor: .2, need: 14, ceiling: .25,
+  // v2: the 2026-10-05 fix (median of the last 7 nights with thermostat data); v1 predictions sat near 3.7 kW
+  'home.alwaysOn': { ...base, id: 'home.alwaysOn', label: 'Always-on load (1–5 AM)', unit: 'kW', floor: .2, need: 14, ceiling: .25, version: 2,
     inputs: ['nights', 'acKw'], help: 'needs two more weeks of nights' },
 };
 export const MODEL_IDS = Object.keys(MODELS) as ModelId[];
+/** A stored prediction's or scored day's version (none = 1, everything logged before B2-3). */
+export const versionOf = (v: unknown) => Number.isFinite(Number(v)) && v != null ? Number(v) : 1;
 
 /** Keys that may never appear anywhere in stored inputs or learning summaries (rule 5). */
 export const FORBIDDEN_KEY = /usd|cost|price|loan|rate|system|name|address|account|token|serial|zip/i;

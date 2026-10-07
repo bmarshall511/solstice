@@ -5,16 +5,18 @@
 // Four queries for the report. Only numbers that are already visible elsewhere in the app; no rate, no dollar figure.
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { localDay, addDays } from '../tesla/client.js';
-import { MODELS, MODEL_IDS, WINDOWS, mean, median, round, type Window } from './models.js';
+import { MODELS, MODEL_IDS, WINDOWS, mean, median, round, versionOf, type Window } from './models.js';
 import { lq } from './store.js';
 import { confidence, badge, type Tier } from './confidence.js';
 import { untrim, learnAcKey, controlKey, CONTROL_EVERY, type LearnAc, type ControlState } from './ac.js';
-import { DAILY_TOTAL_MODELS, type LearnRun, type LogEntry } from './nightly.js';
+import { DAILY_TOTAL_MODELS, versionsKey, type LearnRun, type LogEntry, type ModelVersions } from './nightly.js';
 import { homeForecast } from './homeModel.js';
 
 type Score = { mae: number | null; mape: number | null; bias: number | null; n: number; lastDay: string | null };
 const BANDS = ['h1-6', 'h7-24', 'h25-48'];
 const T: Record<Tier, string> = { measured: 'm', learned: 'l', estimated: 'e', learning: 'n', unscored: 'u' };
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const shortDay = (d: string) => `${MON[+d.slice(5, 7) - 1]} ${+d.slice(8, 10)}`;
 /** The Chicago Monday of a day, for weekly sparkline buckets. */
 const monday = (d: string) => addDays(d, -((new Date(d + 'T12:00:00Z').getUTCDay() + 6) % 7));
 
@@ -26,10 +28,11 @@ export async function modelsReport(siteId: string, today = localDay()) {
     lq<{ day: string; metric: string; value: number }>(`SELECT day, metric, value FROM daily_metrics WHERE site_id = $1 AND day >= $2 AND day < $3 AND metric LIKE 'score:%'`, [siteId, from56, today]),
     lq<{ id: number; kind: string; day: string; severity: string; detail: Record<string, any>; opened_at: number }>(
       `SELECT id::int id, kind, day, severity, detail, opened_at::float8 opened_at FROM anomalies WHERE site_id = $1 AND resolved_at IS NULL ORDER BY opened_at DESC`, [siteId]),
-    lq<{ key: string; value: any }>(`SELECT key, value FROM kv WHERE key = ANY($1::text[])`, [[`${siteId}:learn:last`, `${siteId}:learn:log`, learnAcKey(siteId), controlKey(siteId)]]),
+    lq<{ key: string; value: any }>(`SELECT key, value FROM kv WHERE key = ANY($1::text[])`, [[`${siteId}:learn:last`, `${siteId}:learn:log`, learnAcKey(siteId), controlKey(siteId), versionsKey(siteId)]]),
   ]);
   const kvs = Object.fromEntries(kvRows.map(r => [r.key.slice(siteId.length + 1), r.value]));
   const last = kvs['learn:last'] as LearnRun | undefined, ac = kvs['learn:ac'] as LearnAc | undefined, ctl = kvs['ac:control'] as ControlState | undefined;
+  const versions = kvs['learn:versions'] as ModelVersions | undefined;
   // day → model → part → value
   const byModel = new Map<string, Map<string, Record<string, number>>>();
   for (const r of metrics) {
@@ -42,7 +45,8 @@ export async function modelsReport(siteId: string, today = localDay()) {
     const m = MODELS[id], sc = (w: Window): Score | null => { const r = scores.find(x => x.model === id && x.window === w); return r ? { mae: r.mae, mape: r.mape, bias: r.bias, n: r.n, lastDay: r.last_day } : null; };
     const main = sc(m.window), measuredAc = m.kind === 'estimate' && !!ac?.measured?.measured;
     const { tier, confidence: c } = confidence(m, main, today, measuredAc);
-    const days = [...(byModel.get(id) ?? new Map<string, Record<string, number>>())].sort(([a], [b]) => a.localeCompare(b));
+    // B2-3: only the days the current version scored (an older version's days stay in daily_metrics but no longer count)
+    const days = [...(byModel.get(id) ?? new Map<string, Record<string, number>>())].filter(([, x]) => versionOf(x.v) === m.version).sort(([a], [b]) => a.localeCompare(b));
     const err = (x: Record<string, number>) => m.abs ? x.abs : x.ape;
     // eight weekly errors (MAPE, or MAE for points), oldest first: the sparkline, lower is better
     const weeks = new Map<string, number[]>();
@@ -59,12 +63,16 @@ export async function modelsReport(siteId: string, today = localDay()) {
     const bands = id.startsWith('fc48.') ? Object.fromEntries(BANDS.map(b => { const v = bandOf(b, 'abs'); return [b, v.length ? round(mean(v), 2) : null]; })) : undefined;
     const bandsPct = DAILY_TOTAL_MODELS.includes(id) ? Object.fromEntries(BANDS.map(b => { const v = bandOf(b, 'ape'); return [b, v.length ? round(mean(v) * 100, 1) : null]; })) : undefined;
     const base = last30.length ? round(mean(last30.map(([, x]) => x.actual)), 2) : null;
-    const note = m.kind === 'estimate'
+    // B2-3: a model whose version was bumped re-learns from the day the new version first ran, until it has `need` scored days
+    const since = versions?.[id]?.version === m.version ? versions[id]!.since : null;
+    const relearningSince = m.version > 1 && since && (main?.n ?? 0) < m.need ? since : null;
+    const note = relearningSince ? `re-learning since ${shortDay(relearningSince)} (model updated) · ${main?.n ?? 0} of ${m.need} days scored`
+      : m.kind === 'estimate'
       ? ac?.measured ? `${ac.measured.precoolDays} pre-cool · ${ac.measured.controlDays} control days compared` : 'estimated from the plan until control days measure it'
       : tier === 'unscored' ? (main?.n ? `last scored ${main.lastDay}` : 'no scored days yet') : `${main?.n ?? 0} ${m.window === '365d' ? 'cycles' : 'days'} scored`;
     return { id, label: m.label, unit: m.unit, abs: m.abs, dot: tier, t: T[tier], v: badge(m, tier, main), tier, confidence: c, n: main?.n ?? 0, need: m.need,
       mape: main?.mape != null ? round(main.mape * 100, 1) : null, mae: main?.mae != null ? round(main.mae, 2) : null, mad: m.abs && main?.mae != null ? round(main.mae, 1) : null,
-      bias: main?.bias != null ? round(main.bias * (m.abs ? 1 : 100), 1) : null, base, spark, improvement, bands, bandsPct, note,
+      bias: main?.bias != null ? round(main.bias * (m.abs ? 1 : 100), 1) : null, base, spark, improvement, bands, bandsPct, version: m.version, relearningSince, note,
       help: tier === 'learning' || tier === 'unscored' || (m.kind === 'estimate' && tier !== 'measured') ? m.help : null,
       scores: Object.fromEntries(WINDOWS.map(([w]) => { const s = sc(w); return [w, s && { mae: s.mae, mape: s.mape, bias: s.bias, n: s.n }]; })),
       // the last 30 days of this model's daily metrics: predicted (p) vs measured (a), signed error, relative error, pairs scored

@@ -14,6 +14,7 @@ import { gridWatch } from '../../server/src/gridwatch.js';
 import { teslaFor, localDay } from '../../server/src/tesla/client.js';
 import { saveBill, parsePecText } from '../../server/src/bills.js';
 import { runLearn } from '../../server/src/learn/nightly.js';
+import { modelsReport } from '../../server/src/learn/api.js';
 import { logPrediction, forgetWritten } from '../../server/src/learn/store.js';
 import { untrim, learnAcKey, controlKey } from '../../server/src/learn/ac.js';
 import { WX_KEY } from '../../server/src/learn/wx.js';
@@ -685,8 +686,8 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
     expect(await one(`SELECT COUNT(*)::int n FROM model_scores WHERE site_id = $1`, [S])).toEqual({ n: 24 }); // 8 models × 3 windows
     expect(r.tiers).toMatchObject({ 'fc48.solar': 'learning', 'ac.shifted': 'measured', 'ac.eveningAvoided': 'measured' });
     // budget: a fixed number of round trips, no per-model or per-row queries
-    expect(r.queries).toBeLessThanOrEqual(24);
-    expect(queries).toBeLessThanOrEqual(28);   // mockup ah: + the pool days already marked extra; mockup ak: + the trip days
+    expect(r.queries).toBeLessThanOrEqual(25);
+    expect(queries).toBeLessThanOrEqual(29);   // mockup ah: + the pool days already marked extra; mockup ak: + the trip days; B2-3: + clearing a rescored day's old score rows
     expect(r.ms).toBeLessThan(5000);
     console.info(`[learning] nightly job on seeded data: ${queries} PGlite round trips (${r.queries} counted by the job), ${r.ms} ms`);
   });
@@ -705,13 +706,29 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
     const p = await q<{ model: string; n: number }>(`SELECT model, COUNT(*)::int n FROM predictions WHERE site_id = $1 AND made_at = $2 GROUP BY model ORDER BY model`, [S, RUN]);
     expect(p).toEqual([{ model: 'bill.cycleImport', n: 1 }, { model: 'fc48.home', n: 48 }, { model: 'fc48.soc', n: 48 }, { model: 'fc48.solar', n: 48 }, { model: 'home.alwaysOn', n: 1 }]);
     const first = await one<{ target_day: string; target_hour: number; inputs: any }>(`SELECT target_day, target_hour, inputs FROM predictions WHERE site_id = $1 AND model = 'fc48.soc' AND made_at = $2 AND horizon = 1`, [S, RUN]);
-    expect(first).toEqual({ target_day: '2026-09-25', target_hour: 6, inputs: { k: 1, yieldK: 7.68, soc0: 50, capKwh: 27, maxKw: 10, reservePct: 20, startHour: 5 } });
+    expect(first).toEqual({ target_day: '2026-09-25', target_hour: 6, inputs: { k: 1, yieldK: 7.68, soc0: 50, capKwh: 27, maxKw: 10, reservePct: 20, startHour: 5, version: 1 } });   // B2-3: version
     expect(await one(`SELECT target_day, horizon, predicted, inputs FROM predictions WHERE site_id = $1 AND model = 'bill.cycleImport' AND made_at = $2`, [S, RUN]))
-      .toEqual({ target_day: '2026-10-10', horizon: 15, predicted: 44.6, inputs: { from: '2026-09-10', to: '2026-10-10', elapsedDays: 15, importSoFar: 21.6, exportSoFar: 0 } });
+      .toEqual({ target_day: '2026-10-10', horizon: 15, predicted: 44.6, inputs: { from: '2026-09-10', to: '2026-10-10', elapsedDays: 15, importSoFar: 21.6, exportSoFar: 0, version: 1 } });
     expect(await one(`SELECT target_day, predicted FROM predictions WHERE site_id = $1 AND model = 'home.alwaysOn' AND made_at = $2`, [S, RUN])).toEqual({ target_day: '2026-09-26', predicted: .48 });
     const last = await kv.get<any>(`${S}:learn:last`);
     expect(last).toMatchObject({ at: RUN, predicted: 146, anomalies: { opened: ['pump.below_baseline@1500', 'data.gap.energy'], resolved: [], open: 2 } });
     expect((await kv.get<any[]>(`${S}:learn:log`))?.map(e => e.delta)).toEqual(expect.arrayContaining(['−30 min', 'measured', 'warn']));
+  });
+
+  it('B2-3: a prediction from an older model version is not scored, an older score doesn’t count, and the report says re-learning since', async () => {
+    await q(`INSERT INTO predictions (site_id, model, target_day, target_hour, horizon, predicted, unit, made_at, inputs) VALUES ($1, 'home.alwaysOn', '2026-09-23', -1, 0, 3.7, 'kW', $2, '{"nights":7}')`,
+      [S, Date.parse(ts('2026-09-22', 5))]);   // logged before versions existed (= 1); home.alwaysOn is at 2
+    await q(`INSERT INTO daily_metrics (site_id, day, metric, value) VALUES ($1, '2026-09-10', 'score:home.alwaysOn:ape', 6.7), ($1, '2026-09-10', 'score:home.alwaysOn:abs', 3.2),
+      ($1, '2026-09-10', 'score:home.alwaysOn:err', 3.2), ($1, '2026-09-10', 'score:home.alwaysOn:den', .48), ($1, '2026-09-10', 'score:home.alwaysOn:pred', 3.7)`, [S]);
+    const r = await runLearn(S, { now: RUN + 30_000 });
+    expect(r.errors).toEqual([]);
+    expect(await metric('2026-09-23', 'score:home.alwaysOn:pred')).toBeUndefined();
+    expect(await metric('2026-09-24', 'score:home.alwaysOn:v')).toBe(2);
+    expect(await one(`SELECT n, mape FROM model_scores WHERE site_id = $1 AND model = 'home.alwaysOn' AND "window" = '30d'`, [S])).toEqual({ n: 1, mape: expect.closeTo(.25, 6) });
+    const rep = await modelsReport(S, '2026-09-25'), ao = rep.models.find(m => m.id === 'home.alwaysOn')!;
+    expect(ao).toMatchObject({ version: 2, relearningSince: '2026-09-25', note: 're-learning since Sep 25 (model updated) · 1 of 14 days scored' });
+    expect(ao.days.map(x => x.day)).toEqual(['2026-09-24']);
+    expect(rep.models.find(m => m.id === 'pool.kwhDay')!.relearningSince).toBeNull();
   });
 
   it('a rerun is idempotent; once the day is complete the gap resolves and the pump anomaly stays open (one row)', async () => {

@@ -13,7 +13,7 @@ import { localDay, addDays, localMidnight, localAt, rfc3339 } from '../tesla/cli
 import { learnAcKw } from '../appliances/ac.js';
 import { meanByQuarter, scheduledQuarters } from '../appliances/pool.js';
 import { listBills } from '../bills.js';
-import { MODELS, MODEL_IDS, mean, median, round, type ModelDef, type ModelId } from './models.js';
+import { MODELS, MODEL_IDS, mean, median, round, versionOf, type ModelDef, type ModelId } from './models.js';
 import { lq, learnStats, logPrediction, type Prediction } from './store.js';
 import { confidence, type Tier } from './confidence.js';
 import { forecast48, learnYield } from './forecast48.js';
@@ -90,9 +90,9 @@ export function runDayPair(day: string, run: RunHour[], actual: ReadonlyMap<numb
   }
   return last ? { predicted: pred, actual: act, band: band(last.horizon) } : null;
 }
-/** The daily_metrics rows for a day's score (metric names 'score:<model>:<part>'). */
+/** The daily_metrics rows for a day's score (metric names 'score:<model>:<part>'); `v` is the model version it scored (B2-3). */
 export const scoreMetrics = (model: ModelId, s: DayScore): Array<[string, number]> => [
-  [`score:${model}:pred`, s.pred], [`score:${model}:actual`, s.actual], [`score:${model}:err`, s.err], [`score:${model}:abs`, s.abs], [`score:${model}:den`, s.den],
+  [`score:${model}:v`, MODELS[model].version], [`score:${model}:pred`, s.pred], [`score:${model}:actual`, s.actual], [`score:${model}:err`, s.err], [`score:${model}:abs`, s.abs], [`score:${model}:den`, s.den],
   [`score:${model}:n`, s.n], ...(s.ape != null ? [[`score:${model}:ape`, s.ape] as [string, number]] : []),
   ...Object.entries(s.bands).flatMap(([b, v]) => [[`score:${model}:abs@${b}`, v.abs], [`score:${model}:err@${b}`, v.err], [`score:${model}:den@${b}`, v.den],
     [`score:${model}:n@${b}`, v.n], ...(v.ape != null ? [[`score:${model}:ape@${b}`, v.ape]] : [])] as Array<[string, number]>)];
@@ -128,7 +128,8 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
 
   /* ---------- load ---------- */
   const keys = { ac: learnAcKey(siteId), last: `${siteId}:learn:last`, log: `${siteId}:learn:log`, pump: `${siteId}:learn:pump`, pvsLayout: LAYOUT_KEY,
-    youRuns: `${siteId}:pool:youRuns`, outsideRuns: `${siteId}:pool:outsideRuns`, clearup: `${siteId}:pool:clearup` };   // the last three: mockup ah's pool scoring
+    youRuns: `${siteId}:pool:youRuns`, outsideRuns: `${siteId}:pool:outsideRuns`, clearup: `${siteId}:pool:clearup`,   // the last three: mockup ah's pool scoring
+    versions: versionsKey(siteId) };
   const d = await step('load', async () => {
     // one round trip each, sent together (Neon's HTTP driver runs them in parallel; PGlite queues them)
     const [kvRows, energyDaily, energyHourly, soeHourly, nestHourly, pool, extraRows, preds] = await Promise.all([
@@ -254,6 +255,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
       if (p.target_day >= today || p.target_day < addDays(today, -SCORE_DAYS)) continue;
       const day = p.target_day;
       if (d.trips.has(day) && TRIP_UNSCORED.includes(p.model)) continue;   // mockup ak: an empty house says nothing about the at-home models
+      if (versionOf(p.inputs?.version) !== MODELS[p.model]?.version) continue;   // B2-3: a fixed model isn't judged on its predecessor's rows
       if (p.model.startsWith('fc48.')) {
         if (p.made_at > hourStart(day, p.target_hour)) continue; // a forecast only counts for hours that hadn't started
         if (p.model === 'fc48.soc') { const s = sHour.get(`${day}|${p.target_hour}`); if (s) add(p.model, day, { predicted: p.predicted, actual: s.last, band: band(p.horizon) }); }
@@ -283,14 +285,18 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
       const pr = runDayPair(day, run, act, Math.min(24, expectedBuckets(day) / 12));
       if (pr) add(model, day, pr);
     }
+    const rescored: Array<[string, string]> = [];   // (day, model) scored now: its earlier score rows go first, so no part of an older score survives
     for (const [key, ps] of pairs) {
       const [model, day] = key.split('|') as [ModelId, string], s = scoreDay(MODELS[model], ps);
-      if (s) { for (const [metric, v] of scoreMetrics(model, s)) put(day, metric, v); scored.add(model); }
+      if (s) { for (const [metric, v] of scoreMetrics(model, s)) put(day, metric, v); scored.add(model); rescored.push([day, model]); }
     }
     const skipped = [...poolExtra].filter(x => x >= addDays(today, -SCORE_DAYS) && x < today);   // a score from before the extra run was known goes
-    if (skipped.length) await lq(`DELETE FROM daily_metrics WHERE site_id = $1 AND day = ANY($2::text[]) AND metric LIKE 'score:pool.kwhDay:%'`, [siteId, skipped]);
     const tripScored = [...d.trips].filter(x => x >= addDays(today, -SCORE_DAYS) && x < today);   // and one scored before the trip was known
-    if (tripScored.length) await lq(`DELETE FROM daily_metrics WHERE site_id = $1 AND day = ANY($2::text[]) AND split_part(metric, ':', 2) = ANY($3::text[]) AND metric LIKE 'score:%'`, [siteId, tripScored, TRIP_UNSCORED]);
+    if (skipped.length || tripScored.length || rescored.length) await lq(`DELETE FROM daily_metrics WHERE site_id = $1 AND metric LIKE 'score:%' AND (
+        (day = ANY($2::text[]) AND split_part(metric, ':', 2) = 'pool.kwhDay')
+        OR (day = ANY($3::text[]) AND split_part(metric, ':', 2) = ANY($4::text[]))
+        OR (day, split_part(metric, ':', 2)) IN (SELECT * FROM unnest($5::text[], $6::text[])))`,
+      [siteId, skipped, tripScored, TRIP_UNSCORED, rescored.map(r => r[0]), rescored.map(r => r[1])]);
     if (!metricRows.size) return;
     const rows = [...metricRows.values()];
     await lq(`INSERT INTO daily_metrics (site_id, day, metric, value) SELECT $1, * FROM unnest($2::text[], $3::text[], $4::float8[])
@@ -302,15 +308,16 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     const rows = await lq<{ model: ModelId; window: string; n: number; mae: number | null; mape: number | null; bias: number | null; last_day: string | null }>(
       `INSERT INTO model_scores (site_id, model, "window", mae, mape, bias, n, last_day, updated_at)
        SELECT $1, mm.model, w.name, AVG(s.abs), AVG(s.ape), AVG(s.err) / NULLIF(AVG(s.den), 0), COUNT(s.day)::int, MAX(s.day), $4
-       FROM unnest($5::text[]) mm(model) CROSS JOIN (VALUES ('7d', 7), ('30d', 30), ('365d', 365)) w(name, days)
+       FROM unnest($5::text[], $6::int[]) mm(model, v) CROSS JOIN (VALUES ('7d', 7), ('30d', 30), ('365d', 365)) w(name, days)
        LEFT JOIN (SELECT day, split_part(metric, ':', 2) model,
                     MAX(value) FILTER (WHERE split_part(metric, ':', 3) = 'abs') abs, MAX(value) FILTER (WHERE split_part(metric, ':', 3) = 'ape') ape,
-                    MAX(value) FILTER (WHERE split_part(metric, ':', 3) = 'err') err, MAX(value) FILTER (WHERE split_part(metric, ':', 3) = 'den') den
+                    MAX(value) FILTER (WHERE split_part(metric, ':', 3) = 'err') err, MAX(value) FILTER (WHERE split_part(metric, ':', 3) = 'den') den,
+                    COALESCE(MAX(value) FILTER (WHERE split_part(metric, ':', 3) = 'v'), 1) v
                   FROM daily_metrics WHERE site_id = $1 AND metric LIKE 'score:%' AND day >= $2 AND day < $3 GROUP BY day, split_part(metric, ':', 2)) s
-         ON s.model = mm.model AND s.day >= to_char($3::date - w.days, 'YYYY-MM-DD')
+         ON s.model = mm.model AND s.v = mm.v AND s.day >= to_char($3::date - w.days, 'YYYY-MM-DD')   -- B2-3: the current version's days only
        GROUP BY mm.model, w.name
        ON CONFLICT (site_id, model, "window") DO UPDATE SET mae = excluded.mae, mape = excluded.mape, bias = excluded.bias, n = excluded.n, last_day = excluded.last_day, updated_at = excluded.updated_at
-       RETURNING model, "window", n, mae, mape, bias, last_day`, [siteId, addDays(today, -365), today, now, MODEL_IDS]);
+       RETURNING model, "window", n, mae, mape, bias, last_day`, [siteId, addDays(today, -365), today, now, MODEL_IDS, MODEL_IDS.map(id => MODELS[id].version)]);
     for (const id of MODEL_IDS) {
       const m = MODELS[id], r = rows.find(x => x.model === id && x.window === m.window);
       tiers[id] = confidence(m, r && { n: r.n, mae: r.mae, mape: r.mape, bias: r.bias, lastDay: r.last_day }, today, m.kind === 'estimate' && !!ac?.measured.measured).tier;
@@ -409,6 +416,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     try {
       const prevLog = (d?.kvs[keys.log] as LogEntry[] | undefined) ?? [];
       const writes: Array<[string, unknown]> = [[keys.last, out], [keys.log, [...log.reverse(), ...prevLog].slice(0, 40)]];
+      if (d) writes.push([keys.versions, modelVersions(d.kvs[keys.versions] as ModelVersions | undefined, today)]);
       if (ac) writes.push([keys.ac, ac.record]);
       if (d && pump) writes.push([keys.pump, pump]);
       if (!errors.length) writes.push([`${siteId}:error:learn`, null]);   // a clean run clears the last error, in the same write (orchestrator O-10)
@@ -419,6 +427,14 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     if (errors.length) await kv.set(`${siteId}:error:learn`, { at: now, message: errors.join('; ') }).catch(() => {});
     return out;
   }
+}
+
+/** B2-3: each model's current version and the first nightly day it ran (kv `<site>:learn:versions`), for "re-learning since". */
+export type ModelVersions = Partial<Record<ModelId, { version: number; since: string }>>;
+export const versionsKey = (siteId: string) => `${siteId}:learn:versions`;
+export function modelVersions(prev: ModelVersions | undefined, today: string): ModelVersions {
+  return Object.fromEntries(MODEL_IDS.map(id => { const p = prev?.[id], v = MODELS[id].version;
+    return [id, p && p.version === v ? p : { version: v, since: today }]; }));
 }
 
 /** The 48-hour forecast's inputs as the browser builds them: yield from the last 30 days, the 14-day hourly home profile, battery % now. */

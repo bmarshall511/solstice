@@ -204,7 +204,7 @@ describe('learning layer routes (owner-only)', () => {
     expect(m.models.map((x: any) => x.id)).toEqual(['fc48.solar', 'fc48.home', 'fc48.soc', 'pool.kwhDay', 'ac.shifted', 'ac.eveningAvoided', 'bill.cycleImport', 'home.alwaysOn']);
     // the r-learning mockup's row fields
     expect(Object.keys(m.models[0])).toEqual(['id', 'label', 'unit', 'abs', 'dot', 't', 'v', 'tier', 'confidence', 'n', 'need', 'mape', 'mae', 'mad', 'bias', 'base', 'spark',
-      'improvement', 'bands', 'bandsPct', 'note', 'help', 'scores', 'days']);   // bandsPct: B2-1's daily-total MAPE per horizon band
+      'improvement', 'bands', 'bandsPct', 'version', 'relearningSince', 'note', 'help', 'scores', 'days']);   // bandsPct: B2-1's daily-total MAPE per horizon band; version, relearningSince: B2-3
     expect(m.models[0]).toMatchObject({ label: 'Next 48 h solar', dot: 'learned', t: 'l', v: '±4%', tier: 'learned', n: 20, need: 14, mape: 4, bias: -1, note: '20 days scored', help: null });
     expect(m.models[3]).toMatchObject({ id: 'pool.kwhDay', dot: 'unscored', t: 'u', v: 'unscored', help: 'needs pool readings through at least 80% of the pump’s scheduled hours' });
     expect(m.models[4]).toMatchObject({ id: 'ac.shifted', dot: 'estimated', v: 'estimated' });
@@ -233,9 +233,9 @@ describe('learning layer routes (owner-only)', () => {
   it('/api/profile: B2-2 bias factors once a band has 7 scored days in the last 30', async () => {
     const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
     const days = Array.from({ length: 7 }, (_, i) => new Date(Date.parse(day + 'T12:00:00Z') - (i + 1) * 864e5).toISOString().slice(0, 10));
-    for (const d of days) await q(`INSERT INTO daily_metrics (site_id, day, metric, value) VALUES ('s', $1, 'score:fc48.home:err@h25-48', 3), ('s', $1, 'score:fc48.home:den@h25-48', 30)
+    for (const d of days) await q(`INSERT INTO daily_metrics (site_id, day, metric, value) VALUES ('s', $1, 'score:fc48.home:err@h25-48', 3), ('s', $1, 'score:fc48.home:den@h25-48', 30), ('s', $1, 'score:fc48.home:v', 2)
       ON CONFLICT (site_id, day, metric) DO UPDATE SET value = excluded.value`, [d]);
     expect((await (await get('/api/profile')).json()).correction).toEqual({ solar: {}, home: { 'h25-48': .909 } });
-    await q(`DELETE FROM daily_metrics WHERE site_id = 's' AND metric LIKE 'score:fc48.home:%@h25-48'`);
+    await q(`DELETE FROM daily_metrics WHERE site_id = 's' AND (metric LIKE 'score:fc48.home:%@h25-48' OR metric = 'score:fc48.home:v')`);
   });
 });
