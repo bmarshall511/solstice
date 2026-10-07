@@ -1810,5 +1810,6 @@ html[data-calm] .c-seg::before,html[data-calm] .c-sw::after,html[data-calm] .c-c
 .c-stagerow .c-btn.pri{flex:2;min-width:0;overflow:hidden;text-overflow:ellipsis}
 #plDay{margin-top:0}
 .pl-nums{margin-top:12px}
+.pl-nums.deltas4{grid-template-columns:repeat(2,minmax(0,1fr))}
 /* end Batch 4 */
 /* end al-app */
