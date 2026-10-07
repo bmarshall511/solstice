@@ -18,23 +18,54 @@ export type PoolSnapshot = {
 export const configured = () => !!(process.env.SCREENLOGIC_SYSTEM && process.env.SCREENLOGIC_PASSWORD);
 const hhmm = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(2, 4));
 
-/** Open a session, run `fn`, always close. */
-export async function withUnit<T>(fn: (c: UnitConnection) => Promise<T>): Promise<T> {
+/** The whole session (dispatcher, unit, `fn`) must finish within this: a read 20 s, a write 40 s (code review C-01). */
+export const READ_DEADLINE_MS = 20_000;
+export const WRITE_DEADLINE_MS = 40_000;
+/** The node-screenlogic classes withUnit opens (tests pass fakes). */
+export type ScreenLogicLib = { RemoteLogin: new (name: string) => RemoteLogin; UnitConnection: new () => UnitConnection };
+
+/**
+ * Open a session, run `fn`, always close. One overall deadline covers the dispatcher connect, the unit connect and `fn`:
+ * node-screenlogic has no timer on either connect, and a refused or unreachable unit makes it reconnect forever instead of
+ * failing, which held the 5-minute cron until Vercel killed it. Past the deadline both sockets are destroyed, their listeners
+ * removed and the reconnect loop stopped, and the call rejects with "ScreenLogic: no answer within N s".
+ */
+export async function withUnit<T>(fn: (c: UnitConnection) => Promise<T>, deadlineMs = READ_DEADLINE_MS, lib: ScreenLogicLib = { RemoteLogin, UnitConnection }): Promise<T> {
   const name = process.env.SCREENLOGIC_SYSTEM!, pass = process.env.SCREENLOGIC_PASSWORD!;
-  const gw = new RemoteLogin(name);
-  const g = await gw.connectAsync().finally(() => gw.closeAsync().catch(() => {}));
-  if (!g?.gatewayFound || !g.ipAddr) throw new Error(`ScreenLogic: system "${name}" not found via Pentair`);
-  const c = new UnitConnection(); c.init(name, g.ipAddr, g.port, pass);
-  await c.connectAsync();
-  try { return await fn(c); } finally { await c.closeAsync().catch(() => {}); }
+  let gw: any = null, c: any = null, over = false, timer: ReturnType<typeof setTimeout> | undefined;
+  const quiet = (f: () => unknown) => { try { f(); } catch { /* already closed */ } };
+  const kill = () => {
+    over = true;
+    if (gw) { quiet(() => gw._client?.removeAllListeners?.()); quiet(() => gw._client?.destroy?.()); quiet(() => gw.removeAllListeners?.()); }
+    if (c) {
+      // the library's 'error' handler calls reconnectAsync → connectAsync: both become no-ops, so no new socket is opened
+      c.reconnectAsync = async () => {}; c.connectAsync = async () => { throw new Error('ScreenLogic: session closed'); };
+      quiet(() => c.client?.removeAllListeners?.()); quiet(() => c.client?.destroy?.()); quiet(() => c.removeAllListeners?.());
+    }
+  };
+  const session = (async () => {
+    gw = new lib.RemoteLogin(name);
+    const g = await gw.connectAsync().finally(() => gw.closeAsync().catch(() => {}));
+    if (over) throw new Error('ScreenLogic: deadline passed');
+    if (!g?.gatewayFound || !g.ipAddr) throw new Error(`ScreenLogic: system "${name}" not found via Pentair`);
+    c = new lib.UnitConnection(); c.init(name, g.ipAddr, g.port, pass);
+    await c.connectAsync();
+    if (over) throw new Error('ScreenLogic: deadline passed');
+    try { return await fn(c); } finally { await c.closeAsync().catch(() => {}); }
+  })();
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => { kill(); reject(new Error(`ScreenLogic: no answer within ${Math.round(deadlineMs / 1000)} s`)); }, deadlineMs);
+  });
+  try { return await Promise.race([session, deadline]); }
+  finally { clearTimeout(timer); session.catch(() => {}); }
 }
 
 /**
  * Read-only status: versions, equipment state, circuits, pump status and schedules. No command here changes the controller.
  * Uses the 8000 ms netTimeout (Pentair's dispatcher can take longer than the library's 2.5 s default). `run` opens the
- * ScreenLogic session (tests pass a fake).
+ * ScreenLogic session (tests pass a fake); the whole session gets `deadlineMs` (withUnit).
  */
-export async function readPool(run: typeof withUnit = withUnit): Promise<PoolSnapshot> {
+export async function readPool(run: typeof withUnit = withUnit, deadlineMs = READ_DEADLINE_MS): Promise<PoolSnapshot> {
   return run(async c => {
     (c as any).netTimeout = 8000;
     // schedule type 0: the recurring programs; type 1: run-once (egg-timer) schedules, so a run Solstice didn't plan can be explained
@@ -57,7 +88,7 @@ export async function readPool(run: typeof withUnit = withUnit): Promise<PoolSna
       bodies: st.bodies.map((b: any) => ({ id: b.id, temp: b.currentTemp, setPoint: b.setPoint, heatMode: b.heatMode, heating: !!b.heatStatus })),
       // this firmware answers the run-once query with the recurring list as well (seen 2026-10-07), so only ids absent from it count as run-once
       circuits, pump, schedules: sched.data.map(toSched), runOnce: ((once as any)?.data ?? []).filter((e: any) => !sched.data.some((r: any) => r.scheduleId === e.scheduleId)).map(toSched) };
-  });
+  }, deadlineMs);
 }
 
 export type ScheduleWrite = { circuitId: number; start: number; stop: number; dayMask?: number };
@@ -98,7 +129,7 @@ export async function writePoolPlan(opts: { pumpId: number; speeds: Array<{ circ
     }
     for (const e of removed) if (!added.includes(e.scheduleId)) await c.schedule.deleteScheduleEventByIdAsync(e.scheduleId);
     return { removed: removed.map(e => ({ id: e.scheduleId, circuitId: e.circuitId, start: hhmm(e.startTime), stop: hhmm(e.stopTime), dayMask: e.dayMask })), added };
-  });
+  }, WRITE_DEADLINE_MS);
 }
 
 /** A command that may outlive its ack (Pentair's dispatcher is slow): a timeout is not a failure, the read-back decides. */
@@ -138,5 +169,5 @@ export async function writeOwnerPool(cmd: PoolOwnerCommand, run: typeof withUnit
       const after = await readPool(same); if (commandTook(cmd, after)) return after;
     }
     throw new Error('The controller did not confirm the change');
-  });
+  }, WRITE_DEADLINE_MS);
 }

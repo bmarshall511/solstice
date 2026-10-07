@@ -396,3 +396,96 @@ describe('no path reaches a real device', () => {
     await expect(unit.conn.schedule.deleteScheduleEventByIdAsync(1)).rejects.toThrow('not a read');
   });
 });
+
+/* ---------------------------------------------------------------- C-01: a session that never answers */
+/**
+ * Fake node-screenlogic classes (no sockets): the dispatcher, or the unit, never answers. The unit behaves like the library on a
+ * refused connection: every second its socket errors and reconnectAsync opens a new connection, forever.
+ */
+function silentController(stage: 'dispatcher' | 'unit') {
+  const seen = { gwDestroyed: 0, unitDestroyed: 0, unitConnects: 0, units: 0 };
+  class FakeRemoteLogin {
+    _client = { destroy: () => { seen.gwDestroyed++; }, removeAllListeners: () => {} };
+    constructor(_name: string) {}
+    connectAsync() { return stage === 'dispatcher' ? new Promise(() => {}) : Promise.resolve({ gatewayFound: true, ipAddr: '192.0.2.1', port: 80 }); }
+    closeAsync() { return Promise.resolve(true); }
+    removeAllListeners() {}
+  }
+  class FakeUnit {
+    client: any = null;
+    reconnectAsync = async () => { await this.connectAsync(); };   // as in node-screenlogic: the 'error' handler reconnects
+    constructor() { seen.units++; }
+    init() {}
+    connectAsync() {
+      seen.unitConnects++;
+      const t = setTimeout(() => { this.client = null; void this.reconnectAsync(); }, 1_000);   // ECONNREFUSED a second later
+      this.client = { destroy: () => { clearTimeout(t); seen.unitDestroyed++; }, removeAllListeners: () => {} };
+      return new Promise(() => {});
+    }
+    closeAsync() { return Promise.resolve(true); }
+    removeAllListeners() {}
+  }
+  return { lib: { RemoteLogin: FakeRemoteLogin, UnitConnection: FakeUnit } as any, seen };
+}
+
+describe('C-01: a ScreenLogic session has one overall deadline', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }); });
+  afterEach(() => { vi.useRealTimers(); });
+  const real = () => vi.importActual<typeof import('../../server/src/appliances/screenlogic.js')>('../../server/src/appliances/screenlogic.js');
+
+  it('a dispatcher that never answers: readPool rejects at 20 s, not before, and its socket is destroyed', async () => {
+    const sl = await real(), fake = silentController('dispatcher');
+    let settled: string | null = null;
+    const p = sl.readPool((fn, ms) => sl.withUnit(fn, ms, fake.lib)).then(() => 'resolved', (e: Error) => e.message).then(r => { settled = r; });
+    await vi.advanceTimersByTimeAsync(19_900);
+    expect(settled).toBeNull();
+    await vi.advanceTimersByTimeAsync(200);
+    await p;
+    expect(settled).toBe('ScreenLogic: no answer within 20 s');
+    expect(fake.seen.gwDestroyed).toBe(1);
+    expect(fake.seen.units).toBe(0);   // the unit was never reached
+  });
+
+  it('a unit that refuses: readPool rejects at 20 s and the reconnect loop stops', async () => {
+    const sl = await real(), fake = silentController('unit');
+    const p = sl.readPool((fn, ms) => sl.withUnit(fn, ms, fake.lib)).then(() => 'resolved', (e: Error) => e.message);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(await p).toBe('ScreenLogic: no answer within 20 s');
+    expect(fake.seen.unitConnects).toBeGreaterThan(10);   // the library kept reconnecting until the deadline
+    expect(fake.seen.unitDestroyed).toBe(1);
+    const n = fake.seen.unitConnects;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fake.seen.unitConnects).toBe(n);              // and not once after it
+  });
+
+  it('writes get 40 s', async () => {
+    const sl = await real(), fake = silentController('dispatcher');
+    const p = sl.withUnit(async () => 'done', sl.WRITE_DEADLINE_MS, fake.lib).then(() => 'resolved', (e: Error) => e.message);
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(await p).toBe('ScreenLogic: no answer within 40 s');
+  });
+
+  it('cronTick with a silent controller: the Nest half is done and the tick returns once the pool read gives up', async () => {
+    const sl = await real(), fake = silentController('unit');
+    H.store.set('s:pool:last', poolSnapshot(at('2026-07-15 09:30'), { schedules: CURRENT }));
+    H.S.read = () => sl.readPool((fn, ms) => sl.withUnit(fn, ms, fake.lib));
+    const acTick = vi.fn(async () => ({ sampled: true }));
+    let out: unknown = null;
+    const p = cronTick(at('2026-07-15 10:05'), { sites: async () => ['s'], acTick }).then(r => { out = r; });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(acTick).toHaveBeenCalledWith('s');   // the Nest sample ran without waiting for the pool
+    await vi.advanceTimersByTimeAsync(19_000);
+    await p;
+    expect(out).toEqual({ s: { nest: { every: 5, tick: { sampled: true } }, pool: { read: false, error: 'ScreenLogic: no answer within 20 s' } } });
+    expect(H.readings).toHaveLength(0);
+  });
+
+  it('cronTick: a pool half that throws outside the read is reported, not thrown', async () => {
+    vi.useRealTimers();
+    const get = H.db.kv.get;
+    vi.spyOn(H.db.kv, 'get').mockImplementation(async (k: string) => { if (k === 's:pool:last') throw new Error('database hiccup'); return get(k); });
+    const acTick = vi.fn(async () => ({ sampled: true }));
+    expect(await cronTick(at('2026-07-15 10:05'), { sites: async () => ['s'], acTick }))
+      .toEqual({ s: { nest: { every: 5, tick: { sampled: true } }, pool: { read: false, error: 'database hiccup' } } });
+  });
+});

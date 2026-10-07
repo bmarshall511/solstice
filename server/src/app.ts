@@ -773,10 +773,11 @@ app.get('/api/cron/nest', wrap(async (req, res) => {
   // vacation/index.ts: a trip whose leave time has come starts before the thermostat sample, so the AC plan goes away in the same tick
   const vacation: Record<string, unknown> = {};
   for (const id of await cronSites()) vacation[id] = await vacationTick(id).catch(e => ({ error: (e as Error).message }));
+  // a failed sampling tick (the pool read is bounded at 20 s by withUnit) never stops the watch steps below (code review C-01)
   const tick = await cronTick(Date.now(), {
     sites: async () => (await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL')).map(s => s.id),
     acTick: async id => acTick(id, await kv.get<Record<string, any>>('settings:owner') ?? {}, await rateFor(id), await acSlope(id)),
-  });
+  }).catch((e: Error) => { console.error(`[solstice] cron sampling failed: ${e.message}`); return { error: e.message }; });
   // watch.ts: storm, Storm Watch and ERCOT alerts every tick (read-only), plus what other modules register
   const watch: Record<string, unknown> = {};
   for (const id of await cronSites()) watch[id] = await fiveMinuteWatch(id);
