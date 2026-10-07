@@ -7,7 +7,7 @@ import { learnStats } from './store.js';
 
 export type Wx = {
   hourly: { time: string[]; global_tilted_irradiance: Array<number | null>; temperature_2m: Array<number | null> };
-  daily: { time: string[]; temperature_2m_max: Array<number | null>; precipitation_sum: Array<number | null> };
+  daily: { time: string[]; temperature_2m_max: Array<number | null>; precipitation_sum: Array<number | null>; temperature_2m_min?: Array<number | null> };
 };
 export const WX_KEY = 'wx:gti';
 const TILT = 'tilt=27&azimuth=64'; // Open-Meteo azimuth: 0 = south, +90 = west → the roof's 244° compass = 64
@@ -20,7 +20,7 @@ export async function wxGti(now = Date.now()): Promise<Wx | null> {
   const loc = siteLocation(); if (!loc) return c?.w ?? null;
   try {
     const u = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&${TILT}&past_days=31&forecast_days=3&temperature_unit=fahrenheit&timezone=America%2FChicago` +
-      '&hourly=global_tilted_irradiance,temperature_2m&daily=temperature_2m_max,precipitation_sum';
+      '&hourly=global_tilted_irradiance,temperature_2m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum';   // B2-8: the low, for the heating term
     const j = await fetch(u, { signal: AbortSignal.timeout(10_000) }).then(r => { if (!r.ok) throw new Error(`Open-Meteo: HTTP ${r.status}`); return r.json(); }) as Partial<Wx>;
     if (!j.hourly?.time?.length || !j.daily?.time?.length) throw new Error('Open-Meteo returned no hours');
     const w: Wx = { hourly: j.hourly, daily: j.daily };
@@ -36,3 +36,20 @@ export const gtiByDay = (w: Wx) => {
   w.hourly.time.forEach((t, i) => { const d = t.slice(0, 10); out[d] = (out[d] ?? 0) + (w.hourly.global_tilted_irradiance[i] ?? 0) / 1000; });
   return out;
 };
+
+/**
+ * B2-8: each day's high and low (°F) in the payload. The low is the daily minimum when Open-Meteo sent one (payloads cached before
+ * B2-8 have none), else the lowest of the day's hourly temperatures when 20 or more hours are there, else null.
+ */
+export function tempsOf(w: Pick<Wx, 'daily' | 'hourly'> | null): Record<string, { high: number; low: number | null }> {
+  if (!w) return {};
+  const mins = new Map<string, { min: number; n: number }>();
+  (w.hourly?.time ?? []).forEach((t, i) => { const v = w.hourly.temperature_2m?.[i]; if (typeof v !== 'number') return;
+    const d = t.slice(0, 10), x = mins.get(d) ?? { min: Infinity, n: 0 }; x.min = Math.min(x.min, v); x.n++; mins.set(d, x); });
+  const out: Record<string, { high: number; low: number | null }> = {};
+  (w.daily?.time ?? []).forEach((d, i) => {
+    const high = w.daily.temperature_2m_max[i], low = w.daily.temperature_2m_min?.[i], h = mins.get(d);
+    if (typeof high === 'number') out[d] = { high, low: typeof low === 'number' ? low : h && h.n >= 20 ? h.min : null };
+  });
+  return out;
+}

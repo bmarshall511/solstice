@@ -5,6 +5,7 @@
 //   scores   rolling 7/30/365-day MAE, MAPE and bias per model → model_scores (one upsert for every model)
 //   pump     the clean-filter baseline per RPM (after the last "I cleaned the filter", else the first 60 days)
 //   rules    the anomaly rules → open, update and resolve rows in `anomalies`
+//   home     the home model's year fit (B2-8: kWh = a + b·max(0, high − Tc) + c·max(0, Th − low) on 365 days) → kv
 //   predict  today's 48-hour forecast, the always-on load for tonight and the billing-cycle projection → predictions (one insert)
 // About 20 round trips whatever the data size (no per-model or per-row queries). Every step is timed and caught on its own.
 import { capacityOf, modelKwh } from '../capacity.js';
@@ -17,10 +18,10 @@ import { MODELS, MODEL_IDS, mean, median, round, versionOf, type ModelDef, type 
 import { lq, learnStats, logPrediction, type Prediction } from './store.js';
 import { confidence, type Tier } from './confidence.js';
 import { forecast48, learnYield } from './forecast48.js';
-import { highsOf, homePoints, fitHome, dayScales, forecastDays } from './homeModel.js';
+import { homePoints, modelFor, dayScales, forecastDays, fitYear, yearPoints, wxHiLo, clearUpDays, homeSlopesKey, YEAR_DAYS, type HomeSlopes, type Temp } from './homeModel.js';
 import { measuredSavings, trimFor, ranPrecool, learnAcKey, TRIM_WINDOW_DAYS, type AcDay, type PrecoolDay, type LearnAc, type TrimRecord } from './ac.js';
 import { evaluateRules, type MetricsByDay, type OpenAnomaly, type Verdict } from './rules.js';
-import { wxGti, gtiByDay, type Wx } from './wx.js';
+import { wxGti, gtiByDay, tempsOf, type Wx } from './wx.js';
 import { panelMetrics, LAYOUT_KEY, type Layout } from '../panels.js';
 import { tripDays } from '../vacation/trip.js';
 import { alwaysOnKw } from '../breakdown.js';
@@ -130,7 +131,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
   /* ---------- load ---------- */
   const keys = { ac: learnAcKey(siteId), last: `${siteId}:learn:last`, log: `${siteId}:learn:log`, pump: `${siteId}:learn:pump`, pvsLayout: LAYOUT_KEY,
     youRuns: `${siteId}:pool:youRuns`, outsideRuns: `${siteId}:pool:outsideRuns`, clearup: `${siteId}:pool:clearup`,   // the last three: mockup ah's pool scoring
-    versions: versionsKey(siteId) };
+    versions: versionsKey(siteId), home: homeSlopesKey(siteId) };
   const d = await step('load', async () => {
     // one round trip each, sent together (Neon's HTTP driver runs them in parallel; PGlite queues them)
     const [kvRows, energyDaily, energyHourly, soeHourly, nestHourly, pool, extraRows, preds] = await Promise.all([
@@ -162,8 +163,8 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     for (const r of nestHourly) (nest.get(r.day) ?? nest.set(r.day, {}).get(r.day)!)[r.hour] = { coolMin: r.cool_min, coolF: r.cool_f, indoorF: r.indoor_f, n: r.n };
     learnStats.queries++; // learnAcKw: one kv read (it recomputes at most hourly)
     const coolKw = (await learnAcKw(siteId)).coolKw;
-    learnStats.queries++; // mockup ak: the trip days in the window (4 h or more away), kept out of every at-home model below
-    const trips = await tripDays(siteId, from, today, now);
+    learnStats.queries++; // mockup ak: the trip days (4 h or more away), kept out of every at-home model below; a year of them for the home model (B2-8)
+    const trips = await tripDays(siteId, addDays(today, -YEAR_DAYS), today, now);
     learnStats.queries += 3; // B2-5: the one always-on definition (breakdown.ts alwaysOnKw): energy, Nest and pool readings of the nights
     const alwaysOn = await alwaysOnKw(siteId, LOOKBACK_DAYS, { now, trips, clearUp: (kvs[keys.clearup] ?? null) as { startedAt: number; until: number } | null });
     return { kvs, energyDaily, energyHourly, soeHourly, nest, pool, poolExtraDays: extraRows.map(r => r.day), preds, coolKw, wx: await wxGti(now), trips, alwaysOn };
@@ -174,6 +175,23 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
   const sHour = new Map(d.soeHourly.map(r => [`${r.day}|${r.hour}`, r]));
   const acKwFallback = median(d.preds.filter(p => p.model === 'ac.shifted' && p.inputs?.acKw).map(p => Number(p.inputs.acKw)));
   const kw = d.coolKw ?? (Number.isFinite(acKwFallback) ? acKwFallback : 3.4);
+
+  /* ---------- home: the year fit of the home model (B2-8) ---------- */
+  const homeSlopes = await step('home', async (): Promise<HomeSlopes | null> => {
+    // highs and lows: the archive (one pull a day, kv wx:hilo) over the forecast payload's past days, which fill the archive's last few
+    const temps: Record<string, Temp> = { ...tempsOf(d.wx), ...await wxHiLo(now) };
+    const rows = await lq<{ day: string; kwh: number; buckets: number; extra: boolean }>(
+      `SELECT e.day, (SUM(e.home_wh) / 1000.0)::float8 kwh, COUNT(*)::int buckets,
+         EXISTS (SELECT 1 FROM daily_metrics m WHERE m.site_id = $1 AND m.day = e.day AND m.metric = 'pool.extra') extra
+       FROM energy e WHERE e.site_id = $1 AND e.day >= $2 AND e.day < $3 AND e.home_wh IS NOT NULL GROUP BY e.day`, [siteId, addDays(today, -YEAR_DAYS), today]);
+    // left out: trip days, the Clear-up's days and days the pool ran beyond its plan (a Clear-up, your runs: pool.extra)
+    const exclude = new Set([...d.trips, ...clearUpDays(d.kvs[keys.clearup], now), ...rows.filter(r => r.extra).map(r => r.day)]);
+    const fit = fitYear(yearPoints(rows.map(r => ({ day: r.day, kwh: r.kwh, complete: r.buckets >= .95 * expectedBuckets(r.day) })), temps, exclude));
+    if (!fit) { waiting.push(`home model: ${Object.keys(temps).length ? 'fewer than 30 days with a high and a low spanning 10°' : 'no archived temperatures yet'}`); return null; }
+    return { day: today, ...fit };
+  }, null);
+  // a failed or impossible fit keeps the last one
+  const slopes = homeSlopes ?? (d.kvs[keys.home] as HomeSlopes | undefined) ?? null;
 
   /* ---------- ac: measured savings and tomorrow's trim ---------- */
   ac = await step('ac', async (): Promise<AcStep> => {
@@ -375,7 +393,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     const preds: Prediction[] = [];
     // 48-hour forecast: the browser's model (forecast48.ts twin) on the same inputs the Now tab uses. Logged RAW, without the
     // B2-2 bias correction the road shows (learn/bias.ts), so the scores judge the model and never their own feedback
-    const fc = fc48Inputs(d.wx, d.energyDaily, d.energyHourly.filter(r => !d.trips.has(r.day)), d.soeHourly, today, d.trips);   // mockup ak: trip days aren't at-home days
+    const fc = fc48Inputs(d.wx, d.energyDaily, d.energyHourly.filter(r => !d.trips.has(r.day)), d.soeHourly, today, d.trips, slopes, clearUpDays(d.kvs[keys.clearup], now));   // mockup ak: trip days aren't at-home days
     if (!fc.ready) waiting.push(`fc48: ${fc.why}`);
     else {
       const info = (await lq<{ info: any }>(`SELECT info FROM sites WHERE id = $1`, [siteId]))[0]?.info ?? {};
@@ -420,6 +438,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
       if (d) writes.push([keys.versions, modelVersions(d.kvs[keys.versions] as ModelVersions | undefined, today)]);
       if (ac) writes.push([keys.ac, ac.record]);
       if (d && pump) writes.push([keys.pump, pump]);
+      if (homeSlopes) writes.push([keys.home, homeSlopes]);
       if (!errors.length) writes.push([`${siteId}:error:learn`, null]);   // a clean run clears the last error, in the same write (orchestrator O-10)
       out.ms = Math.round(performance.now() - t0); out.queries = learnStats.queries + 1;
       await lq(`INSERT INTO kv (key, value) SELECT * FROM unnest($1::text[], $2::jsonb[]) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
@@ -440,7 +459,7 @@ export function modelVersions(prev: ModelVersions | undefined, today: string): M
 
 /** The 48-hour forecast's inputs as the browser builds them: yield from the last 30 days, the 14-day hourly home profile, battery % now. */
 export function fc48Inputs(w: Wx | null, daily: Array<{ day: string; solar: number }>, hourly: Array<{ day: string; hour: number; home: number }>,
-  soe: Array<{ day: string; hour: number; last: number; at: number }>, today: string, trips?: ReadonlySet<string>):
+  soe: Array<{ day: string; hour: number; last: number; at: number }>, today: string, trips?: ReadonlySet<string>, slopes?: HomeSlopes | null, clearUp?: ReadonlySet<string>):
   { ready: true; w: Wx; yieldK: number; profile: number[]; soc0: number; dayScale: Record<string, number> } | { ready: false; why: string } {
   if (!w) return { ready: false, why: 'no weather (SITE_LAT/SITE_LON unset or Open-Meteo down)' };
   const yieldK = learnYield(daily.filter(r => r.day >= addDays(today, -30) && r.day < today).map(r => ({ date: r.day, solar: Math.round(r.solar * 100) / 100 })), gtiByDay(w));
@@ -451,7 +470,8 @@ export function fc48Inputs(w: Wx | null, daily: Array<{ day: string; solar: numb
   const n = Math.max(1, 14 - [...(trips ?? [])].filter(d => d >= lo && d < today).length), profile = Array.from({ length: 24 }, (_, h) => sums.has(h) ? sums.get(h)! / n : 2);
   const latest = soe.reduce<{ last: number; at: number } | null>((a, r) => !a || r.at > a.at ? r : a, null);
   if (!latest) return { ready: false, why: 'no battery % yet' };
-  // mockup ah: each day's total from the forecast high (homeModel.ts); the hours keep this profile's shape
-  const highs = highsOf(w), dayScale = dayScales(fitHome(homePoints(hourly, highs, today)), profile, highs, forecastDays(today));
+  // mockup ah / B2-8: each day's total from its forecast high and low (homeModel.ts: the year's slopes, the last 14 days' level);
+  // the hours keep this profile's shape
+  const temps = tempsOf(w), dayScale = dayScales(modelFor(slopes, homePoints(hourly, temps, today, clearUp)), profile, temps, forecastDays(today));
   return { ready: true, w, yieldK, profile, soc0: latest.last, dayScale };
 }

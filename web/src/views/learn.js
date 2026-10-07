@@ -59,18 +59,18 @@ export function drawLearn(S) {
 const DOW = d => new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' });
 function homeHow(H) {
   const f = H.fit, pts = f.points, hs = pts.map(p => p.high).concat(H.tomorrow ? [H.tomorrow.high] : []), ks = pts.map(p => p.kwh).concat(H.tomorrow ? [H.tomorrow.kwh] : []);
-  const t0 = Math.min(70, Math.floor(Math.min(...hs) / 5) * 5), t1 = Math.max(t0 + 15, Math.ceil(Math.max(...hs) / 5) * 5), k0 = Math.floor(Math.min(...ks) / 10) * 10, k1 = Math.ceil(Math.max(...ks) / 10) * 10 || 1;
-  const X = t => 30 + (t - t0) / (t1 - t0) * 290, Y = k => 130 - (k - k0) / (k1 - k0 || 1) * 115, line = t => f.a + f.b * Math.max(0, t - 70);
+  const tc = f.tc ?? 70, t0 = Math.min(tc, Math.floor(Math.min(...hs) / 5) * 5), t1 = Math.max(t0 + 15, Math.ceil(Math.max(...hs) / 5) * 5), k0 = Math.floor(Math.min(...ks) / 10) * 10, k1 = Math.ceil(Math.max(...ks) / 10) * 10 || 1;
+  const X = t => 30 + (t - t0) / (t1 - t0) * 290, Y = k => 130 - (k - k0) / (k1 - k0 || 1) * 115, line = t => f.a + f.b * Math.max(0, t - tc);   // B2-8: the cooling part against the high (the heating part follows the low)
   let o = '';
   for (let t = Math.ceil(t0 / 10) * 10; t <= t1; t += 10) o += `<text x="${X(t)}" y="146" text-anchor="middle" fill="rgba(242,244,248,.45)" font-size="9" font-family="JetBrains Mono">${t}°</text>`;
   [k0, (k0 + k1) / 2, k1].forEach(k => o += `<line x1="30" x2="320" y1="${Y(k)}" y2="${Y(k)}" stroke="rgba(255,255,255,.06)"/><text x="2" y="${Y(k) + 3}" fill="rgba(242,244,248,.45)" font-size="9" font-family="JetBrains Mono">${Math.round(k)}</text>`);
-  o += `<polyline points="${[t0, Math.max(t0, 70), t1].map(t => `${X(t)},${Y(line(t))}`).join(' ')}" fill="none" stroke="#4ef0a6" stroke-width="2"/>`;
+  o += `<polyline points="${[t0, Math.max(t0, tc), t1].map(t => `${X(t)},${Y(line(t))}`).join(' ')}" fill="none" stroke="#4ef0a6" stroke-width="2"/>`;
   pts.forEach(p => o += `<circle cx="${X(p.high)}" cy="${Y(p.kwh)}" r="3.5" fill="#ffd27a" fill-opacity=".85"><title>${p.day.slice(5)}: ${Math.round(p.high)}°, ${p.kwh} kWh</title></circle>`);
   if (H.tomorrow) o += `<circle cx="${X(H.tomorrow.high)}" cy="${Y(H.tomorrow.kwh)}" r="5" fill="none" stroke="#fff" stroke-width="1.5"/><text x="${X(H.tomorrow.high) - 8}" y="${Y(H.tomorrow.kwh) - 9}" text-anchor="end" fill="#fff" font-size="9.5" font-family="Manrope">tomorrow</text>`;
   o += `<text x="320" y="12" text-anchor="end" fill="rgba(242,244,248,.45)" font-size="9" font-family="Manrope">kWh a day vs the day's high</text>`;
   const chk = (H.check ?? []).filter(c => c.new != null);
   return `<div class="ah-h">How it predicts</div><svg viewBox="0 0 330 150" style="width:100%;margin-top:8px">${o}</svg>
-    <p class="ah-line">From your last ${f.n} days: <b>${Math.round(f.a)} kWh a day${f.b > 0 ? `, plus ${f.b.toFixed(1)} kWh for every degree` : ''}</b>${f.b > 0 ? ' the forecast high is above 70°' : ' (it hasn’t tracked the heat lately)'}.${H.tomorrow ? ` Tomorrow’s forecast ${Math.round(H.tomorrow.high)}° → <b>${Math.round(H.tomorrow.kwh)} kWh</b>, spread over the hours the way your recent days ran.` : ''}</p>
+    <p class="ah-line">From your last ${f.year ? `year (${f.year.n} days) for the weather and your last ${f.n || pts.length} days for the level` : `${f.n} days`}: <b>${Math.round(f.a)} kWh a day${f.b > 0 ? `, plus ${f.b.toFixed(1)} kWh for every degree` : ''}</b>${f.b > 0 ? ` the forecast high is above ${tc}°` : ' (it hasn’t tracked the heat lately)'}${f.c > 0 ? `, <b>plus ${f.c.toFixed(1)} kWh for every degree</b> the night’s low is below ${f.th}° (heating)` : ''}.${H.tomorrow ? ` Tomorrow’s forecast ${Math.round(H.tomorrow.high)}° → <b>${Math.round(H.tomorrow.kwh)} kWh</b>, spread over the hours the way your recent days ran.` : ''}</p>
     ${chk.length ? `<div class="ah-h">The last ${chk.length} days, old vs new</div><div class="ah-tbl"><span class="hd">Day</span><span class="hd">Used</span><span class="hd">Old</span><span class="hd">New</span>
       ${chk.map(c => `<span>${DOW(c.day)} ${+c.day.slice(5, 7)}/${+c.day.slice(8)} · ${Math.round(c.high)}°</span><span>${Math.round(c.used)}</span><span class="old">${Math.round(c.old)}</span><span class="nw">${Math.round(c.new)}</span>`).join('')}</div>` : ''}`;
 }

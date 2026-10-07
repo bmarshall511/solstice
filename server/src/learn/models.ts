@@ -42,7 +42,8 @@ export const MODELS: Record<ModelId, ModelDef> = {
   // v2: B2-1's daily-total scores (v1 days hold hourly errors and doubled totals)
   'fc48.solar': { ...base, id: 'fc48.solar', label: 'Next 48 h solar', unit: 'kWh', floor: 1, need: 14, ceiling: .4, inputs: FC48, version: 2,
     help: 'needs a few more days of forecasts scored against what the panels made' },
-  'fc48.home': { ...base, id: 'fc48.home', label: 'Next 48 h home use', unit: 'kWh', floor: 1, need: 14, ceiling: .4, inputs: FC48, version: 2,
+  // v3: B2-8's home model (the year's cooling and heating slopes, the last 14 days' level) shapes the forecast
+  'fc48.home': { ...base, id: 'fc48.home', label: 'Next 48 h home use', unit: 'kWh', floor: 1, need: 14, ceiling: .4, inputs: FC48, version: 3,
     help: 'needs a few more days of forecasts scored against what the house used' },
   'fc48.soc': { ...base, id: 'fc48.soc', label: 'Next 48 h battery %', unit: 'pts', abs: true, floor: 0, need: 14, ceiling: 20, inputs: FC48,
     help: 'needs a few more days of forecasts scored against the Powerwall charge' },

@@ -90,7 +90,13 @@ export function drawAC(S) {
   o += svgText(30, 168, `daily high →  ·  home kWh/day ↑  ·  ${pts.length} hot days (bright = last 60)`, { size: 8.5, font: 'Manrope' });
   $('acChart').innerHTML = o;
   $('acTxt').innerHTML = `Each extra degree of daily high adds about <b style="color:var(--text)">${slope.toFixed(1)} kWh</b> a day, mostly air conditioning. That's about ${S.guest ? veil('$••') : S.tariff ? `$${(slope * 30 * S.tariff.importRateAllIn).toFixed(0)}` : '—'} a month per degree. ` +
-    (worst.res > 12 ? `<b style="color:var(--warn)">${niceDate(worst.date)}</b> used ${Math.round(worst.res)} kWh more than normal for a ${Math.round(worst.t)}° day. That could be guests, laundry or the pool heater. If days like that become common, get the AC checked.` : 'Usage has tracked the temperature normally.');
+    (worst.res > 12 ? `<b style="color:var(--warn)">${niceDate(worst.date)}</b> used ${Math.round(worst.res)} kWh more than normal for a ${Math.round(worst.t)}° day. That could be guests, laundry or the pool heater. If days like that become common, get the AC checked.` : 'Usage has tracked the temperature normally.') +
+    heatSentence(S.models?.home?.fit);
+}
+/** B2-8: the home model's heating term (learn/homeModel.ts), once the last year shows one. */
+function heatSentence(f) {
+  if (!(f?.c > 0)) return '';
+  return ` In cold weather it works the other way: each degree the night's low falls below ${f.th}° adds about <b style="color:var(--text)">${f.c.toFixed(1)} kWh</b> a day for heating${f.year?.heatDays ? `, from ${f.year.heatDays} cold days in the last year` : ''}.`;
 }
 
 /* ---------- overnight baseline ---------- */

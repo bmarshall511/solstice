@@ -433,7 +433,8 @@ describe('forecast48.ts is the browser’s model, line for line', () => {
 /* ------------------------------------------------------------------ B2-2: bias feedback */
 describe('B2-2: the 30-day bias per horizon band divided out of the shown 48-hour forecast', () => {
   const day = (i: number) => addDays('2026-09-01', i);
-  const rows = (model: string, b: string, n: number, err: number, den: number, v = 2) => Array.from({ length: n }, (_, i) => [{ day: day(i), metric: `score:${model}:v`, value: v },
+  // B2-8: each model's current version by default (fc48.home is at 3 now; this was a fixed 2)
+  const rows = (model: string, b: string, n: number, err: number, den: number, v = MODELS[model as keyof typeof MODELS].version) => Array.from({ length: n }, (_, i) => [{ day: day(i), metric: `score:${model}:v`, value: v },
     { day: day(i), metric: `score:${model}:err@${b}`, value: err }, { day: day(i), metric: `score:${model}:den@${b}`, value: den }]).flat();
   it('a band with 7 scored days gets 1 ÷ (1 + bias); fewer than 7 gets none', () => {
     const f = biasFactors([...rows('fc48.solar', 'h25-48', 7, 4, 40), ...rows('fc48.solar', 'h7-24', 6, 4, 40), ...rows('fc48.home', 'h7-24', 10, -3, 30)]);
@@ -470,10 +471,10 @@ describe('B2-2: the 30-day bias per horizon band divided out of the shown 48-hou
 
 /* ------------------------------------------------------------------ B2-3: model versions */
 describe('B2-3: model versions', () => {
-  it('every model has a version; a missing one reads as 1; home.alwaysOn is at 3 (B2-5), the daily-total forecasts at 2', () => {
+  it('every model has a version; a missing one reads as 1; home.alwaysOn is at 3 (B2-5), the daily-total solar forecast at 2, home use at 3 (B2-8)', () => {
     for (const id of MODEL_IDS) expect(Number.isInteger(MODELS[id].version) && MODELS[id].version >= 1, id).toBe(true);
     expect([versionOf(undefined), versionOf(null), versionOf(2), versionOf('3')]).toEqual([1, 1, 2, 3]);
-    expect([MODELS['home.alwaysOn'].version, MODELS['fc48.solar'].version, MODELS['fc48.home'].version, MODELS['pool.kwhDay'].version]).toEqual([3, 2, 2, 1]);
+    expect([MODELS['home.alwaysOn'].version, MODELS['fc48.solar'].version, MODELS['fc48.home'].version, MODELS['pool.kwhDay'].version]).toEqual([3, 2, 3, 1]);   // B2-8: fc48.home 2 → 3 (deliberate)
   });
   it('the versions record keeps the day a version first ran, and restarts it when the version changes', () => {
     const first = modelVersions(undefined, '2026-10-07');

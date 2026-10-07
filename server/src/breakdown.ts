@@ -25,15 +25,21 @@ export function baseOf(buckets: Bucket[], acOn: (start: number) => boolean = () 
   const night = buckets.filter(b => b.hour >= 1 && b.hour < 5 && !acOn(b.epoch)).map(b => b.kw).sort((a, b) => a - b);
   return night.length >= 12 ? night[Math.floor(night.length * BASE_QUANTILE)] : null;
 }
-/** Runs of BURST_MIN_BUCKETS+ buckets at least BURST_OVER_KW above `base` once the AC's draw (`acKw` while `acOn`) is taken out, with the energy above the base. */
-export function burstsOf(buckets: Bucket[], base: number, acOn: (start: number) => boolean, acKw = 0): Burst[] {
+/**
+ * Runs of BURST_MIN_BUCKETS+ buckets at least BURST_OVER_KW above `base` once the AC's draw (`acKw` while `acOn`) is taken out, with the
+ * energy above the base. B2-8 (audit L-09): while `heat.on` (the Nest heating) the heating draw `heat.kw` comes out instead; with no
+ * heating kW learned yet a heating bucket is never part of a burst, so strip heat isn't booked as a water heater or dryer.
+ */
+export function burstsOf(buckets: Bucket[], base: number, acOn: (start: number) => boolean, acKw = 0, heat?: { on: (start: number) => boolean; kw: number | null }): Burst[] {
   const out: Burst[] = []; let run: Bucket[] = [];
   const close = () => { if (run.length >= BURST_MIN_BUCKETS) out.push({ start: run[0].epoch, minutes: run.length * 5,
     kw: Math.round(run.reduce((a, b) => a + b.kw, 0) / run.length * 10) / 10, kwh: Math.round(run.reduce((a, b) => a + (b.kw - base) / 12, 0) * 10) / 10 }); run = []; };
   for (const b of buckets) {
     const contiguous = !run.length || b.epoch - run[run.length - 1].epoch === 300_000;
     if (!contiguous) close();
-    const kw = b.kw - (acOn(b.epoch) ? acKw : 0);
+    const heating = !!heat?.on(b.epoch);
+    if (heating && heat!.kw == null) { close(); continue; }
+    const kw = b.kw - (heating ? heat!.kw! : acOn(b.epoch) ? acKw : 0);
     if (kw - base >= BURST_OVER_KW) run.push({ ...b, kw }); else close();
   }
   close();
@@ -45,10 +51,10 @@ export function nestCoverage(readings: Array<{ ts: number; day: string }>) {
   for (let i = 0; i < readings.length; i++) { const r = readings[i], dt = Math.min(20 * 60_000, (readings[i + 1]?.ts ?? r.ts + 5 * 60_000) - r.ts); out.set(r.day, (out.get(r.day) ?? 0) + dt / 60_000); }
   return out;
 }
-/** Whether the AC ran during a bucket, from Nest readings (each holds until the next, at most 20 min). */
-export function acMask(readings: Array<{ ts: number; hvac: string }>) {
+/** Whether the AC ran during a bucket, from Nest readings (each holds until the next, at most 20 min). `states`: which HVAC states count (B2-8). */
+export function acMask(readings: Array<{ ts: number; hvac: string }>, states: readonly string[] = ['COOLING', 'HEATING']) {
   const on: Array<[number, number]> = [];
-  for (let i = 0; i < readings.length; i++) { const r = readings[i]; if (r.hvac !== 'COOLING' && r.hvac !== 'HEATING') continue;
+  for (let i = 0; i < readings.length; i++) { const r = readings[i]; if (!states.includes(r.hvac)) continue;
     const end = Math.min(r.ts + 20 * 60_000, readings[i + 1]?.ts ?? r.ts + 20 * 60_000); on.push([r.ts, end]); }
   return (start: number) => on.some(([a, b]) => a < start + 300_000 && b > start);
 }
@@ -114,35 +120,39 @@ export async function breakdownFor(siteId: string, range: Range, settings: Recor
   ]);
   const slope = (await kv.get<{ slope: number }>(`${siteId}:ac:slope`))?.slope ?? 2.5;
   const [pool, ac, clearUp, learned] = await Promise.all([poolKwhBetween(siteId, spans, settings), acKwhBetween(siteId, spans, slope), clearUpOf(siteId), learnAcKw(siteId)]);
-  const nr = nest.map(r => ({ ts: Number(r.ts), day: r.day, hvac: r.hvac })), acOn = acMask(nr), covered = nestCoverage(nr), pr = pumpNight.map(p => ({ ts: Number(p.ts), day: p.day, running: pumpRunning(p), kw: (Number(p.watts) || 0) / 1000 })), pumpOn = pumpMask(pr, clearUp);
+  const nr = nest.map(r => ({ ts: Number(r.ts), day: r.day, hvac: r.hvac })), acOn = acMask(nr), coolOn = acMask(nr, ['COOLING']), heatOn = acMask(nr, ['HEATING']), covered = nestCoverage(nr), pr = pumpNight.map(p => ({ ts: Number(p.ts), day: p.day, running: pumpRunning(p), kw: (Number(p.watts) || 0) / 1000 })), pumpOn = pumpMask(pr, clearUp);
   const pumpKw = new Map<string, number>(); for (const r of pr) if (r.running) pumpKw.set(r.day, Math.max(pumpKw.get(r.day) ?? 0, r.kw));   // the running draw, for the fallback
   const byDay = new Map<string, Bucket[]>();
   for (const r of rows) { const b = { epoch: Number(r.epoch), day: r.day, hour: r.hour, kw: Number(r.wh) * 12 / 1000 }; const a = byDay.get(r.day); if (a) a.push(b); else byDay.set(r.day, [b]); }
-  let home = 0, alwaysOn = 0, big = 0, baseSum = 0, baseDays = 0, burstCount = 0, days = 0, acSum = 0, acDays = 0; const todayBursts: Burst[] = [], allBursts: Burst[] = [];
-  const acKwNow = ac.acKw ?? 2.7;
+  let home = 0, alwaysOn = 0, big = 0, baseSum = 0, baseDays = 0, burstCount = 0, days = 0, acSum = 0, acDays = 0, acH = 0, heatH = 0; const todayBursts: Burst[] = [], allBursts: Burst[] = [];
+  const acKwNow = ac.acKw ?? 2.7, heatKw = learned.heatKw ?? null;
+  const hoursOf = (day: string, state: string) => nr.filter(r => r.day === day).reduce((a, r, i, arr) => a + (r.hvac === state ? Math.min(20, ((arr[i + 1]?.ts ?? r.ts + 300_000) - r.ts) / 60_000) / 60 : 0), 0);
   for (const s of spans) {
     const bs = byDay.get(s.day) ?? []; if (range !== 'today' && bs.length < 0.9 * (s.lengthMs / 300_000)) continue;   // a full day needs ~all its buckets
     if ((covered.get(s.day) ?? 0) < NEST_COVERAGE * s.elapsedMs / 60_000) continue;                                   // without Nest the AC can't be told apart
     days++;
-    const dayAcH = nr.filter(r => r.day === s.day).reduce((a, r, i, arr) => a + ((r.hvac === 'COOLING' || r.hvac === 'HEATING') ? Math.min(20, ((arr[i + 1]?.ts ?? r.ts + 300_000) - r.ts) / 60_000) / 60 : 0), 0);
-    acSum += dayAcH * acKwNow; acDays++;
+    // B2-8 (audit L-09): cooling time × the cooling draw, heating time × the heating draw once one is learned (never the cooling kW)
+    const coolH = hoursOf(s.day, 'COOLING'), dayHeatH = hoursOf(s.day, 'HEATING');
+    acSum += coolH * acKwNow + (heatKw != null ? dayHeatH * heatKw : 0); acH += coolH + dayHeatH; heatH += dayHeatH; acDays++;
     home += bs.reduce((a, b) => a + b.kw / 12, 0);
     const base = nightBase(bs, acOn, pumpOn, pumpKw.get(s.day) ?? 0); if (base == null) continue;
     baseSum += base; baseDays++;
     alwaysOn += base * Math.min(s.elapsedMs, bs.length * 300_000) / 3600e3;
-    const bursts = burstsOf(bs, base, acOn, acKwNow); burstCount += bursts.length; allBursts.push(...bursts); big += bursts.reduce((a, b) => a + b.kwh, 0);
+    const bursts = burstsOf(bs, base, coolOn, acKwNow, { on: heatOn, kw: heatKw }); burstCount += bursts.length; allBursts.push(...bursts); big += bursts.reduce((a, b) => a + b.kwh, 0);
     if (s.day === today) todayBursts.push(...bursts);
   }
   const per = (v: number) => days ? Math.round(v / days * 10) / 10 : 0;
-  // AC from the same covered days as everything else (cooling or heating time x the learned draw); pool as the History card has it
+  // AC from the same covered days as everything else (cooling time × the learned cooling draw, heating time × the heating draw); pool as the History card has it
   const acKwh = per(acSum), poolKwh = per(pool.kwh * (days / Math.max(1, spans.length)));
   const homeKwh = per(home), onKwh = per(alwaysOn), bigKwh = per(big), rest = Math.max(0, Math.round((homeKwh - acKwh - poolKwh - onKwh - bigKwh) * 10) / 10);
   const share = (v: number) => homeKwh ? Math.round(v / homeKwh * 100) : 0;
-  const acHours = acDays ? Math.round(acSum / acKwNow / acDays * 10) / 10 : null;
+  const acHours = acDays ? Math.round(acH / acDays * 10) / 10 : null;
+  // heating hours without a learned heating draw: their kWh can't be booked, so the AC part is an estimate (it stays in "everything else")
+  const acConf = heatH > 0 && heatKw == null ? 'estimated' as const : acKwConf(learned);
   return { range, from, to, days, spanDays: spans.length, homeKwh,
     parts: [
       // B2-7: runtime × one learned step is "measured" only when the step's two checks agree with it within 15% (ac.ts acKwConf)
-      { id: 'ac', kwh: acKwh, share: share(acKwh), conf: acKwConf(learned), hours: acHours, kw: acKwNow },
+      { id: 'ac', kwh: acKwh, share: share(acKwh), conf: acConf, hours: acHours, kw: acKwNow, heatHours: acDays ? Math.round(heatH / acDays * 10) / 10 : null, heatKw },
       { id: 'alwaysOn', kwh: onKwh, share: share(onKwh), conf: 'measured', kw: baseDays ? Math.round(baseSum / baseDays * 100) / 100 : null },
       { id: 'big', kwh: bigKwh, share: share(bigKwh), conf: 'estimated', perDay: days ? Math.round(burstCount / days * 10) / 10 : 0,
         minutes: allBursts.length ? [Math.min(...allBursts.map(b => b.minutes)), Math.max(...allBursts.map(b => b.minutes))] : null,

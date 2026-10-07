@@ -91,6 +91,18 @@ export function acDuty(o: { measuredPct: number | null; high: number | null; slo
   return { duty: clamp(Math.max(0, o.high - 80) * o.slope / 24 / Math.max(.5, o.acKw), 0, .6), source: 'estimated' as const };
 }
 
+/**
+ * B2-8 (audit L-09): heating duty (0–1) when the thermostat is in HEAT: today's measured Nest heating duty when there is one; else the
+ * home model's heating kWh at today's low (c × degrees below Th) spread over the day ÷ the heating kW; with no heating term learned,
+ * 50% on a freezing night and nothing above it.
+ */
+export function heatDuty(o: { measuredPct: number | null; low: number | null; c: number; th: number; kw: number }) {
+  if (o.measuredPct != null) return { duty: clamp(o.measuredPct / 100, 0, 1), source: 'nest' as const };
+  if (o.low == null) return { duty: .5, source: 'estimated' as const };
+  if (o.c > 0) return { duty: clamp(Math.max(0, o.th - o.low) * o.c / 24 / Math.max(.5, o.kw), 0, 1), source: 'estimated' as const };
+  return { duty: o.low <= 32 ? .5 : 0, source: 'estimated' as const };
+}
+
 /** Forecast array output by simulation hour: Open-Meteo's hourly sun (kW/m², the hour ending at its timestamp) × the learned yield. */
 export function solarByHour(o: { startDate: string; startHour: number; yieldK: number; sunAt: (date: string, hourEnding: number) => number }) {
   return Array.from({ length: HOURS }, (_, k) => {
@@ -163,8 +175,12 @@ export async function outageDetail(siteId: string, settingsAll: Record<string, a
   const poolRpm = speeds.get(pool.poolCircuit) || pool.filterRpm, poolKw = W(poolRpm) / 1000, poolHourly = poolKwByHour(schedules, speeds, W);
 
   // AC: the kW learned from Nest load steps (or the heat model's estimate, as the AC card does) × duty
-  const [learned, slopeHit, rt] = await Promise.all([learnAcKw(siteId), kv.get<{ slope: number }>(`${siteId}:ac:slope`), runtimeToday(siteId)]);
-  const slope = slopeHit?.slope ?? null, acKw = learned.coolKw ?? (slope ? clamp(slope * 1.3, 2, 5) : 3.4);
+  const [learned, slopeHit, rt, nest] = await Promise.all([learnAcKw(siteId), kv.get<{ slope: number }>(`${siteId}:ac:slope`), runtimeToday(siteId), kv.get<{ mode?: string }>('nest:last')]);
+  const slope = slopeHit?.slope ?? null, coolKw = learned.coolKw ?? (slope ? clamp(slope * 1.3, 2, 5) : 3.4);
+  // B2-8: with the thermostat in HEAT the rung is the heating draw (learned from heating steps, else the cooling figure as a stand-in) × heating duty
+  const heating = nest?.mode === 'HEAT', acKw = heating ? learned.heatKw ?? coolKw : coolKw;
+  // mockup ah: each hour's typical load scaled to its day's total from the forecast weather (learn/homeModel.ts; 1 without a fit)
+  const hf = await homeForecast(siteId, now.getTime()).catch(() => null);
 
   // forecast: today, tomorrow, and the past days that teach the yield (kWh made per kWh/m² of sun)
   let days: Awaited<ReturnType<typeof forecast>> = [];
@@ -176,11 +192,11 @@ export async function outageDetail(siteId: string, settingsAll: Record<string, a
   const yieldK = pairs.length ? clamp(pairs.reduce((a, p) => a + p[0], 0) / pairs.reduce((a, p) => a + p[1], 0), 2, 9.45) : 9.45 * .8; // .8 × AC rating: the pool planner's rule
   const solarKw = solarByHour({ startDate: today, startHour, yieldK, sunAt: (d, h) => byDate.get(d)?.hourlySun[h] ?? 0 });
   const tomorrowKwh = byDate.get(tomorrow) ? r1(byDate.get(tomorrow)!.sunKwhM2 * yieldK) : null;
-  const { duty, source: dutySource } = acDuty({ measuredPct: rt.duty, high: byDate.get(today)?.high ?? null, slope: slope ?? 2.5, acKw });
+  const { duty, source: dutySource } = heating ? heatDuty({ measuredPct: rt.heatDuty, low: hf?.today?.low ?? null, c: hf?.fit?.c ?? 0, th: hf?.fit?.th ?? 65, kw: acKw })
+    : acDuty({ measuredPct: rt.duty, high: byDate.get(today)?.high ?? null, slope: slope ?? 2.5, acKw });
 
   const usable = usableKwh(soc, capKwh), acAvgKw = acKw * duty;
-  // mockup ah: each hour's typical load scaled to its day's total from the forecast high (learn/homeModel.ts; 1 without a fit)
-  const hf = await homeForecast(siteId, now.getTime()).catch(() => null), scaleByK = Array.from({ length: HOURS }, (_, k) => hf?.scale[addDays(today, Math.floor((Math.floor(startHour) + k) / 24))] ?? 1);
+  const scaleByK = Array.from({ length: HOURS }, (_, k) => hf?.scale[addDays(today, Math.floor((Math.floor(startHour) + k) / 24))] ?? 1);
   const loadIn = { startHour, profile: prof, drawKw, alwaysOnKw, acAvgKw, poolKwByHour: poolHourly, scaleByK };
   const scenarios = Object.fromEntries(SCENARIOS.map(sc => {
     const loadKw = scenarioLoads(loadIn, sc), sim = simulateIsland({ soc0: soc, capKwh, maxKw, solarKw, loadKw });
@@ -198,7 +214,7 @@ export async function outageDetail(siteId: string, settingsAll: Record<string, a
   return {
     at: now.getTime(), date: today, startHour: r3(startHour), readingAt: reading ? Number(reading.ts) : null,
     soc: socKnown == null ? null : r1(soc), capacityKwh: capKwh, measuredKwh: cap?.measuredKwh ?? null, usableKwh: r2(usable), reservePct: info.backup_reserve_percent ?? null, maxKw, batteries, drawKw: r3(drawKw),
-    loads: { alwaysOnKw: r3(alwaysOnKw), poolKw: r3(poolKw), poolRpm, acKw: r2(acKw), acSource: learned.coolKw ? 'measured' : 'estimated', acDuty: r2(duty), dutySource },
+    loads: { alwaysOnKw: r3(alwaysOnKw), poolKw: r3(poolKw), poolRpm, acKw: r2(acKw), acSource: (heating ? learned.heatKw : learned.coolKw) ? 'measured' : 'estimated', acDuty: r2(duty), dutySource, acHeat: heating },
     ladder: ladder({ usableKwh: usable, alwaysOnKw, poolKw, acKw, duty, drawKw }),
     scenarios,
     solar: { tomorrowKwh, cloudy: tomorrowKwh != null && tomorrowKwh < CLOUDY_KWH, yieldK: r2(yieldK) },

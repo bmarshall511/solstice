@@ -687,8 +687,8 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
     expect(await one(`SELECT COUNT(*)::int n FROM model_scores WHERE site_id = $1`, [S])).toEqual({ n: 24 }); // 8 models × 3 windows
     expect(r.tiers).toMatchObject({ 'fc48.solar': 'learning', 'ac.shifted': 'measured', 'ac.eveningAvoided': 'measured' });
     // budget: a fixed number of round trips, no per-model or per-row queries
-    expect(r.queries).toBeLessThanOrEqual(28);
-    expect(queries).toBeLessThanOrEqual(32);   // mockup ah: + the pool days already marked extra; mockup ak: + the trip days; B2-3: + clearing a rescored day's old score rows; B2-5: + the always-on nights (3)
+    expect(r.queries).toBeLessThanOrEqual(30);
+    expect(queries).toBeLessThanOrEqual(34);   // mockup ah: + the pool days already marked extra; mockup ak: + the trip days; B2-3: + clearing a rescored day's old score rows; B2-5: + the always-on nights (3); B2-8: + wx:hilo and the year's daily totals (2)
     expect(r.ms).toBeLessThan(5000);
     console.info(`[learning] nightly job on seeded data: ${queries} PGlite round trips (${r.queries} counted by the job), ${r.ms} ms`);
   });
