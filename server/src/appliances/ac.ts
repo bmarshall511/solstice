@@ -3,7 +3,7 @@
 import { q, kv } from '../db.js';
 import { localDay, addDays, rfc3339 } from '../tesla/client.js';
 import { readNest, nestConfigured, nestLinked, setCool, type NestState } from './nest.js';
-import { forecast } from './autopilot.js';
+import { forecastAged } from './autopilot.js';
 import type { Mode } from './autopilot.js';
 import { lastSetpointWrite } from './nest.js';
 import { guardCoolSetpoint, explainRefusal, GuardRefusal } from './guards.js';
@@ -367,6 +367,13 @@ export async function holdToMorning(siteId: string, s: Pick<AcSettings, 'nightTo
 }
 
 /* ---------- detail for the app ---------- */
+/** What the AC card and acTick need to know about the forecast behind today's plan (code review C-04). */
+export function fcInfo(fc: { stale: boolean; ageMs: number | null; unavailable?: true }) {
+  const ageH = fc.ageMs == null ? null : Math.round(fc.ageMs / 3600e3);
+  const note = fc.unavailable ? 'No forecast (Open-Meteo unreachable for over 12 h): Autopilot sends no plan steps until it is back'
+    : fc.stale ? `Forecast is ${ageH} h old (Open-Meteo unreachable)` : null;
+  return { stale: fc.stale, ageH, unavailable: !!fc.unavailable, note };
+}
 export async function acDetail(siteId: string, settingsAll: Record<string, any>, rate: number | null, slope: number, opts: { fresh?: boolean } = {}) {
   const settings = acSettingsOf(settingsAll);   // mockup ag: with the targets
   const presence = await presenceFor(siteId, settingsAll);   // presence.ts: manual "Away until", then Nest Eco, then home
@@ -376,17 +383,24 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
   const prev = st; let fresh = false;
   if (linked && (opts.fresh || !st || Date.now() - st.at > 60_000)) { try { st = await readNest(); fresh = true; await recordNest(siteId, st); } catch (e: any) { error = e.message; } }
   const learned = await learnAcKw(siteId), rt = await runtimeToday(siteId);
-  const days = await forecast(), today = localDay(), ti = Math.max(0, days.findIndex(d => d.date === today));
+  // code review C-04: Open-Meteo down → the last forecast up to 12 h old (stale); with none, a neutral day (high 90, sun 5), and
+  // acTick sends no plan step, while Nest sampling, holds, Eco and Vacation mode carry on
+  const fc = await forecastAged().catch((e: Error) => ({ days: [], stale: true, ageMs: null, error: e.message, unavailable: true as const }));
+  const forecastInfo = fcInfo(fc);
+  const days = fc.days, today = localDay(), ti = Math.max(0, days.findIndex(d => d.date === today));
   // today's plan through the learning layer: a control day holds the band, a learned trim applies, the savings carry `conf`.
   // The day's weather inputs are frozen at the first plan from 06:00 on, so a refreshed forecast or a humidity reading near the
-  // cap can't flip the plan back and forth during the day (it used to re-plan every 5 minutes).
-  const inputs = await dayInputs(siteId, today, { high: days[ti]?.high ?? 90, sunKwhM2: days[ti]?.sunKwhM2 ?? 5, hourlySun: days[ti]?.hourlySun ?? Array(24).fill(0), humidity: st?.humidity ?? null });
+  // cap can't flip the plan back and forth during the day (it used to re-plan every 5 minutes). With no forecast nothing is frozen.
+  const inputs = await dayInputs(siteId, today, { high: days[ti]?.high ?? 90, sunKwhM2: days[ti]?.sunKwhM2 ?? 5, hourlySun: days[ti]?.hourlySun ?? Array(24).fill(0), humidity: st?.humidity ?? null },
+    forecastInfo.unavailable ? -1 : hourNow());
   let plan = await learnedPlan(siteId, { date: today, ...inputs, settings, acKw: learned.coolKw, slope, rate },
-    planFor, learned.coolKw ?? (slope ? Math.max(2, Math.min(5, slope * 1.3)) : 3.4), { readOnly: !!settingsAll[PRESENCE_FIXED as any] });
+    // with no forecast the plan is a neutral day: it claims no control day and logs no prediction (readOnly), so learning isn't fed made-up weather
+    planFor, learned.coolKw ?? (slope ? Math.max(2, Math.min(5, slope * 1.3)) : 3.4), { readOnly: !!settingsAll[PRESENCE_FIXED as any] || forecastInfo.unavailable });
   // Vacation mode (mockup ak): during a trip the plan is the trip's setting now (the hold, or the welcome home), computed in vacation/ac.ts
   const trip = presence.source === 'vacation' ? await liveTrip(siteId) : null, vacation = trip ? tripAcView(trip, settings) : null;
   if (vacation) plan = { ...plan, steps: [{ hour: 0, coolF: vacation.now.coolF, why: vacation.now.why }], precool: false, shiftedKwh: 0, eveningAvoidedKwh: 0, control: false,
     why: [vacation.now.welcome ? `Welcome home: cooling to ${vacation.arrivalF}°` : `Vacation: holding ${vacation.holdF}°${vacation.humid ? ' to keep the house dry' : ''} while you're away`] };
+  if (forecastInfo.note) plan = { ...plan, why: [...plan.why, forecastInfo.note] };
   const hold = await observeHold(siteId, fresh ? prev : null, st, plan, settings, presence);
   const week = days.slice(ti, ti + 7).map(d => { const p = planFor({ date: d.date, high: d.high, sunKwhM2: d.sunKwhM2, hourlySun: d.hourlySun, settings, acKw: learned.coolKw, slope, rate, humidity: null }); return { date: d.date, high: Math.round(d.high), sunKwhM2: Math.round(d.sunKwhM2 * 10) / 10, precool: p.precool, depth: p.precool ? settings.precoolDepth : 0, shiftedKwh: p.shiftedKwh, eveningAvoidedKwh: p.eveningAvoidedKwh, precoolFrom: p.precoolFrom, precoolTo: p.precoolTo, coastFrom: p.coastFrom, coastTo: p.coastTo }; });
   const applied = await kv.get<AcRecord>(`${siteId}:ac:plan`) ?? null;
@@ -399,7 +413,7 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
   const holds = await kv.get<HoldRecord[]>(holdHistoryKey(siteId)) ?? [], since = addDays(today, -6);
   const changes = { recent: holds.filter(h => h.day >= since).map(h => ({ at: h.at, by: h.by ?? null, coolF: Math.round(h.coolF), planF: Math.round(h.planF) })),
     patterns: changePatterns(holds, settings, today).slice(0, 4).map(p => ({ hour: p.hour, f: p.f, from: p.from, planF: p.planF, dir: p.dir, days: p.days, need: 4, window: p.window, set: p.set })) };
-  return { id: 'ac', name: 'AC', configured, linked, error, settings, state: st, hold, suggestion, changes, vacation, learned: { ...learned, acKw, source: learned.coolKw ? 'measured' : 'estimated' }, runtime: rt, todayKwh, shareOfHomePct: home[0]?.kwh ? Math.round(todayKwh / home[0].kwh * 100) : null,
+  return { id: 'ac', name: 'AC', configured, linked, error: error ?? (forecastInfo.unavailable ? forecastInfo.note : null), forecast: forecastInfo, settings, state: st, hold, suggestion, changes, vacation, learned: { ...learned, acKw, source: learned.coolKw ? 'measured' : 'estimated' }, runtime: rt, todayKwh, shareOfHomePct: home[0]?.kwh ? Math.round(todayKwh / home[0].kwh * 100) : null,
     plan, currentStep: stepAt(plan, hourNow()), week, presence, applied: applied?.date === today ? applied : null, log, outdoorF: days[ti] ? Math.round(days[ti].high) : null, hourlyOutdoor: null,
     equipment: { airHandler: 'Trane TEM4A0C42 · 3.5 ton variable-speed (2018)', heat: 'electric strips (staged)',
       outdoor: learned.heatKw != null ? (learned.heatKw < 5 ? `heat pump (measured ${learned.heatKw.toFixed(1)} kW when heating)` : `straight AC, heating on the strips (measured ${learned.heatKw.toFixed(1)} kW)`) : 'outdoor unit type: Solstice will measure it from the first heating steps this winter' } };
@@ -421,6 +435,14 @@ export async function acTick(siteId: string, settingsAll: Record<string, any>, r
     const text = 'Nest is in Eco, so Autopilot sends nothing until Eco is off';
     if (d.log[0]?.text !== text || d.log[0]?.day !== localDay()) await logAc(siteId, text, 'eco');
     return { sampled: true, applied: false, eco: true };
+  }
+  // code review C-04: a stale forecast is said once in the log; with none at all no plan step is sent (logged once a day)
+  if (d.forecast.note) {
+    const today = localDay(), said = d.forecast.unavailable ? d.log[0]?.text === d.forecast.note && d.log[0]?.day === today
+      : d.log.some(l => l.day === today && l.text.startsWith('Forecast is'));
+    // into d.log itself, which the plan step below writes back
+    if (!said) { d.log.unshift({ at: Date.now(), day: today, text: d.forecast.note }); await kv.set(`${siteId}:ac:log`, d.log.slice(0, 40)); }
+    if (d.forecast.unavailable) return { sampled: true, applied: false, noForecast: true };
   }
   const s = d.settings, plan = d.plan, h = hourNow(), planStep = stepAt(plan, h);
   let rec: AcRecord | null = d.applied;
