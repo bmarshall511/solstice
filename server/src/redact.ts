@@ -171,7 +171,7 @@ export const GUEST_GET: ReadonlyMap<string, View> = new Map<string, View>([
       reservePct: true, mode: true, stormWatch: true, solar: SOLAR },
     outage: { active: true, since: true },
     health: { lastLive: true, lastHistory: true, stale: true, liveError: fixed(UNAVAILABLE),
-      errors: { siteInfo: errorEntry, lastHistory: errorEntry, lastBackups: errorEntry } },
+      errors: { siteInfo: errorEntry, lastHistory: errorEntry, lastBackups: errorEntry, live: errorEntry } },
   })],
   ['/api/status', view({ connected: true, lastLive: true, lastHistory: true, backfill: { daysDone: true } })],
   ['/api/day', hourlyDay],

@@ -16,7 +16,10 @@ export async function outageEstimate(siteId: string): Promise<Estimate> {
   return { hours: d.scenarios.asis?.backupH ?? null, hoursNoAc: d.scenarios.noac?.backupH ?? null, drawKw: d.drawKw ?? null };
 }
 
-export const isDown = (r: Pick<Reading, 'grid_status' | 'island_status'>) => r.grid_status !== 'Active' || /off_grid/.test(r.island_status ?? '');
+/** Down: Tesla says a grid status other than Active, or an off-grid island. A missing or empty status ('' or null) is unknown, never down. */
+export const isDown = (r: Pick<Reading, 'grid_status' | 'island_status'>) => (!!r.grid_status && r.grid_status !== 'Active') || /off_grid/.test(r.island_status ?? '');
+/** Whether a reading says anything about the grid at all. */
+const knowsGrid = (r: Pick<Reading, 'grid_status' | 'island_status'>) => !!r.grid_status || /off_grid/.test(r.island_status ?? '');
 const clock = (ms: number) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }).format(new Date(ms));
 /** "3:42–9:52 PM" (one AM/PM when both share it), "11:40 AM–1:05 PM" otherwise. */
 const range = (a: number, b: number) => { const x = clock(a), y = clock(b); return x.slice(-2) === y.slice(-2) ? `${x.slice(0, -3)}–${y}` : `${x}–${y}`; };
@@ -27,6 +30,7 @@ export const hoursText = (h: number | null) => h == null ? null : h < 1 ? 'under
 export async function gridWatch(siteId: string, now = Date.now(), estimate: (siteId: string) => Promise<Estimate> = outageEstimate) {
   const r = await one<Reading>('SELECT ts, grid_status, island_status, soc, load_w FROM readings WHERE site_id = $1 ORDER BY ts DESC LIMIT 1', [siteId]);
   if (!r || now - Number(r.ts) > FRESH_MS) return { skipped: 'no fresh reading' };
+  if (!knowsGrid(r)) return { skipped: 'no grid status' };   // an unknown status neither starts nor ends an outage
   const key = `${siteId}:grid:outage`, st = await kv.get<OutageState | null>(key), down = isDown(r), soc = r.soc == null ? null : Math.round(r.soc);
   const at = Number(r.ts), url = '/?go=v-now';
   if (down && !st) {

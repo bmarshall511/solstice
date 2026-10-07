@@ -141,7 +141,7 @@ async function loadExternal() {
 /* ---------------- outage detection ---------------- */
 let wasOut = null;
 function updateOutage() {
-  const r = S.live, real = !!r && (r.gridStatus !== 'Active' || /off_grid/.test(r.islandStatus ?? '')) || !!S.now?.outage?.active;
+  const r = S.live, real = !!r && ((!!r.gridStatus && r.gridStatus !== 'Active') || /off_grid/.test(r.islandStatus ?? '')) || !!S.now?.outage?.active;   // an empty grid status is unknown, not an outage (gridwatch.ts isDown)
   S.outageActive = real || S.preview; S.realOutage = real;
   if (wasOut !== null && S.outageActive !== wasOut) {
     if (S.outageActive) { toast('⚡', 'rgba(255,90,78,.25)', S.preview ? 'Outage preview' : 'Grid outage detected', `${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} · your Powerwalls took over`); go('v-now'); }

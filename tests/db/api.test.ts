@@ -63,6 +63,22 @@ describe('single-owner mode', () => {
     expect((await (await get('/api/now')).json()).health.stale).toBe(false);
   });
 
+  it('/api/now: an empty grid status is no outage, a real island is; a dropped live_status shows in health.errors', async () => {
+    const now = Date.now(), ins = (dt: number, grid: string, island: string, soc: number | null) => q(`INSERT INTO readings (site_id, ts, solar_w, battery_w, grid_w, load_w, soc, grid_status, island_status, storm_mode_active)
+      VALUES ('s', $1, 0, 0, 0, NULL, $2, $3, $4, false)`, [now - dt, soc, grid, island]);
+    await ins(20_000, '', '', 0);
+    await kv.set('s:error:live', { at: now, message: 'Tesla live_status came back empty (no grid status, power or charge); not stored' });
+    const a = await (await get('/api/now')).json();
+    expect(a.outage).toEqual({ active: false });
+    expect(a.health.errors.live).toMatchObject({ message: expect.stringContaining('came back empty') });
+    await ins(15_000, 'Inactive', 'off_grid', null);
+    const b = await (await get('/api/now')).json();
+    expect(b.outage.active).toBe(true);
+    expect(b.reading.soc).toBeNull();
+    await ins(10_000, 'Active', 'on_grid', 50);   // back to normal for the tests after this one
+    expect((await (await get('/api/now')).json()).outage).toEqual({ active: false });
+  });
+
   it('PUT /api/settings merges top-level keys into the owner settings', async () => {
     expect((await send('PUT', '/api/settings', { calm: { enabled: true } })).status).toBe(200);
     expect((await send('PUT', '/api/settings', { pool: { autopilot: 'suggest' } })).status).toBe(400);   // only through /api/appliances/pool/autopilot

@@ -34,7 +34,7 @@ import { outageDetail } from './outage.js';
 
 import { alertRoutes, notify } from './notify.js';
 import { ercotNow, fiveMinuteWatch, nightlyWatch, cronSites, fiveMinuteSteps, nightlySteps } from './watch.js';
-import { gridWatch } from './gridwatch.js';
+import { gridWatch, isDown } from './gridwatch.js';
 import { poolChanges, dismissPoolSuggestion } from './appliances/poolLearn.js';
 import { pruneOld } from './retention.js';
 import { refreshCapacity, capacityOf, modelKwh, type Capacity } from './capacity.js';
@@ -308,7 +308,7 @@ app.get('/api/now', wrap(async (req, res) => {
   let liveError: string | null = null;
   await refreshLive(id).catch(e => { liveError = e.message; });
   const r = await one('SELECT * FROM readings WHERE site_id = $1 ORDER BY ts DESC LIMIT 1', [id]);
-  const down = (x: any) => !!x && (x.grid_status !== 'Active' || /off_grid/.test(x.island_status ?? ''));
+  const down = (x: any) => !!x && isDown(x);   // a missing or empty grid status is unknown, not an outage
   let outage: { active: boolean; since?: number } = { active: false };
   if (down(r)) {
     const up = await one<{ ts: string }>(`SELECT ts FROM readings WHERE site_id = $1 AND grid_status = 'Active' AND island_status NOT LIKE '%off_grid%' ORDER BY ts DESC LIMIT 1`, [id]);
@@ -316,7 +316,7 @@ app.get('/api/now', wrap(async (req, res) => {
     outage = { active: true, since: Number(start?.ts) };
   }
   const lastLive = await kv.get<number>(`${id}:lastLive`), lastHistory = await kv.get<number>(`${id}:lastHistory`);
-  const errors = Object.fromEntries(await Promise.all(['siteInfo', 'lastHistory', 'lastBackups'].map(async k => [k, await kv.get(`${id}:error:${k}`) ?? null])));
+  const errors = Object.fromEntries(await Promise.all(['siteInfo', 'lastHistory', 'lastBackups', 'live'].map(async k => [k, await kv.get(`${id}:error:${k}`) ?? null])));
   res.json({
     reading: r && { ts: Number(r.ts), solarKw: r.solar_w / 1000, homeKw: r.load_w / 1000, batteryKw: r.battery_w / 1000, gridKw: r.grid_w / 1000, soc: r.soc,
       gridStatus: r.grid_status, islandStatus: r.island_status, stormActive: !!r.storm_mode_active },

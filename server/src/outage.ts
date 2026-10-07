@@ -128,7 +128,7 @@ export async function outageDetail(siteId: string, settingsAll: Record<string, a
   const [trips, away] = await Promise.all([tripDays(siteId, addDays(today, -14), today, now.getTime()), tripAway(siteId, now.getTime())]);
   const [site, reading, profileRows, nights, events] = await Promise.all([
     one<{ info: any }>('SELECT info FROM sites WHERE id = $1', [siteId]),
-    one<{ ts: string; load_w: number; soc: number; storm_mode_active: boolean }>('SELECT ts, load_w, soc, storm_mode_active FROM readings WHERE site_id = $1 ORDER BY ts DESC LIMIT 1', [siteId]),
+    one<{ ts: string; load_w: number | null; soc: number | null; storm_mode_active: boolean }>('SELECT ts, load_w, soc, storm_mode_active FROM readings WHERE site_id = $1 ORDER BY ts DESC LIMIT 1', [siteId]),
     q<{ hour: number; kw: number }>(`SELECT hour::int, AVG(kwh)::float8 kw FROM (SELECT day, hour, ${hourWh('home_wh')} / 1000.0 kwh FROM energy
       WHERE site_id = $1 AND day >= $2 AND day < $3 AND (day = ANY($4::text[])) = $5 GROUP BY day, hour) x GROUP BY hour`, [siteId, addDays(today, -14), today, [...trips], away && trips.size > 0]),
     // 1–5 AM means of the last 30 complete nights (at least 36 of the 48 five-minute buckets)
@@ -138,10 +138,11 @@ export async function outageDetail(siteId: string, settingsAll: Record<string, a
   ]);
   const info = site?.info ?? {};
   const cap = await capacityOf(siteId), capKwh = modelKwh(cap, (info.nameplate_energy ?? 0) / 1000), maxKw = (info.nameplate_power ?? 0) / 1000 || 10, batteries = info.battery_count ?? 2;
-  const soc = reading?.soc ?? (await one<{ soe: number }>('SELECT soe FROM soe WHERE site_id = $1 ORDER BY epoch DESC LIMIT 1', [siteId]))?.soe ?? 0;
+  // the live charge, else the last stored one; with neither it is unknown (null in the answer, no backup hours), never 0%
+  const socKnown = reading?.soc ?? (await one<{ soe: number }>('SELECT soe FROM soe WHERE site_id = $1 ORDER BY epoch DESC LIMIT 1', [siteId]))?.soe ?? null, soc = socKnown ?? 0;
   const profile = Array.from({ length: 24 }, (_, h) => profileRows.find(r => r.hour === h)?.kw ?? null);
   const typical = profile.filter((v): v is number => v != null);
-  const drawKw = reading ? Math.max(0, reading.load_w) / 1000 : profile[Math.floor(startHour)] ?? 2;
+  const drawKw = reading?.load_w != null ? Math.max(0, reading.load_w) / 1000 : profile[Math.floor(startHour)] ?? 2;   // a load Tesla didn't send is not 0 kW
   const alwaysOnKw = nights.length ? Math.min(...nights.map(n => n.kw)) : typical.length ? Math.min(...typical) : Math.min(drawKw, .6);
   const prof = profile.map(v => v ?? drawKw);
 
@@ -180,7 +181,7 @@ export async function outageDetail(siteId: string, settingsAll: Record<string, a
   const loadIn = { startHour, profile: prof, drawKw, alwaysOnKw, acAvgKw, poolKwByHour: poolHourly, scaleByK };
   const scenarios = Object.fromEntries(SCENARIOS.map(sc => {
     const loadKw = scenarioLoads(loadIn, sc), sim = simulateIsland({ soc0: soc, capKwh, maxKw, solarKw, loadKw });
-    return [sc, { drawKw: r3(loadKw[0]), backupH: loadKw[0] > 0 ? r3(usable / loadKw[0]) : null,
+    return [sc, { drawKw: r3(loadKw[0]), backupH: loadKw[0] > 0 && socKnown != null ? r3(usable / loadKw[0]) : null,
       island: { emptyH: sim.emptyH == null ? null : r3(sim.emptyH), emptyAt: sim.emptyH == null ? null : Math.round(now.getTime() + sim.emptyH * 3600e3),
         sunAdds: sim.sunAdds, minSoc: r3(sim.minSoc), unmetKwh: r2(sim.unmetKwh),
         points: sim.points.map(p => ({ k: p.k, soc: r3(p.soc), s: r3(p.s), h: r3(p.h), b: r3(p.b), u: r3(p.u) })) } }];
@@ -193,7 +194,7 @@ export async function outageDetail(siteId: string, settingsAll: Record<string, a
 
   return {
     at: now.getTime(), date: today, startHour: r3(startHour), readingAt: reading ? Number(reading.ts) : null,
-    soc: r1(soc), capacityKwh: capKwh, measuredKwh: cap?.measuredKwh ?? null, usableKwh: r2(usable), reservePct: info.backup_reserve_percent ?? null, maxKw, batteries, drawKw: r3(drawKw),
+    soc: socKnown == null ? null : r1(soc), capacityKwh: capKwh, measuredKwh: cap?.measuredKwh ?? null, usableKwh: r2(usable), reservePct: info.backup_reserve_percent ?? null, maxKw, batteries, drawKw: r3(drawKw),
     loads: { alwaysOnKw: r3(alwaysOnKw), poolKw: r3(poolKw), poolRpm, acKw: r2(acKw), acSource: learned.coolKw ? 'measured' : 'estimated', acDuty: r2(duty), dutySource },
     ladder: ladder({ usableKwh: usable, alwaysOnKw, poolKw, acKw, duty, drawKw }),
     scenarios,

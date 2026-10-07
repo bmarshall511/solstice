@@ -73,7 +73,7 @@ export function mountOutageCard(S, parent) {
       chip(false, 'var(--home)', `Reserve ${d.reservePct ?? '—'}%`);
     $q('[data-swbadge]').hidden = !sw.active;
     const tmr = d.solar.tomorrowKwh;
-    $q('[data-rows]').innerHTML = [['Powerwalls now', `${Math.round(d.soc)}% · ${d.usableKwh.toFixed(1)} kWh`], ['Reserve (kept for outages)', `${d.reservePct ?? '—'}%`],
+    $q('[data-rows]').innerHTML = [['Powerwalls now', d.soc == null ? '?% · ? kWh' : `${Math.round(d.soc)}% · ${d.usableKwh.toFixed(1)} kWh`], ['Reserve (kept for outages)', `${d.reservePct ?? '—'}%`],
       ['Backup at current draw', `${fmtHM(sc.backupH)} at ${sc.drawKw.toFixed(1)} kW`],
       ['Tonight (sim)', m.emptyH != null && m.emptyH < 16 ? `empty ~${clock(m.emptyH, 1, false)}` : `${Math.round(C.socNight * 100)}% by ${clock(C.kNight, 1, false)}`],
       ["Tomorrow's solar", tmr == null ? '—' : `${Math.round(tmr)} kWh${d.solar.cloudy ? ' · clouds' : ''}`], ['Most at once', `${d.maxKw} kW`]]
