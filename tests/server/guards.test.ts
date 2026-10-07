@@ -28,7 +28,9 @@ const H = vi.hoisted(() => {
     return [];
   };
   const readings: { spare: any[] } = { spare: [] };
-  const kv = { get: async (k: string) => clone(store.get(k)) as any, set: async (k: string, v: unknown) => { store.set(k, clone(v)); } };
+  const kv = { get: async (k: string) => clone(store.get(k)) as any, set: async (k: string, v: unknown) => { store.set(k, clone(v)); },
+    // db.ts kv.claim (S-07's single flight): the same conditional upsert as above
+    claim: async (k: string, minAgeMs: number, now = Date.now()) => (await q('INSERT INTO kv … RETURNING key', [k, JSON.stringify({ at: now }), now - minAgeMs])).length > 0 };
   const db = { q, one: async (t: string, p: unknown[] = []) => (await q(t, p))[0], kv, migrate: async () => {} };
 
   // a ScreenLogic session: records every call, never touches a network

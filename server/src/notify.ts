@@ -65,10 +65,20 @@ export async function notify(siteId: string, kind: AlertKind, title: string, bod
   return { stored: true, id: row.id, ...fan };
 }
 
-/** Push one message to every subscription of the site. A gone endpoint (404/410) is deleted; five failures in a row delete it too. */
+/**
+ * Push one message to every subscription of the site. A gone endpoint (404/410) is deleted; five failures in a row delete it too.
+ * S-04: a subscription whose owner session no longer exists (signed out, or past the cookie's 400 days) is not sent to and is
+ * deleted (auth.ts deletes them at sign-out; this catches any left behind). A subscription with no session id (stored before the
+ * column existed) keeps receiving: those are the owner's phones, and deleting them would silently stop their alerts. It gets its
+ * session id when that device subscribes again (Settings › Alerts › Push; the web does not re-subscribe on its own).
+ */
 export async function fanOut(siteId: string, msg: { title: string; body: string; kind: string; id?: number; url?: string }) {
-  const subs = await q<{ endpoint: string; p256dh: string; auth: string }>(`SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE site_id = $1`, [siteId]);
+  const rows = await q<{ endpoint: string; p256dh: string; auth: string; orphan: boolean }>(`SELECT p.endpoint, p.p256dh, p.auth,
+      (p.owner_session_id IS NOT NULL AND (o.id IS NULL OR o.last_seen <= now() - interval '400 days')) AS orphan
+    FROM push_subscriptions p LEFT JOIN owner_sessions o ON o.id = p.owner_session_id WHERE p.site_id = $1`, [siteId]);
   let pushed = 0, failed = 0, pruned = 0, push: string | undefined;
+  const orphans = rows.filter(r => r.orphan).map(r => r.endpoint), subs = rows.filter(r => !r.orphan);
+  if (orphans.length) { await q(`DELETE FROM push_subscriptions WHERE endpoint = ANY($1::text[])`, [orphans]); pruned += orphans.length; }
   for (const s of subs) {
     const r = await sendPush({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, msg, { urgency: msg.kind === 'storm' ? 'high' : 'normal' });
     if (r.ok) { pushed++; await q(`UPDATE push_subscriptions SET last_ok = now(), fails = 0 WHERE endpoint = $1`, [s.endpoint]); continue; }
@@ -130,9 +140,11 @@ export function alertRoutes(app: Express) {
     const s = req.body as PushSubscriptionJson, bad = subscriptionProblem(s);
     if (bad) return res.status(400).json({ error: bad });
     const ua = String(req.headers['user-agent'] ?? '').slice(0, 200) || null;
-    await q(`INSERT INTO push_subscriptions (endpoint, site_id, p256dh, auth, ua) VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (endpoint) DO UPDATE SET site_id = excluded.site_id, p256dh = excluded.p256dh, auth = excluded.auth, ua = excluded.ua, fails = 0`,
-      [s.endpoint, req.siteId, s.keys.p256dh, s.keys.auth, ua]);
+    // S-04: tied to this device's owner session (the gate set req.ownerSessionId), so signing the device out removes it (auth.ts)
+    await q(`INSERT INTO push_subscriptions (endpoint, site_id, p256dh, auth, ua, owner_session_id) VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (endpoint) DO UPDATE SET site_id = excluded.site_id, p256dh = excluded.p256dh, auth = excluded.auth, ua = excluded.ua, fails = 0,
+        owner_session_id = excluded.owner_session_id`,
+      [s.endpoint, req.siteId, s.keys.p256dh, s.keys.auth, ua, req.ownerSessionId ?? null]);
     res.json({ ok: true, push: !!vapidPublicKey() });
   }));
   app.delete('/api/push/subscribe', express.json({ limit: '8kb' }), wrap(async (req, res) => {

@@ -37,6 +37,25 @@ const INGEST_ROUTES = new Set(['POST /api/pvs/readings', 'POST /api/pvs/heartbea
 export const ingestOk = (req: Request) => { const t = process.env.PVS_INGEST_TOKEN ?? '', h = String(req.headers.authorization ?? '');
   return t.length >= 32 && h.startsWith('Bearer ') && safeEqual(h.slice(7), t); };
 
+/**
+ * S-07: each share link gets a token bucket of GUEST_BURST reads, refilled at GUEST_PER_MIN a minute; beyond it a guest gets 429.
+ * The app's own load is about 20 reads and then a few a minute, so only a script hammering the link meets it. In memory, so per
+ * function instance: a client spread over several warm instances gets a bucket on each. That is enough here (guest reads never
+ * reach a device or Tesla any more, so the bucket only bounds database work), and it needs no write per read.
+ */
+export const GUEST_BURST = 60, GUEST_PER_MIN = 60;
+const buckets = new Map<string, { tokens: number; at: number }>();
+/** Tests only: forget every bucket (a suite that walks every route as one guest goes past the limit on purpose). */
+export const resetGuestRateLimits = () => buckets.clear();
+export function guestRateLimited(shareId: string, now = Date.now()) {
+  if (buckets.size > 2000) for (const [k, b] of buckets) if (now - b.at > 60_000) buckets.delete(k);
+  const b = buckets.get(shareId) ?? { tokens: GUEST_BURST, at: now };
+  b.tokens = Math.min(GUEST_BURST, b.tokens + (now - b.at) * GUEST_PER_MIN / 60_000); b.at = now;
+  buckets.set(shareId, b);
+  if (b.tokens < 1) return true;
+  b.tokens -= 1; return false;
+}
+
 /** Resolve the role for this request (req.role, req.guestView, req.preview), then allow, serve through a guest view, or refuse. */
 export async function gate(req: Request, res: Response, next: NextFunction) {
   try {
@@ -52,6 +71,8 @@ export async function gate(req: Request, res: Response, next: NextFunction) {
     if (OPEN_ROUTES.has(`${method} ${path}`)) return next();
     if (!owner && INGEST_ROUTES.has(`${method} ${path}`) && ingestOk(req)) return next();
     if (req.guestView) {
+      // the owner previewing has no share link and is never limited
+      if (req.role === 'guest' && share && guestRateLimited(share.id)) { res.set('Retry-After', '5'); return res.status(429).json({ error: 'too_many_requests' }); }
       const view = method === 'GET' ? GUEST_GET.get(path) : undefined;
       if (!view) return denied(res);                                               // fail closed: no view, no access
       serveThrough(res, view);

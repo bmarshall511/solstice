@@ -13,17 +13,22 @@ const JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
 const ISSUERS = new Set(['accounts.google.com', 'https://accounts.google.com']);
 type Jwk = { kid: string; kty: string; n: string; e: string; alg?: string };
 let jwks: { at: number; keys: Jwk[] } | null = null;
+/** S-13: an unknown `kid` forces a refetch (Google rotated its keys) at most this often per instance, so a flood of tokens with
+ *  made-up kids can't turn into a flood of requests to Google. */
+export const JWKS_REFETCH_MS = 60_000;
 async function googleKeys(force = false): Promise<Jwk[]> {
-  if (!force && jwks && Date.now() - jwks.at < 3600_000) return jwks.keys;
+  if (jwks && Date.now() - jwks.at < (force ? JWKS_REFETCH_MS : 3600_000)) return jwks.keys;
   const r = await fetch(JWKS_URL, { signal: AbortSignal.timeout(5_000) });
   if (!r.ok) throw new Error(`Google certs: HTTP ${r.status}`);
   jwks = { at: Date.now(), keys: ((await r.json()) as { keys: Jwk[] }).keys ?? [] };
   return jwks.keys;
 }
 const b64json = (s: string) => JSON.parse(Buffer.from(s, 'base64url').toString('utf8'));
+/** S-13: a push token must have been issued within this long (Pub/Sub mints a fresh one per push), so a captured token can't be replayed for its hour. */
+export const OIDC_MAX_AGE_S = 600;
 /**
  * Why a Pub/Sub push's Bearer token is not acceptable, or null: RS256 signed by one of Google's current keys, issued by Google, for
- * `audience`, from `email` (verified), and not expired. `keys` is injectable for tests.
+ * `audience`, from `email` (verified), not expired, and issued (`iat`) within the last 10 minutes. `keys` is injectable for tests.
  */
 export async function oidcError(token: string, o: { audience: string; email: string; now?: number; keys?: Jwk[] }): Promise<string | null> {
   const parts = token.split('.'); if (parts.length !== 3) return 'not a JWT';
@@ -39,6 +44,7 @@ export async function oidcError(token: string, o: { audience: string; email: str
   if (!ISSUERS.has(claims.iss)) return 'wrong issuer';
   if (claims.aud !== o.audience) return 'wrong audience';
   if (typeof claims.exp !== 'number' || claims.exp < now - 60) return 'expired';
+  if (typeof claims.iat !== 'number' || claims.iat < now - OIDC_MAX_AGE_S || claims.iat > now + 60) return 'stale token';
   if (claims.email !== o.email || claims.email_verified !== true) return 'wrong service account';
   return null;
 }
@@ -50,6 +56,9 @@ export function eventOf(body: any): SdmEvent | null {
   const data = body?.message?.data; if (typeof data !== 'string') return null;
   try { return JSON.parse(Buffer.from(data, 'base64').toString('utf8')); } catch { return null; }
 }
+/** S-13: the time an event is filed under: its own timestamp, but never more than a minute ahead of now (a future-dated event would
+ *  otherwise make every later event look older than the stored state, and keep the stored reading looking fresh). */
+export const eventTime = (timestamp: string | undefined, now = Date.now()) => Math.min(Date.parse(timestamp ?? '') || now, now + 60_000);
 const SETTING_TRAITS = ['ThermostatMode', 'ThermostatTemperatureSetpoint', 'ThermostatEco'];
 /** Whether an event changes something a person sets (mode, setpoint, Eco), as opposed to a reading (temperature, humidity, HVAC). */
 export const isSettingEvent = (e: SdmEvent) => SETTING_TRAITS.some(t => `sdm.devices.traits.${t}` in (e.resourceUpdate?.traits ?? {}));
