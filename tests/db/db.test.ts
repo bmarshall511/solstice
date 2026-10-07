@@ -90,10 +90,10 @@ describe('nestSince: when the current Eco state began, within 30 days (code revi
     expect(await nestSince('ns', true, NOW)).toBe(NOW - 2 * H);
     expect(await nestSince('ns', false, NOW)).toBeNull();                         // not in that state now: no later reading in it
   });
-  it('returns null when the other state was last seen more than 30 days ago', async () => {
+  it('a state held for more than 30 days reads since its earliest reading in the window (at least 30 days), never null', async () => {
     await at('ns40', NOW - 40 * 864e5, true);
     for (const d of [39, 20, 1]) await at('ns40', NOW - d * 864e5, false);
-    expect(await nestSince('ns40', false, NOW)).toBeNull();
+    expect(await nestSince('ns40', false, NOW)).toBe(NOW - 20 * 864e5);              // the 39-day-old reading is outside the window
     expect(await nestSince('ns40', false, NOW - 25 * 864e5)).toBe(NOW - 39 * 864e5);   // within 30 days of an earlier clock it is found
   });
 });

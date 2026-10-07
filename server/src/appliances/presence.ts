@@ -46,9 +46,10 @@ export function resolvePresence(o: { manual: ManualPresence | null; legacy?: str
 /** How far back nestSince looks for the last reading in the other Eco state (code review C-11: it walked the whole table). */
 export const NEST_SINCE_DAYS = 30;
 /** When the thermostat's current Eco state began, from the stored Nest readings: the first reading in this state after the last one
- *  in the other state within 30 days. Null when unknown, including a state that has held for longer than that. */
+ *  in the other state within 30 days; a state that has held longer than that reads "since" its earliest reading in the window
+ *  (at least 30 days). Null only when there is no reading in the state. */
 export async function nestSince(siteId: string, eco: boolean, now = Date.now()) {
-  const r = await one<{ ts: string | null }>(`SELECT (SELECT MIN(ts) FROM nest_readings WHERE site_id = $1 AND eco = $2 AND ts > x.t)::text ts
+  const r = await one<{ ts: string | null }>(`SELECT (SELECT MIN(ts) FROM nest_readings WHERE site_id = $1 AND eco = $2 AND ts > COALESCE(x.t, $3))::text ts
     FROM (SELECT MAX(ts) t FROM nest_readings WHERE site_id = $1 AND eco IS DISTINCT FROM $2 AND ts > $3) x`, [siteId, eco, now - NEST_SINCE_DAYS * 864e5]);
   return r?.ts != null ? Number(r.ts) : null;
 }
