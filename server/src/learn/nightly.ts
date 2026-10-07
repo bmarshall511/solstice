@@ -1,6 +1,6 @@
 // The learning layer's nightly job (docs/audit-designs/learning-layer.md §8), run by the nightly sync cron right after the sync:
 //   load     a fixed set of range queries (energy by day and hour, battery %, Nest by hour, pool readings, predictions, kv state)
-//   ac       measured savings from control vs pre-cool days; tomorrow morning's trim from the last three pre-cool days
+//   ac       measured savings from control vs pre-cool days; this morning's trim from the last three pre-cool days of 21
 //   metrics  each day's measured values, and yesterday's predictions scored against them → daily_metrics (one upsert)
 //   scores   rolling 7/30/365-day MAE, MAPE and bias per model → model_scores (one upsert for every model)
 //   pump     the clean-filter baseline per RPM (after the last "I cleaned the filter", else the first 60 days)
@@ -18,7 +18,7 @@ import { lq, learnStats, logPrediction, type Prediction } from './store.js';
 import { confidence, type Tier } from './confidence.js';
 import { forecast48, learnYield } from './forecast48.js';
 import { highsOf, homePoints, fitHome, dayScales, forecastDays } from './homeModel.js';
-import { measuredSavings, trimFor, ranPrecool, learnAcKey, type AcDay, type PrecoolDay, type LearnAc, type TrimRecord } from './ac.js';
+import { measuredSavings, trimFor, ranPrecool, learnAcKey, TRIM_WINDOW_DAYS, type AcDay, type PrecoolDay, type LearnAc, type TrimRecord } from './ac.js';
 import { evaluateRules, type MetricsByDay, type OpenAnomaly, type Verdict } from './rules.js';
 import { wxGti, gtiByDay, type Wx } from './wx.js';
 import { panelMetrics, LAYOUT_KEY, type Layout } from '../panels.js';
@@ -179,19 +179,19 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
         coastFrom: Number(i.coastFrom), coastTo: Number(i.coastTo), hours: Object.fromEntries(Object.entries(d.nest.get(p.target_day) ?? {}).map(([h, x]) => [h, { coolMin: x.coolMin, coolF: x.coolF }])) }; })
       .filter(x => [x.mid, x.from, x.to, x.coastFrom, x.coastTo, x.high, x.sunKwhM2].every(Number.isFinite));
     const measured = measuredSavings(days, kw);
-    const last3 = days.filter(ranPrecool).sort((a, b) => a.day.localeCompare(b.day)).slice(-3);
+    // B2-4 (O-03): only pre-cool days of the last 21 days teach a trim (the same window trimFor applies)
+    const last3 = days.filter(x => ranPrecool(x) && x.day >= addDays(today, -TRIM_WINDOW_DAYS)).sort((a, b) => a.day.localeCompare(b.day)).slice(-3);
     if (last3.length === 3) {
       const raw = await lq<{ day: string; ts: number; indoor_f: number | null; hvac: string }>(`SELECT day, ts::float8 ts, indoor_f, hvac FROM nest_readings WHERE site_id = $1 AND day = ANY($2::text[]) ORDER BY ts`,
         [siteId, last3.map(x => x.day)]);
       const pre: PrecoolDay[] = last3.map(x => { const i = d.preds.find(p => p.model === 'ac.shifted' && p.target_day === x.day)!.inputs;
         return { day: x.day, coastF: Number(i.coastF), deep: Number(i.mid) - Number(i.depth), from: x.from, to: x.to, coastFrom: x.coastFrom, coastTo: x.coastTo,
           readings: raw.filter(r => r.day === x.day).map(r => { const t = rfc3339(new Date(r.ts)); return { h: +t.slice(11, 13) + +t.slice(14, 16) / 60 + +t.slice(17, 19) / 3600, indoorF: r.indoor_f, hvac: r.hvac }; }) }; });
-      const t = trimFor(pre);
-      if (t) {
-        trim = { ...t, day: today, ...(prevAc?.trim?.day === today && prevAc.trim.undone ? { undone: true, undoneAt: prevAc.trim.undoneAt } : {}) };
-        log.push({ at: now, day: today, text: `AC trim for today: ${t.what === 'depth' ? `pre-cool ${t.amount > 0 ? 'shallower' : 'deeper'} by ${Math.abs(t.amount)}°` : `coast ${t.amount < 0 ? 'ends' : 'runs'} ${Math.abs(t.amount)} min ${t.amount < 0 ? 'earlier' : 'longer'}`}, because ${t.reason}`, delta: `${t.amount > 0 ? '+' : '−'}${Math.abs(t.amount)} ${t.unit}` });
-      }
-    } else waiting.push(`ac trims: ${last3.length} of 3 pre-cool days`);
+      const t = trimFor(pre, today);
+      // kept for today's plan; its learning-log line is written by the plan only if it applies (learn/ac.ts learnedPlan, B2-4)
+      if (t) trim = { ...t, day: today, ...(prevAc?.trim?.day === today && prevAc.trim.undone ? { undone: true, undoneAt: prevAc.trim.undoneAt } : {}),
+        ...(prevAc?.trim?.day === today && prevAc.trim.logged ? { logged: true } : {}) };
+    } else waiting.push(`ac trims: ${last3.length} of 3 pre-cool days in the last ${TRIM_WINDOW_DAYS}`);
     if (!measured.measured) waiting.push(`ac savings: ${measured.precoolDays} of 5 pre-cool days compared with control days`);
     if (measured.measured && !prevAc?.measured?.measured) log.push({ at: now, day: today, text: `AC savings are now measured: ${measured.shiftedKwh} kWh shifted onto solar and ${measured.eveningAvoidedKwh} kWh avoided in the evening per pre-cool day, against ${measured.controlDays} control days`, delta: 'measured' });
     const warm = trim?.warmupFPerH ?? prevAc?.warmupFPerH ?? null;

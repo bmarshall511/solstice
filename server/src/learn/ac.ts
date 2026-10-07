@@ -9,7 +9,7 @@
 import type { AcPlan, AcSettings } from '../appliances/ac.js';
 import { AC_MIN_F, AC_MAX_F } from '../appliances/guards.js';
 import { kv } from '../db.js';
-import { localDay } from '../tesla/client.js';
+import { localDay, addDays } from '../tesla/client.js';
 import { lq, logPrediction } from './store.js';
 import { confidence, type Tier } from './confidence.js';
 import { MODELS, mean, median, round } from './models.js';
@@ -76,7 +76,13 @@ export async function claimControlDay(siteId: string, day: string, eligible: boo
 /* ---------- trims ---------- */
 export const TRIM_MAX_F = 1, TRIM_MAX_MIN = 30;
 export type AcTrim = { what: 'coast' | 'depth'; amount: number; unit: 'min' | '°F'; reason: string; warmupFPerH?: number | null };
-export type TrimRecord = AcTrim & { day: string; undone?: boolean; undoneAt?: number };
+/** `logged`: the learning-log line for this trim was written (B2-4: once, by the plan that applied it). */
+export type TrimRecord = AcTrim & { day: string; undone?: boolean; undoneAt?: number; logged?: boolean };
+/** B2-4 (O-03, L-11): trims learn from pre-cool days of the last 21 days only, so old evidence can't keep proposing a trim. */
+export const TRIM_WINDOW_DAYS = 21;
+/** The learning-log line for a trim (what it changes and why). */
+export const trimText = (t: AcTrim) => `AC trim for today: ${t.what === 'depth' ? `pre-cool ${t.amount > 0 ? 'shallower' : 'deeper'} by ${Math.abs(t.amount)}°` : `coast ${t.amount < 0 ? 'ends' : 'runs'} ${Math.abs(t.amount)} min ${t.amount < 0 ? 'earlier' : 'longer'}`}, because ${t.reason}`;
+export const trimDelta = (t: AcTrim) => `${t.amount > 0 ? '+' : '−'}${Math.abs(t.amount)} ${t.unit}`;
 export type AppliedTrim = AcTrim & { from: number; to: number };
 
 /** One pre-cool day as the trims see it: the plan's windows (hours, fractional after a coast trim) and that day's Nest readings. */
@@ -103,14 +109,15 @@ export function precoolOutcome(d: PrecoolDay) {
     reachedDeep: r.some(x => x.h >= d.from && x.h < d.to + .5 && x.indoorF != null && x.indoorF <= d.deep + .5), warmup };
 }
 /**
- * The trim for the next plan, from the last three pre-cool days (the design's estimators, with the owner's 30-minute bound):
+ * The trim for the next plan, from the last three pre-cool days within the 21 days before `today` (B2-4; with no `today`, the last
+ * three given) (the design's estimators, with the owner's 30-minute bound):
  *   depth −1 °F  when the AC ran ≥ 50 min an hour through the pre-cool and never reached the pre-cool setpoint on 2 of 3 days;
  *   coast −30 min when the house reached coastF more than an hour before the coast ended on 2 of 3 days;
  *   coast +30 min when the house was still ≤ coastF − 1 when the coast ended on all 3 days.
  * At most one trim, in that order. Fewer than three pre-cool days: none.
  */
-export function trimFor(days: PrecoolDay[]): AcTrim | null {
-  const last = [...days].sort((a, b) => a.day.localeCompare(b.day)).slice(-3);
+export function trimFor(days: PrecoolDay[], today?: string): AcTrim | null {
+  const last = [...days].filter(d => !today || (d.day < today && d.day >= addDays(today, -TRIM_WINDOW_DAYS))).sort((a, b) => a.day.localeCompare(b.day)).slice(-3);
   if (last.length < 3) return null;
   const o = last.map(d => ({ d, ...precoolOutcome(d) }));
   const w = o.map(x => x.warmup).filter((v): v is number => v != null), warmupFPerH = w.length ? round(median(w), 1) : null;
@@ -208,22 +215,36 @@ type PlanInput = { date: string; high: number; sunKwhM2: number; humidity: numbe
  * Today's plan with the learning layer on top: a control day plans the plain comfort band; otherwise the nightly trim is applied
  * (unless undone); the savings figures carry `conf` (estimated until control days measure them, then measured). Eligible days
  * (pre-cool or control) log both figures as predictions, once per instance. Two kv reads, plus one write on a new eligible day.
+ * `frozen` (B2-4, audit L-10): whether the day's inputs are frozen (06:00 on; appliances/ac.ts dayInputs). Before that the plan is
+ * shown but the day's control decision isn't claimed, its predictions aren't logged and its trim isn't logged, so all three
+ * describe the plan that runs, not the midnight one.
  */
-export async function learnedPlan<I extends PlanInput>(siteId: string, input: I, plan: (o: I & { control?: boolean }) => AcPlan, acKw: number, opts: { readOnly?: boolean } = {}): Promise<AcPlan> {
-  const s = input.settings, base = plan(input);
+export async function learnedPlan<I extends PlanInput>(siteId: string, input: I, plan: (o: I & { control?: boolean }) => AcPlan, acKw: number, opts: { readOnly?: boolean; frozen?: boolean } = {}): Promise<AcPlan> {
+  const s = input.settings, base = plan(input), decide = !opts.readOnly && opts.frozen !== false;
   // readOnly (a guest's or the owner's guest preview, planned as if home): use today's decision if one was made, never claim one or log
   // a prediction, so an Away day can't become a control day or a pre-cool day through somebody else's read (Vacation audit, §7)
-  const control = base.precool && input.date === localDay() && (opts.readOnly ? !!(await kv.get<ControlState>(controlKey(siteId)))?.days?.[input.date] : await claimControlDay(siteId, input.date, true));
+  const control = base.precool && input.date === localDay() && (!decide ? !!(await kv.get<ControlState>(controlKey(siteId)))?.days?.[input.date] : await claimControlDay(siteId, input.date, true));
   let p = control ? plan({ ...input, control: true }) : base;
   const learn = await kv.get<LearnAc>(learnAcKey(siteId)) ?? null, t = learn?.trim?.day === input.date ? learn.trim : null;
-  if (t && !t.undone) p = applyTrim(p, t, s) ?? p;
-  else if (t?.undone && p.precool) p = { ...p, why: [...p.why, 'Today’s learned trim was undone, so the plan runs untrimmed'] };
+  if (t && !t.undone) {
+    const trimmed = applyTrim(p, t, s);
+    if (trimmed) {
+      p = trimmed;
+      // B2-4 (orchestrator O-03): the trim is logged once, by the first frozen plan that applies it; a trim today's plan can't
+      // use (no pre-cool, a control day, out of bounds) is never logged
+      if (decide && !t.logged) {
+        await kv.set(learnAcKey(siteId), { ...learn!, trim: { ...t, logged: true } });
+        const key = `${siteId}:learn:log`, log = await kv.get<Array<{ at: number; day: string; text: string; delta?: string }>>(key) ?? [];
+        await kv.set(key, [{ at: Date.now(), day: input.date, text: trimText(t), delta: trimDelta(t) }, ...log].slice(0, 40));
+      }
+    }
+  } else if (t?.undone && p.precool) p = { ...p, why: [...p.why, 'Today’s learned trim was undone, so the plan runs untrimmed'] };
   const est = acSavings(p, s, input.slope, input.acKw ?? acKw), m = learn?.measured?.measured ? learn.measured : null;
   const tier: Tier = confidence(MODELS['ac.shifted'], null, input.date, !!m && p.precool).tier;
   const out: AcPlan = { ...p, trim: p.trim ?? null, shiftedKwh: m && p.precool ? m.shiftedKwh ?? est.shiftedKwh : est.shiftedKwh,
     eveningAvoidedKwh: m && p.precool ? m.eveningAvoidedKwh ?? est.eveningAvoidedKwh : est.eveningAvoidedKwh,
     conf: { shiftedKwh: tier, eveningAvoidedKwh: tier } };
-  if (base.precool && !opts.readOnly) {
+  if (base.precool && decide) {
     // the windows that ran (after a trim), or on a control day the pre-cool plan it held back from, which the scoring compares against
     const ran = out.precool ? out : base, mid = bandMid(s), pre = ran.steps.filter(x => x.hour >= s.nightTo && x.hour < ran.coastFrom && x.coolF < mid);
     const inputs = { high: input.high, sunKwhM2: input.sunKwhM2, humidity: input.humidity, precool: out.precool, control, mid, depth: pre.length ? mid - Math.min(...pre.map(x => x.coolF)) : 0,

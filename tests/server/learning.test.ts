@@ -252,6 +252,14 @@ describe('trims from the indoor trajectory', () => {
     expect(trimFor([precoolDay('2026-09-18', { rate: 2 }), precoolDay('2026-09-19', { rate: 2 }), precoolDay('2026-09-20'), precoolDay('2026-09-21'), precoolDay('2026-09-22')])).toBeNull();
   });
 
+  it('B2-4: only pre-cool days of the last 21 days count (O-03: a 10-day-old trim kept being proposed every night)', () => {
+    const days = [precoolDay('2026-09-26', { rate: 2 }), precoolDay('2026-09-27', { rate: 2 }), precoolDay('2026-09-28', { rate: 2 })];
+    expect(trimFor(days, '2026-10-07')).toMatchObject({ what: 'coast', amount: -30 });                 // 9 days old: still evidence
+    expect(trimFor(days, '2026-10-17')).toMatchObject({ what: 'coast', amount: -30 });                 // Sep 26 is the 21st day back
+    expect(trimFor(days, '2026-10-18')).toBeNull();                                                     // Sep 26 has left the window
+    expect(trimFor([...days, precoolDay('2026-10-07', { rate: 2 })], '2026-10-07')).toMatchObject({ reason: expect.stringContaining('Sep 26') });   // today's own day doesn't count
+  });
+
   const reason = 'test';
   it('applies a coast trim by moving the end of the coast, and records what, how much and why', () => {
     const t = applyTrim(plan(), { what: 'coast', amount: -30, unit: 'min', reason }, AC)!;

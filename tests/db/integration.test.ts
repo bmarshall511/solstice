@@ -712,7 +712,36 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
     expect(await one(`SELECT target_day, predicted FROM predictions WHERE site_id = $1 AND model = 'home.alwaysOn' AND made_at = $2`, [S, RUN])).toEqual({ target_day: '2026-09-26', predicted: .48 });
     const last = await kv.get<any>(`${S}:learn:last`);
     expect(last).toMatchObject({ at: RUN, predicted: 146, anomalies: { opened: ['pump.below_baseline@1500', 'data.gap.energy'], resolved: [], open: 2 } });
-    expect((await kv.get<any[]>(`${S}:learn:log`))?.map(e => e.delta)).toEqual(expect.arrayContaining(['−30 min', 'measured', 'warn']));
+    // B2-4 (deliberate update: the nightly used to log '−30 min' here): the trim's line waits for the plan that applies it
+    expect((await kv.get<any[]>(`${S}:learn:log`))?.map(e => e.delta)).toEqual(expect.arrayContaining(['measured', 'warn']));
+    expect((await kv.get<any[]>(`${S}:learn:log`))?.map(e => e.delta)).not.toContain('−30 min');
+  });
+
+  it('B2-4: before the 06:00 freeze the plan claims no control day, logs no prediction and no trim; the frozen plan logs each once', async () => {
+    const preds = () => q<{ model: string }>(`SELECT model FROM predictions WHERE site_id = $1 AND target_day = '2026-09-25' AND model LIKE 'ac.%' ORDER BY model`, [S]);
+    const trimLines = async () => ((await kv.get<any[]>(`${S}:learn:log`)) ?? []).filter(e => e.text.startsWith('AC trim for today')).length;
+    vi.setSystemTime(Date.parse('2026-09-25T05:40:00-05:00')); await seedForecast(); forgetWritten();
+    const early = await acDetail(S, {}, RATE, SLOPE);
+    expect([early.plan.precool, early.plan.trim?.what]).toEqual([true, 'coast']);       // the trim shows on the plan already
+    expect([await preds(), await trimLines(), await kv.get(controlKey(S))]).toEqual([[], 0, undefined]);
+    vi.setSystemTime(Date.parse('2026-09-25T06:05:00-05:00')); forgetWritten();
+    await acDetail(S, {}, RATE, SLOPE);
+    vi.setSystemTime(Date.parse('2026-09-25T13:00:00-05:00')); forgetWritten();
+    const d = await acDetail(S, {}, RATE, SLOPE);
+    expect((await preds()).map(r => r.model)).toEqual(['ac.eveningAvoided', 'ac.shifted']);
+    expect(await trimLines()).toBe(1);
+    expect((await kv.get<any>(learnAcKey(S))).trim).toMatchObject({ what: 'coast', logged: true });
+    expect((await kv.get<any>(controlKey(S))).count).toBe(1);
+    expect(d.plan.trim).toMatchObject({ what: 'coast', amount: -30 });
+    vi.setSystemTime(RUN);
+  });
+  it('B2-4: a trim today’s plan can’t use (no pre-cool) is never logged', async () => {
+    await kv.set(learnAcKey('lp-mild'), { at: RUN, day: '2026-09-25', trim: { what: 'coast', amount: -30, unit: 'min', reason: 'r', day: '2026-09-25' }, measured: null, warmupFPerH: null, coolKw: null });
+    vi.setSystemTime(Date.parse('2026-09-25T13:00:00-05:00')); await seedForecast({ 0: { high: 80 } }); forgetWritten();
+    const d = await acDetail('lp-mild', {}, RATE, SLOPE);
+    expect([d.plan.precool, d.plan.trim]).toEqual([false, null]);
+    expect(await kv.get('lp-mild:learn:log')).toBeUndefined();
+    vi.setSystemTime(RUN);
   });
 
   it('B2-3: a prediction from an older model version is not scored, an older score doesn’t count, and the report says re-learning since', async () => {
