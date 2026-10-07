@@ -422,7 +422,8 @@ async function boot() {
   setCalm(S.calm);
   if (!S.guest) { S.ownerName = typeof prefs.ownerName === 'string' && prefs.ownerName.trim() ? prefs.ownerName.trim() : 'The owner'; refreshSharing(); }
   if (S.asGuest) { ensurePreviewChrome(); applyRole({ guest: true, preview: true, ownerName: S.ownerName }); }   // a preview survives a reload (the server's flag lasts an hour)
-  S.onModels = () => { safe(renderWeather)(S); if (S.pool) safe(drawPool)(S); safe(drawAC)(S); };   // B2-8: drawAC's heating sentence reads the home model initLearn(S);   // r-learning: the model report (owner only) and its badge text
+  S.onModels = () => { safe(renderWeather)(S); if (S.pool) safe(drawPool)(S); safe(drawAC)(S); };   // B2-8: drawAC's heating sentence reads the home model
+  initLearn(S);   // r-learning: the model report (owner only) and its badge text
   const welcome = S.guest && !S.asGuest ? pendingWelcome() : null;
   if (welcome) showGate('welcome', { welcomeKey: welcome });
   every(30_000, loadNow);                 // live status (the server asks Tesla at most every ~25 s)

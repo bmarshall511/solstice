@@ -68,3 +68,11 @@ describe('mockups/ and docs/ hold no loan or price figures', () => {
     expect(hits(['mockups/g-insights.html'], PRICE)).toEqual([]);
   });
 });
+
+// Batch 2 (audit 10b): an edit once swallowed the `initLearn(S)` call into a trailing comment, so the model report never initialised.
+// Every top-level view init in boot() must stand on its own statement, not inside a comment.
+it('boot() still calls initLearn(S) as a statement (not inside a comment)', async () => {
+  const src = await import('node:fs/promises').then(fs => fs.readFile(new URL('../web/src/main.js', import.meta.url), 'utf8'));
+  const live = src.split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n');   // strip line comments
+  expect(live).toMatch(/^\s*initLearn\(S\);/m);
+});
