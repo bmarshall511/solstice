@@ -19,6 +19,7 @@ import { appliances, comingSoon } from './appliances/index.js';
 import { powerModel, measuredPoints } from './appliances/pool.js';
 import { poolDetail, applyPlan, restorePrevious, poolCommand, PoolUnavailable, goalPatchError, scheduleError, saveSchedule, rebaseline, POOL_DEFAULTS, activeClearUp, startClearUp, extendClearUp, endClearUp, finishClearUpIfDue, clearUpError, CLEARUP_DAYS_MAX } from './appliances/pool.js';
 import { readPool, configured as poolConfigured } from './appliances/screenlogic.js';
+import { learnAcKw, acKwFor } from './appliances/ac.js';
 import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, patchedAc, suggestionPatch, dismissSuggestion, recordNest, observeHold } from './appliances/ac.js';
 import { oidcError, eventOf, seenEvent, applyTraits, isSettingEvent } from './appliances/nestEvents.js';
 import { applianceDay } from './appliances/day.js';
@@ -48,9 +49,10 @@ import { runLearn } from './learn/nightly.js';
 import { learnRouter } from './learn/api.js';
 import { vacationRoutes, vacationTick, finishTrip, tripHooks, departure } from './vacation/index.js';
 import { leftOn, cloudyWater } from './vacation/pool.js';
-import { liveTrip, patchTripData, tripDays } from './vacation/trip.js';
+import { liveTrip, patchTripData, tripDays, endedWithoutReport, lastEnded } from './vacation/trip.js';
 import { freshTripAc, tripAcEnd } from './vacation/ac.js';
 import { vacationWatch, heldSummary } from './vacation/watch.js';
+import { tripReport, reportPush } from './vacation/report.js';
 import { confidenceMap } from './learn/confidence.js';
 
 export const app = express();
@@ -358,9 +360,12 @@ app.get('/api/flows', wrap(async (req, res) => {
 app.get('/api/spare', wrap(async (req, res) => res.json(await spareHistory(site(req)))));
 app.get('/api/daily', wrap(async (req, res) => {
   const id = site(req), days = Math.min(800, Number(req.query.days ?? 30)), from = addDays(localDay(), -days + 1);
-  res.json(await q(`SELECT e.day date, ${kwhCols}, s.mn "socMin", s.mx "socMax" FROM energy e
+  const rows = await q(`SELECT e.day date, ${kwhCols}, s.mn "socMin", s.mx "socMax" FROM energy e
     LEFT JOIN (SELECT day, MIN(soe)::float8 mn, MAX(soe)::float8 mx FROM soe WHERE site_id = $1 AND day >= $2 GROUP BY day) s ON s.day = e.day
-    WHERE e.site_id = $1 AND e.day >= $2 GROUP BY e.day, s.mn, s.mx ORDER BY e.day`, [id, from]));
+    WHERE e.site_id = $1 AND e.day >= $2 GROUP BY e.day, s.mn, s.mx ORDER BY e.day`, [id, from]);
+  // mockup ak: History marks trip days (owner only; the guest view keeps only its listed keys)
+  const trips = req.guestView ? new Set<string>() : await tripDays(id, from, localDay());
+  res.json(trips.size ? rows.map(r => trips.has(r.date) ? { ...r, trip: true } : r) : rows);
 }));
 
 app.get('/api/monthly', wrap(async (req, res) => {
@@ -725,6 +730,14 @@ fiveMinuteSteps.panels = panelWatch;
 fiveMinuteSteps.grid = gridWatch;
 fiveMinuteSteps.vacation = (id, now) => vacationWatch(id, now, (sid, text) => finishTrip(sid, 'home', Date.now(), text));   // mockup ak: trip alerts, "Looks like you're away"
 tripHooks.end.held = (id, trip, now) => heldSummary(id, trip, now);   // the pushes held during the trip, as one summary
+// the trip report (frame 6): built by the nightly job once the trip has ended (its energy is in), pushed from 7:00 the next morning
+nightlySteps.tripReport = async id => {
+  const trips = await endedWithoutReport(id); if (!trips.length) return { none: true };
+  const s = await ownerSettings(), learned = await learnAcKw(id), pool = await poolDetail(id, s, await rateFor(id)).catch(() => null);
+  const deps = { acKw: acKwFor(learned.coolKw, await acSlope(id)), poolNormalKwhDay: pool?.plan?.kwhPerDay ?? null, uv: pool?.settings?.uv ?? true };
+  const out: unknown[] = []; for (const t of trips) out.push(await tripReport(id, t, deps).then(r => ({ trip: t.id, usedKwh: r.usedKwh }))); return out;
+};
+fiveMinuteSteps.tripReport = async (id, now) => { const t = await lastEnded(id); return t ? reportPush(id, t, now) : { none: true }; };
 fiveMinuteSteps.spare = spareWatch;   // mockup ad: the pool speeds up on real spare solar (Auto only)   // mockup ab: grid down / Powerwalls low / grid back (after the storm step's live read)
 nightlySteps.soiling = soilingNightly;
 nightlySteps.poolTest = poolTestReminder;   // poolTests.ts (mockup aj): one "time to test" push per test, 4 days warm / 7 cool   // soiling.ts (mockup ai): the weather for the Cleaning check card, and one push per dusty spell
