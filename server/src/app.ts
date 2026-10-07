@@ -22,7 +22,7 @@ import { poolDetail, applyPlan, restorePrevious, poolCommand, PoolUnavailable, g
 import { readPool, configured as poolConfigured } from './appliances/screenlogic.js';
 import { learnAcKw, acKwFor } from './appliances/ac.js';
 import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, patchedAc, suggestionPatch, dismissSuggestion, recordNest, observeHold } from './appliances/ac.js';
-import { oidcError, eventOf, seenEvent, applyTraits, isSettingEvent } from './appliances/nestEvents.js';
+import { oidcError, eventOf, seenEvent, applyTraits, isSettingEvent, eventTime } from './appliances/nestEvents.js';
 import { applianceDay } from './appliances/day.js';
 import { cronTick } from './appliances/sampling.js';
 import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest, ownerCommand, type NestState } from './appliances/nest.js';
@@ -834,7 +834,7 @@ app.post('/api/nest/events', express.json({ limit: '64kb' }), wrap(async (req, r
   if (bad) { console.warn(`[solstice] nest event refused: ${bad}`); return res.status(401).json({ error: 'unauthorized' }); }
   const ev = eventOf(req.body);
   if (!ev?.resourceUpdate || await seenEvent(ev.eventId)) return res.status(204).end();   // relation events and redeliveries: nothing to do
-  const prev = await kv.get<NestState>('nest:last'), at = Date.parse(ev.timestamp ?? '') || Date.now();
+  const prev = await kv.get<NestState>('nest:last'), at = eventTime(ev.timestamp);   // S-13: at most a minute ahead of now
   if (!prev || ev.resourceUpdate.name !== prev.deviceId || at < prev.at) return res.status(204).end();   // another device, or older than what we have
   const next = applyTraits(prev, ev.resourceUpdate.traits ?? {}, at);
   await kv.set('nest:last', next); await kv.set('nest:eventAt', Date.now());
