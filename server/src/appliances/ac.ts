@@ -421,7 +421,9 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
   if (vacation) plan = { ...plan, steps: [{ hour: 0, coolF: vacation.now.coolF, why: vacation.now.why }], precool: false, shiftedKwh: 0, eveningAvoidedKwh: 0, control: false,
     why: [vacation.now.welcome ? `Welcome home: cooling to ${vacation.arrivalF}°` : `Vacation: holding ${vacation.holdF}°${vacation.humid ? ' to keep the house dry' : ''} while you're away`] };
   if (forecastInfo.note) plan = { ...plan, why: [...plan.why, forecastInfo.note] };
-  const hold = await observeHold(siteId, fresh ? prev : null, st, plan, settings, presence);
+  // S-10: a guest's read only looks at the hold (an expired one shows as none); ending, starting or logging one is the owner's reads' job
+  const hold = opts.readOnly ? await getHold(siteId).then(h => h && !holdOver(h, Date.now(), presence) ? h : null)
+    : await observeHold(siteId, fresh ? prev : null, st, plan, settings, presence);
   const week = days.slice(ti, ti + 7).map(d => { const p = planFor({ date: d.date, high: d.high, sunKwhM2: d.sunKwhM2, hourlySun: d.hourlySun, settings, acKw: learned.coolKw, slope, rate, humidity: null }); return { date: d.date, high: Math.round(d.high), sunKwhM2: Math.round(d.sunKwhM2 * 10) / 10, precool: p.precool, depth: p.precool ? settings.precoolDepth : 0, shiftedKwh: p.shiftedKwh, eveningAvoidedKwh: p.eveningAvoidedKwh, precoolFrom: p.precoolFrom, precoolTo: p.precoolTo, coastFrom: p.coastFrom, coastTo: p.coastTo }; });
   const applied = await kv.get<AcRecord>(`${siteId}:ac:plan`) ?? null;
   const log = await kv.get<Array<{ at: number; day: string; text: string; delta?: string }>>(`${siteId}:ac:log`) ?? [];

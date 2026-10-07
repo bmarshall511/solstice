@@ -133,6 +133,25 @@ describe('S-07 single flight', () => {
   });
 });
 
+describe('S-10 guest reads start no holds', () => {
+  it('GR-4 a guest read with a changed, stale reading and an expired hold writes nothing under the AC hold and log keys', async () => {
+    const t = Date.now();
+    await db.kv.set('nest:last', nestState(t - 10 * 60_000, { coolF: 80 }));         // stale: the owner's read would fetch 74° and hold it
+    await db.kv.set('s:ac:hold', { at: t - 5 * 3600e3, by: 'wall', mode: 'COOL', coolF: 76, heatF: null, until: t - 3600e3, why: 'test' });   // already over
+    await db.kv.set('s:ac:log', [{ at: t - 3600e3, day: '2026-01-01', text: 'synthetic line' }]);
+    // the hold, its history (the suggestion patterns), the AC log and the plan record a hold's end re-arms
+    const keys = async () => JSON.stringify(await db.q(`SELECT key, value FROM kv WHERE key IN ('s:ac:hold', 's:ac:holdHistory', 's:ac:log', 's:ac:plan') ORDER BY key`));
+    const before = await keys();
+    const r = await (await call('/api/appliances/ac', { cookie: guest })).json();
+    expect(r.hold ?? null).toBeNull();                                               // an expired hold shows as none
+    expect(await keys()).toBe(before);
+    expect(nest.readNest).not.toHaveBeenCalled();
+    // the owner's read of the same state does end the hold and log it (what a guest read used to do too)
+    await call('/api/appliances/ac', { cookie: owner });
+    expect(await keys()).not.toBe(before);
+  });
+});
+
 describe('S-07 bounded reads', () => {
   it('GR-5 /api/profile caps days at 60 and /api/overnight at 120; junk falls back to the default', async () => {
     expect((await (await call('/api/profile?days=100000', { cookie: guest })).json()).days).toBe(60);
