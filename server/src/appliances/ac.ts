@@ -125,6 +125,15 @@ export async function runtimeToday(siteId: string) {
   let on = 0, all = 0; for (let i = 1; i < rows.length; i++) { const dt = Math.min(20 * 60_000, Number(rows[i].ts) - Number(rows[i - 1].ts)); all += dt; if (rows[i - 1].hvac === 'COOLING') on += dt; }
   return { minutes: Math.round(on / 60_000), duty: all ? Math.round(on / all * 100) : null };
 }
+/**
+ * B2-7 (audit L-05, L-12): AC kWh is runtime × one learned step, so it is "measured" only when both independent checks of that step
+ * (the late step 10–15 min after a start, and the hourly regression; acDiagnostics) agree with it within 15%; otherwise "estimated".
+ */
+export const AC_KW_AGREE = .15;
+export function acKwConf(l: { coolKw?: number | null; diag?: { lateKw?: number | null; regressionKw?: number | null } } | null | undefined): 'measured' | 'estimated' {
+  const k = l?.coolKw, a = l?.diag?.lateKw, b = l?.diag?.regressionKw;
+  return k && a != null && b != null && Math.abs(a - k) <= AC_KW_AGREE * k && Math.abs(b - k) <= AC_KW_AGREE * k ? 'measured' : 'estimated';
+}
 /** AC kW for energy figures: the learned cooling step, or an estimate from the heat model's slope until one is learned. */
 export const acKwFor = (coolKw: number | null, slope: number) => coolKw ?? (slope ? Math.max(2, Math.min(5, slope * 1.3)) : 3.4);
 

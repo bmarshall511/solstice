@@ -6,20 +6,22 @@ import { q } from '../db.js';
 import { localDay } from '../tesla/client.js';
 import { hourlyRpm, powerModel, pumpSchedules, meanByQuarter, quarterWh, type QuarterWatts } from './pool.js';
 import type { PoolSnapshot } from './screenlogic.js';
-import { acSettingsOf, type AcSettings } from './ac.js';
+import { acSettingsOf, acKwConf, type AcSettings } from './ac.js';
 
 export type AcPhase = 'pre-cool' | 'cool' | 'coast' | 'idle';
 export type DayEnergy = { solarKw: number; homeKw: number; batteryKw: number; gridKw: number; importKw: number; exportKw: number; soc: number | null; buckets: number };
 export type DayPool = { running: boolean; rpm: number; watts: number; meanKw: number; source: 'measured' | 'schedule' };
-export type DayAc = { on: boolean; phase: AcPhase; setpointF: number | null; indoorF: number | null; kw: number; meanKw: number };
+/** kwh (B2-7): the hour's Nest cooling minutes (each reading holding until the next, at most 20 min, as runtimeToday counts them) × the learned kW. */
+export type DayAc = { on: boolean; phase: AcPhase; setpointF: number | null; indoorF: number | null; kw: number; meanKw: number; kwh: number };
 export type DayHour = { hour: number; energy: DayEnergy | null; pool: DayPool | null; ac: DayAc | null };
-export type ApplianceDay = { date: string; acKw: number; coverage: { pool: number; nest: number }; hours: DayHour[] };
+/** acConf (B2-7): whether the AC kWh is measured (the learned step's two checks agree within 15%) or estimated (ac.ts acKwConf). */
+export type ApplianceDay = { date: string; acKw: number; acConf: 'measured' | 'estimated'; coverage: { pool: number; nest: number }; hours: DayHour[] };
 
 // Row shapes of the five queries (numbers arrive as float8/int, timestamps as text).
 export type EnergyRow = { hour: number; n: number; solar: number; home: number; imp: number; exp: number; chg: number; dis: number };
 export type SocRow = { hour: number; soc: number };
 export type PoolRow = { ts: string | null; running: boolean | null; watts: number; rpm: number; n: number | null };
-export type NestRow = { hour: number; n: number; cooling: number; indoor: number | null; cool: number | null };
+export type NestRow = { hour: number; n: number; cooling: number; indoor: number | null; cool: number | null; cool_min?: number | null };
 type Sched = { circuitId: number; start: number; stop: number; rpm?: number };
 type Applied = { plan?: { schedules?: Sched[] } } | null;
 
@@ -51,7 +53,7 @@ export function acKwFrom(learned: { learned?: { coolKw?: number | null } } | nul
  * hour + 1 today, 0 for a future day. Hours after the span get no pool schedule, so nothing is shown for them.
  */
 export function buildDay(o: { date: string; span: number; energy: EnergyRow[]; soc: SocRow[]; pool: PoolRow[]; nest: NestRow[];
-  snapshot: PoolSnapshot | null; applied: Applied; settings: AcSettings; acKw: number }): ApplianceDay {
+  snapshot: PoolSnapshot | null; applied: Applied; settings: AcSettings; acKw: number; acConf?: 'measured' | 'estimated' }): ApplianceDay {
   const E = new Map(o.energy.map(r => [Number(r.hour), r])), SOC = new Map(o.soc.map(r => [Number(r.hour), Number(r.soc)]));
   const N = new Map(o.nest.map(r => [Number(r.hour), r]));
 
@@ -85,12 +87,12 @@ export function buildDay(o: { date: string; span: number; energy: EnergyRow[]; s
     if (n && Number(n.n) > 0) {
       const frac = Number(n.cooling) / Number(n.n), on = frac >= .5, setpointF = n.cool == null ? null : r1(Number(n.cool));
       ac = { on, phase: acPhase({ on, setpointF, hour, settings: o.settings }), setpointF, indoorF: n.indoor == null ? null : r1(Number(n.indoor)),
-        kw: on ? r2(o.acKw) : 0, meanKw: r3(o.acKw * frac) };
+        kw: on ? r2(o.acKw) : 0, meanKw: r3(o.acKw * frac), kwh: r3(Number(n.cool_min ?? 0) / 60 * o.acKw) };
     }
     return { hour, energy, pool, ac };
   });
   const cov = (has: (h: number) => boolean) => o.span > 0 ? r3(Array.from({ length: o.span }, (_, h) => has(h)).filter(Boolean).length / o.span) : 0;
-  return { date: o.date, acKw: r2(o.acKw), coverage: { pool: cov(h => byHour.has(h)), nest: cov(h => (N.get(h)?.n ?? 0) > 0) }, hours };
+  return { date: o.date, acKw: r2(o.acKw), acConf: o.acConf ?? 'estimated', coverage: { pool: cov(h => byHour.has(h)), nest: cov(h => (N.get(h)?.n ?? 0) > 0) }, hours };
 }
 const avg = (a: number[]) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
 /** The Chicago hour of an epoch-ms timestamp (pool_readings.hour holds the same; the ts keeps the quarter-hour too). */
@@ -117,14 +119,17 @@ export async function applianceDay(siteId: string, date: string, settingsAll?: R
       UNION ALL
       SELECT NULL, NULL, PERCENTILE_CONT(.5) WITHIN GROUP (ORDER BY watts)::float8, rpm::int::float8, COUNT(*)::int
       FROM pool_readings WHERE site_id = $1 AND running AND rpm > 0 AND watts > 0 GROUP BY rpm HAVING COUNT(*) >= 3`, [siteId, date]),
+    // cool_min (B2-7): cooling minutes per hour, each reading holding until the next for at most 20 minutes (runtimeToday's rule),
+    // booked to the reading's hour and at most 60 a hour (a hold that runs past the hour, before a gap, can't make an hour longer)
     q<NestRow>(`SELECT hour::int AS hour, COUNT(*)::int AS n, (COUNT(*) FILTER (WHERE hvac = 'COOLING'))::int AS cooling,
-        AVG(indoor_f)::float8 AS indoor, (MODE() WITHIN GROUP (ORDER BY cool_f))::float8 AS cool
-      FROM nest_readings WHERE site_id = $1 AND day = $2 GROUP BY hour`, [siteId, date]),
+        AVG(indoor_f)::float8 AS indoor, (MODE() WITHIN GROUP (ORDER BY cool_f))::float8 AS cool,
+        LEAST(60, COALESCE(SUM(LEAST(dt, 1200000)) FILTER (WHERE hvac = 'COOLING'), 0) / 60000.0)::float8 AS cool_min
+      FROM (SELECT hour, hvac, indoor_f, cool_f, COALESCE(LEAD(ts) OVER (ORDER BY ts) - ts, 0) dt FROM nest_readings WHERE site_id = $1 AND day = $2) x GROUP BY hour`, [siteId, date]),
     q<{ key: string; value: any }>(`SELECT key, value FROM kv WHERE key = ANY($1::text[])`, [settingsAll ? keys.slice(0, 4) : keys]),
   ]);
   const K = new Map(kvRows.map(r => [r.key, r.value]));
   const all = settingsAll ?? K.get('settings:owner') ?? {};
   const settings: AcSettings = acSettingsOf(all);
   return buildDay({ date, span: spanOf(date), energy, soc, pool, nest, snapshot: K.get(keys[0]) ?? null, applied: K.get(keys[1]) ?? null, settings,
-    acKw: acKwFrom(K.get(keys[2]), K.get(keys[3])) });
+    acKw: acKwFrom(K.get(keys[2]), K.get(keys[3])), acConf: acKwConf(K.get(keys[2])?.learned) });
 }

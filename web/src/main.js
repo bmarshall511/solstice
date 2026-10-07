@@ -213,6 +213,7 @@ async function loadApplDay() {
   if (S.applDayAt && Date.now() - S.applDayAt < 5 * 60_000 && S.applDay?.date === date) return;
   S.applDayAt = Date.now();
   try { S.applDay = await api.applDay(date); } catch (e) { S.applDayAt = 0; throw e; }
+  safe(drawDayRing)();   // B2-7: the Day Ring's AC hours come from this day
 }
 const aurora = createAurora($('aurora')), orb = createOrb($('orb')), land = createLandscape($('land'), $('landTip')), roof = createHomeView($('roof'), 'sun');
 $('roofBars').onclick = e => { const on = !S.roofBars; S.roofBars = on; e.currentTarget.classList.toggle('on', on); e.currentTarget.setAttribute('aria-pressed', on); $('roofBarsKey').classList.toggle('on', on); roof.setBars(on); };   // mockup p-roof-veil
@@ -228,33 +229,44 @@ $('insSeg').onclick = e => { const b = e.target.closest('button'); if (!b) retur
 const dayRing = createDayRing($('dayRing'), (h, d) => {
   const ro = $('drRead'); if (!d) return;
   const sum = a => a.reduce((x, y) => x + y, 0), bd = (p, a, r) => `<div class="bd"><span><i style="background:#6cc4ff"></i>${p}</span><span><i style="background:#ff9e66"></i>${a}</span><span><i style="background:#8d93a8"></i>${r}</span></div>`;
-  if (h == null) ro.innerHTML = `<b>${Math.round(sum(d.rest) + sum(d.ac) + sum(d.pool))} kWh</b><small>${d.label}</small>${bd(Math.round(sum(d.pool)), Math.round(sum(d.ac)), Math.round(sum(d.rest)))}`;
+  // B2-7: today so far reads Tesla's home total (the parts are split out of it); the what-if modes read their parts' sum
+  if (h == null) ro.innerHTML = `<b>${Math.round(d.total ?? sum(d.rest) + sum(d.ac) + sum(d.pool))} kWh</b><small>${d.label}</small>${bd(Math.round(sum(d.pool)), Math.round(sum(d.ac)), Math.round(sum(d.rest)))}`;
   else ro.innerHTML = `<b>${(d.rest[h] + d.ac[h] + d.pool[h]).toFixed(1)} kWh</b><small>${h % 12 || 12}${h < 12 ? ' AM' : ' PM'} · solar ${d.solar[h].toFixed(1)} kWh</small>${bd(d.pool[h].toFixed(1), d.ac[h].toFixed(1), d.rest[h].toFixed(1))}`;
 });
 /** Settings › Connections and Data health follow the latest sync, pool and Nest reads (health waits for its first /api/status). */
 const refreshStatus = () => { safe(drawConnections)(S); if ('status' in S) safe(drawHealth)(S, S.status); };
 S.ringMode = 'now'; S.onPool = () => { safe(drawDayRing)(); refreshStatus(); }; S.onAc = () => { safe(drawDayRing)(); refreshStatus(); if (S.vac) safe(drawVacation)(S); };
 $('drModes').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.ringMode = b.dataset.m; document.querySelectorAll('#drModes button').forEach(x => x.classList.toggle('on', x === b)); drawDayRing(); };
-/** Today's hourly loads: pool from the schedule model, AC from the heat model, the rest from Tesla's home load. */
+/**
+ * Today's hourly loads (B2-7, audit L-13/L-14, O-11): the AC from Nest's cooling minutes × the learned kW (/api/appliances/day), the pool
+ * from the schedule model for the hours so far only, the rest from Tesla's home load; in "now" mode the parts add up to Tesla's total.
+ */
+let ringDayAsked = 0;
 function drawDayRing() {
   const day = S.today; if (!day || !day.buckets?.length) return;
+  // the AC series comes from the owner-only appliance day; ask for it (at most once a minute) when the ring has none for today
+  if (!S.guest && S.applDay?.date !== localDate() && Date.now() - ringDayAsked > 60_000) { ringDayAsked = Date.now(); loadApplDay().catch(() => {}); }   // it redraws the ring
   const home = Array(24).fill(0), solar = Array(24).fill(0);
   const per = 60 / (day.bucketMinutes ?? 5); // buckets per hour: kW ÷ 12 = kWh for five-minute buckets (a guest's day comes hourly)
   day.buckets.forEach(b => { const h = Math.floor(b.t); if (h < 24) { home[h] += b.home / per; solar[h] += b.solar / per; } });
   const p = S.pool, curve = p?.model?.curve, W = r => r && curve ? curve.reduce((a, c) => Math.abs(c.rpm - r) < Math.abs(a.rpm - r) ? c : a).watts : 0;
   const hourly = src => Array.from({ length: 24 }, (_, h) => src?.[h] ? (src[h].slices ? src[h].slices.reduce((a, r) => a + W(r) / 4, 0) : W(src[h].rpm) * src[h].frac) / 1000 : 0); // per 15-minute slice
   const extras = p?.extras?.hourlyToday ?? Array(24).fill(0);
-  const poolNow = hourly(p?.current?.hourly).map((v, h) => v + extras[h]), pool = S.ringMode === 'pool' ? hourly(p?.plan?.hourly).map((v, h) => v + extras[h]) : poolNow;
-  const high = S.highs?.[localDate()], slope = S.acSlope ?? 2.5, acDay = high != null ? Math.max(0, (high - 80) * slope) : 0;
-  const w = Array.from({ length: 24 }, (_, h) => Math.max(0, Math.sin((h - 8) / 15 * Math.PI)) ** 1.5), ws = w.reduce((a, b) => a + b, 0) || 1;
-  const ac = w.map(v => Math.min(acDay * v / ws, Math.max(0, home[w.indexOf(v)] - poolNow[w.indexOf(v)])));
-  const rest = home.map((v, h) => Math.max(0, v - ac[h] - poolNow[h])); // the house minus the pump's real share, whatever mode is shown
+  const hNow = localHour(), sofar = h => h < Math.floor(hNow) ? 1 : h === Math.floor(hNow) ? hNow % 1 : 0;   // the hours so far (this one in part)
+  const A = S.applDay?.date === localDate() ? S.applDay : null;
+  const ac = home.map((v, h) => Math.min(v, A?.hours?.[h]?.ac?.kwh ?? 0));   // Nest cooling minutes × the learned kW, never more than the hour's home load
+  const poolNow = hourly(p?.current?.hourly).map((v, h) => Math.min(Math.max(0, home[h] - ac[h]), (v + extras[h]) * sofar(h)));
+  const pool = S.ringMode === 'pool' ? hourly(p?.plan?.hourly).map((v, h) => v + extras[h]) : poolNow;
+  const rest = home.map((v, h) => Math.max(0, v - ac[h] - poolNow[h])); // the house minus the AC and the pump's real share, whatever mode is shown
   const sol = S.ringMode === 'panels' ? solar.map(v => v * (1 + 8 * 400 / 9600)) : solar;
   const label = S.ringMode === 'now' ? 'today so far' : S.ringMode === 'pool' ? 'with the smarter pool schedule' : 'with 8 more panels';
-  dayRing.setData({ rest, ac, pool, solar: sol, label }); dayRing.setHour(localHour());
-  const tot = home.reduce((a, b) => a + b, 0), pk = pool.reduce((a, b) => a + b, 0);
+  const tot = day.totals?.home ?? home.reduce((a, b) => a + b, 0), pk = pool.reduce((a, b) => a + b, 0);   // Tesla's home total, as Now and History show it
+  dayRing.setData({ rest, ac, pool, solar: sol, label, total: S.ringMode === 'now' ? tot : null }); dayRing.setHour(localHour());
   $('insToday').textContent = Math.round(tot);
-  $('drTxt').innerHTML = S.ringMode === 'now' ? (tot ? `The pool pump is about <b style="color:var(--text)">${Math.round(pk / tot * 100)}%</b> of today so far. ${S.ac?.linked && S.ac.learned ? `AC is measured through Nest and Tesla's load steps (${S.ac.learned.acKw.toFixed(1)} kW)` : `AC is estimated from your heat model (about ${slope.toFixed(1)} kWh per degree over 80°F) until Nest is linked`}; everything else is what's left of Tesla's home load.` : 'Waiting for today’s data.')
+  const acTxt = !A ? 'AC isn’t split out in this view'
+    : A.acConf === 'measured' ? `AC is measured: Nest’s cooling minutes × the AC’s draw from Tesla’s load steps (${A.acKw.toFixed(1)} kW, confirmed by two independent checks)`
+    : `AC is estimated: Nest’s cooling minutes × ${A.acKw.toFixed(1)} kW, a draw not yet confirmed by Tesla’s load steps`;
+  $('drTxt').innerHTML = S.ringMode === 'now' ? (tot ? `The pool pump is about <b style="color:var(--text)">${Math.round(pk / tot * 100)}%</b> of today so far. ${acTxt}; everything else is what's left of Tesla's home load.` : 'Waiting for today’s data.')
     : S.ringMode === 'pool' ? `With the smarter schedule the pump moves under the solar curve and drops to about <b style="color:var(--text)">${Math.round(pk)} kWh</b> a day, so nights are just the house idling and the Powerwalls reach the evening fuller.`
     : `Eight more panels lift the gold ribbon by a third. Midday surplus covers more of the AC ramp, and the planner says the batteries would fill on far more days.`;
 }

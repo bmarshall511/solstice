@@ -9,7 +9,7 @@ import { q, kv } from './db.js';
 import { localDay, addDays } from './tesla/client.js';
 import { daySpans } from './flows.js';
 import { poolKwhBetween, pumpRunning } from './appliances/pool.js';
-import { acKwhBetween, learnAcKw, acKwFor } from './appliances/ac.js';
+import { acKwhBetween, learnAcKw, acKwFor, acKwConf } from './appliances/ac.js';
 import { notify } from './notify.js';
 
 export const BURST_OVER_KW = 3, BURST_MIN_BUCKETS = 3, BASE_QUANTILE = .1, NEST_COVERAGE = .8;   // 3 kW over the base for 15 min; the quietest tenth
@@ -113,7 +113,7 @@ export async function breakdownFor(siteId: string, range: Range, settings: Recor
     q<{ ts: string; day: string; running: boolean; watts: number; rpm: number }>(`SELECT ts::text, day, running, watts::float8 watts, rpm::float8 rpm FROM pool_readings WHERE site_id = $1 AND day BETWEEN $2 AND $3 AND hour BETWEEN 0 AND 4 ORDER BY ts`, [siteId, addDays(from, -1), to]),
   ]);
   const slope = (await kv.get<{ slope: number }>(`${siteId}:ac:slope`))?.slope ?? 2.5;
-  const [pool, ac, clearUp] = await Promise.all([poolKwhBetween(siteId, spans, settings), acKwhBetween(siteId, spans, slope), clearUpOf(siteId)]);
+  const [pool, ac, clearUp, learned] = await Promise.all([poolKwhBetween(siteId, spans, settings), acKwhBetween(siteId, spans, slope), clearUpOf(siteId), learnAcKw(siteId)]);
   const nr = nest.map(r => ({ ts: Number(r.ts), day: r.day, hvac: r.hvac })), acOn = acMask(nr), covered = nestCoverage(nr), pr = pumpNight.map(p => ({ ts: Number(p.ts), day: p.day, running: pumpRunning(p), kw: (Number(p.watts) || 0) / 1000 })), pumpOn = pumpMask(pr, clearUp);
   const pumpKw = new Map<string, number>(); for (const r of pr) if (r.running) pumpKw.set(r.day, Math.max(pumpKw.get(r.day) ?? 0, r.kw));   // the running draw, for the fallback
   const byDay = new Map<string, Bucket[]>();
@@ -141,7 +141,8 @@ export async function breakdownFor(siteId: string, range: Range, settings: Recor
   const acHours = acDays ? Math.round(acSum / acKwNow / acDays * 10) / 10 : null;
   return { range, from, to, days, spanDays: spans.length, homeKwh,
     parts: [
-      { id: 'ac', kwh: acKwh, share: share(acKwh), conf: 'measured', hours: acHours, kw: acKwNow },
+      // B2-7: runtime × one learned step is "measured" only when the step's two checks agree with it within 15% (ac.ts acKwConf)
+      { id: 'ac', kwh: acKwh, share: share(acKwh), conf: acKwConf(learned), hours: acHours, kw: acKwNow },
       { id: 'alwaysOn', kwh: onKwh, share: share(onKwh), conf: 'measured', kw: baseDays ? Math.round(baseSum / baseDays * 100) / 100 : null },
       { id: 'big', kwh: bigKwh, share: share(bigKwh), conf: 'estimated', perDay: days ? Math.round(burstCount / days * 10) / 10 : 0,
         minutes: allBursts.length ? [Math.min(...allBursts.map(b => b.minutes)), Math.max(...allBursts.map(b => b.minutes))] : null,

@@ -83,6 +83,15 @@ describe('on PGlite', () => {
     expect(d.parts.reduce((a, p) => a + p.kwh, 0)).toBeCloseTo(d.homeKwh, 0);
     expect(d.trend.length).toBeGreaterThan(0);
   });
+  it('B2-7 the AC part is "measured" only when the learned step\'s two checks agree with it within 15%', async () => {
+    expect((await breakdownFor('bd', 'week', {})).parts.find(p => p.id === 'ac')!.conf).toBe('estimated');   // no step learned from this data
+    const learned = (late: number) => ({ coolKw: 2.7, heatKw: null, samples: 9, heatSamples: 0, diag: { lateKw: late, lateSamples: 9, regressionKw: 2.6, regressionHours: 200 } });
+    await kv.set('bd:ac:learned:v2', { at: Date.now(), learned: learned(2.5) });
+    expect((await breakdownFor('bd', 'week', {})).parts.find(p => p.id === 'ac')!.conf).toBe('measured');
+    await kv.set('bd:ac:learned:v2', { at: Date.now(), learned: learned(2.0) });
+    expect((await breakdownFor('bd', 'week', {})).parts.find(p => p.id === 'ac')!.conf).toBe('estimated');
+    await kv.set('bd:ac:learned:v2', null);
+  });
   it('BD-6 days without Nest readings are left out (the AC could not be told apart)', async () => {
     const d = await breakdownFor('bd', 'month', {});
     expect(d.spanDays).toBe(30);

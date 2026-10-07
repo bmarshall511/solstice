@@ -362,7 +362,9 @@ function drawPlanner(S) {
   const show = () => { $('plGoal').textContent = goal.toFixed(1); $('plSkim').textContent = `${skim} h`; save(() => ({ turnoverGoal: goal, skimHours: skim })); };
   $('plGdn').onclick = () => { goal = Math.max(1, goal - .5); show(); }; $('plGup').onclick = () => { goal = Math.min(4, goal + .5); show(); };
   $('plSdn').onclick = () => { skim = Math.max(0, skim - 1); show(); }; $('plSup').onclick = () => { skim = Math.min(3, skim + 1); show(); };
-  $('plNums').innerHTML = `<div><b>${P.hours} h</b><span>pump a day</span></div><div><b>${P.kwhPerDay}</b><span>kWh a day</span></div><div><b>${S.guest ? veil('$•') : P.costPerMonth == null ? '—' : money(P.costPerMonth)}</b><span>a month</span></div>`;
+  // B2-7 (audit L-17): the server's confidence in the plan's kWh a day (learning layer pool.kwhDay), as the AC card shows its savings'
+  const kc = confChip(d.conf?.kwhPerDay, modelOf(S.models, 'pool.kwhDay'));
+  $('plNums').innerHTML = `<div><b>${P.hours} h</b><span>pump a day</span></div><div><b>${P.kwhPerDay}</b><span>kWh a day</span>${kc && `<span style="margin-top:5px">${kc}</span>`}</div><div><b>${S.guest ? veil('$•') : P.costPerMonth == null ? '—' : money(P.costPerMonth)}</b><span>a month</span></div>`;
   drawPoolLearning(S);
   $('plNote').textContent = `The planner picks hours and speed to reach the goal for the least energy (${P.hours} h at ${P.rpm.toLocaleString()} RPM${P.boostHours ? ` with ${P.boostHours} h at ${sp.boostRpm.toLocaleString()}` : ''}), keeps the skim hour at the sunniest hour, and adds time on hot days (+1 h at 85°) and after rain. Water moved uses the flow model (no flow sensor on this pump), so turnovers are an estimate.`;
 }
