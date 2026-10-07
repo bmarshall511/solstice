@@ -122,8 +122,18 @@ export function acDiagnostics(rows: Array<{ ts: number; hvac: string }>, byStart
  *  in cooling-season daytime and every 15 minutes otherwise (sampling.ts), so a 15-minute gap counts in full. */
 export async function runtimeToday(siteId: string) {
   const rows = await q<{ ts: string; hvac: string }>(`SELECT ts::text, hvac FROM nest_readings WHERE site_id = $1 AND day = $2 ORDER BY ts`, [siteId, localDay()]);
-  let on = 0, all = 0; for (let i = 1; i < rows.length; i++) { const dt = Math.min(20 * 60_000, Number(rows[i].ts) - Number(rows[i - 1].ts)); all += dt; if (rows[i - 1].hvac === 'COOLING') on += dt; }
-  return { minutes: Math.round(on / 60_000), duty: all ? Math.round(on / all * 100) : null };
+  let on = 0, heat = 0, all = 0; for (let i = 1; i < rows.length; i++) { const dt = Math.min(20 * 60_000, Number(rows[i].ts) - Number(rows[i - 1].ts)); all += dt; if (rows[i - 1].hvac === 'COOLING') on += dt; if (rows[i - 1].hvac === 'HEATING') heat += dt; }
+  // B2-8: heating time apart (the outage ladder's heating duty); `minutes`/`duty` stay cooling only
+  return { minutes: Math.round(on / 60_000), duty: all ? Math.round(on / all * 100) : null, heatMinutes: Math.round(heat / 60_000), heatDuty: all ? Math.round(heat / all * 100) : null };
+}
+/**
+ * B2-7 (audit L-05, L-12): AC kWh is runtime × one learned step, so it is "measured" only when both independent checks of that step
+ * (the late step 10–15 min after a start, and the hourly regression; acDiagnostics) agree with it within 15%; otherwise "estimated".
+ */
+export const AC_KW_AGREE = .15;
+export function acKwConf(l: { coolKw?: number | null; diag?: { lateKw?: number | null; regressionKw?: number | null } } | null | undefined): 'measured' | 'estimated' {
+  const k = l?.coolKw, a = l?.diag?.lateKw, b = l?.diag?.regressionKw;
+  return k && a != null && b != null && Math.abs(a - k) <= AC_KW_AGREE * k && Math.abs(b - k) <= AC_KW_AGREE * k ? 'measured' : 'estimated';
 }
 /** AC kW for energy figures: the learned cooling step, or an estimate from the heat model's slope until one is learned. */
 export const acKwFor = (coolKw: number | null, slope: number) => coolKw ?? (slope ? Math.max(2, Math.min(5, slope * 1.3)) : 3.4);
@@ -395,7 +405,8 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
     forecastInfo.unavailable ? -1 : hourNow());
   let plan = await learnedPlan(siteId, { date: today, ...inputs, settings, acKw: learned.coolKw, slope, rate },
     // with no forecast the plan is a neutral day: it claims no control day and logs no prediction (readOnly), so learning isn't fed made-up weather
-    planFor, learned.coolKw ?? (slope ? Math.max(2, Math.min(5, slope * 1.3)) : 3.4), { readOnly: !!settingsAll[PRESENCE_FIXED as any] || forecastInfo.unavailable });
+    planFor, learned.coolKw ?? (slope ? Math.max(2, Math.min(5, slope * 1.3)) : 3.4), { readOnly: !!settingsAll[PRESENCE_FIXED as any] || forecastInfo.unavailable,
+      frozen: hourNow() >= FREEZE_FROM_HOUR });   // B2-4: the day's control decision, predictions and trim line wait for the 06:00 freeze
   // Vacation mode (mockup ak): during a trip the plan is the trip's setting now (the hold, or the welcome home), computed in vacation/ac.ts
   const trip = presence.source === 'vacation' ? await liveTrip(siteId) : null, vacation = trip ? tripAcView(trip, settings) : null;
   if (vacation) plan = { ...plan, steps: [{ hour: 0, coolF: vacation.now.coolF, why: vacation.now.why }], precool: false, shiftedKwh: 0, eveningAvoidedKwh: 0, control: false,

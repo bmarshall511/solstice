@@ -5,9 +5,11 @@
 //                 each holding until the next for at most 20 minutes, plus the UV lamp), always-on (the quietest 5% of the trip's
 //                 5-minute buckets, all the way through), water heater (3.5–5.5 kW steps above that base lasting under 45 minutes) and
 //                 everything else
-//   empty         the same house empty without Vacation mode: the AC at Nest Eco's 82° from this house's degree-hour model (fitted on its
-//                 own non-trip days with Nest readings; 0.095 kWh per °F·h above setpoint − 9 °F until 5 such days exist), the pool's
-//                 normal plan, and the rest as measured (Vacation mode doesn't change them)
+//   empty         the same house empty without Vacation mode: the AC at the Nest's own Eco cooling setpoint (kv nest:last ecoCoolF;
+//                 82° when the Nest hasn't reported one) from this house's degree-hour model (fitted on its own non-trip days with Nest
+//                 readings; 0.095 kWh per °F·h above setpoint − 9 °F until 5 such days exist), the pool's normal plan, and the rest as
+//                 measured (Vacation mode doesn't change them). B2-14 (audit L-26): both sides are the models as they are (no max() with
+//                 what was used), so the saving can come out negative when Vacation mode used more than an empty house would have
 //   home          the home model (learn/homeModel.ts: kWh = a + b·max(0, high − 70) on the 14 days before the trip) for each trip day
 // Pure pieces first (tested on a replay of a real trip), then the database step.
 import { q, kv } from '../db.js';
@@ -28,9 +30,11 @@ export type ReportInput = {
   acKw: number; uv: boolean; temps: Hourly; model: { k: number; delta: number; days: number };
   poolNormalKwhDay: number | null; homeFit: { a: number; b: number } | null; highs: Record<string, number>;
   homeBaseKw: number | null; trip: Pick<Trip, 'backAt' | 'data'>; alerts: number;
+  /** B2-14: the Nest's Eco cooling setpoint (°F) for the empty-house AC; ECO_COOL_F when unknown. */
+  ecoF?: number | null;
 };
 export type Part = { id: 'ac' | 'pool' | 'alwaysOn' | 'waterHeater' | 'else'; used: number; empty: number };
-export type Report = { v: 1; from: number; to: number; days: number; usedKwh: number; emptyKwh: number; homeKwh: number | null; savedKwh: number;
+export type Report = { v: 1; from: number; to: number; days: number; usedKwh: number; emptyKwh: number; homeKwh: number | null; savedKwh: number; ecoCoolF?: number;
   parts: Part[]; awayBaseKw: number; homeBaseKw: number | null; did: string[]; alerts: number; next: string[];
   conf: { ac: 'measured' | 'estimated'; empty: 'estimated'; home: 'estimated' | null }; model: { k: number; delta: number; days: number } };
 
@@ -87,7 +91,7 @@ export function buildReport(o: ReportInput): Report {
   const base = awayBase(o.energy), hours = (o.to - o.from) / 3600_000;
   const ac = acKwh(o.nest, o.to, o.acKw), pool = poolKwh(o.pool, o.to, o.uv), always = Math.min(used, base * hours);
   const wh = waterHeaterKwh(o.energy, base), rest = Math.max(0, used - ac - pool - always - wh);
-  const acEmpty = Math.max(ac, modelAcKwh(o.temps, o.from, o.to, () => ECO_COOL_F, o.model)), poolEmpty = o.poolNormalKwhDay != null ? Math.max(pool, o.poolNormalKwhDay * days) : pool;
+  const eco = o.ecoF ?? ECO_COOL_F, acEmpty = modelAcKwh(o.temps, o.from, o.to, () => eco, o.model), poolEmpty = o.poolNormalKwhDay != null ? o.poolNormalKwhDay * days : pool;
   const parts: Part[] = [{ id: 'ac', used: r1(ac), empty: r1(acEmpty) }, { id: 'pool', used: r1(pool), empty: r1(poolEmpty) }, { id: 'alwaysOn', used: r1(always), empty: r1(always) },
     { id: 'waterHeater', used: r1(wh), empty: r1(wh) }, { id: 'else', used: r1(rest), empty: r1(rest) }];
   const empty = parts.reduce((a, p) => a + p.empty, 0);
@@ -107,12 +111,17 @@ export function buildReport(o: ReportInput): Report {
   if (w?.reachedAt && o.trip.backAt) { const early = (o.trip.backAt - w.reachedAt) / 3600_000; if (early >= 1) next.push(`The house was ready ${r1(early)} h early, so cooling will start later on a day like that`); else if (early < 0) next.push(`The house reached ${w.target}° ${Math.round(-early * 60)} min after you were due, so cooling will start earlier next time`); }
   if (o.homeBaseKw != null && o.homeBaseKw - base >= .1) next.push(`While you were away the house drew ${r1(base * 100) / 100} kW at its quietest, ${Math.round((o.homeBaseKw - base) * 100) / 100} kW less than when you're home`);
   next.push('Log a pool test so the next trip’s pool plan can learn from it');
-  return { v: 1, from: o.from, to: o.to, days: r1(days), usedKwh: r1(used), emptyKwh: r1(empty), homeKwh: home, savedKwh: r1(Math.max(0, empty - used)), parts,
+  return { v: 1, from: o.from, to: o.to, days: r1(days), usedKwh: r1(used), emptyKwh: r1(empty), homeKwh: home, savedKwh: r1(empty - used), ecoCoolF: eco, parts,
     awayBaseKw: Math.round(base * 100) / 100, homeBaseKw: o.homeBaseKw != null ? Math.round(o.homeBaseKw * 100) / 100 : null, did: did.slice(-12), alerts: o.alerts, next,
     conf: { ac: o.nest.length ? 'measured' : 'estimated', empty: 'estimated', home: o.homeFit ? 'estimated' : null }, model: o.model };
 }
 
 /* ---------- the database step ---------- */
+/** B2-14 (audit D5): the Nest's Eco cooling setpoint as last read (kv nest:last), when it is a sane thermostat figure; else null. */
+export async function ecoCoolF(): Promise<number | null> {
+  const v = (await kv.get<{ ecoCoolF?: number | null }>('nest:last'))?.ecoCoolF;
+  return typeof v === 'number' && v >= 65 && v <= 95 ? Math.round(v * 2) / 2 : null;
+}
 /** Hourly outdoor °F for [from, to] (Chicago hours): the learning layer's cache when it covers them, else Open-Meteo (up to 92 days back). */
 export async function hourlyTemps(from: number, to: number, fetcher: typeof fetch = fetch): Promise<Hourly> {
   const out: Hourly = {}, c = await kv.get<{ w: { hourly: { time: string[]; temperature_2m: Array<number | null> } } }>('wx:gti');
@@ -175,7 +184,7 @@ export async function tripReport(siteId: string, trip: Trip, deps: { acKw: numbe
   const { model, homeFit: fit, homeBase, highs } = await houseModel(siteId, from, temps, deps.acKw, rows);
   const report = buildReport({ from, to, energy: energy.map(e => ({ epoch: Number(e.epoch), homeWh: Number(e.home_wh ?? 0) })), nest: nest.map(n => ({ ts: Number(n.ts), hvac: n.hvac, coolF: n.cool_f })),
     pool: pool.map(p => ({ ts: Number(p.ts), running: p.running, watts: Number(p.watts) })), acKw: deps.acKw, uv: deps.uv, temps, model, poolNormalKwhDay: deps.poolNormalKwhDay,
-    homeFit: fit, highs, homeBaseKw: homeBase, trip, alerts: alerts[0]?.n ?? 0 });
+    homeFit: fit, highs, homeBaseKw: homeBase, trip, alerts: alerts[0]?.n ?? 0, ecoF: await ecoCoolF() });
   await patchTripData(trip.id, { report });
   return report;
 }
@@ -195,7 +204,7 @@ export async function reportPush(siteId: string, trip: Trip, now = Date.now()) {
 export const AWAY_BASE_KW = .47, WH_KWH_DAY = 1.3, SMALL_KWH_DAY = 2;
 /**
  * A trip's estimate before it starts, per day and in total: "a day at home" (the home model at each day's forecast high), "empty, without
- * Vacation mode" (the away base, a water-heater burst and small loads, the AC at Nest Eco's 82° and the pool's normal plan) and "with
+ * Vacation mode" (the away base, a water-heater burst and small loads, the AC at the Nest's Eco setpoint (82° unknown) and the pool's normal plan) and "with
  * Vacation mode" (the same with the AC holding 85° and the trip pool plan). Days past the forecast take the last 7 days' hours.
  * The away base and loads come from the last trip's report when there is one.
  */
@@ -209,7 +218,7 @@ export async function estimateTrip(siteId: string, o: { leaveAt: number; backAt:
   const typical = Array.from({ length: 24 }, (_, h) => { const xs = Object.entries(temps).filter(([k]) => +k.slice(11, 13) === h && Date.parse(`${k.slice(0, 10)}T12:00:00Z`) > now - 8 * 864e5).map(([, v]) => v); return xs.length ? xs.reduce((a, v) => a + v, 0) / xs.length : null; });
   const t: Hourly = { ...temps };
   for (let x = Math.floor(from / 3600_000) * 3600_000; x < to; x += 3600_000) { const k = hourKey(x); if (t[k] == null && typical[+k.slice(11, 13)] != null) t[k] = typical[+k.slice(11, 13)]!; }
-  const days = (to - from) / 864e5, acEmpty = modelAcKwh(t, from, to, () => ECO_COOL_F, model), acTrip = modelAcKwh(t, from, to, () => 85, model);
+  const eco = await ecoCoolF() ?? ECO_COOL_F, days = (to - from) / 864e5, acEmpty = modelAcKwh(t, from, to, () => eco, model), acTrip = modelAcKwh(t, from, to, () => 85, model);
   const fixed = (base * 24 + wh + small) * days, poolEmpty = (o.poolNormalKwhDay ?? 0) * days, poolTrip = (o.poolTripKwhDay ?? o.poolNormalKwhDay ?? 0) * days;
   let home: number | null = null;
   if (homeFit) { home = 0; for (let d = localDay(new Date(from)); d <= localDay(new Date(to - 1)); d = addDays(d, 1)) {

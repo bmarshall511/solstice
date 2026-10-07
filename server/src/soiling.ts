@@ -3,6 +3,9 @@
 // first 3 clear days after the last rain of 5 mm or more (or after a logged cleaning); "now" is the median of the latest 3 clear days.
 // Backtested on 13 months (Open-Meteo archive): about −2 %/week in hot dry spells, none in winter; 5 % below clean fired twice, both real.
 // Reads Tesla history (energy), the logged cleanings (events) and Open-Meteo (fetched once a night into kv). Writes no device.
+// B2-13 (audit L-29, owner Q14): a noise band. `lossSd` is the day-to-day spread of the clear-day yield (a robust SD from consecutive
+// clear days, as % of clean); "getting dusty" and "dusty" need the loss to clear the larger of their threshold and one SD (so a real step
+// such as the 8/26 dust event, 5.5% against a 3.3% spread, still reads as dust), and the card says "X% ± Y%".
 import { q, kv } from './db.js';
 import { localDay, addDays } from './tesla/client.js';
 import { siteLocation } from './site.js';
@@ -14,7 +17,7 @@ export type SoilWx = { hourly: { time: string[]; global_tilted_irradiance: Array
   daily: { time: string[]; precipitation_sum: Array<number | null>; temperature_2m_max: Array<number | null> } };
 export type ClearPoint = { day: string; y: number };
 export type Soiling = {
-  state: 'clean' | 'getting' | 'dusty' | 'measuring'; lossPct: number | null; score: number | null; kwhPerDay: number | null; dollarsPerMonth: number | null;
+  state: 'clean' | 'getting' | 'dusty' | 'measuring'; lossPct: number | null; lossSd: number | null; score: number | null; kwhPerDay: number | null; dollarsPerMonth: number | null;
   ref: { from: string; to: string; y: number; after: 'rain' | 'cleaning' | 'window' } | null; now: number | null; resetOn: string | null; resetBy: 'rain' | 'cleaning' | null;
   lastRain: { day: string; mm: number; daysAgo: number } | null; nextRain: { day: string; mm: number } | null; clearSince: number;
   points: ClearPoint[]; rains: Array<{ day: string; mm: number }>; at: number;
@@ -35,6 +38,18 @@ export function clearDays(wx: SoilWx, solar: Record<string, number>, today: stri
   });
 }
 
+/**
+ * B2-13: the day-to-day noise of the clear-day yield, in % of `ref`: 1.4826 × the median |change| between consecutive clear days ÷ √2
+ * (the spread of one day's figure; a median, so the dust step itself or one odd day doesn't count as noise). Consecutive days a rain or
+ * a cleaning falls between are not compared. Null with fewer than 4 pairs.
+ */
+export function yieldSd(points: ClearPoint[], resets: string[], ref: number): number | null {
+  const d: number[] = [];
+  for (let i = 1; i < points.length; i++) if (!resets.some(r => r >= points[i - 1].day && r < points[i].day)) d.push(Math.abs(points[i].y - points[i - 1].y));
+  if (d.length < 4 || !(ref > 0)) return null;
+  return Math.round(1.4826 * median(d) / Math.SQRT2 / ref * 1000) / 10;
+}
+
 /** The card's figures from the clear days, the rains (past and forecast) and the logged cleanings. */
 export function soiling(o: { points: ClearPoint[]; rains: Array<{ day: string; mm: number }>; cleanings: string[]; today: string; solarRecent: number | null; rate: number | null; now?: number }): Soiling {
   const past = o.rains.filter(r => r.day < o.today && r.mm >= RAIN_MM), lastRain = past.at(-1) ?? null;
@@ -47,10 +62,11 @@ export function soiling(o: { points: ClearPoint[]; rains: Array<{ day: string; m
   const ref = refPts.length === REF_DAYS ? { from: refPts[0].day, to: refPts.at(-1)!.day, y: r2(median(refPts.map(p => p.y))), after: resetBy ?? 'window' as const } : null;
   const nowPts = after.slice(REF_DAYS).slice(-NOW_DAYS), now = ref && nowPts.length >= NOW_DAYS ? r2(median(nowPts.map(p => p.y))) : null;
   const lossPct = ref && now != null ? Math.max(0, Math.round((1 - now / ref.y) * 1000) / 10) : null;
+  const lossSd = ref ? yieldSd(o.points, [...past.map(r => r.day), ...o.cleanings], ref.y) : null, band = lossSd ?? 0;   // B2-13
   const kwhPerDay = lossPct != null && o.solarRecent != null ? r2(o.solarRecent * lossPct / (100 - lossPct)) : null;
   return {
-    state: lossPct == null ? 'measuring' : lossPct >= DUSTY ? 'dusty' : lossPct >= GETTING ? 'getting' : 'clean',
-    lossPct, score: lossPct == null ? null : Math.min(100, Math.round(lossPct * 10)), kwhPerDay, dollarsPerMonth: kwhPerDay != null && o.rate ? Math.round(kwhPerDay * 30 * o.rate) : null,
+    state: lossPct == null ? 'measuring' : lossPct >= Math.max(DUSTY, band) ? 'dusty' : lossPct >= Math.max(GETTING, band) ? 'getting' : 'clean',
+    lossPct, lossSd, score: lossPct == null ? null : Math.min(100, Math.round(lossPct * 10)), kwhPerDay, dollarsPerMonth: kwhPerDay != null && o.rate ? Math.round(kwhPerDay * 30 * o.rate) : null,
     ref, now, resetOn, resetBy, clearSince: after.length,
     lastRain: lastRain ? { ...lastRain, daysAgo: Math.round((Date.parse(o.today) - Date.parse(lastRain.day)) / 864e5) } : null, nextRain,
     points: o.points, rains: o.rains.filter(r => r.mm >= RAIN_MM), at: o.now ?? Date.now(),
@@ -111,7 +127,7 @@ export async function soilingNightly(siteId: string, now = Date.now()) {
   if (!s) return { skipped: 'no weather' };
   if (s.state !== 'dusty' || s.nextRain) return { state: s.state, lossPct: s.lossPct, nextRain: s.nextRain?.day ?? null };
   const r = await notify(siteId, 'panel', 'Panels look dusty',
-    `About ${s.lossPct}% below clean${s.kwhPerDay != null ? ` (≈ ${s.kwhPerDay.toFixed(1)} kWh a day)` : ''}${s.lastRain ? ` after ${s.lastRain.daysAgo} days without 5 mm of rain` : ''}, and none in the 5-day forecast. A rinse would bring it back.`,
+    `About ${s.lossPct}%${s.lossSd ? ` ± ${s.lossSd}%` : ''} below clean${s.kwhPerDay != null ? ` (≈ ${s.kwhPerDay.toFixed(1)} kWh a day)` : ''}${s.lastRain ? ` after ${s.lastRain.daysAgo} days without 5 mm of rain` : ''}, and none in the 5-day forecast. A rinse would bring it back.`,
     { lossPct: s.lossPct }, { key: `soiling:${s.resetOn ?? s.ref?.from ?? 'window'}`, windowH: 24 * 120, now, url: '/?go=v-roof' });   // once per dusty spell: the key changes when rain or a cleaning resets it
   return { state: s.state, lossPct: s.lossPct, pushed: r.pushed, skipped: r.skipped ?? null };
 }

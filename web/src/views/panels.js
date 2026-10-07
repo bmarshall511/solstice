@@ -52,6 +52,7 @@ function drawWarranty(S) {
 const span = (a, b) => a.slice(0, 7) === b.slice(0, 7) ? `${MON3(a)}–${+b.slice(8)}` : `${MON3(a)}–${MON3(b)}`;   // Jul 20–26 · Jul 30–Aug 2
 const md = d => `${+d.slice(5, 7)}/${+d.slice(8)}`, MON3 = d => new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 async function loadSoiling(S) { try { S.soiling = await api.soiling(); } catch { /* keep the last */ } drawCleaning(S); }
+const pm = s => s?.lossSd ? ` ± ${s.lossSd}%` : '';   // B2-13: the day-to-day noise band ("5.5% ± 1.2% below clean")
 function drawCleaning(S) {
   const s = S.soiling; if (s === undefined) return;
   const loss = s?.lossPct ?? null, score = s?.score ?? 0;
@@ -71,8 +72,8 @@ function drawCleaning(S) {
   $('cleanTxt').innerHTML = !s ? 'Solstice needs the weather history to compare against; it arrives with the nightly update.'
     : !s.ref ? `${washed} The next ${3 - Math.min(2, s.clearSince)} clear day${3 - s.clearSince === 1 ? '' : 's'} set the new clean level; after that each clear day is compared with it.`
     : loss == null ? `${washed} The clean level is set; a few more clear days and Solstice compares them with it.`
-    : st === 'dusty' ? `On clear days the panels are running about <b style="color:var(--text)">${loss}% below</b> clean${s.kwhPerDay ? `, about ${s.kwhPerDay.toFixed(1)} kWh a day` : ''}. ${s.nextRain ? `About ${Math.round(s.nextRain.mm)} mm of rain is forecast ${new Date(`${s.nextRain.day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' })}, which should wash them; if it doesn't come, a rinse` : 'A rinse'} from the ground, early or late in the day, brings it back.`
-    : st === 'getting' ? `On clear days the panels are running about <b style="color:var(--text)">${loss}% below</b> clean. Worth watching; rain of 5 mm or more usually brings it back.`
+    : st === 'dusty' ? `On clear days the panels are running about <b style="color:var(--text)">${loss}%${pm(s)} below</b> clean${s.kwhPerDay ? `, about ${s.kwhPerDay.toFixed(1)} kWh a day` : ''}. ${s.nextRain ? `About ${Math.round(s.nextRain.mm)} mm of rain is forecast ${new Date(`${s.nextRain.day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' })}, which should wash them; if it doesn't come, a rinse` : 'A rinse'} from the ground, early or late in the day, brings it back.`
+    : st === 'getting' ? `On clear days the panels are running about <b style="color:var(--text)">${loss}%${pm(s)} below</b> clean. Worth watching; rain of 5 mm or more usually brings it back.`
     : `The panels are producing what they did when clean for the same sunlight. No cleaning needed.`;
   drawCleanChart(s);
 }

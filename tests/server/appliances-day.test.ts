@@ -9,7 +9,7 @@ import { createServer, type Server } from 'node:http';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { acPhase, acKwFrom, buildDay, spanOf, type PoolRow } from '../../server/src/appliances/day.js';
-import { AC_DEFAULTS } from '../../server/src/appliances/ac.js';
+import { AC_DEFAULTS, acKwConf } from '../../server/src/appliances/ac.js';
 
 vi.mock('../../server/src/db.js', async importOriginal => {
   const real = await importOriginal<typeof import('../../server/src/db.js')>();
@@ -110,10 +110,13 @@ describe('GET /api/appliances/day', () => {
   it('DAY-4 AC: on, phase, setpoint and indoor from the Nest readings, kW from the learned step; no eco or humidity served', async () => {
     const d = await (await get(`/api/appliances/day?date=${DAY}`)).json();
     expect(d.acKw).toBe(2.02);
-    expect(d.hours[13].ac).toEqual({ on: true, phase: 'pre-cool', setpointF: 74, indoorF: 75, kw: 2.02, meanKw: 2.016 });
-    expect(d.hours[18].ac).toEqual({ on: false, phase: 'coast', setpointF: 78, indoorF: 76.5, kw: 0, meanKw: 0 });
-    expect(d.hours[21].ac).toEqual({ on: true, phase: 'cool', setpointF: 76, indoorF: 76.2, kw: 2.02, meanKw: 1.68 });
-    expect(d.hours[23].ac).toEqual({ on: false, phase: 'idle', setpointF: 76, indoorF: 75.8, kw: 0, meanKw: 0 });
+    // B2-7 (deliberate update: each hour now also carries kwh = Nest cooling minutes × the learned kW, for the Day Ring): 1 PM cooled
+    // all hour (its last reading's 20-minute hold is cut at 60 minutes), 9 PM for 50 minutes
+    expect(d.hours[13].ac).toEqual({ on: true, phase: 'pre-cool', setpointF: 74, indoorF: 75, kw: 2.02, meanKw: 2.016, kwh: 2.016 });
+    expect(d.hours[18].ac).toEqual({ on: false, phase: 'coast', setpointF: 78, indoorF: 76.5, kw: 0, meanKw: 0, kwh: 0 });
+    expect(d.hours[21].ac).toEqual({ on: true, phase: 'cool', setpointF: 76, indoorF: 76.2, kw: 2.02, meanKw: 1.68, kwh: 1.68 });
+    expect(d.hours[23].ac).toEqual({ on: false, phase: 'idle', setpointF: 76, indoorF: 75.8, kw: 0, meanKw: 0, kwh: 0 });
+    expect(d.acConf).toBe('estimated');                          // the learned step's two checks are missing here
     expect(d.hours[2].ac).toBeNull();
     expect(d.coverage.nest).toBeCloseTo(4 / 24, 3);
     expect(JSON.stringify(d)).not.toMatch(/eco|humidity/);
@@ -136,6 +139,16 @@ describe('day.ts pure parts', () => {
     expect(acPhase({ on, setpointF, hour, settings: S })).toBe(phase);
   });
 
+  it('B2-7 acKwConf: measured only when the late step and the regression both agree with the learned step within 15%', () => {
+    const l = (late: number | null, reg: number | null, coolKw: number | null = 2.59) => ({ coolKw, diag: { lateKw: late, regressionKw: reg } });
+    expect(acKwConf(l(2.45, 2.58))).toBe('measured');                           // the live figures of 2026-10-07 (within 6%)
+    expect(acKwConf(l(2.59 * .851, 2.59 * 1.149))).toBe('measured');            // just inside 15% either way
+    expect(acKwConf(l(2.59 * .84, 2.58))).toBe('estimated');
+    expect(acKwConf(l(2.45, 3.1))).toBe('estimated');
+    expect(acKwConf(l(null, 2.58))).toBe('estimated');
+    expect(acKwConf(l(2.45, 2.58, null))).toBe('estimated');                    // no learned step: the heat-model estimate
+    expect(acKwConf(null)).toBe('estimated');
+  });
   it('DAY-7 acKwFrom: learned step, else 1.3 × the heat-model slope within 2–5 kW', () => {
     expect(acKwFrom({ learned: { coolKw: 2.2 } }, { slope: 3 })).toBe(2.2);
     expect(acKwFrom({ learned: { coolKw: null } }, { slope: 3 })).toBeCloseTo(3.9, 6);

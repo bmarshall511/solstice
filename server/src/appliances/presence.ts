@@ -15,6 +15,7 @@
 import type { Express, Request, Response, NextFunction } from 'express';
 import express from 'express';
 import { one, kv } from '../db.js';
+import { patchSettings } from '../settings.js';
 import type { NestState } from './nest.js';
 import { liveTrip, isAway } from '../vacation/trip.js';
 import { finishTrip } from '../vacation/index.js';
@@ -84,7 +85,7 @@ export async function setPresence(siteId: string, v: { state: PresenceState; unt
   const rec: ManualPresence = { state: v.state, at: now, until: v.until, nestEco: nest && now - nest.at <= NEST_MAX_AGE_MS ? !!nest.eco : null };
   await kv.set(presenceKey(siteId), rec);
   const s = await kv.get<Record<string, any>>('settings:owner') ?? {};
-  if (s.ac?.presence !== v.state) await kv.set('settings:owner', { ...s, ac: { ...(s.ac ?? {}), presence: v.state } });
+  if (s.ac?.presence !== v.state) await patchSettings(['ac', 'presence'], v.state, { by: 'presence' });   // B2-10: only the presence key
   return rec;
 }
 

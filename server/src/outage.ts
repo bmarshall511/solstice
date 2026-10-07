@@ -4,6 +4,7 @@
 // It never calls ScreenLogic, Nest or Tesla, so it adds no SDM queries and writes nothing to any device.
 import { tripDays, tripAway } from './vacation/trip.js';
 import { q, one, kv, hourWh } from './db.js';
+import { alwaysOnKw as alwaysOnNights } from './breakdown.js';
 import { localDay, addDays, rfc3339 } from './tesla/client.js';
 import { forecast } from './appliances/autopilot.js';
 import { powerModel, measuredPoints, hourlyRpm, POOL_DEFAULTS, FREEZE_CIRCUIT, type PoolSettings } from './appliances/pool.js';
@@ -90,6 +91,18 @@ export function acDuty(o: { measuredPct: number | null; high: number | null; slo
   return { duty: clamp(Math.max(0, o.high - 80) * o.slope / 24 / Math.max(.5, o.acKw), 0, .6), source: 'estimated' as const };
 }
 
+/**
+ * B2-8 (audit L-09): heating duty (0–1) when the thermostat is in HEAT: today's measured Nest heating duty when there is one; else the
+ * home model's heating kWh at today's low (c × degrees below Th) spread over the day ÷ the heating kW; with no heating term learned,
+ * 50% on a freezing night and nothing above it.
+ */
+export function heatDuty(o: { measuredPct: number | null; low: number | null; c: number; th: number; kw: number }) {
+  if (o.measuredPct != null) return { duty: clamp(o.measuredPct / 100, 0, 1), source: 'nest' as const };
+  if (o.low == null) return { duty: .5, source: 'estimated' as const };
+  if (o.c > 0) return { duty: clamp(Math.max(0, o.th - o.low) * o.c / 24 / Math.max(.5, o.kw), 0, 1), source: 'estimated' as const };
+  return { duty: o.low <= 32 ? .5 : 0, source: 'estimated' as const };
+}
+
 /** Forecast array output by simulation hour: Open-Meteo's hourly sun (kW/m², the hour ending at its timestamp) × the learned yield. */
 export function solarByHour(o: { startDate: string; startHour: number; yieldK: number; sunAt: (date: string, hourEnding: number) => number }) {
   return Array.from({ length: HOURS }, (_, k) => {
@@ -131,9 +144,8 @@ export async function outageDetail(siteId: string, settingsAll: Record<string, a
     one<{ ts: string; load_w: number | null; soc: number | null; storm_mode_active: boolean }>('SELECT ts, load_w, soc, storm_mode_active FROM readings WHERE site_id = $1 ORDER BY ts DESC LIMIT 1', [siteId]),
     q<{ hour: number; kw: number }>(`SELECT hour::int, AVG(kwh)::float8 kw FROM (SELECT day, hour, ${hourWh('home_wh')} / 1000.0 kwh FROM energy
       WHERE site_id = $1 AND day >= $2 AND day < $3 AND (day = ANY($4::text[])) = $5 GROUP BY day, hour) x GROUP BY hour`, [siteId, addDays(today, -14), today, [...trips], away && trips.size > 0]),
-    // 1–5 AM means of the last 30 complete nights (at least 36 of the 48 five-minute buckets)
-    q<{ kw: number }>(`SELECT (SUM(home_wh) / 1000.0 / 4)::float8 kw FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 AND hour BETWEEN 1 AND 4
-      GROUP BY day HAVING COUNT(*) >= 36`, [siteId, addDays(today, -30), today]),
+    // B2-5 (audit L-08): the one always-on definition (breakdown.ts alwaysOnKw) over the last 30 nights, trip nights apart
+    alwaysOnNights(siteId, 30, { now: now.getTime() }),
     q<{ ts: string; duration_s: number }>('SELECT ts, duration_s FROM backup_events WHERE site_id = $1 ORDER BY epoch DESC', [siteId]),
   ]);
   const info = site?.info ?? {};
@@ -143,7 +155,10 @@ export async function outageDetail(siteId: string, settingsAll: Record<string, a
   const profile = Array.from({ length: 24 }, (_, h) => profileRows.find(r => r.hour === h)?.kw ?? null);
   const typical = profile.filter((v): v is number => v != null);
   const drawKw = reading?.load_w != null ? Math.max(0, reading.load_w) / 1000 : profile[Math.floor(startHour)] ?? 2;   // a load Tesla didn't send is not 0 kW
-  const alwaysOnKw = nights.length ? Math.min(...nights.map(n => n.kw)) : typical.length ? Math.min(...typical) : Math.min(drawKw, .6);
+  // the median at-home night (it was the minimum of 30 nightly means, so a trip's empty-house night set it for a month); during a
+  // trip the trip nights' own when there are any
+  const nightKw = away && nights.tripKw != null ? nights.tripKw : nights.kw;
+  const alwaysOnKw = nightKw ?? (typical.length ? Math.min(...typical) : Math.min(drawKw, .6));
   const prof = profile.map(v => v ?? drawKw);
 
   // pool pump: the schedule on the controller as last read (or the plan last applied), watts from the pump's power model
@@ -160,8 +175,12 @@ export async function outageDetail(siteId: string, settingsAll: Record<string, a
   const poolRpm = speeds.get(pool.poolCircuit) || pool.filterRpm, poolKw = W(poolRpm) / 1000, poolHourly = poolKwByHour(schedules, speeds, W);
 
   // AC: the kW learned from Nest load steps (or the heat model's estimate, as the AC card does) × duty
-  const [learned, slopeHit, rt] = await Promise.all([learnAcKw(siteId), kv.get<{ slope: number }>(`${siteId}:ac:slope`), runtimeToday(siteId)]);
-  const slope = slopeHit?.slope ?? null, acKw = learned.coolKw ?? (slope ? clamp(slope * 1.3, 2, 5) : 3.4);
+  const [learned, slopeHit, rt, nest] = await Promise.all([learnAcKw(siteId), kv.get<{ slope: number }>(`${siteId}:ac:slope`), runtimeToday(siteId), kv.get<{ mode?: string }>('nest:last')]);
+  const slope = slopeHit?.slope ?? null, coolKw = learned.coolKw ?? (slope ? clamp(slope * 1.3, 2, 5) : 3.4);
+  // B2-8: with the thermostat in HEAT the rung is the heating draw (learned from heating steps, else the cooling figure as a stand-in) × heating duty
+  const heating = nest?.mode === 'HEAT', acKw = heating ? learned.heatKw ?? coolKw : coolKw;
+  // mockup ah: each hour's typical load scaled to its day's total from the forecast weather (learn/homeModel.ts; 1 without a fit)
+  const hf = await homeForecast(siteId, now.getTime()).catch(() => null);
 
   // forecast: today, tomorrow, and the past days that teach the yield (kWh made per kWh/m² of sun)
   let days: Awaited<ReturnType<typeof forecast>> = [];
@@ -173,11 +192,11 @@ export async function outageDetail(siteId: string, settingsAll: Record<string, a
   const yieldK = pairs.length ? clamp(pairs.reduce((a, p) => a + p[0], 0) / pairs.reduce((a, p) => a + p[1], 0), 2, 9.45) : 9.45 * .8; // .8 × AC rating: the pool planner's rule
   const solarKw = solarByHour({ startDate: today, startHour, yieldK, sunAt: (d, h) => byDate.get(d)?.hourlySun[h] ?? 0 });
   const tomorrowKwh = byDate.get(tomorrow) ? r1(byDate.get(tomorrow)!.sunKwhM2 * yieldK) : null;
-  const { duty, source: dutySource } = acDuty({ measuredPct: rt.duty, high: byDate.get(today)?.high ?? null, slope: slope ?? 2.5, acKw });
+  const { duty, source: dutySource } = heating ? heatDuty({ measuredPct: rt.heatDuty, low: hf?.today?.low ?? null, c: hf?.fit?.c ?? 0, th: hf?.fit?.th ?? 65, kw: acKw })
+    : acDuty({ measuredPct: rt.duty, high: byDate.get(today)?.high ?? null, slope: slope ?? 2.5, acKw });
 
   const usable = usableKwh(soc, capKwh), acAvgKw = acKw * duty;
-  // mockup ah: each hour's typical load scaled to its day's total from the forecast high (learn/homeModel.ts; 1 without a fit)
-  const hf = await homeForecast(siteId, now.getTime()).catch(() => null), scaleByK = Array.from({ length: HOURS }, (_, k) => hf?.scale[addDays(today, Math.floor((Math.floor(startHour) + k) / 24))] ?? 1);
+  const scaleByK = Array.from({ length: HOURS }, (_, k) => hf?.scale[addDays(today, Math.floor((Math.floor(startHour) + k) / 24))] ?? 1);
   const loadIn = { startHour, profile: prof, drawKw, alwaysOnKw, acAvgKw, poolKwByHour: poolHourly, scaleByK };
   const scenarios = Object.fromEntries(SCENARIOS.map(sc => {
     const loadKw = scenarioLoads(loadIn, sc), sim = simulateIsland({ soc0: soc, capKwh, maxKw, solarKw, loadKw });
@@ -195,7 +214,7 @@ export async function outageDetail(siteId: string, settingsAll: Record<string, a
   return {
     at: now.getTime(), date: today, startHour: r3(startHour), readingAt: reading ? Number(reading.ts) : null,
     soc: socKnown == null ? null : r1(soc), capacityKwh: capKwh, measuredKwh: cap?.measuredKwh ?? null, usableKwh: r2(usable), reservePct: info.backup_reserve_percent ?? null, maxKw, batteries, drawKw: r3(drawKw),
-    loads: { alwaysOnKw: r3(alwaysOnKw), poolKw: r3(poolKw), poolRpm, acKw: r2(acKw), acSource: learned.coolKw ? 'measured' : 'estimated', acDuty: r2(duty), dutySource },
+    loads: { alwaysOnKw: r3(alwaysOnKw), poolKw: r3(poolKw), poolRpm, acKw: r2(acKw), acSource: (heating ? learned.heatKw : learned.coolKw) ? 'measured' : 'estimated', acDuty: r2(duty), dutySource, acHeat: heating },
     ladder: ladder({ usableKwh: usable, alwaysOnKw, poolKw, acKw, duty, drawKw }),
     scenarios,
     solar: { tomorrowKwh, cloudy: tomorrowKwh != null && tomorrowKwh < CLOUDY_KWH, yieldK: r2(yieldK) },

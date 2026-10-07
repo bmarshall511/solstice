@@ -149,3 +149,30 @@ describe('pumpRunning', () => {
       { running: true, rpm: null, watts: null }, null, undefined].map(pumpRunning)).toEqual([false, false, false, false, false, false, false]);
   });
 });
+
+/* ---------------------------------------------------------------- B2-6: when the D.E. filter will want cleaning */
+import { filterFit } from '../../server/src/appliances/poolFilter.js';
+describe('filter forecast (B2-6, ideas I-07): a line through the daily watts at the filter RPM, to 88% of the clean baseline', () => {
+  const day = (i: number) => new Date(Date.parse('2026-10-01T12:00:00Z') + i * 864e5).toISOString().slice(0, 10);
+  const falling = Array.from({ length: 10 }, (_, i) => ({ day: day(i), w: 300 - 2 * i }));   // 300 → 282 W, 2 W a day
+  it('a falling line projects the day it crosses 88% of the baseline (264 W): day 18', () => {
+    expect(filterFit(falling, 300, day(9))).toEqual({ thresholdW: 264, points: 10, slopeWPerDay: -2, r2: 1, forecastDay: day(18), conf: 'learned' });
+  });
+  it('fewer than 7 points: no forecast, still learning', () => {
+    expect(filterFit(falling.slice(0, 6), 300, day(5))).toMatchObject({ points: 6, forecastDay: null, conf: 'learning' });
+  });
+  it('a flat or rising line, or no baseline at that speed, has no forecast day; a line already at the threshold says today', () => {
+    expect(filterFit(falling.map(p => ({ ...p, w: 300 })), 300, day(9)).forecastDay).toBeNull();
+    expect(filterFit(falling.map((p, i) => ({ ...p, w: 280 + i })), 300, day(9)).forecastDay).toBeNull();
+    expect(filterFit(falling, null, day(9))).toMatchObject({ thresholdW: null, forecastDay: null });
+    expect(filterFit(falling, 330, day(9)).forecastDay).toBe(day(9));          // 88% of 330 W is 290.4 W: the line (282 W) is past it
+    expect(filterFit(falling, 320, day(9)).forecastDay).toBe(day(10));         // 281.6 W: tomorrow
+  });
+  it('a noisy fit is estimated, a tight one learned', () => {
+    const noisy = falling.map((p, i) => ({ ...p, w: p.w + (i % 2 ? 9 : -9) }));
+    const f = filterFit(noisy, 300, day(9));
+    expect(f.conf).toBe('estimated');
+    expect(f.r2!).toBeLessThan(.6);
+    expect(f.forecastDay).not.toBeNull();
+  });
+});

@@ -11,18 +11,25 @@ export function learnYield(daily, gtiByDate) {
   return pts[Math.floor(pts.length * .6)]; // upper-middle: clear days define "healthy"
 }
 
-/** 48-hour forecast: forecast sunlight × learned yield vs your typical hourly usage, with the Powerwalls simulated. */
-export function forecast48({ w, startDate, startHour, soc0, yieldK, profile, capKwh, maxKw, reservePct, dayScale }) {   // dayScale: mockup ah (server/src/learn/homeModel.ts)
+const fcBand = k => k <= 6 ? 'h1-6' : k <= 24 ? 'h7-24' : 'h25-48';
+
+/** 48-hour forecast: forecast sunlight × learned yield vs your typical hourly usage, with the Powerwalls simulated.
+ *  correction (B2-2, /api/profile, server/src/learn/bias.ts): the 30-day bias factors per horizon band; a day's hours take the
+ *  factor of the band its daily total is scored in, and the points keep the raw solar/home as rs/rh. */
+export function forecast48({ w, startDate, startHour, soc0, yieldK, profile, capKwh, maxKw, reservePct, dayScale, correction }) {   // dayScale: mockup ah (server/src/learn/homeModel.ts)
   const out = []; let soc = soc0 / 100, full = null, low = { soc: 1, t: null };
   const rows = w.hourly.time.map((t, i) => ({ t, i })).filter(r => r.t >= `${startDate}T${String(Math.floor(startHour)).padStart(2, '0')}`).slice(0, 49);
+  const lastK = {};   // each day's 23:00 as a horizon (extrapolated for the last, partial day)
+  rows.forEach(({ t }, k) => { lastK[t.slice(0, 10)] = k + 23 - +t.slice(11, 13); });
   rows.forEach(({ t, i }, k) => {
     // radiation is the mean over the *preceding* hour, so hour i describes (i-1 → i)
     const next = w.hourly.global_tilted_irradiance[i + 1] ?? 0;
-    const s = Math.max(0, next) / 1000 * yieldK, h = (profile[+t.slice(11, 13)] ?? 2) * (dayScale?.[t.slice(0, 10)] ?? 1);
+    const rs = Math.max(0, next) / 1000 * yieldK, rh = (profile[+t.slice(11, 13)] ?? 2) * (dayScale?.[t.slice(0, 10)] ?? 1);
+    const band = fcBand(lastK[t.slice(0, 10)]), s = rs * (correction?.solar?.[band] ?? 1), h = rh * (correction?.home?.[band] ?? 1);
     let n = s - h, b;
     if (n > 0) b = -Math.min(n, maxKw, (1 - soc) * capKwh / .95); else b = Math.min(-n, maxKw, Math.max(0, soc - reservePct / 100) * capKwh * .95);
     soc = clamp(soc + (b < 0 ? -b * .95 : -b / .95) / capKwh, 0, 1);
-    out.push({ k, t, s, h, soc, g: h - s - b });
+    out.push(correction ? { k, t, s, h, soc, g: h - s - b, rs, rh } : { k, t, s, h, soc, g: h - s - b });
     if (full == null && soc > .995) full = t;
     if (k > 1 && soc < low.soc) low = { soc, t };
   });

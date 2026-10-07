@@ -131,7 +131,7 @@ export async function autopilot(siteId: string, o: { settings: PoolSettings; mod
   if (o.act && mode === 'auto' && o.snap && !held && !writing) {
     const applied = await kv.get<any>(`${siteId}:pool:applied`), managed = [o.settings.poolCircuit, o.settings.boostCircuit];
     if (applied?.plan?.schedules && programKey(o.snap.schedules, managed) !== programKey(applied.plan.schedules, managed)) {
-      mode = 'suggest'; await setPoolAutopilot('suggest'); await rebaseline(siteId, o.snap, o.settings, 'controller');
+      mode = 'suggest'; await setPoolAutopilot('suggest', 'outside edit'); await rebaseline(siteId, o.snap, o.settings, 'controller');
       log.unshift({ at: Date.now(), day: today, text: 'The pump schedule was changed outside Solstice, so it stays; Autopilot moved to Suggest', delta: 'kept' });
       await kv.set(`${siteId}:pool:autolog`, log.slice(0, 30));
     }

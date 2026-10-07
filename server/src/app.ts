@@ -39,6 +39,7 @@ import { poolChanges, dismissPoolSuggestion } from './appliances/poolLearn.js';
 import { pruneOld } from './retention.js';
 import { refreshCapacity, capacityOf, modelKwh, type Capacity } from './capacity.js';
 import { homeForecast } from './learn/homeModel.js';
+import { fc48Correction } from './learn/bias.js';
 import { soilingFor, soilingNightly } from './soiling.js';
 import { poolWater, addTest, deleteTest, testError, poolTestReminder } from './appliances/poolTests.js';
 import { spareWatch, spareHistory } from './spare.js';
@@ -55,6 +56,9 @@ import { vacationWatch, heldSummary } from './vacation/watch.js';
 import { tripReport, reportPush, estimateTrip } from './vacation/report.js';
 import { tripPlanDay } from './appliances/autopilot.js';
 import { confidenceMap } from './learn/confidence.js';
+import { patchSettings, changedKeys, PREV_KEY } from './settings.js';
+import { ledger, cronHealth, cronWatch, markOf } from './cronLedger.js';
+import { INFLATED_WH } from './learn/rules.js';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -226,24 +230,26 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
   if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
   const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL');
   const out: Record<string, unknown> = {};
-  const t0 = Date.now();
+  const t0 = Date.now(), L = ledger('sync', t0);   // B2-11: the run's ledger (kv cron:sync:last)
   // the sync gets 30 s, leaving the learning layer, the nightly alerts and the prune room inside Vercel's 60 s (it had 50 s)
-  for (const s of sites) out[s.id] = await syncSite(s.id, Math.floor(30_000 / sites.length), { nightly: true }).catch(e => ({ error: e.message }));
-  await q(`DELETE FROM readings WHERE ts < $1`, [Date.now() - 3 * 864e5]); // live snapshots are short-lived; history lives in `energy`
-  await pruneShares().catch(e => console.error('[solstice] pruning share links', e)); // revoked/expired links leave the owner's list after 30 days
-  for (const s of sites) out[`capacity:${s.id}`] = await refreshCapacity(s.id).catch(e => ({ error: e.message }));   // capacity.ts: before the learning layer's forecast reads it
-  out.pruned = await pruneOld().catch(e => { console.error('[solstice] pruning old rows', e); return { error: e.message }; });   // retention.ts: the tables that grew forever
+  for (const s of sites) out[s.id] = await L.step('sync', () => syncSite(s.id, Math.floor(30_000 / sites.length), { nightly: true })).catch(e => ({ error: e.message }));
+  await L.step('readings', () => q(`DELETE FROM readings WHERE ts < $1`, [Date.now() - 3 * 864e5])); // live snapshots are short-lived; history lives in `energy`
+  await L.step('shares', () => pruneShares()).catch(e => console.error('[solstice] pruning share links', e)); // revoked/expired links leave the owner's list after 30 days
+  for (const s of sites) out[`capacity:${s.id}`] = await L.step('capacity', () => refreshCapacity(s.id)).catch(e => ({ error: e.message }));   // capacity.ts: before the learning layer's forecast reads it
+  out.pruned = await L.step('prune', () => pruneOld()).catch(e => { console.error('[solstice] pruning old rows', e); return { error: e.message }; });   // retention.ts: the tables that grew forever
 
   // learning layer (server/src/learn/nightly.ts): score yesterday's predictions, trims, anomalies, today's predictions; skips what won't fit by 55 s
-  for (const s of sites) out[`learn:${s.id}`] = await runLearn(s.id, { deadline: t0 + 55_000 }).catch(e => ({ error: e.message }));
+  for (const s of sites) out[`learn:${s.id}`] = await L.step('learn', () => runLearn(s.id, { deadline: t0 + 55_000 })).catch(e => ({ error: e.message }));
   // the sync and learning core are done: mark it now, so a slow tail (alerts, trip report, prune) cut off at 60 s can't fire the
   // 5-minute watchdog (below), which alerts when this is more than 26 h old (code review C-06)
   await kv.set(SYNC_DONE_KEY, Date.now());
   // watch.ts: bill due and the other nightly alert checks; a step with under 5 s left before the deadline is skipped and said so
-  for (const s of sites) out[`watch:${s.id}`] = await nightlyWatch(s.id, Date.now(), { deadline: t0 + 55_000 });
+  for (const s of sites) out[`watch:${s.id}`] = await nightlyWatch(s.id, Date.now(), { deadline: t0 + 55_000, onStep: (n, ms, r) => L.mark(`watch.${n}`, markOf(r, ms)) });
   // raw per-panel readings older than 90 days go, after the learning layer has written the day's per-panel figures (pvs.ts)
-  out.pvsPrune = Date.now() - t0 < 55_000 ? await prunePvs().catch(e => ({ error: e.message })) : { skipped: 'out of time; tomorrow night' };
+  const pvsTime = Date.now() - t0 < 55_000; if (!pvsTime) L.mark('pvsPrune', 'skipped');
+  out.pvsPrune = pvsTime ? await L.step('pvsPrune', () => prunePvs()).catch(e => ({ error: e.message })) : { skipped: 'out of time; tomorrow night' };
   out.ms = Date.now() - t0;
+  await L.finish();
   res.json(out);
 }));
 
@@ -285,7 +291,7 @@ export function settingsPatchError(b: unknown): string | null {
 app.put('/api/settings', express.json({ limit: '8kb' }), wrap(async (req, res) => {
   const bad = settingsPatchError(req.body); if (bad) return res.status(400).json({ error: bad });
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify(req.body)]);
-  else { const cur = await kv.get<object>('settings:owner') ?? {}; await kv.set('settings:owner:prev', cur); await kv.set('settings:owner', { ...cur, ...req.body }); }   // one level of undo
+  else { const { before } = await patchSettings([], req.body, { by: 'you' }); await kv.set(PREV_KEY, before); }   // B2-10: one atomic merge; one level of undo
   res.json({ ok: true });
 }));
 
@@ -325,7 +331,7 @@ app.get('/api/now', wrap(async (req, res) => {
       gridStatus: r.grid_status, islandStatus: r.island_status, stormActive: !!r.storm_mode_active },
     today: await one(`SELECT ${kwhCols} FROM energy WHERE site_id = $1 AND day = $2`, [id, localDay()]),
     site: summary(await siteInfo(id), await capacityOf(id)), outage,
-    health: { lastLive: lastLive ?? null, lastHistory: lastHistory ?? null, stale: !r || Date.now() - Number(r.ts) > 3 * 60_000, liveError, errors },   // by the reading's own time (mockup x), not the fetch's
+    health: { lastLive: lastLive ?? null, lastHistory: lastHistory ?? null, stale: !r || Date.now() - Number(r.ts) > 3 * 60_000, liveError, errors, crons: await cronHealth() },   // crons: B2-11 (owner only; redact.ts leaves it out)   // by the reading's own time (mockup x), not the fetch's
   });
 }));
 
@@ -342,8 +348,11 @@ app.get('/api/day', wrap(async (req, res) => {
   const b = await q(`SELECT ts, solar_wh, home_wh, import_wh, export_wh, charge_wh, discharge_wh FROM energy WHERE site_id = $1 AND day = $2 ORDER BY epoch`, [id, date]);
   const s = await q(`SELECT ts, soe FROM soe WHERE site_id = $1 AND day = $2 ORDER BY epoch`, [id, date]);
   const t = (ts: string) => +ts.slice(11, 13) + +ts.slice(14, 16) / 60;
+  // B2-12 (b): the day's peaks leave out solar buckets above the inverter limit (Tesla's bucket inflation, not output)
+  const ok = b.filter(x => !(x.solar_wh > INFLATED_WH));
   res.json({ date,
     buckets: b.map(x => ({ t: t(x.ts), solar: r2(x.solar_wh * 12 / 1000), home: r2(x.home_wh * 12 / 1000), grid: r2((x.import_wh - x.export_wh) * 12 / 1000), battery: r2((x.discharge_wh - x.charge_wh) * 12 / 1000) })),
+    peaks: { solarKw: r2(Math.max(0, ...ok.map(x => x.solar_wh * 12 / 1000))), homeKw: r2(Math.max(0, ...b.map(x => x.home_wh * 12 / 1000))), inflated: b.length - ok.length },
     soe: s.map(x => ({ t: t(x.ts), soc: x.soe })),
     totals: await one(`SELECT ${kwhCols} FROM energy WHERE site_id = $1 AND day = $2`, [id, date]) });
 }));
@@ -383,7 +392,8 @@ app.get('/api/profile', wrap(async (req, res) => {
   res.json({ days, hours: await q(`SELECT hour::int, (SUM(h) FILTER (WHERE NOT (day = ANY($5::text[]))) / 1000.0 / GREATEST(1, $4 - cardinality($5::text[])))::float8 home, (SUM(s) / 1000.0 / $4)::float8 solar
     FROM (SELECT day, hour, ${hourWh('home_wh')} h, ${hourWh('solar_wh')} s FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day, hour) x GROUP BY hour ORDER BY hour`, [site(req), from, to, days, trips]),
     conf: await confidenceMap(site(req), ['fc48.solar', 'fc48.home', 'fc48.soc']),   // learning layer: trust in the 48-hour forecast built on this profile
-    scale: (await homeForecast(site(req)).catch(() => null))?.scale ?? {} }); // mockup ah: each day's total from its forecast high (learn/homeModel.ts)
+    scale: (await homeForecast(site(req)).catch(() => null))?.scale ?? {},   // mockup ah: each day's total from its forecast high (learn/homeModel.ts)
+    correction: await fc48Correction(site(req)) }); // B2-2: the 30-day bias per horizon band the 48-hour road divides out (learn/bias.ts)
 }));
 
 app.get('/api/grid-days', wrap(async (req, res) => {
@@ -438,7 +448,8 @@ app.delete('/api/bills/:date', wrap(async (req, res) => { await q('DELETE FROM b
 app.get('/api/events', wrap(async (req, res) => res.json(await q('SELECT id, type, day, note, created_at FROM events WHERE site_id = $1 ORDER BY day DESC, id DESC', [site(req)]))));
 app.post('/api/events', express.json(), wrap(async (req, res) => {
   const { type, day, note } = req.body ?? {};
-  if (!['cleaned', 'note'].includes(type) || !/^\d{4}-\d{2}-\d{2}$/.test(day ?? '')) return res.status(400).json({ error: 'type and day required' });
+  // 'cleaned': the panels (soiling.ts); 'filter_cleaned': the pool's D.E. filter (B2-6: the pump's clean-filter baseline restarts from it)
+  if (!['cleaned', 'filter_cleaned', 'note'].includes(type) || !/^\d{4}-\d{2}-\d{2}$/.test(day ?? '')) return res.status(400).json({ error: 'type and day required' });
   res.json(await one('INSERT INTO events (site_id, type, day, note) VALUES ($1, $2, $3, $4) RETURNING id, type, day, note', [site(req), type, day, note ?? null]));
 }));
 app.delete('/api/events/:id', wrap(async (req, res) => { await q('DELETE FROM events WHERE site_id = $1 AND id = $2', [site(req), Number(req.params.id)]); res.json({ ok: true }); }));
@@ -542,7 +553,7 @@ app.post('/api/appliances/pool/suggestion', express.json({ limit: '1kb' }), wrap
   if (action === 'dismiss') await dismissPoolSuggestion(sid, key);
   else {
     const patch = m[1] === 'skim' ? { skimAt: Number(m[2]) } : { turnoverGoal: Number(m[2]) }, bad = m[1] === 'goal' ? goalPatchError(patch) : null; if (bad) return res.status(400).json({ error: bad });
-    await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), pool: { ...(settings.pool ?? {}), ...patch } });
+    await patchSettings(['pool'], patch, { merge: true, by: 'you' });   // B2-10: only the accepted key
   }
   res.json(await poolDetail(sid, await settingsFor(req), await rateFor(sid)));
 }));
@@ -572,7 +583,7 @@ app.post('/api/appliances/pool/goal', express.json({ limit: '1kb' }), wrap(async
   const patch = Object.fromEntries(['turnoverGoal', 'skimHours'].filter(k => k in req.body).map(k => [k, req.body[k]]));
   const cur = (await settingsFor(req)).pool ?? {};
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ pool: { ...cur, ...patch } })]);
-  else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), pool: { ...cur, ...patch } });
+  else await patchSettings(['pool'], patch, { merge: true, by: 'you' });   // B2-10: only the goal's keys
   const sid = site(req);
   res.json(await poolDetail(sid, await settingsFor(req), await rateFor(sid)));
 }));
@@ -580,7 +591,7 @@ app.post('/api/appliances/pool/autopilot', express.json(), wrap(async (req, res)
   const mode = String(req.body?.mode ?? ''); if (!['off', 'suggest', 'auto'].includes(mode)) return res.status(400).json({ error: 'mode must be off, suggest or auto' });
   const cur = (await settingsFor(req)).pool ?? {};
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ pool: { ...cur, autopilot: mode } })]);
-  else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), pool: { ...cur, autopilot: mode } });
+  else await patchSettings(['pool', 'autopilot'], mode, { by: 'you' });   // B2-10: atomic, and logged in settings:changes
   // choosing Auto means "plan over what runs now": the controller's programs become the baseline, so they are not taken for an outside edit
   const snap = mode === 'auto' ? await kv.get<any>(`${site(req)}:pool:last`) : null;
   if (snap?.schedules) await rebaseline(site(req), snap, { ...POOL_DEFAULTS, ...cur }, 'auto');
@@ -589,8 +600,10 @@ app.post('/api/appliances/pool/autopilot', express.json(), wrap(async (req, res)
 /** Nightly at 01:15 UTC (8:15 PM CDT, 7:15 PM CST): Autopilot re-plans tomorrow for every site; Auto mode writes it, Suggest stores it. */
 app.get('/api/cron/pool', wrap(async (req, res) => {
   if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
-  const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL'), out: Record<string, unknown> = {};
-  for (const s of sites) { const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; await finishClearUpIfDue(s.id, settings, await rateFor(s.id)).catch(e => console.error('[solstice] clear-up end failed', e.message)); out[s.id] = await poolDetail(s.id, settings, await rateFor(s.id), { fresh: true, act: true }).then(d => d.autopilot).catch(e => ({ error: e.message })); }
+  const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL'), out: Record<string, unknown> = {}, L = ledger('pool');   // B2-11: kv cron:pool:last
+  for (const s of sites) { const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; await L.step('clearUp', async () => finishClearUpIfDue(s.id, settings, await rateFor(s.id))).catch(e => console.error('[solstice] clear-up end failed', e.message));
+    out[s.id] = await L.step('plan', async () => poolDetail(s.id, settings, await rateFor(s.id), { fresh: true, act: true }).then(d => d.autopilot)).catch(e => ({ error: e.message })); }
+  await L.finish();
   res.json(out);
 }));
 app.post('/api/appliances/pool/restore', wrap(async (req, res) => { await restorePrevious(site(req), await readPool()); res.json({ ok: true }); }));
@@ -629,7 +642,7 @@ app.post('/api/appliances/ac/settings', express.json(), wrap(async (req, res) =>
   const bad = acPatchError(patch, cur); if (bad) return res.status(400).json({ error: bad });   // ac.ts: known keys, 65–85°, lows ≤ highs
   const next = patchedAc(cur, patch);   // mockup ag: a target change stores all four targets and the band they stand for
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ ac: next })]);
-  else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ac: next });
+  else await patchSettings(['ac'], changedKeys(cur, next), { merge: true, by: 'you' });   // B2-10: only the keys this change touched
   if (patch.presence === 'home' && (await liveTrip(site(req)))?.state === 'active') await finishTrip(site(req), 'you');   // Home during a trip is "I'm home" (mockup ak)
   if (patch.presence) await setPresence(site(req), { state: patch.presence, until: null });   // presence.ts: the switch is the manual mark
   // marking away/home takes effect right away when the plan is approved or Autopilot is Auto
@@ -678,7 +691,7 @@ app.post('/api/appliances/ac/nudge', express.json({ limit: '1kb' }), wrap(async 
   const h = new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hourCycle: 'h23' }), night = +h >= d.settings.nightFrom || +h < d.settings.nightTo;
   const cur = settings.ac ?? {}, patch = night ? { nightF: d.settings.nightF + dir } : { dayF: d.settings.dayF + dir }, bad = acPatchError(patch, cur);
   if (bad) return res.status(400).json({ error: bad });
-  await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ac: patchedAc(cur, patch) });
+  await patchSettings(['ac'], changedKeys(cur, patchedAc(cur, patch)), { merge: true, by: 'you' });   // B2-10
   const now = await settingsFor(req);
   if (d.settings.autopilot === 'auto') { await resumeHold(id); const rec = await kv.get<any>(`${id}:ac:plan`); if (rec) { rec.lastStepHour = null; await kv.set(`${id}:ac:plan`, rec); }
     await acTick(id, now, rate, slope).catch(e => console.warn(`[solstice] tick after nudge: ${e?.message ?? e}`)); }
@@ -693,7 +706,7 @@ app.post('/api/appliances/ac/suggestion', express.json({ limit: '1kb' }), wrap(a
   if (action === 'dismiss') await dismissSuggestion(id, key);
   else if (action === 'accept') {
     const cur = settings.ac ?? {}, patch = suggestionPatch(sg), bad = acPatchError(patch, cur); if (bad) return res.status(400).json({ error: bad });
-    await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ac: patchedAc(cur, patch) });
+    await patchSettings(['ac'], changedKeys(cur, patchedAc(cur, patch)), { merge: true, by: 'you' });   // B2-10
     await dismissSuggestion(id, key);   // accepted: don't offer it again
   } else return res.status(400).json({ error: 'action must be accept or dismiss' });
   res.json(await acDetail(id, await settingsFor(req), rate, slope));
@@ -760,6 +773,10 @@ nightlySteps.alwaysOn = alwaysOnWatch;   // breakdown.ts: one push when the alwa
 /* Watchdog: Vercel never retries a cron, so a nightly run that died (timeout, deploy, outage) would be silent. The 5-minute tick
  * pushes one alert a day while the last finished nightly run is more than 26 hours old. */
 const SYNC_DONE_KEY = 'cron:sync:done';
+// B2-11 (cronLedger.ts): the crons watch each other: a quiet 5-minute tick, a missed pool plan, a nightly over 50 s; the nightly
+// re-checks the 5-minute tick (if every tick has stopped, only it can tell)
+fiveMinuteSteps.crons = (id, now) => cronWatch(id, now);
+nightlySteps.crons = (id, now) => cronWatch(id, now, ['nest']);
 fiveMinuteSteps.watchdog = async (id, now) => {
   const done = await kv.get<number>(SYNC_DONE_KEY); if (done == null) { await kv.set(SYNC_DONE_KEY, now); return { armed: true }; }   // first run after deploy
   const h = (now - done) / 3600e3; if (h <= 26) return { ok: true, hours: Math.round(h * 10) / 10 };
@@ -774,16 +791,17 @@ fiveMinuteSteps.watchdog = async (id, now) => {
 app.get('/api/cron/nest', wrap(async (req, res) => {
   if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
   // vacation/index.ts: a trip whose leave time has come starts before the thermostat sample, so the AC plan goes away in the same tick
-  const vacation: Record<string, unknown> = {};
-  for (const id of await cronSites()) vacation[id] = await vacationTick(id).catch(e => ({ error: (e as Error).message }));
+  const vacation: Record<string, unknown> = {}, L = ledger('nest');   // B2-11: kv cron:nest:last
+  for (const id of await cronSites()) vacation[id] = await L.step('vacation', () => vacationTick(id)).catch(e => ({ error: (e as Error).message }));
   // a failed sampling tick (the pool read is bounded at 20 s by withUnit) never stops the watch steps below (code review C-01)
-  const tick = await cronTick(Date.now(), {
+  const tick = await L.step('sampling', () => cronTick(Date.now(), {
     sites: async () => (await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL')).map(s => s.id),
     acTick: async id => acTick(id, await kv.get<Record<string, any>>('settings:owner') ?? {}, await rateFor(id), await acSlope(id)),
-  }).catch((e: Error) => { console.error(`[solstice] cron sampling failed: ${e.message}`); return { error: e.message }; });
+  })).catch((e: Error) => { console.error(`[solstice] cron sampling failed: ${e.message}`); return { error: e.message }; });
   // watch.ts: storm, Storm Watch and ERCOT alerts every tick (read-only), plus what other modules register
   const watch: Record<string, unknown> = {};
-  for (const id of await cronSites()) watch[id] = await fiveMinuteWatch(id);
+  for (const id of await cronSites()) watch[id] = await fiveMinuteWatch(id, Date.now(), (n, ms, r) => L.mark(`watch.${n}`, markOf(r, ms)));
+  await L.finish();   // after the watch: its cron step read the previous tick's record to see a gap
   res.json({ ...tick, vacation, watch });
 }));
 /* ---------- Nest change events (Google Pub/Sub push; appliances/nestEvents.ts) ----------

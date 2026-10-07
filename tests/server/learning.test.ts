@@ -7,14 +7,15 @@ import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import { q } from '../../server/src/db.js';
 import { planFor, AC_DEFAULTS, type AcPlan, type AcSettings } from '../../server/src/appliances/ac.js';
 import { guardCoolSetpoint, AUTOPILOT_OFF } from '../../server/src/appliances/guards.js';
-import { MODELS, MODEL_IDS, FORBIDDEN_KEY, type ModelDef } from '../../server/src/learn/models.js';
+import { MODELS, MODEL_IDS, FORBIDDEN_KEY, versionOf, type ModelDef } from '../../server/src/learn/models.js';
 import { pickInputs, logPrediction, forgetWritten } from '../../server/src/learn/store.js';
-import { confidence, badge } from '../../server/src/learn/confidence.js';
+import { confidence, badge, acDormancy, whyText } from '../../server/src/learn/confidence.js';
 import { acSavings, controlDecision, CONTROL_EVERY, trimFor, applyTrim, precoolOutcome, measuredSavings, windowKwh, COOLING_HOURS,
   type ControlState, type PrecoolDay, type AcDay } from '../../server/src/learn/ac.js';
-import { pumpRules, acOverrunRule, solarStepRule, alwaysOnRule, dataGapRules, type MetricsByDay, type RuleCtx, type OpenAnomaly } from '../../server/src/learn/rules.js';
-import { scoreDay, scoreMetrics, poolActual } from '../../server/src/learn/nightly.js';
+import { pumpRules, acOverrunRule, solarStepRule, alwaysOnRule, dataGapRules, pvsDriftRule, inflatedRule, socJumpRule, meterGapRule, INFLATED_WH, type MetricsByDay, type RuleCtx, type OpenAnomaly } from '../../server/src/learn/rules.js';
+import { scoreDay, scoreMetrics, poolActual, runDayPair, modelVersions } from '../../server/src/learn/nightly.js';
 import { forecast48, learnYield } from '../../server/src/learn/forecast48.js';
+import { biasFactors } from '../../server/src/learn/bias.js';
 // @ts-ignore: the browser module is plain JS without types; the twin must match it
 import * as web from '../../web/src/lib/model.js';
 import { sunPeak } from '../fixtures/forecast.js';
@@ -49,7 +50,8 @@ describe('prediction logging', () => {
     expect(q).toHaveBeenCalledTimes(1);
     const [sql, params] = vi.mocked(q).mock.calls[0];
     expect(sql).toContain('ON CONFLICT (site_id, model, target_day, target_hour, horizon) DO NOTHING');
-    expect(params).toEqual(['s', ['fc48.solar', 'home.alwaysOn'], ['2026-09-25', '2026-09-26'], [13, -1], [8, 0], [4.2, .52], ['kWh', 'kW'], [1000, 1000], ['{"k":8}', '{}']]);
+    // B2-3: every row carries its model's version (deliberate update: inputs used to be '{"k":8}' and '{}')
+    expect(params).toEqual(['s', ['fc48.solar', 'home.alwaysOn'], ['2026-09-25', '2026-09-26'], [13, -1], [8, 0], [4.2, .52], ['kWh', 'kW'], [1000, 1000], ['{"k":8,"version":2}', '{"version":3}']]);
   });
   it('`once` writes a key at most once per instance (the AC plan is recomputed on every read)', async () => {
     vi.mocked(q).mockResolvedValue([{ id: 1 }]);
@@ -62,15 +64,48 @@ describe('prediction logging', () => {
 
 /* ------------------------------------------------------------------ scoring arithmetic */
 describe('scoring arithmetic', () => {
-  it('a kWh-per-hour model: sums the day, relative error on a floored denominator, and per-band error', () => {
-    const s = scoreDay(MODELS['fc48.solar'], [{ predicted: 2, actual: 1.5, band: 'h1-6' }, { predicted: .1, actual: 0, band: 'h1-6' }, { predicted: 4, actual: 5, band: 'h7-24' }])!;
-    // e = +.5, +.1, −1; den = 1.5, .3 (the floor), 5; |rel| = 1/3, 1/3, .2
-    expect(s.pred).toBeCloseTo(6.1, 10); expect(s.actual).toBeCloseTo(6.5, 10);
-    expect(s.err).toBeCloseTo(-.4 / 3, 10); expect(s.abs).toBeCloseTo(1.6 / 3, 10); expect(s.ape).toBeCloseTo((2 / 3 + .2) / 3, 10); expect(s.den).toBeCloseTo(6.8 / 3, 10);
+  // B2-1 (audit L-03): deliberately replaces "a kWh-per-hour model sums the day": the 48-hour kWh models now score one daily total
+  // per (day, run), so the day's predicted/actual are means over the runs (the real daily total), and each band has its own MAPE.
+  it('a daily-total model: each run is one pair, the day keeps the real total, relative error on a floored denominator, per-band MAE and MAPE', () => {
+    const s = scoreDay(MODELS['fc48.solar'], [{ predicted: 44, actual: 40, band: 'h25-48' }, { predicted: 38, actual: 40, band: 'h7-24' }, { predicted: .5, actual: 0, band: 'h7-24' }])!;
+    // e = +4, −2, +.5; den = 40, 40, 1 (the floor); |rel| = .1, .05, .5
+    expect(s.pred).toBeCloseTo(82.5 / 3, 10); expect(s.actual).toBeCloseTo(80 / 3, 10);
+    expect(s.err).toBeCloseTo(2.5 / 3, 10); expect(s.abs).toBeCloseTo(6.5 / 3, 10); expect(s.ape).toBeCloseTo(.65 / 3, 10); expect(s.den).toBeCloseTo(81 / 3, 10);
     expect(s.n).toBe(3);
-    expect(s.bands['h1-6']).toBeCloseTo(.3, 10); expect(s.bands['h7-24']).toBeCloseTo(1, 10);
-    expect(scoreMetrics('fc48.solar', s).map(m => m[0])).toEqual(['score:fc48.solar:pred', 'score:fc48.solar:actual', 'score:fc48.solar:err', 'score:fc48.solar:abs',
-      'score:fc48.solar:den', 'score:fc48.solar:n', 'score:fc48.solar:ape', 'score:fc48.solar:abs@h1-6', 'score:fc48.solar:abs@h7-24']);
+    expect(s.bands['h25-48']).toEqual({ abs: 4, err: 4, ape: .1, den: 40, n: 1 });
+    expect(s.bands['h7-24'].abs).toBeCloseTo(1.25, 10); expect(s.bands['h7-24'].err).toBeCloseTo(-.75, 10); expect(s.bands['h7-24'].ape).toBeCloseTo(.275, 10);
+    expect(scoreMetrics('fc48.solar', s).map(m => m[0])).toEqual(['score:fc48.solar:v', 'score:fc48.solar:pred', 'score:fc48.solar:actual', 'score:fc48.solar:err', 'score:fc48.solar:abs',
+      'score:fc48.solar:den', 'score:fc48.solar:n', 'score:fc48.solar:ape',
+      'score:fc48.solar:abs@h25-48', 'score:fc48.solar:err@h25-48', 'score:fc48.solar:den@h25-48', 'score:fc48.solar:n@h25-48', 'score:fc48.solar:ape@h25-48',
+      'score:fc48.solar:abs@h7-24', 'score:fc48.solar:err@h7-24', 'score:fc48.solar:den@h7-24', 'score:fc48.solar:n@h7-24', 'score:fc48.solar:ape@h7-24']);
+  });
+  describe('B2-1: one daily-total pair per (day, run)', () => {
+    const day = '2026-09-24', at = (h: number, m = 15) => Date.parse(`${day}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00-05:00`);
+    const sun = Array.from({ length: 24 }, (_, h) => h >= 7 && h <= 18 ? 3 : 0);       // 36 kWh made
+    const actual = new Map(sun.map((v, h) => [h, v]));
+    // yesterday's 05:15 run reaches the whole day (k 19–42); today's covers 6–23 (k 1–18); the one from two days ago only 0–5 (k 43–48)
+    const yRun = sun.map((v, h) => ({ hour: h, predicted: v * 1.1, horizon: 19 + h, madeAt: at(5) - 864e5 }));
+    const tRun = sun.slice(6).map((v, i) => ({ hour: 6 + i, predicted: v + (6 + i === 12 ? 1 : 0), horizon: 1 + i, madeAt: at(5) }));
+    const oldRun = sun.slice(0, 6).map((v, h) => ({ hour: h, predicted: v, horizon: 43 + h, madeAt: at(5) - 2 * 864e5 }));
+    it('two runs forecasting the same day score once each, and actual is the daily total', () => {
+      const a = runDayPair(day, yRun, actual, 24)!, b = runDayPair(day, tRun, actual, 24)!;
+      expect(a).toEqual({ predicted: expect.closeTo(39.6, 10), actual: 36, band: 'h25-48' });
+      expect(b).toEqual({ predicted: 37, actual: 36, band: 'h7-24' });   // hours 0–5 had begun: measured on both sides
+      const s = scoreDay(MODELS['fc48.solar'], [a, b])!;
+      expect([s.n, s.actual]).toEqual([2, 36]);
+      expect(s.ape).toBeCloseTo((.1 + 1 / 36) / 2, 10);
+    });
+    it('a run that doesn’t reach the end of the day, a day with an hour of energy missing, or a run with nothing left to forecast is not scored', () => {
+      expect(runDayPair(day, oldRun, actual, 24)).toBeNull();
+      expect(runDayPair(day, tRun.filter(r => r.hour !== 15), actual, 24)).toBeNull();
+      expect(runDayPair(day, yRun, new Map([...actual].filter(([h]) => h !== 3)), 24)).toBeNull();
+      expect(runDayPair(day, [{ hour: 12, predicted: 99, horizon: 1, madeAt: at(12, 30) }], actual, 24)).toBeNull();
+    });
+    it('a spring-forward day has 23 hours', () => {
+      const d = '2027-03-14', act = new Map([...actual].filter(([h]) => h !== 2));
+      const run = [...act].map(([h, v]) => ({ hour: h, predicted: v, horizon: 19 + h, madeAt: Date.parse('2027-03-13T05:15:00-06:00') }));
+      expect(runDayPair(d, run, act, 23)).toEqual({ predicted: 36, actual: 36, band: 'h25-48' });
+    });
   });
   it('an absolute-unit model (battery %) averages the day and has no percent error', () => {
     const s = scoreDay(MODELS['fc48.soc'], [{ predicted: 80, actual: 75 }, { predicted: 60, actual: 70 }])!;
@@ -215,6 +250,14 @@ describe('trims from the indoor trajectory', () => {
   it('fewer than three pre-cool days: no trim; only the last three count', () => {
     expect(trimFor([precoolDay('2026-09-20', { rate: 2 }), precoolDay('2026-09-21', { rate: 2 })])).toBeNull();
     expect(trimFor([precoolDay('2026-09-18', { rate: 2 }), precoolDay('2026-09-19', { rate: 2 }), precoolDay('2026-09-20'), precoolDay('2026-09-21'), precoolDay('2026-09-22')])).toBeNull();
+  });
+
+  it('B2-4: only pre-cool days of the last 21 days count (O-03: a 10-day-old trim kept being proposed every night)', () => {
+    const days = [precoolDay('2026-09-26', { rate: 2 }), precoolDay('2026-09-27', { rate: 2 }), precoolDay('2026-09-28', { rate: 2 })];
+    expect(trimFor(days, '2026-10-07')).toMatchObject({ what: 'coast', amount: -30 });                 // 9 days old: still evidence
+    expect(trimFor(days, '2026-10-17')).toMatchObject({ what: 'coast', amount: -30 });                 // Sep 26 is the 21st day back
+    expect(trimFor(days, '2026-10-18')).toBeNull();                                                     // Sep 26 has left the window
+    expect(trimFor([...days, precoolDay('2026-10-07', { rate: 2 })], '2026-10-07')).toMatchObject({ reason: expect.stringContaining('Sep 26') });   // today's own day doesn't count
   });
 
   const reason = 'test';
@@ -374,10 +417,150 @@ describe('forecast48.ts is the browser’s model, line for line', () => {
     const o = { w, startDate: '2026-09-25', startHour, soc0, yieldK: 8.2, profile, capKwh: 27, maxKw: 10, reservePct: 20 };
     expect(forecast48(o)).toEqual(web.forecast48(o));
   });
+  it('with a bias correction too (B2-2)', () => {
+    const o = { w, startDate: '2026-09-25', startHour: 5, soc0: 62, yieldK: 8.2, profile, capKwh: 27, maxKw: 10, reservePct: 20,
+      correction: { solar: { 'h7-24': .9, 'h25-48': 1.2 }, home: { 'h25-48': .8 } } };
+    expect(forecast48(o)).toEqual(web.forecast48(o));
+  });
   it('learnYield matches too', () => {
     const daily = [50, 60, 70, 80, 90, 1, 30].map((solar, i) => ({ date: addDays('2026-09-01', i), solar }));
     const g = Object.fromEntries(daily.map((d, i) => [d.date, [10, 10, 9, 11, 10, 10, 2][i]]));
     expect(learnYield(daily, g)).toBe(web.learnYield(daily, g));
     expect(learnYield([], {})).toBe(web.learnYield([], {}));
+  });
+});
+
+/* ------------------------------------------------------------------ B2-2: bias feedback */
+describe('B2-2: the 30-day bias per horizon band divided out of the shown 48-hour forecast', () => {
+  const day = (i: number) => addDays('2026-09-01', i);
+  // B2-8: each model's current version by default (fc48.home is at 3 now; this was a fixed 2)
+  const rows = (model: string, b: string, n: number, err: number, den: number, v = MODELS[model as keyof typeof MODELS].version) => Array.from({ length: n }, (_, i) => [{ day: day(i), metric: `score:${model}:v`, value: v },
+    { day: day(i), metric: `score:${model}:err@${b}`, value: err }, { day: day(i), metric: `score:${model}:den@${b}`, value: den }]).flat();
+  it('a band with 7 scored days gets 1 ÷ (1 + bias); fewer than 7 gets none', () => {
+    const f = biasFactors([...rows('fc48.solar', 'h25-48', 7, 4, 40), ...rows('fc48.solar', 'h7-24', 6, 4, 40), ...rows('fc48.home', 'h7-24', 10, -3, 30)]);
+    expect(f).toEqual({ solar: { 'h25-48': .909 }, home: { 'h7-24': 1.111 } });
+  });
+  it('B2-3: days an older model version scored don’t count toward the 7', () => {
+    expect(biasFactors(rows('fc48.solar', 'h25-48', 7, 4, 40, 1))).toEqual({ solar: {}, home: {} });
+    expect(biasFactors(rows('fc48.solar', 'h25-48', 7, 4, 40).filter(r => !r.metric.endsWith(':v')))).toEqual({ solar: {}, home: {} });   // no v = version 1
+  });
+  it('the factor is clamped to ±25%', () => {
+    expect(biasFactors([...rows('fc48.solar', 'h7-24', 8, 30, 40), ...rows('fc48.home', 'h25-48', 8, -20, 40)])).toEqual({ solar: { 'h7-24': .75 }, home: { 'h25-48': 1.25 } });
+  });
+  const time = Array.from({ length: 72 }, (_, i) => `${addDays('2026-09-25', Math.floor(i / 24))}T${String(i % 24).padStart(2, '0')}:00`);
+  const w = { hourly: { time, global_tilted_irradiance: time.map(t => { const h = +t.slice(11, 13); return h >= 7 && h <= 19 ? 600 : 0; }) } };
+  const o = { w, startDate: '2026-09-25', startHour: 5, soc0: 50, yieldK: 8, profile: Array(24).fill(1.5), capKwh: 27, maxKw: 10, reservePct: 20 };
+  it('biased history → corrected forecast: today (scored in h7-24) and tomorrow (h25-48) each take their band’s factor; the raw stays alongside', () => {
+    const correction = biasFactors([...rows('fc48.solar', 'h7-24', 7, 4, 40), ...rows('fc48.solar', 'h25-48', 7, 8, 40), ...rows('fc48.home', 'h25-48', 7, -6, 30)]);
+    expect(correction).toEqual({ solar: { 'h7-24': .909, 'h25-48': .833 }, home: { 'h25-48': 1.25 } });
+    const raw = forecast48(o).points, fc = forecast48({ ...o, correction }).points;
+    const at = (t: string) => fc.find(p => p.t === t)!, rawAt = (t: string) => raw.find(p => p.t === t)!;
+    expect(at('2026-09-25T12:00').s).toBeCloseTo(rawAt('2026-09-25T12:00').s * .909, 10);
+    expect(at('2026-09-25T12:00').h).toBe(1.5);
+    expect(at('2026-09-26T12:00').s).toBeCloseTo(rawAt('2026-09-26T12:00').s * .833, 10);
+    expect(at('2026-09-26T20:00').h).toBeCloseTo(1.875, 10);
+    expect(at('2026-09-27T03:00').h).toBeCloseTo(1.875, 10);              // the partial third day reads as day-ahead too
+    // scoring uses the raw forecast: the corrected points carry it, equal to what the nightly logs (forecast48 without a correction)
+    expect(fc.map(p => [p.rs, p.rh])).toEqual(raw.map(p => [p.s, p.h]));
+    expect(raw[0]).not.toHaveProperty('rs');
+  });
+  it('no factors, no change', () => {
+    expect(forecast48({ ...o, correction: { solar: {}, home: {} } }).points.map(p => [p.s, p.h, p.soc])).toEqual(forecast48(o).points.map(p => [p.s, p.h, p.soc]));
+  });
+});
+
+/* ------------------------------------------------------------------ B2-3: model versions */
+describe('B2-3: model versions', () => {
+  it('every model has a version; a missing one reads as 1; home.alwaysOn is at 3 (B2-5), the daily-total solar forecast at 2, home use at 3 (B2-8)', () => {
+    for (const id of MODEL_IDS) expect(Number.isInteger(MODELS[id].version) && MODELS[id].version >= 1, id).toBe(true);
+    expect([versionOf(undefined), versionOf(null), versionOf(2), versionOf('3')]).toEqual([1, 1, 2, 3]);
+    expect([MODELS['home.alwaysOn'].version, MODELS['fc48.solar'].version, MODELS['fc48.home'].version, MODELS['pool.kwhDay'].version]).toEqual([3, 2, 3, 1]);   // B2-8: fc48.home 2 → 3 (deliberate)
+  });
+  it('the versions record keeps the day a version first ran, and restarts it when the version changes', () => {
+    const first = modelVersions(undefined, '2026-10-07');
+    expect(first['home.alwaysOn']).toEqual({ version: 3, since: '2026-10-07' });
+    expect(modelVersions(first, '2026-10-09')['home.alwaysOn']).toEqual({ version: 3, since: '2026-10-07' });
+    expect(modelVersions({ ...first, 'home.alwaysOn': { version: 2, since: '2026-09-25' } }, '2026-10-09')['home.alwaysOn']).toEqual({ version: 3, since: '2026-10-09' });
+  });
+});
+
+/* ------------------------------------------------------------------ B2-9: dormancy and the why sentence */
+describe('B2-9: the AC savings models go dormant, and every model says why', () => {
+  const spare = new Set(['2026-10-02', '2026-09-10']);
+  it('dormant outside May–October, or with no surplus-eligible day (eligible plan day + measured spare) in the last 14 days', () => {
+    expect(acDormancy('2026-11-10', ['2026-10-02'], spare)).toMatchObject({ dormant: true, reason: 'season', why: expect.stringContaining('Expected back from May') });
+    expect(acDormancy('2026-04-20', [], new Set())).toMatchObject({ dormant: true, reason: 'season' });
+    expect(acDormancy('2026-10-07', ['2026-10-02'], spare)).toEqual({ dormant: false, reason: null, last: '2026-10-02', why: null });
+    expect(acDormancy('2026-10-07', ['2026-10-03'], spare)).toMatchObject({ dormant: true, reason: 'surplus', last: null });           // eligible, but no spare solar that day
+    expect(acDormancy('2026-10-07', ['2026-09-10'], spare)).toMatchObject({ dormant: true, reason: 'surplus', last: '2026-09-10', why: expect.stringContaining('the last on Sep 10') });
+    expect(acDormancy('2026-05-01', ['2026-04-25'], new Set(['2026-04-25'])).dormant).toBe(false);   // one surplus day in the window wakes it in season
+  });
+  it('a dormant estimate is tier "dormant" (badge "dormant", confidence 0) even if measured; scored models ignore the flag', () => {
+    expect(confidence(MODELS['ac.shifted'], null, '2026-11-10', true, true)).toEqual({ tier: 'dormant', confidence: 0 });
+    expect(badge(MODELS['ac.shifted'], 'dormant', null)).toBe('dormant');
+    expect(confidence(MODELS['ac.shifted'], null, '2026-07-10', false, false).tier).toBe('estimated');
+    expect(confidence(MODELS['fc48.solar'], { n: 20, mae: 1, mape: .04, bias: -.01, lastDay: '2026-11-09' }, '2026-11-10', false, true).tier).toBe('learned');
+  });
+  it('why: the learning ETA, the factor an estimate lacks, the dormant reason', () => {
+    const m = MODELS['fc48.home'];   // need 14: rated from 7 scored days
+    expect(whyText(m, 'learning', { n: 3, mae: 2, mape: .1, bias: 0, lastDay: '2026-10-06' }, { rate: .5 })).toBe('Learning: 3 of 14 days scored; about 8 more days until it is rated.');
+    expect(whyText(m, 'learning', { n: 3, mae: 2, mape: .1, bias: 0, lastDay: '2026-10-06' })).toBe('Learning: 3 of 14 days scored.');
+    expect(whyText(m, 'estimated', { n: 14, mae: 20, mape: .38, bias: .05, lastDay: '2026-10-06' }, { conf: .1 })).toBe('Estimated: its error ±38% is large against the 40% ceiling (confidence 0.10, 0.70 makes it learned).');
+    expect(whyText(m, 'estimated', { n: 8, mae: 2, mape: .05, bias: 0, lastDay: '2026-10-06' }, { conf: .5 })).toMatch(/^Estimated: only 8 of 14 days are scored/);
+    expect(whyText(m, 'estimated', { n: 14, mae: 2, mape: .1, bias: -.1, lastDay: '2026-10-06' }, { conf: .6 })).toMatch(/^Estimated: it runs low by 10% on average/);
+    expect(whyText(m, 'unscored', null)).toBe(`Nothing scored yet: it ${m.help}.`);
+    expect(whyText(MODELS['ac.shifted'], 'dormant', null, { dormantWhy: 'Dormant: x.' })).toBe('Dormant: x.');
+    expect(whyText(MODELS['ac.shifted'], 'estimated', null, { ac: { precoolDays: 2, controlDays: 1 } })).toBe('Estimated from the plan until control days measure it: 2 of 5 pre-cool days compared so far.');
+  });
+  it('forecastSurplus: an hour of the pre-cool window whose forecast output covers the AC and the daytime base', async () => {
+    const { forecastSurplus } = await import('../../server/src/learn/ac.js');
+    const sun = (peak: number) => Array.from({ length: 24 }, (_, h) => h >= 7 && h <= 19 ? Math.sin((h - 7) / 12 * Math.PI) * peak : 0);
+    expect(forecastSurplus(sun(.9), 11, 16, 3)).toBe(true);           // .9 × 7.56 = 6.8 kW ≥ 3 + 1.5
+    expect(forecastSurplus(sun(.5), 11, 16, 3)).toBe(false);          // 3.8 kW at best: the house and the AC take it all
+    expect(forecastSurplus(undefined, 11, 16, 3)).toBe(true);         // no hourly sun: unchanged behaviour
+  });
+});
+
+/* ------------------------------------------------------------------ B2-12: data-quality rules */
+describe('B2-12: data-quality cross-checks', () => {
+  // 60 days; PVS reads 2% under Tesla on a usual day
+  const pvs = (tail: number[], polls = (_: number) => 100) => ctx((_, i) => {
+    const tesla = 40, k = i - (60 - tail.length), r = k >= 0 ? tail[k] : .98;
+    return { 'solar.kwh': tesla, 'pvs.array_kwh': tesla * r, 'pvs.polls': polls(i) };
+  });
+  it('(a) PVS vs Tesla: more than 4% off the 30-day median ratio on 3 of 4 full days fires; 3% doesn\'t; back within 4% for 3 days clears', () => {
+    const v = pvsDriftRule(pvs([.92, .92, .98, .92]));                       // 6% under the usual 2% gap on 3 of 4
+    expect(v).toMatchObject({ kind: 'data.pvs_drift', state: 'fire', severity: 'info', detail: { title: 'Panels and Tesla disagree on solar', expected: 2, measured: 8, persisted: '3 of the last 4 covered days' } });
+    expect(v.detail.body).toBe(`Panels (PVS) 36.8 kWh vs Tesla 40 kWh on ${new Date(DAYS[59] + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' })}, 8% apart (usually 2%). One of the two meters may be drifting, or a panel isn't reporting.`);
+    expect(pvsDriftRule(pvs([.95, .95, .95, .95])).state).toBe('clear');      // 3% off: within the band
+    expect(pvsDriftRule(pvs([.92, .92, .98, .98])).state).toBe('hold');
+    // a day the relay went quiet (half the usual polls) is not compared: three short days leave only one drifting covered day
+    expect(pvsDriftRule(pvs([.92, .92, .92, .98], i => i >= 56 && i <= 58 ? 50 : 100)).state).not.toBe('fire');
+    expect(pvsDriftRule(ctx(() => ({ 'solar.kwh': 40 }))).state).toBe('wait');
+  });
+  it('(b) inflated solar buckets on 3 of the last 7 days fire (info); none for 3 days clears; the threshold is 9.45 kW + 5% over 5 minutes', () => {
+    expect(INFLATED_WH).toBeCloseTo(826.875, 6);
+    const inf = (tail: number[]) => ctx((_, i) => ({ 'energy.inflated': i >= 60 - tail.length ? tail[i - (60 - tail.length)] : 0 }));
+    expect(inflatedRule(inf([0, 1, 0, 2, 0, 1, 0]))).toMatchObject({ kind: 'data.solar_inflated', state: 'fire', severity: 'info', detail: { measured: 4, persisted: '3 of the last 7 days' } });
+    expect(inflatedRule(inf([3, 1, 2, 0, 0, 0, 0])).state).toBe('fire');
+    expect(inflatedRule(inf([0, 0, 0, 1, 0, 0, 0])).state).toBe('clear');
+    expect(inflatedRule(inf([0, 0, 0, 0, 1, 1, 0])).state).toBe('hold');
+  });
+  it('(c) a battery-% jump without energy yesterday fires; three clean days clear it', () => {
+    const j = (tail: number[]) => ctx((_, i) => i >= 60 - tail.length ? { 'soe.jumps': tail[i - (60 - tail.length)] } : {});
+    expect(socJumpRule(j([0, 0, 2]))).toMatchObject({ kind: 'data.soc_jump', state: 'fire', severity: 'info', detail: { measured: 2 } });
+    expect(socJumpRule(j([1, 0, 0])).state).toBe('hold');
+    expect(socJumpRule(j([0, 0, 0])).state).toBe('clear');
+    expect(socJumpRule(j([])).state).toBe('wait');
+  });
+  it('(d) the meter-vs-Tesla gap: a slope over 1 point a bill across the last 6 bills fires; under 0.5 clears; fewer than 3 waits', () => {
+    const gaps = (v: number[]) => ctx(() => ({}), { billGaps: v.map((g, i) => ({ to: `2026-0${i + 1}-10`, gapPct: g })) });
+    const v = meterGapRule(gaps([1, 2.5, 4, 6]));
+    expect(v).toMatchObject({ kind: 'data.meter_drift', state: 'fire', severity: 'warn', detail: { measured: 1.65 } });
+    expect(v.detail.body).toContain('went from +1% to +6% over 4 bills (about 1.7 points a bill)');
+    expect(meterGapRule(gaps([2, 1.8, 2.3, 2.1, 2.2, 1.9])).state).toBe('clear');
+    expect(meterGapRule(gaps([0, .7, 1.4, 2.1])).state).toBe('hold');              // 0.7 a bill
+    expect(meterGapRule(gaps([-10, 2, 2, 2, 2, 2, 2])).state).toBe('clear');         // only the last 6 count: an old outlier doesn't make a trend
+    expect(meterGapRule(gaps([1, 5])).state).toBe('wait');
   });
 });

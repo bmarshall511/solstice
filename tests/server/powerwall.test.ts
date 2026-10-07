@@ -385,6 +385,17 @@ describe('the nightly cron\'s tail (code review C-06)', () => {
       expect((await r.json())['watch:s'].zzProbe).toEqual({ error: 'tail failed' });
       expect(seen).toBeGreaterThanOrEqual(t0);                              // already written when the tail ran
       expect(await db.kv.get<number>('cron:sync:done')).toBe(seen);         // and not written again after it
+      // B2-11: the run's ledger, with the failed tail step marked
+      expect(await db.kv.get<any>('cron:sync:last')).toMatchObject({ at: expect.any(Number), ms: expect.any(Number), ok: false,
+        steps: { sync: expect.any(Number), learn: expect.anything(), 'watch.zzProbe': 'error' }, errors: [] });
     } finally { delete W.nightlySteps.zzProbe; }
+  });
+  it('B2-11 the 5-minute tick writes its ledger after its watch steps, which saw the previous tick', async () => {
+    await db.kv.set('cron:nest:last', { at: Date.now() - 30 * 60_000, ms: 1, steps: {}, ok: true, errors: [] });
+    const r = await (await call('/api/cron/nest', { cookie: '', headers: { authorization: `Bearer ${CRON}` } })).json();
+    expect(r.watch.s.crons).toEqual({ alerts: ['nest:silent'] });                                 // a 30-minute gap before this tick
+    const rec = await db.kv.get<any>('cron:nest:last');
+    expect(rec.at).toBeGreaterThan(Date.now() - 60_000);
+    expect(Object.keys(rec.steps)).toEqual(expect.arrayContaining(['sampling', 'watch.storm', 'watch.crons']));
   });
 });

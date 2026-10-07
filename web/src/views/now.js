@@ -137,7 +137,7 @@ export function renderWeather(S) {
 
   if (!S.live || !S.yieldK || !S.profile) return;
   const site = S.now.site, fc = forecast48({ w, startDate: now, startHour: h, soc0: S.live.soc, yieldK: S.yieldK, profile: S.profile,
-    capKwh: site.modelKwh || site.capacityKwh || 27, maxKw: site.maxPowerKw || 10, reservePct: site.reservePct ?? 20, dayScale: S.profileScale });
+    capKwh: site.modelKwh || site.capacityKwh || 27, maxKw: site.maxPowerKw || 10, reservePct: site.reservePct ?? 20, dayScale: S.profileScale, correction: S.fcCorrection });
   const P = fc.points; if (!P.length) return;
   const maxKw = Math.max(4, ...P.map(p => Math.max(p.s, p.h))), X = k => 8 + k / 48 * 294, Yk = v => 118 - v / maxKw * 100, Ys = v => 118 - v * 100;
   let o = '';

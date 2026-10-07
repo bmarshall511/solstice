@@ -181,4 +181,15 @@ describe('the audit fix', () => {
     expect(await db.kv.get<any>('s:ac:control')).toMatchObject({ count: 1, days: { [localDay()]: false } });
     expect((await db.q(`SELECT model FROM predictions ORDER BY model`)).map(r => r.model)).toEqual(['ac.eveningAvoided', 'ac.shifted']);
   });
+  it('B2-9 a hot, "sunny" day whose hourly forecast has no spare solar for the pre-cool window claims no control day', async () => {
+    const { learnedPlan } = await import('../../server/src/learn/ac.js');
+    const { planFor, acSettingsOf } = await import('../../server/src/appliances/ac.js');
+    const { localDay } = await import('../../server/src/tesla/client.js');
+    const weak = Array.from({ length: 24 }, (_, h) => h >= 7 && h <= 19 ? Math.sin((h - 7) / 12 * Math.PI) * .45 : 0);   // 3.4 kW at best
+    const input = { date: localDay(), high: 96, sunKwhM2: 7, hourlySun: weak, humidity: 40, settings: acSettingsOf({ ac: { presence: 'home' } }), acKw: 2.6, slope: 2.5, rate: null };
+    await db.q(`DELETE FROM kv WHERE key = 's:ac:control'`); await db.q('DELETE FROM predictions');
+    const p = await learnedPlan('s', input, planFor, 2.6);
+    expect(p.precool).toBe(true);                                                       // the plan still offers it (the live gate decides)
+    expect(await db.kv.get('s:ac:control')).toBeUndefined();                             // but the day doesn't count toward control days
+  });
 });

@@ -101,8 +101,24 @@ describe('data routes', () => {
     expect({ ...d.buckets[0], t: undefined }).toEqual({ t: undefined, solar: 6, home: 4.44, grid: -0.9, battery: -0.66 });
     expect(d.soe).toEqual([]);
     expect(d.totals).toEqual({ solar: .5, home: .37, import: .03, export: .1, charge: .11, discharge: .05 });
+    expect(d.peaks).toEqual({ solarKw: 6, homeKw: 4.44, inflated: 0 });   // B2-12
+  });
+  it('B2-12 /api/day peaks leave out a solar bucket above the 9.45 kW inverter limit (Tesla bucket inflation)', async () => {
+    const at = (m: number) => `2026-09-20T12:${String(m).padStart(2, '0')}:00-05:00`;
+    await saveEnergyRows('s', [0, 5, 10].map((m, i) => ({ ts: at(m), epoch: Date.parse(at(m)), day: '2026-09-20', hour: 12, solar: [700, 900, 760][i], home: 200, imp: 0, exp: 0, chg: 0, dis: 0 })));
+    const d = await (await get('/api/day?date=2026-09-20')).json();
+    expect(d.buckets.map((b: any) => b.solar)).toEqual([8.4, 10.8, 9.12]);                      // the buckets are shown as stored
+    expect(d.peaks).toEqual({ solarKw: 9.12, homeKw: 2.4, inflated: 1 });                         // 10.8 kW is not a peak the array can make
+    await q(`DELETE FROM energy WHERE day = '2026-09-20'`);
   });
 
+  it('POST /api/events accepts filter_cleaned (B2-6, audit L-02: the pool card\'s "I cleaned the filter" button got a 400)', async () => {
+    const r = await send('POST', '/api/events', { type: 'filter_cleaned', day: '2026-09-20' });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ type: 'filter_cleaned', day: '2026-09-20', note: null });
+    expect((await send('POST', '/api/events', { type: 'filter', day: '2026-09-20' })).status).toBe(400);
+    await q(`DELETE FROM events WHERE type = 'filter_cleaned'`);
+  });
   it('POST /api/events rejects a malformed day', async () => {
     const r = await send('POST', '/api/events', { type: 'cleaned', day: '2026-9-1' });
     expect(r.status).toBe(400);
@@ -204,11 +220,13 @@ describe('learning layer routes (owner-only)', () => {
     expect(m.models.map((x: any) => x.id)).toEqual(['fc48.solar', 'fc48.home', 'fc48.soc', 'pool.kwhDay', 'ac.shifted', 'ac.eveningAvoided', 'bill.cycleImport', 'home.alwaysOn']);
     // the r-learning mockup's row fields
     expect(Object.keys(m.models[0])).toEqual(['id', 'label', 'unit', 'abs', 'dot', 't', 'v', 'tier', 'confidence', 'n', 'need', 'mape', 'mae', 'mad', 'bias', 'base', 'spark',
-      'improvement', 'bands', 'note', 'help', 'scores', 'days']);
+      'improvement', 'bands', 'bandsPct', 'version', 'relearningSince', 'note', 'help', 'why', 'scores', 'days']);   // bandsPct: B2-1's daily-total MAPE per horizon band; version, relearningSince: B2-3; why: B2-9
     expect(m.models[0]).toMatchObject({ label: 'Next 48 h solar', dot: 'learned', t: 'l', v: '±4%', tier: 'learned', n: 20, need: 14, mape: 4, bias: -1, note: '20 days scored', help: null });
     expect(m.models[3]).toMatchObject({ id: 'pool.kwhDay', dot: 'unscored', t: 'u', v: 'unscored', help: 'needs pool readings through at least 80% of the pump’s scheduled hours' });
-    expect(m.models[4]).toMatchObject({ id: 'ac.shifted', dot: 'estimated', v: 'estimated' });
-    expect(m.summary).toEqual({ learned: 1, measured: 0, total: 8, improvement: null, headline: null });
+    // B2-9 (deliberate): with no surplus-eligible day in 14 days (or outside May–October) the AC savings models are dormant, drawn as unscored
+    expect(m.models[4]).toMatchObject({ id: 'ac.shifted', dot: 'unscored', t: 'u', v: 'dormant', tier: 'dormant', help: null, why: expect.stringMatching(/^Dormant/) });
+    expect(m.models[0].why).toBe('Learned: ±4% over 20 scored days.');
+    expect(m.summary).toEqual({ learned: 1, measured: 0, total: 8, dormant: 2, active: 6, improvement: null, headline: null });
     expect(m.anomalies).toEqual([{ id: expect.any(Number), kind: 'data.gap.energy', day, severity: 'warn', openedAt: 1, title: 'Energy history has a gap', body: 'b',
       detail: { title: 'Energy history has a gap', body: 'b', expected: 288, measured: 200 } }]);
     expect(m.ac).toEqual({ trim: null, measured: null, warmupFPerH: null, control: { every: 5, eligibleDays: 0, nextIn: 5, today: null } });
@@ -228,5 +246,14 @@ describe('learning layer routes (owner-only)', () => {
   it('/api/profile carries the 48-hour forecast’s confidence next to the profile it is built on', async () => {
     const p = await (await get('/api/profile')).json();
     expect(p.conf).toEqual({ 'fc48.solar': 'learned', 'fc48.home': 'unscored', 'fc48.soc': 'unscored' });
+    expect(p.correction).toEqual({ solar: {}, home: {} });
+  });
+  it('/api/profile: B2-2 bias factors once a band has 7 scored days in the last 30', async () => {
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+    const days = Array.from({ length: 7 }, (_, i) => new Date(Date.parse(day + 'T12:00:00Z') - (i + 1) * 864e5).toISOString().slice(0, 10));
+    for (const d of days) await q(`INSERT INTO daily_metrics (site_id, day, metric, value) VALUES ('s', $1, 'score:fc48.home:err@h25-48', 3), ('s', $1, 'score:fc48.home:den@h25-48', 30), ('s', $1, 'score:fc48.home:v', 3)
+      ON CONFLICT (site_id, day, metric) DO UPDATE SET value = excluded.value`, [d]);
+    expect((await (await get('/api/profile')).json()).correction).toEqual({ solar: {}, home: { 'h25-48': .909 } });
+    await q(`DELETE FROM daily_metrics WHERE site_id = 's' AND (metric LIKE 'score:fc48.home:%@h25-48' OR metric = 'score:fc48.home:v')`);
   });
 });

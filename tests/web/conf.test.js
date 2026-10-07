@@ -11,7 +11,7 @@ const report = { models: [
 
 describe('confidence badge mapping', () => {
   it('maps each tier to the mockup data-t letter', () => {
-    expect(TIERS).toEqual({ measured: 'm', learned: 'l', estimated: 'e', learning: 'n', unscored: 'u' });
+    expect(TIERS).toEqual({ measured: 'm', learned: 'l', estimated: 'e', learning: 'n', unscored: 'u', dormant: 'u' });   // B2-9: + dormant (deliberate)
     for (const [tier, t] of Object.entries(TIERS)) expect(confChip(tier)).toBe(`<span class="conf" data-t="${t}">${tier}</span>`);
   });
 

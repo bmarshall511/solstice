@@ -90,7 +90,13 @@ export function drawAC(S) {
   o += svgText(30, 168, `daily high →  ·  home kWh/day ↑  ·  ${pts.length} hot days (bright = last 60)`, { size: 8.5, font: 'Manrope' });
   $('acChart').innerHTML = o;
   $('acTxt').innerHTML = `Each extra degree of daily high adds about <b style="color:var(--text)">${slope.toFixed(1)} kWh</b> a day, mostly air conditioning. That's about ${S.guest ? veil('$••') : S.tariff ? `$${(slope * 30 * S.tariff.importRateAllIn).toFixed(0)}` : '—'} a month per degree. ` +
-    (worst.res > 12 ? `<b style="color:var(--warn)">${niceDate(worst.date)}</b> used ${Math.round(worst.res)} kWh more than normal for a ${Math.round(worst.t)}° day. That could be guests, laundry or the pool heater. If days like that become common, get the AC checked.` : 'Usage has tracked the temperature normally.');
+    (worst.res > 12 ? `<b style="color:var(--warn)">${niceDate(worst.date)}</b> used ${Math.round(worst.res)} kWh more than normal for a ${Math.round(worst.t)}° day. That could be guests, laundry or the pool heater. If days like that become common, get the AC checked.` : 'Usage has tracked the temperature normally.') +
+    heatSentence(S.models?.home?.fit);
+}
+/** B2-8: the home model's heating term (learn/homeModel.ts), once the last year shows one. */
+function heatSentence(f) {
+  if (!(f?.c > 0)) return '';
+  return ` In cold weather it works the other way: each degree the night's low falls below ${f.th}° adds about <b style="color:var(--text)">${f.c.toFixed(1)} kWh</b> a day for heating${f.year?.heatDays ? `, from ${f.year.heatDays} cold days in the last year` : ''}.`;
 }
 
 /* ---------- overnight baseline ---------- */
@@ -232,18 +238,30 @@ export function backupError(S) {
 }
 export const httpCode = message => /HTTP (\d{3})/.exec(message ?? '')?.[1] ?? null;
 
+/** B2-11: the three crons' last runs (owner only: /api/now's health.crons), each with its slowest step. */
+const secs = ms => ms < 10_000 ? (ms / 1000).toFixed(1) : String(Math.round(ms / 1000));
+export function cronRows(c, now = Date.now()) {
+  if (!c) return [];
+  const slow = r => r.slowest ? ` · slowest ${esc(r.slowest.name)} ${secs(r.slowest.ms)} s` : '';
+  const out = [];
+  if (c.sync) out.push({ label: 'Nightly update', ok: c.sync.ok && now - c.sync.at < 26 * 3600e3 && c.sync.ms <= 50_000, v: `${clk(c.sync.at)} · ${secs(c.sync.ms)} s${slow(c.sync)}${c.sync.errors ? ` · ${c.sync.errors} error${c.sync.errors === 1 ? '' : 's'}` : ''}` });
+  if (c.nest) out.push({ label: '5-minute checks', ok: c.nest.ok && now - c.nest.at < 20 * 60_000, v: `${ago(c.nest.at)}${slow(c.nest)}` });
+  if (c.pool) out.push({ label: 'Pool plan', ok: c.pool.ok && now - c.pool.at < 26 * 3600e3, v: `${clk(c.pool.at)} ${c.pool.ok ? '✓' : '· failed'}` });
+  return out;
+}
 export function drawHealth(S, status) {
   const h = S.now?.health ?? {}, row = (ok, label, v) => `<div class="health"><i style="${ok ? '' : 'background:var(--warn);box-shadow:0 0 8px var(--warn)'}"></i>${label}<b>${v}</b></div>`;
   const errs = Object.entries(h.errors ?? {}).filter(([k, e]) => k !== 'lastBackups' && e && Date.now() - e.at < 30 * 60_000);
   const bk = backupError(S), code = httpCode(bk), p = S.pool, a = S.ac;
-  const poolOk = !!p?.linked && !p.error, nestOk = !!a?.linked && !a.error;
+  const poolOk = !!p?.linked && !p.error, nestOk = !!a?.linked && !a.error, crons = cronRows(h.crons);
   $('dhList').innerHTML = row(!h.stale, 'Tesla live status', h.lastLive ? ago(h.lastLive) : '—') + row(true, 'Energy history (5-min)', h.lastHistory ? ago(h.lastHistory) : '—') +
     row(!bk, 'Backup history (Tesla)', bk ? `${code ? code + ' · ' : ''}retrying` : 'ok') +
     row(!!status, 'History stored', status ? `${status.backfill.daysDone} days` : '—') + row(!!S.wx, 'Open-Meteo weather', S.wx ? 'live' : '—') + row(!!S.ercot, 'ERCOT grid status', S.ercot ? esc(S.ercot.condition) : '—') +
     row(poolOk, 'ScreenLogic', p?.snapshot?.at ? ago(p.snapshot.at) : p?.error ? 'read failed' : p ? 'not linked' : '—') +
     row(nestOk, 'Nest', a?.state?.at ? ago(a.state.at) : a?.error ? 'read failed' : a ? (a.configured ? 'not linked' : 'not set up') : '—') +
+    crons.map(c => row(c.ok, c.label, c.v)).join('') +
     errs.map(([k, e]) => row(false, `${esc(k)} error`, esc(String(e.message ?? '').slice(0, 40)))).join('');
   // issues: what used to turn the badge to "check" (Tesla stale, recent errors), plus the backup history, ScreenLogic and Nest once loaded
-  const n = (h.stale ? 1 : 0) + errs.length + (bk ? 1 : 0) + (p && !poolOk ? 1 : 0) + (a && !nestOk && (a.configured || a.error) ? 1 : 0);
+  const n = (h.stale ? 1 : 0) + errs.length + (bk ? 1 : 0) + (p && !poolOk ? 1 : 0) + (a && !nestOk && (a.configured || a.error) ? 1 : 0) + crons.filter(c => !c.ok).length;
   $('dhBadge').textContent = n ? `${n} issue${n === 1 ? '' : 's'}` : 'all good'; $('dhBadge').className = 'badge' + (n ? '' : ' g');
 }
