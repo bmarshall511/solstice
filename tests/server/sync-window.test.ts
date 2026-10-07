@@ -290,3 +290,22 @@ describe('per-path energy split', () => {
     log.mockRestore();
   }, 60_000);   // two full nightly back-fills (30 + 2 days of 288 buckets): 3.5 s alone, 10–11 s in a full parallel run, so the 20 s default flaked under load
 });
+
+describe('recorded sync errors clear on the next success (orchestrator O-10)', () => {
+  it('a step that succeeds clears its error:<key>; one that fails records it; nothing is written when there is nothing to clear', async () => {
+    vi.setSystemTime(NOW);                                                // (an earlier test moved the faked clock on)
+    await addSite('o10', '2026-09-24');
+    const old = { at: NOW.getTime() - 9 * 864e5, message: 'Missing TESLA_CLIENT_ID' };
+    for (const k of ['lastHistory', 'lastBackups', 'live']) await kv.set(`o10:error:${k}`, old);
+    fake.state.fail.add(TODAY);                                           // today's history fails this time
+    const r = await syncSite('o10');
+    expect(r.errors).toEqual([expect.stringMatching(/^lastHistory: Tesla calendar_history → HTTP 504/)]);
+    expect(await kv.get('o10:error:lastHistory')).toMatchObject({ at: NOW.getTime(), message: expect.stringContaining('HTTP 504') });
+    expect(await kv.get('o10:error:lastBackups')).toBeNull();            // succeeded: cleared
+    expect(await kv.get('o10:error:live')).toBeNull();                   // a stored live reading clears error:live
+    fake.state.fail.clear(); await kv.set('o10:lastHistory', 0);
+    await syncSite('o10');
+    expect(await kv.get('o10:error:lastHistory')).toBeNull();
+    expect(await kv.get('o10:error:siteInfo')).toBeUndefined();           // never recorded: still no row
+  });
+});

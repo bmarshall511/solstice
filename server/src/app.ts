@@ -236,10 +236,13 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
 
   // learning layer (server/src/learn/nightly.ts): score yesterday's predictions, trims, anomalies, today's predictions; skips what won't fit by 55 s
   for (const s of sites) out[`learn:${s.id}`] = await runLearn(s.id, { deadline: t0 + 55_000 }).catch(e => ({ error: e.message }));
-  for (const s of sites) out[`watch:${s.id}`] = await nightlyWatch(s.id, Date.now(), { deadline: t0 + 55_000 });   // watch.ts: bill due and the other nightly alert checks
+  // the sync and learning core are done: mark it now, so a slow tail (alerts, trip report, prune) cut off at 60 s can't fire the
+  // 5-minute watchdog (below), which alerts when this is more than 26 h old (code review C-06)
+  await kv.set(SYNC_DONE_KEY, Date.now());
+  // watch.ts: bill due and the other nightly alert checks; a step with under 5 s left before the deadline is skipped and said so
+  for (const s of sites) out[`watch:${s.id}`] = await nightlyWatch(s.id, Date.now(), { deadline: t0 + 55_000 });
   // raw per-panel readings older than 90 days go, after the learning layer has written the day's per-panel figures (pvs.ts)
   out.pvsPrune = Date.now() - t0 < 55_000 ? await prunePvs().catch(e => ({ error: e.message })) : { skipped: 'out of time; tomorrow night' };
-  await kv.set(SYNC_DONE_KEY, Date.now());   // the 5-minute watchdog (below) alerts when this is more than 26 h old
   out.ms = Date.now() - t0;
   res.json(out);
 }));

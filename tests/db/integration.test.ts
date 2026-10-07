@@ -635,10 +635,12 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
   });
 
   it('scores yesterday’s predictions into daily_metrics with exact arithmetic, and updates model_scores', async () => {
+    await kv.set(`${S}:error:learn`, { at: 1, message: 'an old failure' });
     pg.queries = 0;
     const r = await runLearn(S, { now: RUN });
     const queries = pg.queries;
     expect(r.errors).toEqual([]);
+    expect(await kv.get(`${S}:error:learn`)).toBeNull();                         // a clean run clears the last error, in its kv write (O-10)
     expect(r.scored.sort()).toEqual(['ac.eveningAvoided', 'ac.shifted', 'bill.cycleImport', 'fc48.home', 'fc48.soc', 'fc48.solar', 'home.alwaysOn', 'pool.kwhDay']);
     // 48-hour forecast, 12:00 yesterday: 6.76 predicted vs 5.76 kWh made (the 12:30 prediction is not scored)
     expect(await metric('2026-09-24', 'score:fc48.solar:pred')).toBeCloseTo(6.76, 6);
