@@ -46,7 +46,7 @@ const POOL_WHY = [['Vacation: 1 turnover a day (water 75°F)'], ['Vacation: 1.5 
 const sched = (why: string) => ({ name: 'Pool', rpm: 1500, start: 600, stop: 1140, why });
 const plan = (whys: string[]) => ({ goal: 1, hours: 6, schedules: whys.map(sched), kwhPerDay: 2, why: whys });
 const all = [...AC_LOG.map(e => e.text), ...AC_WHY, ...TRIP_LOG, ...POOL_WHY.flat()];
-const at = (i: number) => ({ at: i, day: '2026-10-12' });
+const at = (i: number) => ({ at: i, day: '2026-08-03' });
 
 describe('S-02: nothing a trip writes reaches a guest', () => {
   const acView = GUEST_GET.get('/api/appliances/ac')!, poolView = GUEST_GET.get('/api/appliances/pool')!;
@@ -68,7 +68,7 @@ describe('S-02: nothing a trip writes reaches a guest', () => {
   });
   it('GT-3 every pool `why`: tomorrow, tomorrowIfHome, pending, each schedule of every plan', () => {
     for (const whys of POOL_WHY) {
-      const day = { date: '2026-10-12', plan: plan(whys), why: whys };
+      const day = { date: '2026-08-03', plan: plan(whys), why: whys };
       const g = poolView({ autopilot: { mode: 'auto', tomorrow: day, tomorrowIfHome: day }, pending: day, plan: plan(whys) }) as any;
       expect(g.autopilot.tomorrow.why).toEqual([]);
       expect(g.autopilot.tomorrow.plan.schedules.map((s: any) => s.why)).toEqual(whys.map(w => (noPresence(w) ? w : null)));
@@ -78,7 +78,7 @@ describe('S-02: nothing a trip writes reaches a guest', () => {
     }
   });
   it('GT-4 the AC plan: reasons, step reasons, the current step and a trim reason drop every trip text', () => {
-    const g = acView({ plan: { date: '2026-10-12', steps: AC_WHY.map((why, hour) => ({ hour, coolF: 85, why })), why: [...AC_WHY, 'Mild day (high 85°): no pre-cool needed'],
+    const g = acView({ plan: { date: '2026-08-03', steps: AC_WHY.map((why, hour) => ({ hour, coolF: 85, why })), why: [...AC_WHY, 'Mild day (high 85°): no pre-cool needed'],
       trim: { what: 'precool', reason: 'welcome home' } }, currentStep: { hour: 0, coolF: 85, why: 'vacation: drying the house' } }) as any;
     expect(g.plan.why).toEqual(['Mild day (high 85°): no pre-cool needed']);
     expect(g.plan.steps.every((s: any) => s.why === null)).toBe(true);

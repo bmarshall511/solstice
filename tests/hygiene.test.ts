@@ -96,7 +96,7 @@ describe('the git index holds no private working files or the production host', 
     const allowed = new Set(['mockups/q-share.html', 'tests/web/qr.test.js']);
     expect(hits(textual.filter(f => !allowed.has(f)), /[\w-]+\.vercel\.app/g)).toEqual([]);
   });
-  it('no trip table ("Left Thu 2026-05-28 … → back …") in any tracked file', () => {
+  it('no trip table ("Left <weekday> <date> … → back …") in any tracked file', () => {
     expect(hits(textual, /\bLeft (Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{4}-\d\d-\d\d\b[^\n]{0,40}→ back\b/g)).toEqual([]);
   });
   it('the dead cloud-migration script stays deleted, and no script or README hands the relay the owner key', () => {
