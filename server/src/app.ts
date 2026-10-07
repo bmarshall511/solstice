@@ -57,6 +57,7 @@ import { tripReport, reportPush, estimateTrip } from './vacation/report.js';
 import { tripPlanDay } from './appliances/autopilot.js';
 import { confidenceMap } from './learn/confidence.js';
 import { patchSettings, changedKeys, PREV_KEY } from './settings.js';
+import { ledger, cronHealth, cronWatch, markOf } from './cronLedger.js';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -228,24 +229,26 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
   if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
   const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL');
   const out: Record<string, unknown> = {};
-  const t0 = Date.now();
+  const t0 = Date.now(), L = ledger('sync', t0);   // B2-11: the run's ledger (kv cron:sync:last)
   // the sync gets 30 s, leaving the learning layer, the nightly alerts and the prune room inside Vercel's 60 s (it had 50 s)
-  for (const s of sites) out[s.id] = await syncSite(s.id, Math.floor(30_000 / sites.length), { nightly: true }).catch(e => ({ error: e.message }));
-  await q(`DELETE FROM readings WHERE ts < $1`, [Date.now() - 3 * 864e5]); // live snapshots are short-lived; history lives in `energy`
-  await pruneShares().catch(e => console.error('[solstice] pruning share links', e)); // revoked/expired links leave the owner's list after 30 days
-  for (const s of sites) out[`capacity:${s.id}`] = await refreshCapacity(s.id).catch(e => ({ error: e.message }));   // capacity.ts: before the learning layer's forecast reads it
-  out.pruned = await pruneOld().catch(e => { console.error('[solstice] pruning old rows', e); return { error: e.message }; });   // retention.ts: the tables that grew forever
+  for (const s of sites) out[s.id] = await L.step('sync', () => syncSite(s.id, Math.floor(30_000 / sites.length), { nightly: true })).catch(e => ({ error: e.message }));
+  await L.step('readings', () => q(`DELETE FROM readings WHERE ts < $1`, [Date.now() - 3 * 864e5])); // live snapshots are short-lived; history lives in `energy`
+  await L.step('shares', () => pruneShares()).catch(e => console.error('[solstice] pruning share links', e)); // revoked/expired links leave the owner's list after 30 days
+  for (const s of sites) out[`capacity:${s.id}`] = await L.step('capacity', () => refreshCapacity(s.id)).catch(e => ({ error: e.message }));   // capacity.ts: before the learning layer's forecast reads it
+  out.pruned = await L.step('prune', () => pruneOld()).catch(e => { console.error('[solstice] pruning old rows', e); return { error: e.message }; });   // retention.ts: the tables that grew forever
 
   // learning layer (server/src/learn/nightly.ts): score yesterday's predictions, trims, anomalies, today's predictions; skips what won't fit by 55 s
-  for (const s of sites) out[`learn:${s.id}`] = await runLearn(s.id, { deadline: t0 + 55_000 }).catch(e => ({ error: e.message }));
+  for (const s of sites) out[`learn:${s.id}`] = await L.step('learn', () => runLearn(s.id, { deadline: t0 + 55_000 })).catch(e => ({ error: e.message }));
   // the sync and learning core are done: mark it now, so a slow tail (alerts, trip report, prune) cut off at 60 s can't fire the
   // 5-minute watchdog (below), which alerts when this is more than 26 h old (code review C-06)
   await kv.set(SYNC_DONE_KEY, Date.now());
   // watch.ts: bill due and the other nightly alert checks; a step with under 5 s left before the deadline is skipped and said so
-  for (const s of sites) out[`watch:${s.id}`] = await nightlyWatch(s.id, Date.now(), { deadline: t0 + 55_000 });
+  for (const s of sites) out[`watch:${s.id}`] = await nightlyWatch(s.id, Date.now(), { deadline: t0 + 55_000, onStep: (n, ms, r) => L.mark(`watch.${n}`, markOf(r, ms)) });
   // raw per-panel readings older than 90 days go, after the learning layer has written the day's per-panel figures (pvs.ts)
-  out.pvsPrune = Date.now() - t0 < 55_000 ? await prunePvs().catch(e => ({ error: e.message })) : { skipped: 'out of time; tomorrow night' };
+  const pvsTime = Date.now() - t0 < 55_000; if (!pvsTime) L.mark('pvsPrune', 'skipped');
+  out.pvsPrune = pvsTime ? await L.step('pvsPrune', () => prunePvs()).catch(e => ({ error: e.message })) : { skipped: 'out of time; tomorrow night' };
   out.ms = Date.now() - t0;
+  await L.finish();
   res.json(out);
 }));
 
@@ -327,7 +330,7 @@ app.get('/api/now', wrap(async (req, res) => {
       gridStatus: r.grid_status, islandStatus: r.island_status, stormActive: !!r.storm_mode_active },
     today: await one(`SELECT ${kwhCols} FROM energy WHERE site_id = $1 AND day = $2`, [id, localDay()]),
     site: summary(await siteInfo(id), await capacityOf(id)), outage,
-    health: { lastLive: lastLive ?? null, lastHistory: lastHistory ?? null, stale: !r || Date.now() - Number(r.ts) > 3 * 60_000, liveError, errors },   // by the reading's own time (mockup x), not the fetch's
+    health: { lastLive: lastLive ?? null, lastHistory: lastHistory ?? null, stale: !r || Date.now() - Number(r.ts) > 3 * 60_000, liveError, errors, crons: await cronHealth() },   // crons: B2-11 (owner only; redact.ts leaves it out)   // by the reading's own time (mockup x), not the fetch's
   });
 }));
 
@@ -593,8 +596,10 @@ app.post('/api/appliances/pool/autopilot', express.json(), wrap(async (req, res)
 /** Nightly at 01:15 UTC (8:15 PM CDT, 7:15 PM CST): Autopilot re-plans tomorrow for every site; Auto mode writes it, Suggest stores it. */
 app.get('/api/cron/pool', wrap(async (req, res) => {
   if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
-  const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL'), out: Record<string, unknown> = {};
-  for (const s of sites) { const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; await finishClearUpIfDue(s.id, settings, await rateFor(s.id)).catch(e => console.error('[solstice] clear-up end failed', e.message)); out[s.id] = await poolDetail(s.id, settings, await rateFor(s.id), { fresh: true, act: true }).then(d => d.autopilot).catch(e => ({ error: e.message })); }
+  const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL'), out: Record<string, unknown> = {}, L = ledger('pool');   // B2-11: kv cron:pool:last
+  for (const s of sites) { const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; await L.step('clearUp', async () => finishClearUpIfDue(s.id, settings, await rateFor(s.id))).catch(e => console.error('[solstice] clear-up end failed', e.message));
+    out[s.id] = await L.step('plan', async () => poolDetail(s.id, settings, await rateFor(s.id), { fresh: true, act: true }).then(d => d.autopilot)).catch(e => ({ error: e.message })); }
+  await L.finish();
   res.json(out);
 }));
 app.post('/api/appliances/pool/restore', wrap(async (req, res) => { await restorePrevious(site(req), await readPool()); res.json({ ok: true }); }));
@@ -764,6 +769,10 @@ nightlySteps.alwaysOn = alwaysOnWatch;   // breakdown.ts: one push when the alwa
 /* Watchdog: Vercel never retries a cron, so a nightly run that died (timeout, deploy, outage) would be silent. The 5-minute tick
  * pushes one alert a day while the last finished nightly run is more than 26 hours old. */
 const SYNC_DONE_KEY = 'cron:sync:done';
+// B2-11 (cronLedger.ts): the crons watch each other: a quiet 5-minute tick, a missed pool plan, a nightly over 50 s; the nightly
+// re-checks the 5-minute tick (if every tick has stopped, only it can tell)
+fiveMinuteSteps.crons = (id, now) => cronWatch(id, now);
+nightlySteps.crons = (id, now) => cronWatch(id, now, ['nest']);
 fiveMinuteSteps.watchdog = async (id, now) => {
   const done = await kv.get<number>(SYNC_DONE_KEY); if (done == null) { await kv.set(SYNC_DONE_KEY, now); return { armed: true }; }   // first run after deploy
   const h = (now - done) / 3600e3; if (h <= 26) return { ok: true, hours: Math.round(h * 10) / 10 };
@@ -778,16 +787,17 @@ fiveMinuteSteps.watchdog = async (id, now) => {
 app.get('/api/cron/nest', wrap(async (req, res) => {
   if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
   // vacation/index.ts: a trip whose leave time has come starts before the thermostat sample, so the AC plan goes away in the same tick
-  const vacation: Record<string, unknown> = {};
-  for (const id of await cronSites()) vacation[id] = await vacationTick(id).catch(e => ({ error: (e as Error).message }));
+  const vacation: Record<string, unknown> = {}, L = ledger('nest');   // B2-11: kv cron:nest:last
+  for (const id of await cronSites()) vacation[id] = await L.step('vacation', () => vacationTick(id)).catch(e => ({ error: (e as Error).message }));
   // a failed sampling tick (the pool read is bounded at 20 s by withUnit) never stops the watch steps below (code review C-01)
-  const tick = await cronTick(Date.now(), {
+  const tick = await L.step('sampling', () => cronTick(Date.now(), {
     sites: async () => (await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL')).map(s => s.id),
     acTick: async id => acTick(id, await kv.get<Record<string, any>>('settings:owner') ?? {}, await rateFor(id), await acSlope(id)),
-  }).catch((e: Error) => { console.error(`[solstice] cron sampling failed: ${e.message}`); return { error: e.message }; });
+  })).catch((e: Error) => { console.error(`[solstice] cron sampling failed: ${e.message}`); return { error: e.message }; });
   // watch.ts: storm, Storm Watch and ERCOT alerts every tick (read-only), plus what other modules register
   const watch: Record<string, unknown> = {};
-  for (const id of await cronSites()) watch[id] = await fiveMinuteWatch(id);
+  for (const id of await cronSites()) watch[id] = await fiveMinuteWatch(id, Date.now(), (n, ms, r) => L.mark(`watch.${n}`, markOf(r, ms)));
+  await L.finish();   // after the watch: its cron step read the previous tick's record to see a gap
   res.json({ ...tick, vacation, watch });
 }));
 /* ---------- Nest change events (Google Pub/Sub push; appliances/nestEvents.ts) ----------

@@ -95,9 +95,11 @@ export async function billDueCheck(siteId: string, now = Date.now()) {
 
 /* ---------- the cron entry points ---------- */
 type Step = () => Promise<unknown>;
-async function run(steps: Record<string, Step>) {
+/** `onStep` (B2-11, cronLedger.ts): told each step's name, time and result, for the cron ledger. */
+export type OnStep = (name: string, ms: number, result: unknown) => void;
+async function run(steps: Record<string, Step>, onStep?: OnStep) {
   const out: Record<string, unknown> = {};
-  for (const [name, fn] of Object.entries(steps)) out[name] = await fn().catch((e: unknown) => ({ error: (e as Error)?.message ?? String(e) }));
+  for (const [name, fn] of Object.entries(steps)) { const t = performance.now(); out[name] = await fn().catch((e: unknown) => ({ error: (e as Error)?.message ?? String(e) })); onStep?.(name, performance.now() - t, out[name]); }
   return out;
 }
 /** Extra steps other modules add to the 5-minute and nightly watches (digest, Powerwall rules), registered at import. */
@@ -105,14 +107,14 @@ export const fiveMinuteSteps: Record<string, (siteId: string, now: number) => Pr
   storm: stormWatch, ercot: (id, now) => ercotWatch(id, now),
 };
 /** `o.deadline` (epoch ms): when the nightly cron must be done (app.ts: 55 s after it started); a long step skips itself near it. */
-export type NightlyOpts = { deadline?: number };
+export type NightlyOpts = { deadline?: number; onStep?: OnStep };
 export const nightlySteps: Record<string, (siteId: string, now: number, o: NightlyOpts) => Promise<unknown>> = {
   billDue: billDueCheck, anomalies: notifyAnomalies,
 };
-export const fiveMinuteWatch = (siteId: string, now = Date.now()) => run(Object.fromEntries(Object.entries(fiveMinuteSteps).map(([k, f]) => [k, () => f(siteId, now)])));
+export const fiveMinuteWatch = (siteId: string, now = Date.now(), onStep?: OnStep) => run(Object.fromEntries(Object.entries(fiveMinuteSteps).map(([k, f]) => [k, () => f(siteId, now)])), onStep);
 /** A nightly step doesn't start with less than this left before `o.deadline`; it is recorded as skipped (code review C-06). */
 export const NIGHTLY_STEP_MIN_MS = 5_000;
 export const nightlyWatch = (siteId: string, now = Date.now(), o: NightlyOpts = {}) => run(Object.fromEntries(Object.entries(nightlySteps).map(([k, f]) => [k,
-  () => o.deadline != null && o.deadline - Date.now() < NIGHTLY_STEP_MIN_MS ? Promise.resolve({ skipped: 'out of time' }) : f(siteId, now, o)])));
+  () => o.deadline != null && o.deadline - Date.now() < NIGHTLY_STEP_MIN_MS ? Promise.resolve({ skipped: 'out of time' }) : f(siteId, now, o)])), o.onStep);
 /** The sites the crons act for. */
 export const cronSites = async () => (await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL')).map(s => s.id);
