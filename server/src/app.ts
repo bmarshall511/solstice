@@ -537,15 +537,25 @@ app.get('/api/appliances', wrap(async (req, res) => {
 // old); the owner's stale reads share one read per minute (pool.ts single flight)
 app.get('/api/appliances/pool', wrap(async (req, res) => res.json(await poolDetail(site(req), await settingsFor(req), await rateFor(site(req)), { fresh: !req.guestView && req.query.fresh === '1', readOnly: !!req.guestView }))));
 /** Writes the smarter schedule to ScreenLogic: replaces the pump programs' schedules and speeds, keeps everything else (lights, spa, freeze protection). */
+// S-14: like /schedule, neither apply route writes during a Clear-up (it owns the pump until it ends), checked before the controller is read
+const CLEARUP_BUSY = 'A Clear-up is running; end it first';
 app.post('/api/appliances/pool/apply', wrap(async (req, res) => {
-  const id = site(req), d = await poolDetail(id, await settingsFor(req), await rateFor(id), { fresh: true });
+  const id = site(req);
+  if (await activeClearUp(id)) return res.status(409).json({ error: CLEARUP_BUSY });
+  const d = await poolDetail(id, await settingsFor(req), await rateFor(id), { fresh: true });
   if (!d.snapshot) return res.status(409).json({ error: d.error ?? 'ScreenLogic is not linked' });
   res.json(await applyPlan(id, d.plan, d.snapshot, d.settings));
 }));
 app.post('/api/appliances/pool/apply-tomorrow', wrap(async (req, res) => {
-  const id = site(req), d = await poolDetail(id, await settingsFor(req), await rateFor(id), { fresh: true });
+  const id = site(req);
+  if (await activeClearUp(id)) return res.status(409).json({ error: CLEARUP_BUSY });
+  // S-14: only the plan made for tomorrow (Chicago) may be applied; one left from an earlier evening is stale (its weather, its water)
+  const waiting = await kv.get<{ date?: string } | null>(`${id}:pool:pending`);
+  if (!waiting) return res.status(409).json({ error: 'Nothing is waiting to be applied' });
+  if (waiting.date !== addDays(localDay(), 1)) return res.status(409).json({ error: 'That suggestion was for another day; tonight\u2019s plan replaces it' });
+  const d = await poolDetail(id, await settingsFor(req), await rateFor(id), { fresh: true });
   if (!d.snapshot) return res.status(409).json({ error: d.error ?? 'ScreenLogic is not linked' });
-  if (!d.pending) return res.status(409).json({ error: 'Nothing is waiting to be applied' });
+  if (!d.pending || d.pending.date !== waiting.date) return res.status(409).json({ error: 'Nothing is waiting to be applied' });
   const r = await applyPlan(id, d.pending.plan, d.snapshot, d.settings);
   await kv.set(`${id}:pool:pending`, null as any);
   res.json(r);
