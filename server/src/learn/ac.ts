@@ -64,6 +64,18 @@ export function controlDecision(st: ControlState | null | undefined, day: string
   return { state: { count, days }, control, changed: true };
 }
 export const controlKey = (siteId: string) => `${siteId}:ac:control`;
+/**
+ * B2-9 (idea I-03): whether the day's forecast has spare solar to pre-cool with: some hour of the pre-cool window [from, to) whose
+ * forecast array output (Open-Meteo's hourly sun on the hour ending at h + 1, × 9.45 kW × 0.8: the planner's rule) covers the AC's
+ * draw plus the house's daytime base. A day without it can't pre-cool (the live gate wants measured spare solar), so it doesn't
+ * count toward control days: the claim pauses. Without hourly sun the claim goes ahead as before.
+ */
+export const SURPLUS_BASE_KW = 1.5;
+export function forecastSurplus(hourlySun: readonly number[] | undefined, from: number, to: number, acKw: number, baseKw = SURPLUS_BASE_KW) {
+  if (!hourlySun?.length) return true;
+  for (let h = Math.floor(from); h < to; h++) if ((hourlySun[h + 1] ?? 0) * 9.45 * .8 >= acKw + baseKw) return true;
+  return false;
+}
 /** controlDecision against kv, taken atomically: if two invocations decide the same day at once, the first write wins and both use it. */
 export async function claimControlDay(siteId: string, day: string, eligible: boolean): Promise<boolean> {
   const key = controlKey(siteId), d = controlDecision(await kv.get<ControlState>(key), day, eligible);
@@ -209,7 +221,7 @@ export function measuredSavings(days: AcDay[], kw: number) {
 export type LearnAc = { at: number; day: string; trim: TrimRecord | null; warmupFPerH: number | null; coolKw: number | null;
   measured: { measured: boolean; shiftedKwh: number | null; eveningAvoidedKwh: number | null; precoolDays: number; controlDays: number } | null };
 export const learnAcKey = (siteId: string) => `${siteId}:learn:ac`;
-type PlanInput = { date: string; high: number; sunKwhM2: number; humidity: number | null; settings: AcSettings; slope: number; acKw: number | null };
+type PlanInput = { date: string; high: number; sunKwhM2: number; humidity: number | null; settings: AcSettings; slope: number; acKw: number | null; hourlySun?: number[] };
 
 /**
  * Today's plan with the learning layer on top: a control day plans the plain comfort band; otherwise the nightly trim is applied
@@ -223,7 +235,9 @@ export async function learnedPlan<I extends PlanInput>(siteId: string, input: I,
   const s = input.settings, base = plan(input), decide = !opts.readOnly && opts.frozen !== false;
   // readOnly (a guest's or the owner's guest preview, planned as if home): use today's decision if one was made, never claim one or log
   // a prediction, so an Away day can't become a control day or a pre-cool day through somebody else's read (Vacation audit, §7)
-  const control = base.precool && input.date === localDay() && (!decide ? !!(await kv.get<ControlState>(controlKey(siteId)))?.days?.[input.date] : await claimControlDay(siteId, input.date, true));
+  // B2-9: a day whose forecast has no spare solar isn't eligible: no new control-day claim (a decision already made for it stands)
+  const surplus = forecastSurplus(input.hourlySun, base.precoolFrom, base.precoolTo, input.acKw ?? acKw);
+  const control = base.precool && input.date === localDay() && (!decide ? !!(await kv.get<ControlState>(controlKey(siteId)))?.days?.[input.date] : await claimControlDay(siteId, input.date, surplus));
   let p = control ? plan({ ...input, control: true }) : base;
   const learn = await kv.get<LearnAc>(learnAcKey(siteId)) ?? null, t = learn?.trim?.day === input.date ? learn.trim : null;
   if (t && !t.undone) {

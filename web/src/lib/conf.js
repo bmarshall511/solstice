@@ -2,7 +2,7 @@
 // A chip is drawn only from a tier the API sent: `conf` on /api/profile, /api/appliances/pool and /api/appliances/ac, or a
 // model row of the owner's /api/models. No tier, no chip. The owner's model row supplies the text ("±11%", "learning · 3 of 14");
 // a guest (no /api/models) sees the tier word.
-export const TIERS = { measured: 'm', learned: 'l', estimated: 'e', learning: 'n', unscored: 'u' };
+export const TIERS = { measured: 'm', learned: 'l', estimated: 'e', learning: 'n', unscored: 'u', dormant: 'u' };   // B2-9: dormant wears the unscored (dashed) look
 
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 

@@ -211,11 +211,13 @@ describe('learning layer routes (owner-only)', () => {
     expect(m.models.map((x: any) => x.id)).toEqual(['fc48.solar', 'fc48.home', 'fc48.soc', 'pool.kwhDay', 'ac.shifted', 'ac.eveningAvoided', 'bill.cycleImport', 'home.alwaysOn']);
     // the r-learning mockup's row fields
     expect(Object.keys(m.models[0])).toEqual(['id', 'label', 'unit', 'abs', 'dot', 't', 'v', 'tier', 'confidence', 'n', 'need', 'mape', 'mae', 'mad', 'bias', 'base', 'spark',
-      'improvement', 'bands', 'bandsPct', 'version', 'relearningSince', 'note', 'help', 'scores', 'days']);   // bandsPct: B2-1's daily-total MAPE per horizon band; version, relearningSince: B2-3
+      'improvement', 'bands', 'bandsPct', 'version', 'relearningSince', 'note', 'help', 'why', 'scores', 'days']);   // bandsPct: B2-1's daily-total MAPE per horizon band; version, relearningSince: B2-3; why: B2-9
     expect(m.models[0]).toMatchObject({ label: 'Next 48 h solar', dot: 'learned', t: 'l', v: '±4%', tier: 'learned', n: 20, need: 14, mape: 4, bias: -1, note: '20 days scored', help: null });
     expect(m.models[3]).toMatchObject({ id: 'pool.kwhDay', dot: 'unscored', t: 'u', v: 'unscored', help: 'needs pool readings through at least 80% of the pump’s scheduled hours' });
-    expect(m.models[4]).toMatchObject({ id: 'ac.shifted', dot: 'estimated', v: 'estimated' });
-    expect(m.summary).toEqual({ learned: 1, measured: 0, total: 8, improvement: null, headline: null });
+    // B2-9 (deliberate): with no surplus-eligible day in 14 days (or outside May–October) the AC savings models are dormant, drawn as unscored
+    expect(m.models[4]).toMatchObject({ id: 'ac.shifted', dot: 'unscored', t: 'u', v: 'dormant', tier: 'dormant', help: null, why: expect.stringMatching(/^Dormant/) });
+    expect(m.models[0].why).toBe('Learned: ±4% over 20 scored days.');
+    expect(m.summary).toEqual({ learned: 1, measured: 0, total: 8, dormant: 2, active: 6, improvement: null, headline: null });
     expect(m.anomalies).toEqual([{ id: expect.any(Number), kind: 'data.gap.energy', day, severity: 'warn', openedAt: 1, title: 'Energy history has a gap', body: 'b',
       detail: { title: 'Energy history has a gap', body: 'b', expected: 288, measured: 200 } }]);
     expect(m.ac).toEqual({ trim: null, measured: null, warmupFPerH: null, control: { every: 5, eligibleDays: 0, nextIn: 5, today: null } });

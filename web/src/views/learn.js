@@ -34,7 +34,7 @@ export function drawLearn(S) {
   const R = S.models, card = $('learnCard'); if (!R || !card) return;
   card.hidden = false;
   const s = R.summary;
-  $('lrBadge').textContent = `${s.learned} of ${s.total} learned`;
+  $('lrBadge').textContent = `${s.learned} of ${s.active ?? s.total} learned${s.dormant ? ` · ${s.dormant} dormant` : ''}`;   // B2-9: dormant models leave the count
   $('lrHead').hidden = !s.headline; $('lrHead').textContent = s.headline ?? '';
   $('lrRows').innerHTML = R.models.map(m => {
     const dir = biasDir(m.bias), arrow = dir ? `<span class="bias ${dir}">${dir === 'up' ? '▲' : dir === 'dn' ? '▼' : '→'}</span>` : '<span class="bias"></span>';
@@ -79,8 +79,9 @@ function openModel(S, id) {
   const u = m.abs ? ` ${esc(m.unit)}` : '%', f = v => v == null ? '—' : `${v > 0 ? '+' : ''}${v}${u}`;
   const pairs = (m.days ?? []).filter(d => d.p != null && d.a != null);
   let body;
-  if (m.tier === 'measured') body = `<p class="sub">A direct reading — no model to score.</p>${m.note ? `<p class="sub">${esc(m.note)}</p>` : ''}`;
-  else if (!pairs.length) body = `<p class="sub">Not enough scored samples yet.</p><p style="font-size:13px;color:var(--dim);line-height:1.55;margin-top:10px">${esc(m.help ?? 'No predictions have been scored against an actual reading in the last 14 days.')}</p>`;
+  if (m.tier === 'dormant') body = `<p class="sub">${esc(m.why)}</p>`;   // B2-9
+  else if (m.tier === 'measured') body = `<p class="sub">A direct reading — no model to score.</p>${m.note ? `<p class="sub">${esc(m.note)}</p>` : ''}`;
+  else if (!pairs.length) body = `<p class="sub">Not enough scored samples yet.</p><p style="font-size:13px;color:var(--dim);line-height:1.55;margin-top:10px">${esc(m.why ?? m.help ?? 'No predictions have been scored against an actual reading in the last 14 days.')}</p>`;
   else {
     const vals = pairs.flatMap(p => [p.p, p.a]), lo = Math.min(...vals) * .9, hi = Math.max(...vals) * 1.08 || 1, w = 300, h = 170, pad = 28;
     const X = v => pad + (v - lo) / (hi - lo || 1) * (w - pad - 10), Y = v => h - 14 - (v - lo) / (hi - lo || 1) * (h - 24);

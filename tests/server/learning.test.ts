@@ -9,7 +9,7 @@ import { planFor, AC_DEFAULTS, type AcPlan, type AcSettings } from '../../server
 import { guardCoolSetpoint, AUTOPILOT_OFF } from '../../server/src/appliances/guards.js';
 import { MODELS, MODEL_IDS, FORBIDDEN_KEY, versionOf, type ModelDef } from '../../server/src/learn/models.js';
 import { pickInputs, logPrediction, forgetWritten } from '../../server/src/learn/store.js';
-import { confidence, badge } from '../../server/src/learn/confidence.js';
+import { confidence, badge, acDormancy, whyText } from '../../server/src/learn/confidence.js';
 import { acSavings, controlDecision, CONTROL_EVERY, trimFor, applyTrim, precoolOutcome, measuredSavings, windowKwh, COOLING_HOURS,
   type ControlState, type PrecoolDay, type AcDay } from '../../server/src/learn/ac.js';
 import { pumpRules, acOverrunRule, solarStepRule, alwaysOnRule, dataGapRules, type MetricsByDay, type RuleCtx, type OpenAnomaly } from '../../server/src/learn/rules.js';
@@ -481,5 +481,42 @@ describe('B2-3: model versions', () => {
     expect(first['home.alwaysOn']).toEqual({ version: 3, since: '2026-10-07' });
     expect(modelVersions(first, '2026-10-09')['home.alwaysOn']).toEqual({ version: 3, since: '2026-10-07' });
     expect(modelVersions({ ...first, 'home.alwaysOn': { version: 2, since: '2026-09-25' } }, '2026-10-09')['home.alwaysOn']).toEqual({ version: 3, since: '2026-10-09' });
+  });
+});
+
+/* ------------------------------------------------------------------ B2-9: dormancy and the why sentence */
+describe('B2-9: the AC savings models go dormant, and every model says why', () => {
+  const spare = new Set(['2026-10-02', '2026-09-10']);
+  it('dormant outside May–October, or with no surplus-eligible day (eligible plan day + measured spare) in the last 14 days', () => {
+    expect(acDormancy('2026-11-10', ['2026-10-02'], spare)).toMatchObject({ dormant: true, reason: 'season', why: expect.stringContaining('Expected back from May') });
+    expect(acDormancy('2026-04-20', [], new Set())).toMatchObject({ dormant: true, reason: 'season' });
+    expect(acDormancy('2026-10-07', ['2026-10-02'], spare)).toEqual({ dormant: false, reason: null, last: '2026-10-02', why: null });
+    expect(acDormancy('2026-10-07', ['2026-10-03'], spare)).toMatchObject({ dormant: true, reason: 'surplus', last: null });           // eligible, but no spare solar that day
+    expect(acDormancy('2026-10-07', ['2026-09-10'], spare)).toMatchObject({ dormant: true, reason: 'surplus', last: '2026-09-10', why: expect.stringContaining('the last on Sep 10') });
+    expect(acDormancy('2026-05-01', ['2026-04-25'], new Set(['2026-04-25'])).dormant).toBe(false);   // one surplus day in the window wakes it in season
+  });
+  it('a dormant estimate is tier "dormant" (badge "dormant", confidence 0) even if measured; scored models ignore the flag', () => {
+    expect(confidence(MODELS['ac.shifted'], null, '2026-11-10', true, true)).toEqual({ tier: 'dormant', confidence: 0 });
+    expect(badge(MODELS['ac.shifted'], 'dormant', null)).toBe('dormant');
+    expect(confidence(MODELS['ac.shifted'], null, '2026-07-10', false, false).tier).toBe('estimated');
+    expect(confidence(MODELS['fc48.solar'], { n: 20, mae: 1, mape: .04, bias: -.01, lastDay: '2026-11-09' }, '2026-11-10', false, true).tier).toBe('learned');
+  });
+  it('why: the learning ETA, the factor an estimate lacks, the dormant reason', () => {
+    const m = MODELS['fc48.home'];   // need 14: rated from 7 scored days
+    expect(whyText(m, 'learning', { n: 3, mae: 2, mape: .1, bias: 0, lastDay: '2026-10-06' }, { rate: .5 })).toBe('Learning: 3 of 14 days scored; about 8 more days until it is rated.');
+    expect(whyText(m, 'learning', { n: 3, mae: 2, mape: .1, bias: 0, lastDay: '2026-10-06' })).toBe('Learning: 3 of 14 days scored.');
+    expect(whyText(m, 'estimated', { n: 14, mae: 20, mape: .38, bias: .05, lastDay: '2026-10-06' }, { conf: .1 })).toBe('Estimated: its error ±38% is large against the 40% ceiling (confidence 0.10, 0.70 makes it learned).');
+    expect(whyText(m, 'estimated', { n: 8, mae: 2, mape: .05, bias: 0, lastDay: '2026-10-06' }, { conf: .5 })).toMatch(/^Estimated: only 8 of 14 days are scored/);
+    expect(whyText(m, 'estimated', { n: 14, mae: 2, mape: .1, bias: -.1, lastDay: '2026-10-06' }, { conf: .6 })).toMatch(/^Estimated: it runs low by 10% on average/);
+    expect(whyText(m, 'unscored', null)).toBe(`Nothing scored yet: it ${m.help}.`);
+    expect(whyText(MODELS['ac.shifted'], 'dormant', null, { dormantWhy: 'Dormant: x.' })).toBe('Dormant: x.');
+    expect(whyText(MODELS['ac.shifted'], 'estimated', null, { ac: { precoolDays: 2, controlDays: 1 } })).toBe('Estimated from the plan until control days measure it: 2 of 5 pre-cool days compared so far.');
+  });
+  it('forecastSurplus: an hour of the pre-cool window whose forecast output covers the AC and the daytime base', async () => {
+    const { forecastSurplus } = await import('../../server/src/learn/ac.js');
+    const sun = (peak: number) => Array.from({ length: 24 }, (_, h) => h >= 7 && h <= 19 ? Math.sin((h - 7) / 12 * Math.PI) * peak : 0);
+    expect(forecastSurplus(sun(.9), 11, 16, 3)).toBe(true);           // .9 × 7.56 = 6.8 kW ≥ 3 + 1.5
+    expect(forecastSurplus(sun(.5), 11, 16, 3)).toBe(false);          // 3.8 kW at best: the house and the AC take it all
+    expect(forecastSurplus(undefined, 11, 16, 3)).toBe(true);         // no hourly sun: unchanged behaviour
   });
 });
