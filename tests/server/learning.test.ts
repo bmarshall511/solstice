@@ -51,7 +51,7 @@ describe('prediction logging', () => {
     const [sql, params] = vi.mocked(q).mock.calls[0];
     expect(sql).toContain('ON CONFLICT (site_id, model, target_day, target_hour, horizon) DO NOTHING');
     // B2-3: every row carries its model's version (deliberate update: inputs used to be '{"k":8}' and '{}')
-    expect(params).toEqual(['s', ['fc48.solar', 'home.alwaysOn'], ['2026-09-25', '2026-09-26'], [13, -1], [8, 0], [4.2, .52], ['kWh', 'kW'], [1000, 1000], ['{"k":8,"version":2}', '{"version":2}']]);
+    expect(params).toEqual(['s', ['fc48.solar', 'home.alwaysOn'], ['2026-09-25', '2026-09-26'], [13, -1], [8, 0], [4.2, .52], ['kWh', 'kW'], [1000, 1000], ['{"k":8,"version":2}', '{"version":3}']]);
   });
   it('`once` writes a key at most once per instance (the AC plan is recomputed on every read)', async () => {
     vi.mocked(q).mockResolvedValue([{ id: 1 }]);
@@ -470,15 +470,15 @@ describe('B2-2: the 30-day bias per horizon band divided out of the shown 48-hou
 
 /* ------------------------------------------------------------------ B2-3: model versions */
 describe('B2-3: model versions', () => {
-  it('every model has a version; a missing one reads as 1; home.alwaysOn and the daily-total forecasts are at 2', () => {
+  it('every model has a version; a missing one reads as 1; home.alwaysOn is at 3 (B2-5), the daily-total forecasts at 2', () => {
     for (const id of MODEL_IDS) expect(Number.isInteger(MODELS[id].version) && MODELS[id].version >= 1, id).toBe(true);
     expect([versionOf(undefined), versionOf(null), versionOf(2), versionOf('3')]).toEqual([1, 1, 2, 3]);
-    expect([MODELS['home.alwaysOn'].version, MODELS['fc48.solar'].version, MODELS['fc48.home'].version, MODELS['pool.kwhDay'].version]).toEqual([2, 2, 2, 1]);
+    expect([MODELS['home.alwaysOn'].version, MODELS['fc48.solar'].version, MODELS['fc48.home'].version, MODELS['pool.kwhDay'].version]).toEqual([3, 2, 2, 1]);
   });
   it('the versions record keeps the day a version first ran, and restarts it when the version changes', () => {
     const first = modelVersions(undefined, '2026-10-07');
-    expect(first['home.alwaysOn']).toEqual({ version: 2, since: '2026-10-07' });
-    expect(modelVersions(first, '2026-10-09')['home.alwaysOn']).toEqual({ version: 2, since: '2026-10-07' });
-    expect(modelVersions({ ...first, 'home.alwaysOn': { version: 1, since: '2026-09-25' } }, '2026-10-09')['home.alwaysOn']).toEqual({ version: 2, since: '2026-10-09' });
+    expect(first['home.alwaysOn']).toEqual({ version: 3, since: '2026-10-07' });
+    expect(modelVersions(first, '2026-10-09')['home.alwaysOn']).toEqual({ version: 3, since: '2026-10-07' });
+    expect(modelVersions({ ...first, 'home.alwaysOn': { version: 2, since: '2026-09-25' } }, '2026-10-09')['home.alwaysOn']).toEqual({ version: 3, since: '2026-10-09' });
   });
 });

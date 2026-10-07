@@ -56,8 +56,9 @@ export const MODELS: Record<ModelId, ModelDef> = {
   'bill.cycleImport': { ...base, id: 'bill.cycleImport', label: 'Billing-cycle kWh bought', unit: 'kWh', floor: 50, need: 3, ceiling: .25,
     window: '365d', staleDays: 45, freshDays: 35, inputs: ['from', 'to', 'elapsedDays', 'importSoFar', 'exportSoFar'],
     help: 'needs a parsed bill and a few finished billing cycles' },
-  // v2: the 2026-10-05 fix (median of the last 7 nights with thermostat data); v1 predictions sat near 3.7 kW
-  'home.alwaysOn': { ...base, id: 'home.alwaysOn', label: 'Always-on load (1–5 AM)', unit: 'kW', floor: .2, need: 14, ceiling: .25, version: 2,
+  // v2: the 2026-10-05 fix (median of the last 7 nights with thermostat data); v1 predictions sat near 3.7 kW.
+  // v3: B2-5's one always-on definition (p10 of 1–5 AM with the AC, the pump and a Clear-up masked; it was the mean less the AC)
+  'home.alwaysOn': { ...base, id: 'home.alwaysOn', label: 'Always-on load (1–5 AM)', unit: 'kW', floor: .2, need: 14, ceiling: .25, version: 3,
     inputs: ['nights', 'acKw'], help: 'needs two more weeks of nights' },
 };
 export const MODEL_IDS = Object.keys(MODELS) as ModelId[];

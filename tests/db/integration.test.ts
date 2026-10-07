@@ -686,8 +686,8 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
     expect(await one(`SELECT COUNT(*)::int n FROM model_scores WHERE site_id = $1`, [S])).toEqual({ n: 24 }); // 8 models × 3 windows
     expect(r.tiers).toMatchObject({ 'fc48.solar': 'learning', 'ac.shifted': 'measured', 'ac.eveningAvoided': 'measured' });
     // budget: a fixed number of round trips, no per-model or per-row queries
-    expect(r.queries).toBeLessThanOrEqual(25);
-    expect(queries).toBeLessThanOrEqual(29);   // mockup ah: + the pool days already marked extra; mockup ak: + the trip days; B2-3: + clearing a rescored day's old score rows
+    expect(r.queries).toBeLessThanOrEqual(28);
+    expect(queries).toBeLessThanOrEqual(32);   // mockup ah: + the pool days already marked extra; mockup ak: + the trip days; B2-3: + clearing a rescored day's old score rows; B2-5: + the always-on nights (3)
     expect(r.ms).toBeLessThan(5000);
     console.info(`[learning] nightly job on seeded data: ${queries} PGlite round trips (${r.queries} counted by the job), ${r.ms} ms`);
   });
@@ -746,16 +746,16 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
 
   it('B2-3: a prediction from an older model version is not scored, an older score doesn’t count, and the report says re-learning since', async () => {
     await q(`INSERT INTO predictions (site_id, model, target_day, target_hour, horizon, predicted, unit, made_at, inputs) VALUES ($1, 'home.alwaysOn', '2026-09-23', -1, 0, 3.7, 'kW', $2, '{"nights":7}')`,
-      [S, Date.parse(ts('2026-09-22', 5))]);   // logged before versions existed (= 1); home.alwaysOn is at 2
+      [S, Date.parse(ts('2026-09-22', 5))]);   // logged before versions existed (= 1); home.alwaysOn is at 3
     await q(`INSERT INTO daily_metrics (site_id, day, metric, value) VALUES ($1, '2026-09-10', 'score:home.alwaysOn:ape', 6.7), ($1, '2026-09-10', 'score:home.alwaysOn:abs', 3.2),
       ($1, '2026-09-10', 'score:home.alwaysOn:err', 3.2), ($1, '2026-09-10', 'score:home.alwaysOn:den', .48), ($1, '2026-09-10', 'score:home.alwaysOn:pred', 3.7)`, [S]);
     const r = await runLearn(S, { now: RUN + 30_000 });
     expect(r.errors).toEqual([]);
     expect(await metric('2026-09-23', 'score:home.alwaysOn:pred')).toBeUndefined();
-    expect(await metric('2026-09-24', 'score:home.alwaysOn:v')).toBe(2);
+    expect(await metric('2026-09-24', 'score:home.alwaysOn:v')).toBe(3);
     expect(await one(`SELECT n, mape FROM model_scores WHERE site_id = $1 AND model = 'home.alwaysOn' AND "window" = '30d'`, [S])).toEqual({ n: 1, mape: expect.closeTo(.25, 6) });
     const rep = await modelsReport(S, '2026-09-25'), ao = rep.models.find(m => m.id === 'home.alwaysOn')!;
-    expect(ao).toMatchObject({ version: 2, relearningSince: '2026-09-25', note: 're-learning since Sep 25 (model updated) · 1 of 14 days scored' });
+    expect(ao).toMatchObject({ version: 3, relearningSince: '2026-09-25', note: 're-learning since Sep 25 (model updated) · 1 of 14 days scored' });
     expect(ao.days.map(x => x.day)).toEqual(['2026-09-24']);
     expect(rep.models.find(m => m.id === 'pool.kwhDay')!.relearningSince).toBeNull();
   });

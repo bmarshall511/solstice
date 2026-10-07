@@ -2,7 +2,8 @@
 // the always-on push, on in-memory PGlite with synthetic 5-minute energy. All data synthetic.
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { q, kv, migrate } from '../../server/src/db.js';
-import { baseOf, burstsOf, acMask, nightBases, alwaysOnWatch, breakdownFor, overnightSplit } from '../../server/src/breakdown.js';
+import { baseOf, burstsOf, acMask, nightBases, alwaysOnWatch, breakdownFor, overnightSplit, alwaysOnKw } from '../../server/src/breakdown.js';
+import { outageDetail } from '../../server/src/outage.js';
 import { localMidnight, addDays, rfc3339 } from '../../server/src/tesla/client.js';
 
 vi.mock(import('../../server/src/appliances/screenlogic.js'), () => ({ configured: () => false, readPool: vi.fn(), writePoolPlan: vi.fn(), withUnit: vi.fn() }));
@@ -126,5 +127,44 @@ describe('on PGlite', () => {
     expect(b.split).toBe(true);
     expect([b.base, b.pump, b.ac]).toEqual([a.base, a.pump, a.ac]);       // counted as runs, the 03:05 hold would take the 03:20 step as pump
     expect(b.pump!).toBeLessThan(0.1);
+  });
+});
+
+describe('B2-5: one always-on figure (p10 of 1–5 AM, AC, pump and Clear-up masked)', () => {
+  // ten nights of a 1.2 kW house before 2026-10-05, Nest every 15 min (off) so the AC mask applies; the pump adds 0.48 kW where it runs (whole Wh per bucket)
+  const site = 'ao', nights = Array.from({ length: 10 }, (_, i) => addDays('2026-09-25', i));   // 09-25 … 10-04
+  const PUMP_ALL_NIGHT = nights[2], CLEARUP = nights[5], TRIP = nights[7];
+  beforeAll(async () => {
+    await q(`INSERT INTO sites (id, user_id, tesla_account_id, name) VALUES ($1, NULL, 1, 'Test')`, [site]);
+    for (const d of nights) {
+      const t0 = localMidnight(d).getTime(), ts: number[] = [], hrs: number[] = [], wh: number[] = [];
+      for (let t = t0 + 3600e3; t < t0 + 5 * 3600e3; t += B) {
+        const pump = d === PUMP_ALL_NIGHT || d === CLEARUP, kw = d === TRIP ? .6 : 1.2 + (pump ? .48 : 0);
+        ts.push(t); hrs.push(Math.floor((t - t0) / 3600e3)); wh.push(Math.round(kw * 1000 / 12));
+      }
+      await q(`INSERT INTO energy (site_id, ts, epoch, day, hour, home_wh) SELECT $1, ts, epoch, $2, hour, wh FROM unnest($3::text[], $4::bigint[], $5::int[], $6::int[]) AS x(ts, epoch, hour, wh)`,
+        [site, d, ts.map(t => rfc3339(new Date(t))), ts, hrs, wh]);
+      const nt = Array.from({ length: 20 }, (_, i) => t0 + i * 15 * 60_000);
+      await q(`INSERT INTO nest_readings (site_id, ts, day, hour, hvac) SELECT $1, ts, $2, ((ts - $3) / 3600000)::int, 'OFF' FROM unnest($4::bigint[]) AS x(ts)`, [site, d, t0, nt]);
+      // the pump all night: read every 15 min (its schedule covers the night); the Clear-up night: one sparse read at 02:05 only
+      const reads = d === PUMP_ALL_NIGHT ? nt.filter(t => t >= t0 + 3600e3).map(t => t + 5 * 60_000) : d === CLEARUP ? [t0 + 2 * 3600e3 + 5 * 60_000] : [];
+      for (const t of reads) await q(`INSERT INTO pool_readings (site_id, ts, day, hour, running, watts, rpm) VALUES ($1, $2, $3, $4, true, 480, 2000)`, [site, t, d, Math.floor((t - t0) / 3600e3)]);
+    }
+  });
+  it('a pump running all night is masked (the AC-masked base less its draw); a Clear-up masks the whole night even between sparse reads', async () => {
+    const clearUp = { startedAt: localMidnight(CLEARUP).getTime(), until: localMidnight(addDays(CLEARUP, 1)).getTime() };
+    const r = await alwaysOnKw(site, 10, { trips: new Set([TRIP]), clearUp });
+    const at = (d: string) => r.nights.find(n => n.day === d)!;
+    expect(at(nights[0])).toEqual({ day: nights[0], kw: 1.2, split: true, trip: false });
+    expect(at(PUMP_ALL_NIGHT).kw).toBeCloseTo(1.2, 3);
+    expect(at(CLEARUP).kw).toBeCloseTo(1.2, 3);
+    expect([r.kw, r.tripKw]).toEqual([1.2, .6]);                                         // the median at-home night; the trip's own
+    // without the Clear-up record only the 02:05 read's 20 minutes are masked: the night would read 1.68 kW
+    expect((await alwaysOnKw(site, 10, { trips: new Set(), clearUp: null })).nights.find(n => n.day === CLEARUP)!.kw).toBeCloseTo(1.68, 3);
+  });
+  it('the outage ladder uses the same figure: the median at-home night, not the minimum (the trip night)', async () => {
+    await q(`INSERT INTO trips (site_id, leave_at, back_at, state, started_at, ended_at) VALUES ($1, $2, $3, 'ended', $2, $3)`, [site, localMidnight(TRIP).getTime(), localMidnight(addDays(TRIP, 1)).getTime()]);
+    const o = await outageDetail(site, {}, new Date(NOW));
+    expect(o.loads.alwaysOnKw).toBe(1.2);
   });
 });

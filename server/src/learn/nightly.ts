@@ -23,6 +23,7 @@ import { evaluateRules, type MetricsByDay, type OpenAnomaly, type Verdict } from
 import { wxGti, gtiByDay, type Wx } from './wx.js';
 import { panelMetrics, LAYOUT_KEY, type Layout } from '../panels.js';
 import { tripDays } from '../vacation/trip.js';
+import { alwaysOnKw } from '../breakdown.js';
 
 /** The metrics an empty house would teach the at-home rules wrong (mockup ak): left out of the rules and the always-on prediction on trip days. */
 export const TRIP_METRICS = ['home.alwaysOn_kw', 'home.overnight_kw', 'home.kwh', 'ac.runtime_min', 'ac.degree_hours', 'ac.cool_f', 'ac.overnight_min'];
@@ -163,7 +164,9 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     const coolKw = (await learnAcKw(siteId)).coolKw;
     learnStats.queries++; // mockup ak: the trip days in the window (4 h or more away), kept out of every at-home model below
     const trips = await tripDays(siteId, from, today, now);
-    return { kvs, energyDaily, energyHourly, soeHourly, nest, pool, poolExtraDays: extraRows.map(r => r.day), preds, coolKw, wx: await wxGti(now), trips };
+    learnStats.queries += 3; // B2-5: the one always-on definition (breakdown.ts alwaysOnKw): energy, Nest and pool readings of the nights
+    const alwaysOn = await alwaysOnKw(siteId, LOOKBACK_DAYS, { now, trips, clearUp: (kvs[keys.clearup] ?? null) as { startedAt: number; until: number } | null });
+    return { kvs, energyDaily, energyHourly, soeHourly, nest, pool, poolExtraDays: extraRows.map(r => r.day), preds, coolKw, wx: await wxGti(now), trips, alwaysOn };
   }, null);
   if (!d) return finish();
   const prevLast = d.kvs[keys.last] as LearnRun | undefined, prevAc = d.kvs[keys.ac] as LearnAc | undefined;
@@ -224,11 +227,9 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
       const dh = Array.from({ length: 24 }, (_, h) => { const t = temps.get(`${day}|${h}`); return t == null ? null : Math.max(0, t - (hours[h]?.coolF ?? daySp ?? 76)); });
       if (dh.filter(v => v != null).length >= 20) put(day, 'ac.degree_hours', dh.reduce((a: number, v) => a + (v ?? 0), 0));
     }
-    // always-on: the 1–5 AM load with the AC's share (cooling minutes × its learned kW) taken out
-    for (const r of d.energyDaily) if (past(r.day) && r.overnight_n >= 46 && r.overnight_kw != null) {
-      const acMin = metricRows.get(`${r.day}|ac.overnight_min`)?.[2] ?? 0;
-      put(r.day, 'home.alwaysOn_kw', Math.max(0, r.overnight_kw - acMin / (r.overnight_n * 5) * kw));   // the window's own minutes (300 on fall-back night)
-    }
+    // always-on (B2-5): the app's one definition, the quiet tenth of 1–5 AM with the AC, the pool pump and a Clear-up masked
+    // (breakdown.ts alwaysOnKw); it was the 1–5 AM mean less the AC's minutes × kW, with the pump left in
+    for (const n of d.alwaysOn.nights) if (past(n.day)) put(n.day, 'home.alwaysOn_kw', n.kw);
     for (const day of d.trips) if (past(day)) put(day, 'trip.day', 1);   // mockup ak: shown as "trip" in History, skipped by the at-home models
     // per-panel days (mockup u-panels): the last 21 days of PVS readings by roof position, one query (none before the relay's first poll)
     const layout = d.kvs[keys.pvsLayout] as Layout | undefined;

@@ -4,6 +4,7 @@
 // It never calls ScreenLogic, Nest or Tesla, so it adds no SDM queries and writes nothing to any device.
 import { tripDays, tripAway } from './vacation/trip.js';
 import { q, one, kv, hourWh } from './db.js';
+import { alwaysOnKw as alwaysOnNights } from './breakdown.js';
 import { localDay, addDays, rfc3339 } from './tesla/client.js';
 import { forecast } from './appliances/autopilot.js';
 import { powerModel, measuredPoints, hourlyRpm, POOL_DEFAULTS, FREEZE_CIRCUIT, type PoolSettings } from './appliances/pool.js';
@@ -131,9 +132,8 @@ export async function outageDetail(siteId: string, settingsAll: Record<string, a
     one<{ ts: string; load_w: number | null; soc: number | null; storm_mode_active: boolean }>('SELECT ts, load_w, soc, storm_mode_active FROM readings WHERE site_id = $1 ORDER BY ts DESC LIMIT 1', [siteId]),
     q<{ hour: number; kw: number }>(`SELECT hour::int, AVG(kwh)::float8 kw FROM (SELECT day, hour, ${hourWh('home_wh')} / 1000.0 kwh FROM energy
       WHERE site_id = $1 AND day >= $2 AND day < $3 AND (day = ANY($4::text[])) = $5 GROUP BY day, hour) x GROUP BY hour`, [siteId, addDays(today, -14), today, [...trips], away && trips.size > 0]),
-    // 1–5 AM means of the last 30 complete nights (at least 36 of the 48 five-minute buckets)
-    q<{ kw: number }>(`SELECT (SUM(home_wh) / 1000.0 / 4)::float8 kw FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 AND hour BETWEEN 1 AND 4
-      GROUP BY day HAVING COUNT(*) >= 36`, [siteId, addDays(today, -30), today]),
+    // B2-5 (audit L-08): the one always-on definition (breakdown.ts alwaysOnKw) over the last 30 nights, trip nights apart
+    alwaysOnNights(siteId, 30, { now: now.getTime() }),
     q<{ ts: string; duration_s: number }>('SELECT ts, duration_s FROM backup_events WHERE site_id = $1 ORDER BY epoch DESC', [siteId]),
   ]);
   const info = site?.info ?? {};
@@ -143,7 +143,10 @@ export async function outageDetail(siteId: string, settingsAll: Record<string, a
   const profile = Array.from({ length: 24 }, (_, h) => profileRows.find(r => r.hour === h)?.kw ?? null);
   const typical = profile.filter((v): v is number => v != null);
   const drawKw = reading?.load_w != null ? Math.max(0, reading.load_w) / 1000 : profile[Math.floor(startHour)] ?? 2;   // a load Tesla didn't send is not 0 kW
-  const alwaysOnKw = nights.length ? Math.min(...nights.map(n => n.kw)) : typical.length ? Math.min(...typical) : Math.min(drawKw, .6);
+  // the median at-home night (it was the minimum of 30 nightly means, so a trip's empty-house night set it for a month); during a
+  // trip the trip nights' own when there are any
+  const nightKw = away && nights.tripKw != null ? nights.tripKw : nights.kw;
+  const alwaysOnKw = nightKw ?? (typical.length ? Math.min(...typical) : Math.min(drawKw, .6));
   const prof = profile.map(v => v ?? drawKw);
 
   // pool pump: the schedule on the controller as last read (or the plan last applied), watts from the pump's power model

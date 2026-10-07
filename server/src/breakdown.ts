@@ -53,12 +53,54 @@ export function acMask(readings: Array<{ ts: number; hvac: string }>) {
   return (start: number) => on.some(([a, b]) => a < start + 300_000 && b > start);
 }
 
-/** Whether the pool pump ran during a bucket, from ScreenLogic readings (same holds as acMask; night reads are sparse, so gaps count as off). `running` is pumpRunning: 0 RPM / 0 W is off. */
-export const pumpMask = (readings: Array<{ ts: number; running: boolean }>) => acMask(readings.map(r => ({ ts: r.ts, hvac: r.running ? 'COOLING' : 'OFF' })));
+/**
+ * Whether the pool pump ran during a bucket, from ScreenLogic readings (same holds as acMask; night reads are sparse, so gaps count as off).
+ * `running` is pumpRunning: 0 RPM / 0 W is off. B2-5: the whole of a Clear-up (kv `<site>:pool:clearup`, the pump on all day) counts as on.
+ */
+export const pumpMask = (readings: Array<{ ts: number; running: boolean }>, clearUp?: { startedAt: number; until: number } | null) => {
+  const read = acMask(readings.map(r => ({ ts: r.ts, hvac: r.running ? 'COOLING' : 'OFF' })));
+  return (start: number) => read(start) || (!!clearUp?.startedAt && start + 300_000 > clearUp.startedAt && start < clearUp.until);
+};
 /** The night's base with the AC and the pump masked out; with too few such buckets (a 24-hour pump), the AC-masked base less the pump's average. */
-function nightBase(bs: Bucket[], acOn: (t: number) => boolean, pumpOn: (t: number) => boolean, pumpKw: number) {
+export function nightBase(bs: Bucket[], acOn: (t: number) => boolean, pumpOn: (t: number) => boolean, pumpKw: number) {
   const clean = baseOf(bs, t => acOn(t) || pumpOn(t)); if (clean != null) return clean;
   const raw = baseOf(bs, acOn); return raw == null ? null : Math.max(0, raw - pumpKw);
+}
+const clearUpOf = (siteId: string) => kv.get<{ startedAt: number; until: number } | null>(`${siteId}:pool:clearup`);
+
+/**
+ * THE always-on figure (B2-5; audit L-07, L-08, orchestrator O-02: the app showed three different ones). One definition, used by the
+ * breakdown ("Where your energy goes", nightBase above), the overnight split, the always-on push (alwaysOnWatch), the nightly
+ * home.alwaysOn model (learn/nightly.ts) and the outage ladder (outage.ts):
+ *   a night's always-on = the quietest tenth (p10) of its 01:00–05:00 five-minute home buckets with the AC (Nest cooling or heating)
+ *   and the pool pump (pumpRunning readings, and the whole of a Clear-up) masked out, each reading held up to 20 minutes; with fewer
+ *   than 12 unmasked buckets, the AC-masked p10 less the pump's running draw that night. A night needs 40 of its 48 buckets.
+ *   Over several nights it is their median, trip nights left out (`kw`; `tripKw` is the trip nights' own, for an empty house).
+ * `split`: Nest covered 80% of the night, so the AC was masked; earlier nights have the pump masked only.
+ * Three queries (energy, Nest, pool readings, in parallel), plus the trip days and the Clear-up when the caller doesn't pass them.
+ */
+export async function alwaysOnKw(siteId: string, days: number, o: { now?: number; trips?: ReadonlySet<string>; clearUp?: { startedAt: number; until: number } | null } = {}) {
+  const now = o.now ?? Date.now(), today = localDay(new Date(now)), from = addDays(today, -days);
+  const [rows, nest, pumpNight, trips, clearUp] = await Promise.all([
+    q<{ epoch: string; day: string; hour: number; wh: number }>(`SELECT epoch::text, day, hour::int, home_wh::float8 wh FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 AND hour BETWEEN 1 AND 4 AND home_wh IS NOT NULL ORDER BY epoch`, [siteId, from, today]),
+    q<{ ts: string; day: string; hour: number; hvac: string }>(`SELECT ts::text, day, hour::int, hvac FROM nest_readings WHERE site_id = $1 AND day >= $2 AND day < $3 AND hour BETWEEN 0 AND 4 ORDER BY ts`, [siteId, from, today]),
+    q<{ ts: string; day: string; running: boolean; watts: number; rpm: number }>(`SELECT ts::text, day, running, watts::float8 watts, rpm::float8 rpm FROM pool_readings WHERE site_id = $1 AND day >= $2 AND day < $3 AND hour BETWEEN 0 AND 4 ORDER BY ts`, [siteId, from, today]),
+    o.trips ?? tripDays(siteId, from, today, now),
+    o.clearUp !== undefined ? o.clearUp : clearUpOf(siteId),
+  ]);
+  const nr = nest.map(r => ({ ts: Number(r.ts), day: r.day, hour: r.hour, hvac: r.hvac })), acOn = acMask(nr), covered = nestCoverage(nr.filter(r => r.hour >= 1 && r.hour <= 4));
+  const pr = pumpNight.map(p => ({ ts: Number(p.ts), day: p.day, running: pumpRunning(p), kw: (Number(p.watts) || 0) / 1000 })), pumpOn = pumpMask(pr, clearUp);
+  const pumpKw = new Map<string, number>(); for (const r of pr) if (r.running) pumpKw.set(r.day, Math.max(pumpKw.get(r.day) ?? 0, r.kw));
+  const byDay = new Map<string, Bucket[]>();
+  for (const r of rows) { const b = { epoch: Number(r.epoch), day: r.day, hour: r.hour, kw: Number(r.wh) * 12 / 1000 }; const a = byDay.get(r.day); if (a) a.push(b); else byDay.set(r.day, [b]); }
+  const nights: Array<{ day: string; kw: number; split: boolean; trip: boolean }> = [];
+  for (const [day, bs] of [...byDay].sort(([a], [b]) => a.localeCompare(b))) {
+    if (bs.length < 40) continue;
+    const split = (covered.get(day) ?? 0) >= NEST_COVERAGE * 240, kw = nightBase(bs, split ? acOn : () => false, pumpOn, pumpKw.get(day) ?? 0);
+    if (kw != null) nights.push({ day, kw: Math.round(kw * 1000) / 1000, split, trip: trips.has(day) });
+  }
+  const med = (v: number[]) => { if (!v.length) return null; const x = [...v].sort((a, b) => a - b), m = Math.floor(x.length / 2); return Math.round((x.length % 2 ? x[m] : (x[m - 1] + x[m]) / 2) * 1000) / 1000; };
+  return { kw: med(nights.filter(n => !n.trip).map(n => n.kw)), tripKw: med(nights.filter(n => n.trip).map(n => n.kw)), nights };
 }
 
 /** GET /api/breakdown?range=today|week|month: kWh a day by part (today: so far), today's bursts, the always-on trend. */
@@ -71,8 +113,8 @@ export async function breakdownFor(siteId: string, range: Range, settings: Recor
     q<{ ts: string; day: string; running: boolean; watts: number; rpm: number }>(`SELECT ts::text, day, running, watts::float8 watts, rpm::float8 rpm FROM pool_readings WHERE site_id = $1 AND day BETWEEN $2 AND $3 AND hour BETWEEN 0 AND 4 ORDER BY ts`, [siteId, addDays(from, -1), to]),
   ]);
   const slope = (await kv.get<{ slope: number }>(`${siteId}:ac:slope`))?.slope ?? 2.5;
-  const [pool, ac] = await Promise.all([poolKwhBetween(siteId, spans, settings), acKwhBetween(siteId, spans, slope)]);
-  const nr = nest.map(r => ({ ts: Number(r.ts), day: r.day, hvac: r.hvac })), acOn = acMask(nr), covered = nestCoverage(nr), pr = pumpNight.map(p => ({ ts: Number(p.ts), day: p.day, running: pumpRunning(p), kw: (Number(p.watts) || 0) / 1000 })), pumpOn = pumpMask(pr);
+  const [pool, ac, clearUp] = await Promise.all([poolKwhBetween(siteId, spans, settings), acKwhBetween(siteId, spans, slope), clearUpOf(siteId)]);
+  const nr = nest.map(r => ({ ts: Number(r.ts), day: r.day, hvac: r.hvac })), acOn = acMask(nr), covered = nestCoverage(nr), pr = pumpNight.map(p => ({ ts: Number(p.ts), day: p.day, running: pumpRunning(p), kw: (Number(p.watts) || 0) / 1000 })), pumpOn = pumpMask(pr, clearUp);
   const pumpKw = new Map<string, number>(); for (const r of pr) if (r.running) pumpKw.set(r.day, Math.max(pumpKw.get(r.day) ?? 0, r.kw));   // the running draw, for the fallback
   const byDay = new Map<string, Bucket[]>();
   for (const r of rows) { const b = { epoch: Number(r.epoch), day: r.day, hour: r.hour, kw: Number(r.wh) * 12 / 1000 }; const a = byDay.get(r.day); if (a) a.push(b); else byDay.set(r.day, [b]); }
@@ -124,7 +166,7 @@ export async function overnightSplit(siteId: string, from: string) {
   ]);
   const slope = (await kv.get<{ slope: number }>(`${siteId}:ac:slope`))?.slope ?? 2.5, acKw = acKwFor((await learnAcKw(siteId)).coolKw, slope);
   const nr = nest.map(r => ({ ts: Number(r.ts), day: r.day, hour: r.hour, hvac: r.hvac })), acOn = acMask(nr);
-  const covered = nestCoverage(nr.filter(r => r.hour >= 1 && r.hour <= 4)), pr = pumpNight.map(p => ({ ts: Number(p.ts), day: p.day, running: pumpRunning(p), kw: (Number(p.watts) || 0) / 1000 })), pumpOn = pumpMask(pr);
+  const covered = nestCoverage(nr.filter(r => r.hour >= 1 && r.hour <= 4)), pr = pumpNight.map(p => ({ ts: Number(p.ts), day: p.day, running: pumpRunning(p), kw: (Number(p.watts) || 0) / 1000 })), pumpOn = pumpMask(pr, await clearUpOf(siteId));
   const pumpKw = new Map<string, number>(); for (const r of pr) if (r.running) pumpKw.set(r.day, Math.max(pumpKw.get(r.day) ?? 0, r.kw));   // the running draw, for the fallback
   const byDay = new Map<string, Bucket[]>();
   for (const r of rows) { const b = { epoch: Number(r.epoch), day: r.day, hour: r.hour, kw: Number(r.wh) * 12 / 1000 }; const a = byDay.get(r.day); if (a) a.push(b); else byDay.set(r.day, [b]); }
@@ -144,7 +186,8 @@ export async function overnightSplit(siteId: string, from: string) {
 /* ---------- the always-on base by month and by night (the trend and the push) ---------- */
 const NIGHTS_SQL = `SELECT day, (PERCENTILE_CONT(${BASE_QUANTILE}) WITHIN GROUP (ORDER BY home_wh) * 12 / 1000.0)::float8 kw
   FROM energy WHERE site_id = $1 AND day >= $2 AND hour BETWEEN 1 AND 4 AND home_wh IS NOT NULL GROUP BY day HAVING COUNT(*) >= 40 ORDER BY day`;
-/** The quietest tenth of each night's 01:00–05:00 buckets since `since`, for the 13-month trend (no AC mask: Nest history is shorter). */
+/** The quietest tenth of each night's 01:00–05:00 buckets since `since`, for the 13-month trend only (no AC or pump mask: Nest and pool
+ *  history are shorter than 13 months); every current figure uses alwaysOnKw. */
 export const nightBases = (siteId: string, since: string) => q<{ day: string; kw: number }>(NIGHTS_SQL, [siteId, since]);
 /** Thirteen months of the base: the median night of each month. Cached a day in kv. */
 export async function alwaysOnTrend(siteId: string, now = Date.now()) {
@@ -161,8 +204,8 @@ export async function alwaysOnTrend(siteId: string, now = Date.now()) {
  * has come back within 0.15 kW (kv `<site>:alwaysOn:alerted`).
  */
 export async function alwaysOnWatch(siteId: string, now = Date.now()) {
-  const today = localDay(new Date(now)), trips = await tripDays(siteId, addDays(today, -34), today, now);   // mockup ak: trip nights are not the house's base
-  const nights = (await nightBases(siteId, addDays(today, -34))).filter(n => n.day < today && !trips.has(n.day)).map(n => ({ day: n.day, kw: Number(n.kw) }));
+  // B2-5: the one always-on definition (AC, pump and Clear-up masked); mockup ak: trip nights are not the house's base
+  const today = localDay(new Date(now)), nights = (await alwaysOnKw(siteId, 34, { now })).nights.filter(n => !n.trip);
   if (nights.length < 20) return { skipped: 'too few nights' };
   const last3 = nights.slice(-3), prior = nights.slice(-33, -3).map(n => n.kw).sort((a, b) => a - b), med = prior[Math.floor(prior.length / 2)];
   const key = `${siteId}:alwaysOn:alerted`, alerted = !!(await kv.get<boolean>(key)), latest = last3[last3.length - 1].kw;
