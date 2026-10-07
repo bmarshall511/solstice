@@ -14,7 +14,7 @@ import { icon } from '../lib/icons.js';
 import { dialPoint, arcPath, dialFrac, toFrac, fromFrac, snapRpm, snapDeg, thermoTone, pumpPresets, poolSpeedStage, circuitStage, autopilotStage, acStage,
   holdProgress, runLabel, rulesPill, ageWords, NEST_WORD } from '../lib/nowui.js';
 import { sheet, sheetHead, sheetFoot, modePill, seg, sysRow, banner, closeSheet } from './csheet.js';
-import { poolSend, clearUpSend, openClearUp, boostId, drawPool, openCircuits } from './appliances.js';
+import { poolSend, clearUpSend, openClearUp, boostId, drawPool, openCircuits, poolError } from './appliances.js';
 import { drawAc, openComfort, openNudge, loadAc } from './ac.js';
 import { RULE, EXPORT, MODE, waitingSuggestion, applyRule, setRuleMode, skip, loadPowerwallRules } from './powerwall.js';
 import { openVacation } from './vacation.js';
@@ -109,7 +109,8 @@ function mountPool(S, { inSheet = false, root = null }) {
       ${T ? `<div class="c-modeline c-acc-batt"><p><b>Tomorrow:</b> ${T.hours} h at ${(T.rpm ?? s.filterRpm ?? 0).toLocaleString()} rpm${T.boostHours ? ` + ${T.boostHours} h skim` : ''} · ${mode === 'auto' ? 'writes' : mode === 'off' ? 'off, nothing written' : 'suggests'}${mode !== 'off' && ap?.nextRunAt ? ` at ${esc(clock(Date.parse(ap.nextRunAt)))}` : ''}</p></div>` : ''}
       ${ap?.pending && d.pending ? `<div class="c-well"><div class="c-head"><h5>Plan waiting</h5><span class="c-fig">${esc(new Date(d.pending.date + 'T12:00').toLocaleDateString('en-US', { weekday: 'long' }))}</span></div>
         <p class="c-sum">${d.pending.plan.hours} h at ${(s.filterRpm ?? 0).toLocaleString()} rpm${d.pending.plan.boostHours ? ' + skim' : ''}. ${esc(d.pending.why.join('; ') || 'Season plan.')}</p><div class="c-btns"><button class="c-btn pri c-acc-batt" data-act="apply-tomorrow">Apply tomorrow</button></div></div>` : ''}`;
-    const rows = `<div class="c-card flush" data-pl="circ">${sysRow({ acc: 'c-acc-pool', ic: 'grid', title: 'Circuits', line: 'every circuit, its speed and schedule' })}</div>`;
+    const err = poolError() ? `<p class="c-fine" style="color:var(--warn)">${esc(poolError())}</p>` : '';   // the last command's refusal or failure
+    const rows = `${err}<div class="c-card flush" data-pl="circ">${sysRow({ acc: 'c-acc-pool', ic: 'grid', title: 'Circuits', line: 'every circuit, its speed and schedule' })}</div>`;
     show(`${sheetHead('Pool', modePill(cu ? 'clear' : boostOn ? 'boost' : mode))}<p class="c-sheet-sub">${esc(sub)}</p>`, `<div class="c-equip">${dial}${modes}${toggles}</div>${inSheet ? auto : ''}${rows}`,
       inSheet ? footer(st.stage, 'Open Pool', 'c-acc-pool') : stageRow(st.stage, 'c-acc-pool'));
     wire(d, { pid, bid, lim, presets, poolOn, boostOn, speeds, cur });

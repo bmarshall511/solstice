@@ -187,6 +187,7 @@ function go(v, anchor, p) {
   if (r.view === 'v-sys') setSeg(r.seg, false);
   setTimeout(syncTwins);   // next tick: the view is shown
   const sc = $('screen'), el = r.anchor && $(r.anchor);
+  if (el?.classList.contains('c-disc') && !el.classList.contains('expanded')) el.querySelector('.c-disc-h')?.click();   // a link to a disclosure opens it
   if (el) setTimeout(() => sc.scrollTo({ top: el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 50, behavior: 'smooth' }), 60); else sc.scrollTo({ top: 0 });
   if (r.planner) setTimeout(() => openPlanner(S), 120);
 }

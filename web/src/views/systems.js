@@ -4,7 +4,7 @@
 // panels.js, powerwall.js, appliances.js, ac.js); this file only reads S and writes markup. Nothing here writes to a device.
 import { $, clamp, localDate, localHour, addDays } from '../lib/util.js';
 import { cBadge } from '../lib/conf.js';
-import { SEGS, SEG_IDS, segIndex, k1 } from '../lib/sysui.js';
+import { SEGS, SEG_IDS, segIndex, k1, batteryUntil } from '../lib/sysui.js';
 import { nowPct, scheduleBlocks, acBlocks, hourBlocks, tileDelta, sumUntil, chargeBlocks, peakToday, rulesPill } from '../lib/nowui.js';
 import { sysTop, planStrip, tileHtml, modePill } from './csheet.js';
 
@@ -91,13 +91,6 @@ function drawSolarTiles(S) {
 
 /* ======================= Powerwall (frame 11) ======================= */
 const MODE_WORD = { autonomous: 'Time-Based Control', self_consumption: 'Self-Powered', backup: 'Backup-only' };
-/** Charge and discharge so far today and at the same time yesterday, from the 5-minute days (battery > 0 is discharging). */
-export function batteryUntil(day, hour) {
-  if (!day?.buckets?.length) return null;
-  const len = (day.bucketMinutes ?? 5) / 60, out = { charge: 0, discharge: 0 };
-  for (const b of day.buckets) { const f = Math.max(0, Math.min(1, (hour - b.t) / len)); if (!f) continue; const v = (b.battery ?? 0) * len * f; if (v > 0) out.discharge += v; else out.charge -= v; }
-  return out;
-}
 const dur = h => h == null || !isFinite(h) ? '—' : h >= 1 ? `${Math.floor(h)}h ${String(Math.round(h % 1 * 60)).padStart(2, '0')}m` : `${Math.round(h * 60)}m`;
 /** The Powerwall system card (rules mode, charge, time to full or reserve, the charging window), the hero, the unit bars, three rows. */
 export function drawPwLive(S) {

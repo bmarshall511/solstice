@@ -1,7 +1,7 @@
 // The four-tab layout (approved mockup mockups/al-ia.html v2): Systems segment routing and the old Insights / Panels aliases,
 // deep links, the History jump targets, the mini-gauge arc and the one badge component (web/src/lib/sysui.js, lib/conf.js).
 import { describe, it, expect } from 'vitest';
-import { SEGS, SEG_IDS, VIEWS, route, fromInsights, fromQuery, segIndex, JUMPS, jumpTarget, scrollFor, gaugeArc, hm, k1 } from '../../web/src/lib/sysui.js';
+import { SEGS, SEG_IDS, VIEWS, route, fromInsights, fromQuery, segIndex, JUMPS, jumpTarget, scrollFor, gaugeArc, hm, k1, batteryUntil } from '../../web/src/lib/sysui.js';
 import { cBadge, badge, BADGE_T, TIERS } from '../../web/src/lib/conf.js';
 
 describe('tabs and segments', () => {
@@ -68,6 +68,12 @@ describe('drawing helpers', () => {
     expect(gaugeArc(1)).toBe('M11.2 42.0 A24 24 0 1 1 52.8 42.0');
     expect(gaugeArc(.75)).toBe('M11.2 42.0 A24 24 0 0 1 52.8 18.0');
     expect(gaugeArc(-1)).toBe(gaugeArc(0)); expect(gaugeArc(2)).toBe(gaugeArc(1));
+  });
+  it('charge and discharge so far: battery < 0 charges, > 0 discharges, a bucket in progress counts in part', () => {
+    const day = { bucketMinutes: 60, buckets: [{ t: 0, battery: 2 }, { t: 1, battery: -3 }, { t: 2, battery: 1 }] };
+    expect(batteryUntil(day, 2.5)).toEqual({ charge: 3, discharge: 2.5 });
+    expect(batteryUntil(day, 0)).toEqual({ charge: 0, discharge: 0 });
+    expect(batteryUntil(null, 5)).toBeNull();
   });
   it('run time and kWh figures', () => {
     expect(hm(64)).toBe('1h 4m'); expect(hm(null)).toBe('—');

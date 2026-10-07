@@ -161,11 +161,9 @@ body.out .orbtxt p b{color:var(--solar)}
 .chipx i{width:6px;height:6px;border-radius:50%;background:var(--c,var(--batt));box-shadow:0 0 8px var(--c,var(--batt))}
 .chipx.alert{background:rgba(255,90,78,.14);border-color:rgba(255,90,78,.4);color:#ffd0cb}
 /* heatmap + records */
-.rec2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
-.rec2 div{background:rgba(255,255,255,.04);border:1px solid var(--glass-b);border-radius:16px;padding:11px 12px}
-.rec2 span{font-size:11px;color:var(--dim)}
-.rec2 b{display:block;font-size:19px;font-weight:300;margin-top:2px}
-.rec2 em{font-style:normal;font-size:10.5px;color:var(--mute)}
+
+
+
 .health{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--glass-b);font-size:12.5px;color:var(--dim)}
 .health:first-of-type{border-top:none}
 .health i{width:8px;height:8px;border-radius:50%;background:var(--batt);box-shadow:0 0 8px var(--batt);flex:none}
@@ -179,7 +177,7 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .check{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.45}
 .check:first-of-type{border-top:none}
 .check i{flex:none;width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-style:normal;font-size:12px;font-weight:700;margin-top:1px}
-.check i.ok{background:rgba(78,240,166,.15);color:var(--batt)} .check i.wa{background:rgba(255,193,94,.15);color:var(--solar)} .check i.al{background:rgba(255,90,78,.18);color:var(--out)}
+.check i.ok{background:rgba(78,240,166,.15);color:var(--batt)}  .check i.al{background:rgba(255,90,78,.18);color:var(--out)}
 .check b{color:var(--text);font-weight:600}
 .flag{margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(255,90,78,.08);border:1px solid rgba(255,90,78,.3);font-size:12px;color:#ffd6d1;line-height:1.5}
 .flag b{color:#fff}
@@ -321,8 +319,7 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 /* bills list */
 .bill{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--glass-b);cursor:pointer}
 .bill:first-child{border-top:none}
-.bill .bm{flex:1;font-size:12.5px;color:var(--dim);line-height:1.45}
-.bill .bm b{color:var(--text);font-weight:600;font-size:13.5px}
+
 .bill .bt{font:500 13px "JetBrains Mono";text-align:right}
 .bill .bt small{display:block;font:500 10.5px Manrope;margin-top:2px}
 .danger{all:unset;box-sizing:border-box;width:100%;cursor:pointer;display:block;text-align:center;margin-top:16px;padding:13px;border-radius:16px;background:rgba(255,90,78,.12);border:1px solid rgba(255,90,78,.4);color:#ffb3aa;font-weight:600;font-size:14px}
@@ -331,7 +328,7 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .seg{z-index:5;display:flex;gap:4px;margin:14px -4px 0;padding:4px;border-radius:999px;background:rgba(8,10,16,.75);border:1px solid var(--glass-b);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
 .seg button{all:unset;cursor:pointer;flex:1;text-align:center;font-size:12px;font-weight:600;padding:8px 0;border-radius:999px;color:var(--dim);transition:.2s}
 .seg button.on{background:rgba(255,255,255,.12);color:var(--text)}
-#insSeg{position:sticky;top:0}
+
 .panel{display:none}.panel.on{display:block;animation:in .4s var(--ease)}
 .seg2{display:flex;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid var(--glass-b)}.seg2 button{all:unset;cursor:pointer;font-size:11px;font-weight:600;padding:5px 10px;border-radius:999px;color:var(--dim)}.seg2 button.on{background:rgba(78,240,166,.18);color:var(--text)}
 /* Day Ring */
@@ -381,7 +378,7 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .signals{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-top:14px}.signals div{text-align:center;min-width:0}.signals svg{display:block;width:100%}.signals b{display:block;font:500 10.5px "JetBrains Mono";margin-top:2px}.signals small{display:block;font-size:9px;color:var(--mute);letter-spacing:.06em;text-transform:uppercase}
 .card.auto{container-type:inline-size}
 @container (max-width:480px){.signals{grid-template-columns:repeat(3,1fr);gap:8px 4px}.signals svg{max-width:64px;margin:0 auto}.signals small{letter-spacing:.02em}}
-.wkhead{display:flex;justify-content:space-between;align-items:baseline;margin-top:16px;font-size:12px;color:var(--dim);gap:8px}.wkhead span{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;flex:none}.wkhead b{font:500 11px "JetBrains Mono";color:var(--text);text-align:right}
+
 .rules{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.rules span{font-size:11px;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);color:var(--dim)}
 .tline{margin-top:14px;position:relative;padding-left:18px}.tline:before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:1px;background:rgba(255,255,255,.12)}
 .tline div{position:relative;display:flex;gap:8px;font-size:12px;color:var(--dim);padding:5px 0;min-width:0}.tline i{position:absolute;left:-16px;top:10px;width:7px;height:7px;border-radius:50%;background:var(--batt);box-shadow:0 0 8px var(--batt)}.tline i.w{background:var(--solar);box-shadow:0 0 8px var(--solar)}
@@ -390,7 +387,7 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .season div b{display:block;font:500 13px "JetBrains Mono";color:var(--text)}.season div.cur{border-color:rgba(255,193,94,.45);background:rgba(255,193,94,.1)}
 .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.tiles .stat b{font-size:15px}.tiles .stat b.up{color:var(--batt)}.tiles .stat b.dn{color:var(--warn)}
 /* ---------- appliances (Insights) ---------- */
-.apps{display:flex;gap:8px;margin-top:2px;overflow-x:auto;scrollbar-width:none;padding:0 2px}
+
 .app{flex:0 0 auto;padding:8px 12px;border-radius:999px;background:var(--glass);border:1px solid var(--glass-b);font-size:12px;color:var(--dim);display:flex;gap:6px;align-items:center}
 .app.on{background:rgba(108,196,255,.14);border-color:rgba(108,196,255,.4);color:var(--text)}
 .app i{width:7px;height:7px;border-radius:50%;background:var(--mute)}
@@ -402,8 +399,7 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 :where(.two,.tiles) .stat b{display:block;font:500 13px "JetBrains Mono";margin-top:4px;word-break:break-word;letter-spacing:-.02em}
 
 /* ---------- AC ---------- */
-.scrub{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:center;margin-top:10px;font-size:12px;color:var(--dim)}.scrub span{font:500 11px "JetBrains Mono";color:var(--text);white-space:nowrap}
-.scrub input{-webkit-appearance:none;appearance:none;width:100%;min-width:0;height:6px;border-radius:3px;background:rgba(255,255,255,.12);outline:none;margin:0}.scrub input::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.4),0 0 0 4px rgba(108,196,255,.35);cursor:pointer}.scrub small{grid-column:2;font-size:10.5px;color:var(--mute)}
+
 .tlab{position:absolute;right:12px;top:10px;text-align:right;font:500 11px "JetBrains Mono";color:var(--text);background:rgba(0,0,0,.35);padding:6px 9px;border-radius:10px;line-height:1.5;pointer-events:none}
 .comfort{position:relative;height:170px;margin-top:10px}.comfort svg{display:block;width:100%;height:100%}
 .presence{margin-top:12px;justify-content:center}.presence button{flex:1;text-align:center;padding:8px 10px}
@@ -469,7 +465,7 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .outage .o3d .roofhud span{display:block;color:var(--dim)}
 .outage .o3d .hlbl,.outage .o3d .hlead{will-change:left,top}
 .outage .o3d .hlbl.dark b{color:var(--mute)}
-.outage .hbtns{display:flex;gap:6px;align-items:center;flex:none}
+
 .outage button.chip{cursor:pointer;font-family:inherit}
 .outage button.chip.on{background:rgba(255,90,78,.14);border-color:rgba(255,90,78,.4);color:#ffd0cb}
 .outage .seg2.wide{margin-top:10px}.outage .seg2.wide button{flex:1 1 auto;text-align:center}
@@ -478,7 +474,7 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .outage .rung i{display:block;height:3px;border-radius:2px;margin-top:5px;background:var(--c);transition:width .6s var(--ease),opacity .3s}
 .outage .kv .off{opacity:.35;text-decoration:line-through}
 .outage .kv .off i{opacity:.4}
-.outage .wkhead b{min-width:0}
+
 /* end n-outage */
 
 /* q-share */
@@ -606,11 +602,10 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 .conf[data-t="e"]{color:var(--solar);background:rgba(255,193,94,.12);border-color:rgba(255,193,94,.32)}
 .conf[data-t="n"]{color:var(--mute);background:rgba(255,255,255,.05);border-color:var(--glass-b)}
 .conf[data-t="u"]{color:var(--mute);background:transparent;border:1px dashed rgba(255,255,255,.22)}
-.mrhead{display:flex;justify-content:space-between;align-items:center;gap:10px}
-.mrhead b{font-size:15px;font-weight:600;line-height:1.3}
-.mrhead .badge{flex:none}
+
+
 .lrep .headline{font-size:13px;color:var(--dim);line-height:1.5;margin-top:8px}
-.lrep .lrows{margin-top:14px}
+
 .lrep .lrow{display:block;padding:10px 0;border-top:1px solid var(--glass-b);cursor:pointer}
 .lrep .lrow:first-child{border-top:none}
 .lrep .lrow:active{background:rgba(255,255,255,.04)}
@@ -629,8 +624,7 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 .lrep .lnote{flex:1;font-size:11px;color:var(--mute);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lrep .lhelp{padding-left:16px;margin-top:4px;font-size:11px;color:var(--mute);line-height:1.4}
 .lrep .chev-r{flex:none;color:var(--mute);font-size:13px}
-.lrep .lanom{margin-top:12px;padding-top:12px;border-top:1px solid var(--glass-b)}
-.lrep .sect2{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:600;margin:16px 2px 4px}
+
 #learnCard [hidden],#learnCard[hidden]{display:none}
 .sheet .scatter{margin-top:12px}
 .sheet .scatter svg{display:block;width:100%}
@@ -722,29 +716,18 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 .row .rt small.st-on{color:var(--batt)}
 .row .rt small.st-off{color:var(--mute)}
 .row .rt small.st-warn{color:var(--warn)}
-.row.newk .rt{position:relative}
-.nbadge{font:600 9.5px Manrope;letter-spacing:.08em;text-transform:uppercase;color:var(--batt);border:1px solid rgba(78,240,166,.35);border-radius:999px;padding:1px 6px;margin-left:6px;vertical-align:1px}
+
 /* frame 4: presence line and "Away until…" */
-.psrc{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--dim);line-height:1.4}
-.psrc[hidden]{display:none}
-.psrc i{flex:none;width:7px;height:7px;border-radius:50%;background:var(--home);box-shadow:0 0 8px var(--home)}
-.psrc b{color:var(--text);font-weight:600}
-.aw-pre{display:grid;gap:8px;margin-top:14px}
-.aw-pre button,.aw-pre .awb{all:unset;cursor:pointer;display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:16px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b)}
-.aw-pre .rt{flex:1;font-size:14px;font-weight:600}
-.aw-pre .rt small{display:block;font-size:11.5px;color:var(--mute);font-weight:400;margin-top:1px}
-.aw-pre .rd{flex:none;width:18px;height:18px;border-radius:50%;border:1.5px solid rgba(255,255,255,.35);box-sizing:border-box}
-.aw-pre .on{border-color:rgba(78,240,166,.5);background:rgba(78,240,166,.08)}
-.aw-pre .on .rd{border:5px solid var(--batt)}
-.aw-pick{position:relative;flex:none}
-.aw-pre input{all:unset;font:500 14px "JetBrains Mono";padding:6px 10px;border-radius:10px;background:rgba(0,0,0,.35);border:1px solid var(--glass-b);color:var(--text);width:104px;text-align:center;font-size:13px;flex:none}
-.aw-pick input[type=datetime-local]{position:absolute;inset:0;opacity:0;width:100%;padding:0;box-sizing:border-box}
-.aw-do{margin-top:14px;display:grid;gap:8px}
-.aw-do div{display:flex;gap:10px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.035);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.45}
-.aw-do i{flex:none;width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-style:normal;font-size:12px;background:color-mix(in srgb,var(--c) 20%,transparent);color:var(--c)}
-.aw-do b{color:var(--text);font-weight:600}
-.aw-do .mode{font:600 9.5px Manrope;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);border:1px solid var(--glass-b);border-radius:999px;padding:1px 6px;margin-left:4px}
-.sheet #awGo{margin-top:14px;width:100%;box-sizing:border-box}
+
+
+
+
+
+
+
+
+
+
 /* frame 5: Powerwall rules */
 .pwr .scope{margin-top:10px;padding:10px 12px;border-radius:14px;background:rgba(108,196,255,.07);border:1px solid rgba(108,196,255,.24);font-size:12px;color:var(--dim);line-height:1.5}
 .pwr .scope b{color:var(--text)}
@@ -769,12 +752,12 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 .pwr .cur{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 .pwr .cur span{font:500 10.5px "JetBrains Mono";padding:4px 8px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);color:var(--dim)}
 .pwr .cur span b{color:var(--text);font-weight:500}
-.pwr.nocmd .apply{background:rgba(255,255,255,.08);color:var(--mute);border:1px solid var(--glass-b);cursor:default}
+
 /* end t-enhancements */
 /* u-panels ---------------------------------------------------------------------------------------------------------------------
  * Panels → Live roof "Per panel" chip, its diverging legend, the HUD line and the pinned readout (frames 1–2), and the Panel health
  * card (frames 3–4) of the approved mockup u-panels. */
-.togs{margin-left:auto;display:flex;gap:6px;flex:none}
+
 .chip.tog.pp[hidden],.card.ph[hidden]{display:none}
 .chip.tog.pp.on i{background:linear-gradient(90deg,#2f5fd0,#ffc15e);box-shadow:none;width:10px;border-radius:3px}
 .chip.tog.pp:disabled{opacity:.45;cursor:default}
@@ -836,7 +819,7 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 .ph .flagbox .kv{margin-top:10px}
 .ph .flagbox .why{font-size:12px;color:var(--dim);margin-top:8px;line-height:1.5}
 .ph .flagbox .why b{color:var(--text)}
-.ins.lanom[data-go]{cursor:pointer}
+
 /* end u-panels */
 /* ---------- v-ac-control: Thermostat card, hold banner, fan sheet ---------- */
 .tstat[hidden]{display:none}
@@ -848,7 +831,7 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 .tstat .sp small{display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);font-weight:600}
 .tstat .sp b{display:block;font-size:54px;font-weight:300;letter-spacing:-.03em;line-height:1.05;font-variant-numeric:tabular-nums;white-space:nowrap}
 .tstat .sp b sup{font-size:24px;vertical-align:22px;margin-left:1px}
-.tstat .sp b.rng{font-size:42px}.tstat .sp b.rng sup{font-size:20px;vertical-align:16px}
+
 .tstat .sp b.cool{color:#9fd6ff}.tstat .sp b.heat{color:#ffb38a}.tstat .sp b.off{color:var(--mute)}
 .tstat .sp b .dash{display:inline;font-size:30px;vertical-align:10px;color:var(--mute);margin:0 4px}
 .tstat .sp b .pick{border-bottom:2px solid rgba(255,255,255,.35)}
@@ -856,12 +839,9 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 .tstat .sp span.sending{color:var(--solar)}.tstat .sp span.ok{color:var(--batt)}.tstat .sp span.err{color:var(--warn)}
 .tstat .seg2.wide{margin-top:14px}.tstat .seg2.wide button{flex:1;text-align:center;padding:9px 6px;font-size:12px}
 .tstat .seg2.wide button.on.cool{background:rgba(108,196,255,.2)}.tstat .seg2.wide button.on.heat{background:rgba(255,158,102,.2)}.tstat .seg2.wide button.on.off{background:rgba(255,255,255,.12)}
-.tstat .xtra{display:flex;gap:8px;margin-top:10px}
-.tstat .xtra button{all:unset;cursor:pointer;flex:1;display:flex;align-items:center;justify-content:center;gap:7px;padding:10px 8px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);font-size:12.5px;font-weight:600;color:var(--dim)}
-.tstat .xtra button i{width:7px;height:7px;border-radius:50%;background:var(--mute)}
-.tstat .xtra button.on{color:var(--text);border-color:rgba(78,240,166,.4);background:rgba(78,240,166,.08)}
-.tstat .xtra button.on i{background:var(--batt);box-shadow:0 0 6px var(--batt)}
-.tstat .xtra button small{font:500 10.5px "JetBrains Mono";color:var(--mute)}
+
+
+
 .follow{display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:12px;color:var(--dim);line-height:1.45}
 .follow i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--batt);box-shadow:0 0 10px var(--batt);margin-top:5px}
 .follow i.off{background:var(--mute);box-shadow:none}
@@ -879,17 +859,15 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 .hold .row2 button.p{background:rgba(196,162,255,.18);border-color:rgba(196,162,255,.4)}
 .hold.paused{background:rgba(255,255,255,.04);border-color:var(--glass-b)}
 .hold.paused .hh i{background:var(--mute);box-shadow:none}.hold.paused .hh em{color:var(--mute)}
-.status i.hold-dot{background:#c4a2ff;box-shadow:0 0 10px #c4a2ff}
+
 .tline i.h{background:#c4a2ff;box-shadow:0 0 8px #c4a2ff}.tline em.h{color:#c4a2ff}
 .fan{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
 .fan button{all:unset;cursor:pointer;text-align:center;padding:12px 0;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);font:500 13px "JetBrains Mono"}
 .fan button.on{border-color:rgba(78,240,166,.5);background:rgba(78,240,166,.1)}
-#fanGo{width:100%;box-sizing:border-box}
+
 /* v-ac-control frames 5 and 7: band button and sheet, the band suggestion */
-.bandbtn{all:unset;cursor:pointer;font-size:11px;color:var(--dim);display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;border:1px solid var(--glass-b);background:rgba(255,255,255,.04);white-space:nowrap;flex:none}
-.bandbtn:after{content:"✎";font-size:10px;color:var(--mute)}
-html[data-role=guest] .bandbtn,html[data-as=guest] .bandbtn{pointer-events:none}
-html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:none}
+
+
 .bands{display:grid;gap:8px;margin-top:14px}
 .brow{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
 .brow .bt{flex:1;min-width:0;font-size:13.5px;font-weight:600}
@@ -946,20 +924,16 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .eg-trend i.now{opacity:1}
 .eg-tlab{display:flex;justify-content:space-between;font:500 9px "JetBrains Mono";color:var(--mute);margin-top:4px}
 /* end y-energy-breakdown */
-
 /* ---------- z-overnight-baseline: the night split ---------- */
-.ob-key{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;font-size:11.5px;color:var(--dim)}
-.ob-key i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+
 .ob-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
 .ob-sum div{padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
 .ob-sum b{display:block;font:500 15px "JetBrains Mono"}
 .ob-sum span{font-size:11px;color:var(--dim)}
 #nightSum+p{margin-top:10px}
 /* end z-overnight-baseline */
-
 /* ---------- w-pool-control frames 1–2: the switches and each circuit's sheet ---------- */
-.pc-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}
-.pc-grid:empty{display:none}
+
 .pc{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:4px 9px;padding:10px 11px;border-radius:15px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b);min-width:0}
 .pc i{width:9px;height:9px;border-radius:50%;background:var(--mute)}
 .pc b{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -970,7 +944,7 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .pc.on i{background:#6cc4ff;box-shadow:0 0 8px #6cc4ff}
 .pc.on small{color:#9fd6ff}
 .pc.send{border-color:rgba(255,193,94,.45)}.pc.send small{color:var(--solar)}
-.pc-err{grid-column:1/-1;color:var(--warn)!important;margin-top:0!important}
+
 .pc-lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-top:16px}
 .pc-runs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
 .pc-runs.five{grid-template-columns:repeat(5,1fr)}
@@ -980,35 +954,25 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .pc-rpm .bt{font-size:13.5px;font-weight:600;min-width:0}.pc-rpm .bt small{display:block;font-size:11px;color:var(--mute);font-weight:400}
 #pcGo{width:100%;box-sizing:border-box;margin-top:14px;background:var(--batt);color:#04140c}
 /* frames 3–4: the Boost button and sheet, spa heat */
-.pc-row{display:flex;gap:8px;margin-top:10px}
-.pc-row:empty{display:none}
-.pc-row button{all:unset;box-sizing:border-box;cursor:pointer;flex:1;display:flex;align-items:center;justify-content:center;gap:7px;padding:11px 8px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);font-weight:600;font-size:12.5px}
-.pc-row button small{font:500 10.5px "JetBrains Mono";color:var(--mute)}
-.pc-row button.on{border-color:rgba(255,122,102,.5);background:rgba(255,122,102,.1)}
-.pc-row button.send{border-color:rgba(255,193,94,.45)}
+
+
+
 .pc-heat .seg2{display:flex;margin-top:10px}.pc-heat .seg2 button{flex:1;text-align:center;padding:9px 6px}
 .pc-heat .tstat{margin-top:4px}
 /* frame 6: Clear-up (the row button, the banner on the planner, its badge) */
-.pc-row button.cu{border-color:rgba(108,196,255,.5);background:rgba(108,196,255,.1)}
+
 .badge.cu{color:#9fd6ff;border-color:rgba(108,196,255,.4);background:rgba(108,196,255,.08)}
-.pl-clear{margin-top:12px;padding:12px 14px;border-radius:16px;background:rgba(108,196,255,.09);border:1px solid rgba(108,196,255,.35);font-size:12.5px;line-height:1.5;color:var(--dim)}
-.pl-clear .hh{display:flex;align-items:center;gap:8px}
-.pl-clear .hh i{flex:none;width:8px;height:8px;border-radius:50%;background:#6cc4ff;box-shadow:0 0 10px #6cc4ff}
-.pl-clear .hh b{color:var(--text);font-weight:700;font-size:13.5px}
-.pl-clear .hh em{margin-left:auto;font:500 10.5px "JetBrains Mono";font-style:normal;color:#9fd6ff;flex:none}
-.pl-clear p{margin-top:4px}
-.pl-clear .bar{height:4px;border-radius:2px;background:rgba(255,255,255,.08);margin-top:9px;overflow:hidden}
-.pl-clear .bar i{display:block;height:100%;background:#6cc4ff}
-.pl-clear .row2{display:flex;gap:8px;margin-top:10px}
-.pl-clear .row2 button{all:unset;cursor:pointer;flex:1;text-align:center;padding:9px 10px;border-radius:12px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);font-weight:600;font-size:12.5px;color:var(--text)}
+
+
+
+
+
 .pc-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}
 .pc-nums div{padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
 .pc-nums b{display:block;font:500 15px "JetBrains Mono"}.pc-nums span{font-size:11px;color:var(--dim)}
 /* mockup ac (option B): the Off / Suggest / Auto switch on both Autopilot cards, a full-width row under the title */
-.modes-row{display:flex;gap:2px;padding:3px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid var(--glass-b);margin-top:12px}
-.modes-row button{all:unset;cursor:pointer;flex:1;text-align:center;padding:10px 6px;border-radius:11px;font-size:13px;font-weight:600;color:var(--dim)}
-.modes-row button.on{background:rgba(78,240,166,.16);color:var(--text)}
-.modes-row button:focus-visible{outline:2px solid var(--home);outline-offset:1px}
+
+
 /* mockup ae: learning from your changes (the line, the "Your changes" sheet, the pool suggestions) */
 .ae-line{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;gap:8px;width:100%;margin-top:12px;font-size:12.5px;color:var(--dim)}
 .ae-line i{flex:none;width:8px;height:8px;border-radius:50%;background:#c4a2ff;box-shadow:0 0 8px #c4a2ff}
@@ -1028,15 +992,11 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .ae-chg b{color:var(--text);font-weight:600}
 .ae-chg span{font:500 11px "JetBrains Mono";color:var(--text)}
 /* mockup aj: the pool water log */
-.pw-vals{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px;cursor:pointer}
-.pw-vals div{padding:8px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b);min-width:0}
-.pw-vals small{display:block;font:600 9.5px Manrope;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
-.pw-vals b{display:block;font:500 17px "JetBrains Mono";margin-top:2px}
-.pw-vals span{font-size:10.5px;color:var(--dim)}
-.pw-vals .ok b{color:var(--batt)}.pw-vals .lo b,.pw-vals .hi b{color:#ffc15e}
-.pw-line{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--dim)}
-.pw-line b{color:var(--text);font-weight:600}
-.pw-btn{all:unset;cursor:pointer;font-size:12.5px;font-weight:600;padding:8px 12px;border-radius:12px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);color:var(--text);white-space:nowrap}
+
+
+
+
+
 .pw-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;padding:11px 0;border-top:1px solid rgba(255,255,255,.06)}
 .pw-row:first-child{border-top:0}
 .pw-row .tl{font-size:13.5px;font-weight:600}
@@ -1067,17 +1027,12 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .ah-tbl .hd{font:600 9.5px Manrope;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
 .ah-tbl .old{color:#ff9e66}.ah-tbl .nw{color:var(--batt)}
 /* mockup ag: the Comfort card and sheets */
-.ag-edit{all:unset;cursor:pointer;font-size:12px;font-weight:600;color:var(--text);padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b)}
-.ag-two{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
-.ag-two div{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
-.ag-two small{display:block;font:600 10px Manrope;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
-.ag-two b{display:block;font-size:30px;font-weight:300;letter-spacing:-.02em;margin-top:2px}
-.ag-two span{font-size:11.5px;color:var(--dim)}
-.ag-line{font-size:12.5px;color:var(--dim);margin-top:10px;line-height:1.5}
-.ag-line b{color:var(--text);font-weight:600}
-.ag-nudge{display:flex;gap:8px;margin-top:12px}
-.ag-nudge button{all:unset;cursor:pointer;flex:1;text-align:center;padding:9px 10px;border-radius:12px;font-weight:600;font-size:12.5px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);color:var(--text)}
-.ag-nudge i{font-style:normal}.ag-nudge .cold i{color:#7cc4ff}.ag-nudge .warm i{color:#ff9e66}
+
+
+
+
+
+
 .ag-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;padding:12px 0;border-top:1px solid rgba(255,255,255,.06)}
 .ag-row:first-child{border-top:0}
 .ag-row .tl{font-size:13.5px;font-weight:600}
@@ -1100,33 +1055,23 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .ag-opt b{font-size:13.5px}
 .ag-opt p{font-size:12px;color:var(--dim);margin-top:3px;line-height:1.45}
 /* mockup af: the Powerwall capacity card */
-.bc-big{display:flex;align-items:baseline;gap:8px;margin-top:10px}
-.bc-big b{font-size:30px;font-weight:300;letter-spacing:-.02em}
-.bc-big span{font-size:12px;color:var(--dim)}
-.bc-meter{position:relative;height:12px;border-radius:6px;background:rgba(255,255,255,.06);margin-top:12px;overflow:hidden}
-.bc-meter i{position:absolute;left:0;top:0;bottom:0;border-radius:6px;background:var(--batt);opacity:.85}
-.bc-meter s{position:absolute;top:-2px;bottom:-2px;width:2px;background:rgba(255,255,255,.55)}
-.bc-lab{position:relative;display:flex;justify-content:space-between;font:500 9.5px "JetBrains Mono";color:var(--mute);margin-top:4px}
-.bc-lab em{position:absolute;left:70%;transform:translateX(-50%);font-style:normal;white-space:nowrap}
+
+
+
+
 .bc-months{display:flex;align-items:flex-end;gap:4px;height:64px;margin-top:14px}
 .bc-months div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:3px;height:100%}
 .bc-months i{display:block;width:100%;border-radius:3px 3px 0 0;background:var(--batt);opacity:.75}
 .bc-months i.few{opacity:.3}
 .bc-months small{font:500 9px "JetBrains Mono";color:var(--mute)}
 /* mockup ad: the Spare solar card */
-.sp-big{display:flex;align-items:baseline;gap:8px;margin-top:10px}
-.sp-big b{font-size:30px;font-weight:300;letter-spacing:-.02em}
-.sp-big span{font-size:12px;color:var(--dim)}
-.sp-bars{display:flex;align-items:flex-end;gap:4px;height:84px;margin-top:12px}
-.sp-bars div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:3px;height:100%}
-.sp-bars i{display:block;width:100%;border-radius:4px 4px 0 0;background:var(--batt);opacity:.8}
-.sp-bars i.z{background:rgba(255,255,255,.12);height:2px!important}
-.sp-bars small{font:500 9px "JetBrains Mono";color:var(--mute)}
-.sp-bars em{font:500 9px "JetBrains Mono";font-style:normal;color:var(--dim)}
-.sp-now{display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:12.5px;color:var(--dim);line-height:1.45}
-.sp-now i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--mute);margin-top:5px}
-.sp-now i.on{background:var(--batt);box-shadow:0 0 10px var(--batt)}
-.sp-now b{color:var(--text);font-weight:600}
+
+
+
+
+
+
+
 /* frame 7: the schedule editor sheet */
 .se-list{display:grid;gap:8px;margin-top:12px}
 .se-row{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:10px 1fr auto;gap:2px 10px;align-items:center;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
@@ -1143,23 +1088,15 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .se-time input::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.5}
 #seDel{width:100%;box-sizing:border-box;justify-content:center;margin-top:10px}
 /* frame 5: the turnover planner (the Pump schedule card) */
-.pl-goal{display:flex;align-items:center;gap:14px;margin-top:12px}
-.pl-ring{flex:none;width:92px;height:92px;position:relative}
-.pl-ring svg{width:100%;height:100%;transform:rotate(-90deg)}
-.pl-ring .c{position:absolute;inset:0;display:grid;place-items:center;text-align:center}
-.pl-ring .c b{display:block;font-size:22px;font-weight:300;line-height:1}
-.pl-ring .c small{font-size:10px;color:var(--mute)}
-.pl-goal .gt{font-size:12.5px;color:var(--dim);line-height:1.5;min-width:0}
-.pl-goal .gt b{color:var(--text)}
-.pl-day{position:relative;height:30px;border-radius:9px;background:rgba(255,255,255,.04);margin-top:14px;overflow:hidden}
-.pl-day i{position:absolute;top:0;bottom:0;border-radius:4px}
-.pl-day i.now{width:2px;background:#fff;opacity:.7;border-radius:0}
-.pl-tlab{display:flex;justify-content:space-between;font:500 9px "JetBrains Mono";color:var(--mute);margin-top:4px}
-.pl-list{display:grid;gap:6px;margin-top:12px}
-.pl-row{display:grid;grid-template-columns:10px 1fr auto;gap:2px 10px;align-items:baseline;font-size:12.5px;color:var(--dim)}
-.pl-row i{width:10px;height:10px;border-radius:3px;align-self:center}
-.pl-row b{color:var(--text);font-weight:600;min-width:0}
-.pl-row span{font:500 11.5px "JetBrains Mono";color:var(--text)}
+
+
+
+
+
+
+
+
+
 .pl-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}
 .pl-nums div{padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
 .pl-nums b{display:block;font:500 15px "JetBrains Mono"}.pl-nums span{font-size:11px;color:var(--dim)}
@@ -1195,13 +1132,10 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .chipx.vidle{color:var(--dim);cursor:pointer}
 .chipx.vidle i{--c:rgba(242,244,248,.4);box-shadow:none}
 .badge.vb{color:var(--vac);border-color:rgba(127,224,200,.4);background:rgba(127,224,200,.08)}
-.presence button.on.vacon{background:rgba(127,224,200,.18)}
-.pl-clear.vtrip{border-color:rgba(127,224,200,.35);background:rgba(127,224,200,.08)}
-.pl-clear.vtrip .hh i{background:var(--vac);box-shadow:0 0 10px var(--vac)}
-.pl-clear.vtrip .hh{flex-wrap:wrap}
-.pl-clear.vtrip .hh em{color:var(--vac)}
-.aw-pre .awvac{border-color:rgba(127,224,200,.45);background:rgba(127,224,200,.06)}
-.aw-pre .awvac .rd{border-color:var(--vac)}
+
+
+
+
 /* the sheet: dates, "Before you go", the checklist, the plan */
 .sheet .lab{font:600 10.5px Manrope;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin-top:16px}
 .vd{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
@@ -1845,5 +1779,7 @@ html[data-calm] .c-seg::before,html[data-calm] .c-sw::after,html[data-calm] .c-c
 #connCard .c-sys-l,#alertCard .c-sys-l{white-space:normal}
 #pushSt.st-warn{color:var(--warn)}
 #connCard .c-btn.sm{min-height:44px}
+/* the Planner sheet's sliders: a 44 px track to touch, drawn 6 px high */
+#planner .slider input{height:44px;margin-top:0;background:linear-gradient(rgba(255,255,255,.12),rgba(255,255,255,.12)) center/100% 6px no-repeat;border-radius:0}
 /* end Batch 4 */
 /* end al-app */

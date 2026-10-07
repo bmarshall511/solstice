@@ -71,6 +71,13 @@ export function gaugeArc(f, cx = 32, cy = 30, r = 24) {
 /** One mini-gauge: value, label, fraction and accent class. */
 export const gauge = (v, label, f, acc) => `<div class="${acc}"><svg viewBox="0 0 64 52" aria-hidden="true"><path class="c-arc-track" style="stroke-width:6" d="${gaugeArc(1)}"/>${f > 0.001 ? `<path class="c-arc-val" style="stroke-width:6;filter:none" d="${gaugeArc(f)}"/>` : ''}</svg><b>${v}</b><small>${label}</small></div>`;
 
+/** Charge and discharge (kWh) of a 5-minute day up to `hour` (battery > 0 is discharging; a bucket in progress counts in part). */
+export function batteryUntil(day, hour) {
+  if (!day?.buckets?.length) return null;
+  const len = (day.bucketMinutes ?? 5) / 60, out = { charge: 0, discharge: 0 };
+  for (const b of day.buckets) { const f = Math.max(0, Math.min(1, (hour - b.t) / len)); if (!f) continue; const v = (b.battery ?? 0) * len * f; if (v > 0) out.discharge += v; else out.charge -= v; }
+  return out;
+}
 /** "1h 4m" from minutes. */
 export const hm = min => min == null || !isFinite(min) ? '—' : `${Math.floor(min / 60)}h ${Math.round(min % 60)}m`;
 /** A one-decimal kWh figure ("14.8"), or "—". */
