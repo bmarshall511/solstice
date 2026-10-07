@@ -130,6 +130,9 @@ const SCHEMA = [
   // One row per browser that turned notifications on: the push endpoint (a bearer capability) and its encryption keys. DB only.
   `CREATE TABLE IF NOT EXISTS push_subscriptions (endpoint text PRIMARY KEY, site_id text NOT NULL, p256dh text NOT NULL, auth text NOT NULL,
      ua text, created_at timestamptz NOT NULL DEFAULT now(), last_ok timestamptz, fails int NOT NULL DEFAULT 0)`,
+  // S-04: the owner session (owner_sessions.id) that subscribed, so signing that device out also stops its pushes. NULL on rows stored
+  // before this column existed: those keep receiving (they are the owner's phones) until the device subscribes again (notify.ts).
+  `ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS owner_session_id text`,
   // Weekly digests (digest.ts): kWh, counts and confidence tiers only, no rate or dollar figure. One row per ISO week.
   `CREATE TABLE IF NOT EXISTS digests (site_id text NOT NULL, week text NOT NULL, data jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (site_id, week))`,
   // Powerwall commands and rule suggestions (tesla/commands.ts, powerwall.ts): every send, refusal, missing scope and suggestion.

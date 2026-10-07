@@ -142,20 +142,28 @@ export async function startOwnerSession(req: Request, res: Response) {
   }
   setOwnerCookie(res, `${id}.${sessionMac(id, key)}`, OWNER_MAX_AGE_S);
 }
+/** S-04: a signed-out device stops getting pushes. Its Web Push subscriptions (push_subscriptions.owner_session_id) go with its
+ *  session. Rows with no session id (subscribed before the column existed) are never matched here; notify.ts keeps sending to them. */
+const dropSubscriptions = async (ids: string[]) => { if (ids.length) await q('DELETE FROM push_subscriptions WHERE owner_session_id = ANY($1::text[])', [ids]); };
 export async function endOwnerSession(req: Request, res: Response) {
-  const id = await ownerSession(req); if (id) await q('DELETE FROM owner_sessions WHERE id = $1', [id]);
+  const id = await ownerSession(req);
+  if (id) { await q('DELETE FROM owner_sessions WHERE id = $1', [id]); await dropSubscriptions([id]); }
   setOwnerCookie(res, '', 0);
 }
 export async function endOtherOwnerSessions(req: Request) {
   const id = await ownerSession(req);
-  return (await q('DELETE FROM owner_sessions WHERE id <> $1 RETURNING id', [id ?? ''])).length;
+  const gone = (await q<{ id: string }>('DELETE FROM owner_sessions WHERE id <> $1 RETURNING id', [id ?? ''])).map(r => r.id);
+  await dropSubscriptions(gone);
+  return gone.length;
 }
 /** Sign one other device out by the short id listOwnerSessions shows. 'current' when that is this device, false when none matches. */
 export async function endOwnerSessionById(req: Request, shortId: string): Promise<boolean | 'current'> {
   const cur = await ownerSession(req);
   if (!/^[\w-]{6}$/.test(shortId)) return false;
   if (cur?.slice(0, 6) === shortId) return 'current';
-  return (await q('DELETE FROM owner_sessions WHERE left(id, 6) = $1 AND id <> $2 RETURNING id', [shortId, cur ?? ''])).length > 0;
+  const gone = (await q<{ id: string }>('DELETE FROM owner_sessions WHERE left(id, 6) = $1 AND id <> $2 RETURNING id', [shortId, cur ?? ''])).map(r => r.id);
+  await dropSubscriptions(gone);
+  return gone.length > 0;
 }
 export async function listOwnerSessions(req: Request) {
   const cur = await ownerSession(req);
