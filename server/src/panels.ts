@@ -305,7 +305,7 @@ export async function panelWatch(siteId: string, now = Date.now()) {
     const { cause, note } = relayCause(await getHeartbeat(), newest, now);
     const r = await notify(siteId, 'panel', cause === 'offline' ? 'The PVS relay has gone quiet' : 'The PVS has stopped sending panel readings',
       `No per-panel readings since ${clock(newest)}. ${note}; the panels themselves may be fine.`,
-      { relay: true, cause }, { key: `pvs:relay:${day}`, windowH: 24, now, url: '/?go=v-roof' });
+      { relay: true, cause }, { key: `pvs:relay:${day}`, windowH: 24, now, url: '/?go=v-sys&p=solar' });
     return { relay: 'silent', cause, pushed: r.stored };
   }
   if (now - newest > PANELS.staleMs) return { relay: 'late' };
@@ -322,7 +322,7 @@ export async function panelWatch(siteId: string, now = Date.now()) {
     if (polls.filter(t => t > b.ts).length < PANELS.silentPolls) continue;
     const r = await notify(siteId, 'panel', `Panel ${posName(b.p)} has stopped reporting`,
       `No reading since ${clock(b.ts)} while the rest of the array kept producing. Its microinverter or its link to the PVS has dropped out. Tap to see it on the roof.`,
-      { panel: posId(b.p) }, { key: `panel:silent:${posId(b.p)}:${day}`, windowH: 24, now, url: `/?go=v-roof&panel=${posId(b.p)}` });
+      { panel: posId(b.p) }, { key: `panel:silent:${posId(b.p)}:${day}`, windowH: 24, now, url: `/?go=v-sys&p=solar&panel=${posId(b.p)}` });
     if (r.stored) out.push(posId(b.p));
   }
   return { silent: behind.length, notified: out };

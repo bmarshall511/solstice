@@ -1,47 +1,80 @@
-import { $, niceDate, localDate, addDays, svgText, path, ago, money, localHour } from '../lib/util.js';
+import { $, niceDate, localDate, addDays, svgText, ago, money, localHour } from '../lib/util.js';
+import { icon } from '../lib/icons.js';
+import { cBadge, badge } from '../lib/conf.js';
+import { sheet, sheetHead, sheetFoot, closeSheet, segSet } from './csheet.js';
 import { api } from '../lib/api.js';
 import { mountOutageCard } from './outage.js';
 import { veil, esc } from '../lib/frost.js';
 import { guestPlan } from './guest.js';
 
-/* ---------- alert cards ---------- */
+/* ---------- Worth knowing (Systems › Home): a vertical, dated list, newest 3 and "All N ›" (October audit B7) ---------- */
+let alertItems = [];
+const whenOf = iso => { const t = Date.parse(iso), at = new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return Date.now() - t < 864e5 && new Date(t).getDate() === new Date().getDate() ? `Today ${at}` : `${new Date(t).toLocaleDateString('en-US', { weekday: 'short' })} ${at}`; };
 export function drawAlerts(S) {
-  const cards = [], site = S.now?.site ?? {};
-  const card = (c, icon, title, when, body, link) => cards.push(`<div class="card" style="--c:${c}"><div class="ins"><div class="ic">${icon}</div><div><b>${title}</b> <time>· ${when}</time><p>${body}</p></div></div>${link ?? ''}</div>`);
+  const items = [], site = S.now?.site ?? {};
+  const add = (acc, ic, title, when, body, link = null) => items.push({ acc, ic, title, when, body, link });
   // mockup ab: stored grid alerts, newest first (the feed is already newest first)
   for (const a of S.gridFeed ?? []) {
-    const ev = a.data?.event, at = new Date(a.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    const when = Date.now() - Date.parse(a.createdAt) < 864e5 ? at : `${new Date(a.createdAt).toLocaleDateString('en-US', { weekday: 'short' })} ${at}`;
-    card(ev === 'back' ? 'var(--batt)' : ev === 'low' ? 'var(--solar)' : 'var(--out)', ev === 'low' ? '\u2193' : '\u26a1', esc(a.title), when, esc(a.body.replace(/ Tap for the outage view\.$/, '')));
+    const ev = a.data?.event;
+    add(ev === 'back' ? 'c-acc-batt' : ev === 'low' ? 'c-acc-solar' : 'c-acc-out', ev === 'low' ? 'batt' : 'bolt', esc(a.title), whenOf(a.createdAt), esc(a.body.replace(/ Tap for the outage view\.$/, '')));
   }
-  if (S.now?.health?.stale) card('var(--warn)', '⏻', 'Tesla stopped reporting', S.now.health.lastLive ? ago(S.now.health.lastLive) : 'now', 'No live data for over 3 minutes. Check the gateway Wi-Fi, or open the Tesla app to see if it can reach your Powerwalls.');
-  (S.nws ?? []).slice(0, 2).forEach(a => card('var(--out)', '⛈', esc(a.event), 'NWS', `${esc(a.headline)}${/hail/i.test(a.description ?? '') ? ' If hail hits, check the Panels tab afterwards for any drop in output.' : ''}${site.stormWatch ? ' Storm Watch will charge the Powerwalls ahead of it.' : ''}`));
+  if (S.now?.health?.stale) add('c-acc-warn', 'tesla', 'Tesla stopped reporting', S.now.health.lastLive ? ago(S.now.health.lastLive) : 'now', 'No live data for over 3 minutes. Check the gateway Wi-Fi, or open the Tesla app to see if it can reach your Powerwalls.');
+  (S.nws ?? []).slice(0, 2).forEach(a => add('c-acc-out', 'storm', esc(a.event), 'NWS', `${esc(a.headline)}${/hail/i.test(a.description ?? '') ? ' If hail hits, check Systems › Solar afterwards for any drop in output.' : ''}${site.stormWatch ? ' Storm Watch will charge the Powerwalls ahead of it.' : ''}`));
   const bad = (S.reconcile ?? []).filter(r => r.checks.some(c => !c.ok)).at(-1);
-  if (bad) card('var(--grid)', '≈', 'PEC bill doesn’t match Tesla', niceDate(bad.billDate, { month: 'short' }) + ' bill', bad.checks.filter(c => !c.ok).map(c => esc(c.detail)).join(' '), '<button class="link" data-go="v-hist" data-bills="1">Open bill check →</button>');
-  if (S.perf?.loss > .08) card('var(--warn)', '☀', `Solar output ${Math.round(S.perf.loss * 100)}% low`, 'last 7 clear days', 'Compared with the same sunlight this time last year. An even loss like this usually means dust or pollen.', '<button class="link" data-go="v-roof">See your panels →</button>');
+  if (bad) add('c-acc-grid', 'bill', 'PEC bill doesn’t match Tesla', niceDate(bad.billDate, { month: 'short' }) + ' bill', bad.checks.filter(c => !c.ok).map(c => esc(c.detail)).join(' '), ['Open bill check', 'v-hist', null, 'billSect']);
+  if (S.perf?.loss > .08) add('c-acc-warn', 'sun', `Solar output ${Math.round(S.perf.loss * 100)}% low`, 'last 7 clear days', 'Compared with the same sunlight this time last year. An even loss like this usually means dust or pollen.', ['See your panels', 'v-sys', 'solar']);
   const N = S.overnight ?? [];
   if (N.length > 20) { const recent = N.slice(-7).reduce((a, n) => a + n.kw, 0) / 7, base = N.slice(-37, -7).map(n => n.kw).sort((a, b) => a - b), med = base[Math.floor(base.length / 2)];
-    if (recent > med * 1.15 && recent - med > .15) card('var(--solar)', '◐', `Overnight usage up ${Math.round((recent / med - 1) * 100)}%`, '7 nights', `Your 1–5 AM average went from ${(med * 1000).toFixed(0)} W to ${(recent * 1000).toFixed(0)} W, about ${S.guest ? veil('$••') : S.tariff ? `$${((recent - med) * 24 * 30 * S.tariff.importRateAllIn / 6).toFixed(0)}` : '—'}/month if it's always-on. Nights are hotter too, so some of this may be AC.`); }
-  if (S.pool?.extras?.lightReadings30d > 0) card('var(--solar)', '💡', 'Pool lights are 600 W of incandescent', 'from the plan', `The AmeriLite pool (500 W) and spa (100 W) lights cost about ${S.guest ? veil('$•.••') : S.tariff ? `$${(0.6 * S.tariff.importRateAllIn).toFixed(2)}` : '—'} an hour. LED replacements draw about a tenth of that and change colour.`);
+    if (recent > med * 1.15 && recent - med > .15) add('c-acc-solar', 'moon', `Overnight usage up ${Math.round((recent / med - 1) * 100)}%`, '7 nights', `Your 1–5 AM average went from ${(med * 1000).toFixed(0)} W to ${(recent * 1000).toFixed(0)} W, about ${S.guest ? veil('$••') : S.tariff ? `$${((recent - med) * 24 * 30 * S.tariff.importRateAllIn / 6).toFixed(0)}` : '—'}/month if it's always-on. Nights are hotter too, so some of this may be AC.`); }
+  if (S.pool?.extras?.lightReadings30d > 0) add('c-acc-solar', 'light', 'Pool lights are 600 W of incandescent', 'from the plan', `The AmeriLite pool (500 W) and spa (100 W) lights cost about ${S.guest ? veil('$•.••') : S.tariff ? `$${(0.6 * S.tariff.importRateAllIn).toFixed(2)}` : '—'} an hour. LED replacements draw about a tenth of that and change colour.`);
   const D = (S.daily ?? []).slice(-30).filter(d => d.socMax != null);
   if (D.length > 10) { const full = D.filter(d => d.socMax >= 99).length;
-    card('var(--batt)', '▮', full < 5 ? 'Your Powerwalls rarely fill up' : 'Powerwalls are cycling well', '30 days', full < 5
+    add('c-acc-batt', 'batt', full < 5 ? 'Your Powerwalls rarely fill up' : 'Powerwalls are cycling well', '30 days', full < 5
       ? `They reached 100% on only ${full} of the last ${D.length} days (typical peak ${Math.round(D.reduce((a, d) => a + d.socMax, 0) / D.length)}%). Your home uses most of the solar as it's made, so the batteries only store the small surplus. More panels would help them more than more batteries would.`
       : `They reached 100% on ${full} of the last ${D.length} days.`); }
-  $('alerts').innerHTML = cards.join('');
-  $('insDot').hidden = !cards.some(c => /--warn|--out|--grid/.test(c.slice(0, 60)));
+  alertItems = items;
+  const row = (x, i) => `<div class="c-sys compact ${x.acc}" role="button" tabindex="0" data-alert="${i}"><span class="c-ic">${icon(x.ic)}</span><div style="min-width:0"><div class="c-sys-top"><b>${x.title}</b></div><div class="c-sys-l">${esc(x.when)} · ${x.body.replace(/<[^>]+>/g, '')}</div></div><span class="c-chev">${icon('chev')}</span></div>`;
+  $('alertsCard').hidden = !items.length;
+  $('alertsFig').textContent = items.length ? `${items.length}` : '';
+  $('alerts').innerHTML = items.slice(0, 3).map(row).join('') + (items.length > 3 ? `<div class="c-sys compact c-acc-mute" role="button" tabindex="0" data-alert="all"><span class="c-ic">${icon('bell')}</span><div style="min-width:0"><div class="c-sys-top"><b>All ${items.length}</b></div></div><span class="c-chev">${icon('chev')}</span></div>` : '');
+  $('alerts').onclick = e => { const r = e.target.closest('[data-alert]'); if (r) openAlerts(S); };
+  $('sysDot').hidden = !items.some(x => /out|warn|grid/.test(x.acc));
+}
+/** Every Worth knowing item in full, as a sheet; a link row goes where the old card's link went. */
+function openAlerts(S) {
+  sheet(`${sheetHead('Worth knowing', badge('', `${alertItems.length}`))}${alertItems.map((x, i) => `<div class="c-card ${x.acc}"><div class="c-head"><span class="c-ic" style="width:32px;height:32px;border-radius:10px">${icon(x.ic)}</span><h5>${x.title}</h5><span class="c-fig">${esc(x.when)}</span></div><p class="c-sum">${x.body}</p>${x.link ? `<div class="c-btns"><button class="c-btn line" data-link="${i}">${x.link[0]} ›</button></div>` : ''}</div>`).join('')}${sheetFoot('', 'Done')}`);
+  $('sheetBody').querySelector('[data-f="pri"]').onclick = closeSheet;
+  $('sheetBody').querySelectorAll('[data-link]').forEach(b => b.onclick = () => { const [, v, seg, anchor] = alertItems[+b.dataset.link].link; closeSheet(); S.nav?.go(v, anchor, seg); });
 }
 
-/* ---------- what-if planner (server replays your real last 12 months) ---------- */
-let t;
-export function initPlanner(S) {
+/* ---------- what-if planner (server replays your real last 12 months), in a sheet from Systems › Home's "What if you added…" ---------- */
+let t, plan = { panels: 8, powerwalls: 0, extra: 0 };
+export function openPlanner(S) {
+  const inst = S.now?.site?.installed ? niceDate(S.now.site.installed.slice(0, 10), { month: 'short', year: 'numeric' }) : null;
+  sheet(`${sheetHead('What if you added…', '', 'Your last 12 months replayed with the change. The Day Ring’s “+8 panels” mode shows the same idea on today.')}
+    <div class="c-card" id="planner">
+      <div class="slider"><label>Solar panels <b id="aPv">+0</b></label><input type="range" id="rPv" min="0" max="20" step="2" value="${plan.panels}" aria-label="Solar panels to add"><small id="aPvS">—</small></div>
+      <div class="slider"><label>Powerwalls <b id="aPw">+0</b></label><input type="range" id="rPw" min="0" max="2" step="1" value="${plan.powerwalls}" aria-label="Powerwalls to add"><small id="aPwS">—</small></div>
+      <div class="slider"><label>New daily usage <b id="aUse">+0 kWh</b></label><input type="range" id="rUse" min="0" max="30" step="2" value="${plan.extra}" aria-label="New daily usage"><small>EV, pool heater, heat pump… (added 5–11 PM)</small></div>
+      <div class="tiles" id="planTiles"></div>
+      <div class="rec" id="planRec">Calculating…</div>
+      <div class="c-btns"><button class="c-btn line block" id="planMore" aria-expanded="false">Full comparison table</button></div>
+      <div class="cmp" id="cmp" hidden></div>
+      <p class="c-fine" id="planFine" hidden></p>
+    </div>
+    <div class="c-card" id="sysPayCard"><div class="c-head"><h5>Your system so far</h5>${inst ? `<span class="c-fig">installed ${esc(inst)}</span>` : ''}</div><div class="rec" id="sysPay" style="margin-top:10px"></div></div>
+    ${sheetFoot('', 'Done', 'c-acc-solar')}`);
+  $('sheetBody').querySelector('[data-f="pri"]').onclick = closeSheet;
+  $('planMore').onclick = () => { const open = $('cmp').hidden; $('cmp').hidden = $('planFine').hidden = !open; $('planMore').setAttribute('aria-expanded', String(open)); };
   const update = () => { clearTimeout(t); t = setTimeout(run, 180); };
   ['rPv', 'rPw', 'rUse'].forEach(id => $(id).addEventListener('input', update));
-  update();
+  run();
   async function run() {
-    const q = { panels: +$('rPv').value, powerwalls: +$('rPw').value, extra: +$('rUse').value };
+    if (!$('rPv')) return;   // the sheet was closed or replaced
+    const q = { panels: +$('rPv').value, powerwalls: +$('rPw').value, extra: +$('rUse').value }; plan = q;
     $('aPv').textContent = '+' + q.panels; $('aPw').textContent = '+' + q.powerwalls; $('aUse').textContent = `+${q.extra} kWh`;
-    const r = await api.whatif(q).catch(() => null); if (!r) return;
+    const r = await api.whatif(q).catch(() => null); if (!r || !$('rPv')) return;
     if (S.guest) return guestPlan(S, r, q);   // no dollars for guests: the kWh-only planner (views/guest.js)
     $('aPvS').textContent = q.panels ? `${r.panels + q.panels} panels · roughly $${(q.panels * r.assumptions.panelW * 2.75 / 1000).toFixed(1)}k (assumes ${r.assumptions.panelW} W modules)` : `Today: ${r.panels} × ${r.panelWdc} W SunPower · ${r.kwpNow} kW DC`;
     $('aPwS').textContent = q.powerwalls ? `${2 + q.powerwalls} Powerwalls · ${27 + q.powerwalls * 13.5} kWh · roughly $${(q.powerwalls * 11.5).toFixed(1)}k` : 'Today: 2 × Powerwall 2 · 27 kWh';
@@ -57,6 +90,7 @@ export function initPlanner(S) {
       `<span>Saves per year</span><span class="n">—</span><b class="${r.savesPerYear > 0 ? 'up' : ''}">${r.cost ? money(r.savesPerYear) : '—'}</b>` +
       `<span>Payback</span><span class="n">—</span><b>${r.paybackYears ? r.paybackYears + ' yrs' : r.cost && r.savesPerYear != null ? 'never' : '—'}</b>`;
     const pv = await api.whatif({ panels: 8, extra: q.extra }).catch(() => null), pw = await api.whatif({ powerwalls: 1, extra: q.extra }).catch(() => null);
+    if (!$('planRec')) return;
     $('planRec').innerHTML = pv && pw ? `<b>For your home, panels beat batteries.</b> 8 more panels would save about ${money(pv.savesPerYear)} a year (${pv.paybackYears ?? '—'}-year payback). ` +
       `Another Powerwall would save about ${money(pw.savesPerYear)}, because today's batteries only reach full on ${pw.baseline.batteryFullDays} days a year, so there's rarely any surplus to store. ` +
       `Extra batteries would mainly buy outage time: about ${pw.backupHoursEvening.upgraded} h of evening backup instead of ${pw.backupHoursEvening.now} h.` : '';
@@ -69,29 +103,30 @@ export function initPlanner(S) {
 }
 
 /* ---------- outage readiness: the first card on Home, above Heat & your AC (views/outage.js, mockup n-outage) ---------- */
-export const initOutage = S => mountOutageCard(S, $('ip-home'));
+export const initOutage = S => mountOutageCard(S, $('sp-powerwall'));
 
-/* ---------- AC vs heat ---------- */
+/* ---------- Heat & your AC (frame 9): every 80°F+ day as a dot, the fitted trend as a gradient line with its direct label ---------- */
 export function drawAC(S) {
   // cooling season only (highs ≥ 80°F): winter heating would muddy the AC relationship
   const pts = (S.daily ?? []).map(d => ({ date: d.date, t: S.highs?.[d.date], u: d.home })).filter(p => p.t != null && p.t >= 80 && p.u > 5 && p.date < localDate());
   if (pts.length < 10) return;
   const n = pts.length, mx = pts.reduce((a, p) => a + p.t, 0) / n, my = pts.reduce((a, p) => a + p.u, 0) / n;
-  const slope = pts.reduce((a, p) => a + (p.t - mx) * (p.u - my), 0) / pts.reduce((a, p) => a + (p.t - mx) ** 2, 0), icpt = my - slope * mx;
+  const sxx = pts.reduce((a, p) => a + (p.t - mx) ** 2, 0); if (!(sxx > 0)) return;   // every hot day at one temperature: no trend to draw
+  const slope = pts.reduce((a, p) => a + (p.t - mx) * (p.u - my), 0) / sxx, icpt = my - slope * mx;
   S.acSlope = slope;
-  const tMin = Math.min(...pts.map(p => p.t)) - 2, tMax = Math.max(...pts.map(p => p.t)) + 2, uMin = Math.min(...pts.map(p => p.u)) - 5, uMax = Math.max(...pts.map(p => p.u)) + 5;
-  const X = t => 30 + (t - tMin) / (tMax - tMin) * 272, Y = u => 140 - (u - uMin) / (uMax - uMin) * 128;
-  let o = ''; [uMin, (uMin + uMax) / 2, uMax].forEach(u => o += `<line x1="30" x2="302" y1="${Y(u)}" y2="${Y(u)}" stroke="rgba(255,255,255,.06)"/>` + svgText(0, Y(u) + 3, Math.round(u), { size: 8.5 }));
-  [Math.ceil(tMin / 5) * 5, Math.round((tMin + tMax) / 10) * 5, Math.floor(tMax / 5) * 5].forEach(t => o += svgText(X(t), 156, `${t}°`, { anchor: 'middle', size: 9 }));
-  o += `<line x1="${X(tMin)}" y1="${Y(icpt + slope * tMin)}" x2="${X(tMax)}" y2="${Y(icpt + slope * tMax)}" stroke="#6cc4ff" stroke-width="1.5" stroke-dasharray="4 3"/>`;
-  const res = pts.map(p => ({ ...p, res: p.u - (icpt + slope * p.t) })), worst = res.reduce((a, b) => b.res > a.res ? b : a);
-  const recent = addDays(localDate(), -60);
-  res.forEach(p => { const flag = p === worst && worst.res > 12; o += `<circle cx="${X(p.t)}" cy="${Y(p.u)}" r="${flag ? 5 : 3}" fill="${flag ? '#ff7a66' : p.date >= recent ? 'rgba(108,196,255,.9)' : 'rgba(108,196,255,.3)'}"><title>${esc(p.date)}: ${p.u.toFixed(0)} kWh at ${Math.round(p.t)}°</title></circle>`; });
-  o += svgText(30, 168, `daily high →  ·  home kWh/day ↑  ·  ${pts.length} hot days (bright = last 60)`, { size: 8.5, font: 'Manrope' });
+  const tMin = Math.min(...pts.map(p => p.t)) - 1, tMax = Math.max(...pts.map(p => p.t)) + 1, uMin = Math.min(...pts.map(p => p.u)) - 4, uMax = Math.max(...pts.map(p => p.u)) + 4;
+  const X = t => 16 + (t - tMin) / (tMax - tMin) * 300, Y = u => 128 - (u - uMin) / (uMax - uMin) * 104;
+  const res = pts.map(p => ({ ...p, res: p.u - (icpt + slope * p.t) })), worst = res.reduce((a, b) => b.res > a.res ? b : a), recent = addDays(localDate(), -60);
+  let o = `<defs><linearGradient id="hacg" x1="0" x2="1"><stop offset="0" style="stop-color:var(--ac);stop-opacity:.2"/><stop offset="1" style="stop-color:var(--ac)"/></linearGradient></defs>`;
+  res.forEach(p => { const flag = p === worst && worst.res > 12;
+    o += `<circle cx="${X(p.t).toFixed(1)}" cy="${Y(p.u).toFixed(1)}" r="${flag ? 5 : 4}" style="fill:var(${flag ? '--out' : '--ac'})" fill-opacity="${flag ? .9 : p.date >= recent ? .7 : .35}"><title>${esc(p.date)}: ${p.u.toFixed(0)} kWh at ${Math.round(p.t)}°</title></circle>`; });
+  o += `<path d="M${X(tMin).toFixed(1)} ${Y(icpt + slope * tMin).toFixed(1)} L${X(tMax).toFixed(1)} ${Y(icpt + slope * tMax).toFixed(1)}" stroke="url(#hacg)" stroke-width="2" stroke-linecap="round" fill="none"/>`;
+  o += `<text x="0" y="10">home kWh a day</text><text x="16" y="146">${Math.round(tMin + 1)}°</text><text x="316" y="146" text-anchor="end">${Math.round(tMax - 1)}° high</text>`;
+  o += `<text class="v" x="316" y="${Math.max(22, Y(icpt + slope * tMax) - 8).toFixed(0)}" text-anchor="end">${slope >= 0 ? '+' : ''}${slope.toFixed(1)} kWh per °F</text>`;
   $('acChart').innerHTML = o;
-  $('acTxt').innerHTML = `Each extra degree of daily high adds about <b style="color:var(--text)">${slope.toFixed(1)} kWh</b> a day, mostly air conditioning. That's about ${S.guest ? veil('$••') : S.tariff ? `$${(slope * 30 * S.tariff.importRateAllIn).toFixed(0)}` : '—'} a month per degree. ` +
-    (worst.res > 12 ? `<b style="color:var(--warn)">${niceDate(worst.date)}</b> used ${Math.round(worst.res)} kWh more than normal for a ${Math.round(worst.t)}° day. That could be guests, laundry or the pool heater. If days like that become common, get the AC checked.` : 'Usage has tracked the temperature normally.') +
-    heatSentence(S.models?.home?.fit);
+  $('acTxt').innerHTML = `Each extra degree of daily high adds about <b>${slope.toFixed(1)} kWh</b> a day, mostly air conditioning. That's about ${S.guest ? veil('$••') : S.tariff ? `$${(slope * 30 * S.tariff.importRateAllIn).toFixed(0)}` : '—'} a month per degree. ` +
+    (worst.res > 12 ? `<b style="color:var(--warn)">${niceDate(worst.date)}</b> (the red dot) used ${Math.round(worst.res)} kWh more than normal for a ${Math.round(worst.t)}° day. That could be guests, laundry or the pool heater. If days like that become common, get the AC checked.` : 'Usage has tracked the temperature normally.') +
+    ` ${pts.length} hot days; the brighter dots are the last 60.` + heatSentence(S.models?.home?.fit);
 }
 /** B2-8: the home model's heating term (learn/homeModel.ts), once the last year shows one. */
 function heatSentence(f) {
@@ -99,9 +134,8 @@ function heatSentence(f) {
   return ` In cold weather it works the other way: each degree the night's low falls below ${f.th}° adds about <b style="color:var(--text)">${f.c.toFixed(1)} kWh</b> a day for heating${f.year?.heatDays ? `, from ${f.year.heatDays} cold days in the last year` : ''}.`;
 }
 
-/* ---------- overnight baseline ---------- */
-/* ---------- mockup y: Where your energy goes ---------- */
-const EG = { ac: ['AC', '#ff9e66'], alwaysOn: ['Always-on', '#c4a2ff'], big: ['Big loads', 'var(--solar)'], pool: ['Pool', '#6cc4ff'], other: ['Everything else', 'rgba(255,255,255,.35)'] };
+/* ---------- mockup y, restyled by mockup al frame 9: Where your energy goes ---------- */
+const EG = { ac: ['AC', 'c-acc-ac'], alwaysOn: ['Always-on', 'c-acc-grid'], big: ['Big loads', 'c-acc-solar'], pool: ['Pool', 'c-acc-pool'], other: ['Everything else', 'c-acc-mute'] };
 const eg = { range: 'week', open: new Set(), data: null, timer: null };
 const clk = ms => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 /** Owner only (main.js boot): loads the card now and every 15 minutes while visible; the range switch reloads it. */
@@ -151,12 +185,12 @@ function drawCapacity(S, c) {
 export function initBreakdown(S, every) {
   $('egCard').hidden = !!S.guest; if (S.guest) return;
   $('egRange').onclick = e => { const b = e.target.closest('button'); if (!b || b.dataset.r === eg.range) return; eg.range = b.dataset.r; loadBreakdown(); };
-  $('egParts').onclick = e => { const p = e.target.closest('.part'); if (!p) return; eg.open.has(p.dataset.id) ? eg.open.delete(p.dataset.id) : eg.open.add(p.dataset.id); drawBreakdown(); };
-  $('egParts').onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('.part')) { e.preventDefault(); e.target.closest('.part').click(); } };
+  $('egParts').onclick = e => { const p = e.target.closest('.c-part[data-id]'); if (!p) return; eg.open.has(p.dataset.id) ? eg.open.delete(p.dataset.id) : eg.open.add(p.dataset.id); drawBreakdown(); };
+  $('egParts').onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('.c-part[data-id]')) { e.preventDefault(); e.target.closest('.c-part').click(); } };
   eg.timer ??= every(15 * 60_000, loadBreakdown);
 }
 async function loadBreakdown() {
-  document.querySelectorAll('#egRange button').forEach(b => b.classList.toggle('on', b.dataset.r === eg.range));
+  segSet($('egRange'), eg.range, 'data-r');
   try { eg.data = await api.breakdown(eg.range); } catch (e) { $('egSub').textContent = `Couldn\u2019t load: ${e.message}`; return; }
   drawBreakdown();
 }
@@ -167,14 +201,17 @@ function drawBreakdown() {
   $('egSub').textContent = !d.days ? 'No full day with thermostat readings yet' : d.range === 'today' ? 'kWh so far today'
     : d.days < n ? `kWh a day \u00b7 ${d.days} day${d.days === 1 ? '' : 's'} with Nest data` : `kWh a day \u00b7 last ${n} days`;
   const sum = d.parts.reduce((a, p) => a + p.kwh, 0) || 1;
-  $('egBar').innerHTML = d.parts.map(p => `<i style="background:${EG[p.id][1]};width:${p.kwh / sum * 100}%"></i>`).join('');
+  $('egBar').innerHTML = d.parts.map(p => `<i class="${EG[p.id][1]}" style="width:${p.kwh / sum * 100}%"></i>`).join('');
   const note = p => p.id === 'ac' ? (p.hours != null ? `Cooling ${p.hours} h${d.range === 'today' ? ' today' : ' a day'} \u00d7 ${p.kw.toFixed(1)} kW` : 'From the heat model')
     : p.id === 'alwaysOn' ? (p.kw != null ? `${p.kw.toFixed(2)} kW every hour, from the quietest stretch of each night` : 'Not enough night data yet')
     : p.id === 'big' ? `${d.range === 'today' ? `${d.bursts.length} bursts today` : `${p.perDay} bursts a day`}${p.minutes ? `, ${p.minutes[0] === p.minutes[1] ? p.minutes[0] : `${p.minutes[0]}\u2013${p.minutes[1]}`} min at about ${p.burstKw} kW` : ''}: looks like the water heater, dryer, oven or range`
     : p.id === 'pool' ? 'Pump, UV and extras' : 'Lights, stovetop, TVs, small appliances';
-  $('egParts').innerHTML = d.parts.map(p => `<div class="part${eg.open.has(p.id) ? ' open' : ''}" data-id="${p.id}" role="button" tabindex="0" aria-expanded="${eg.open.has(p.id)}">
-    <i class="dot" style="background:${EG[p.id][1]}"></i><b>${EG[p.id][0]}</b><span class="v">${p.kwh.toFixed(1)} kWh<em>${p.share}%</em></span>
-    <small>${esc(note(p))}. <span class="conf ${p.conf === 'measured' ? 'm' : 'e'}">${p.conf}</span></small>${eg.open.has(p.id) ? detail(p, d) : ''}</div>`).join('');
+  // the overnight baseline lives in its own card for a guest; for the owner it opens under Always-on (moved, not redrawn)
+  const night = $('nightBox'); if (night && night.parentElement !== $('nightCard')) $('nightCard').appendChild(night);
+  $('egParts').innerHTML = d.parts.map(p => { const open = eg.open.has(p.id);
+    return `<div class="c-part ${EG[p.id][1]}${open ? ' open' : ''}" data-id="${p.id}" role="button" tabindex="0" aria-expanded="${open}"><i></i><span>${EG[p.id][0]} ${cBadge(p.conf)}</span><b>${p.kwh.toFixed(1)} kWh<em>${p.share}%</em></b></div>`
+      + (open ? `<div class="c-part-d"><p class="c-cap">${esc(note(p))}.</p>${detail(p, d)}</div>` : ''); }).join('');
+  const slot = $('egParts').querySelector('[data-night]'); if (slot && night) slot.appendChild(night);
 }
 function detail(p, d) {
   if (p.id === 'big') {
@@ -184,13 +221,18 @@ function detail(p, d) {
       <span class="ax" style="left:0;transform:none">12a</span><span class="ax" style="left:25%">6a</span><span class="ax" style="left:50%">12p</span><span class="ax" style="left:75%">6p</span><span class="ax" style="left:auto;right:0;transform:none">12a</span></div>
       <div class="eg-bursts">${d.bursts.map(b => `<b>${clk(b.start)}</b><span>${b.minutes} min \u00b7 ${b.kw} kW</span><em>${b.kwh} kWh</em>`).join('') || '<span style="grid-column:1/4">None yet today.</span>'}</div></div>`;
   }
-  if (p.id === 'alwaysOn' && d.trend?.length) {
+  if (p.id === 'alwaysOn') return `<div data-night></div>${trend(d)}`;
+  if (p.id === 'ac' || p.id === 'pool') return `<p class="c-fine">Details on Systems › ${p.id === 'ac' ? 'AC' : 'Pool'}.</p>`;
+  return '';
+}
+/** Always-on's monthly lowest-night trend (under the overnight baseline when the row is open). */
+function trend(d) {
+  if (d.trend?.length) {
     const mx = Math.max(...d.trend.map(t => t.kw)) || 1, mon = m => new Date(`${m}-15T12:00:00`).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }).replace(' ', " '");
     return `<div class="detail"><div class="eg-trend">${d.trend.map((t, i) => `<i class="${i === d.trend.length - 1 ? 'now' : ''}" style="height:${Math.max(8, t.kw / mx * 100)}%" title="${mon(t.month)}: ${t.kw} kW"></i>`).join('')}</div>
       <div class="eg-tlab"><span>${mon(d.trend[0].month)}</span><span>monthly \u00b7 lowest night</span><span>${mon(d.trend.at(-1).month)}</span></div>
       <p class="fine" style="margin-top:8px">A typical home\u2019s base is 0.3\u20130.6 kW. A fridge or freezer in a warm room runs more in summer.</p></div>`;
   }
-  if (p.id === 'ac' || p.id === 'pool') return `<div class="detail"><p class="fine">Details on the ${p.id === 'ac' ? 'AC' : 'Pool'} card in Appliances.</p></div>`;
   return '';
 }
 
@@ -201,10 +243,10 @@ export function drawOvernight(S) {
   let o = '';
   N.forEach((n, i) => {
     let y0 = 90; const x = (X(i) - w / 2).toFixed(1);
-    const seg = (v, c) => { if (!(v > 0)) return; const h = v / mx * 80; o += `<rect x="${x}" y="${(y0 - h).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${c}"/>`; y0 -= h; };
-    const base = n.base ?? 0; seg(base, '#c4a2ff');
-    if (n.split) { seg(n.ac, '#f4a46e'); seg(n.pump, '#7cc4ff'); }
-    seg(n.kw - base - (n.split ? (n.ac ?? 0) + (n.pump ?? 0) : 0), 'rgba(255,255,255,.22)');
+    const seg = (v, c) => { if (!(v > 0)) return; const h = v / mx * 80; o += `<rect x="${x}" y="${(y0 - h).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" style="fill:${c}"/>`; y0 -= h; };
+    const base = n.base ?? 0; seg(base, 'var(--grid)');
+    if (n.split) { seg(n.ac, 'var(--ac)'); seg(n.pump, 'var(--home)'); }
+    seg(n.kw - base - (n.split ? (n.ac ?? 0) + (n.pump ?? 0) : 0), 'var(--c-fill-2)');
   });
   const first = N.findIndex(n => n.split);
   if (first > 0) o += `<line x1="${X(first - .5)}" x2="${X(first - .5)}" y1="8" y2="90" stroke="rgba(255,255,255,.25)" stroke-dasharray="2 3"/>` + svgText(X(first - .5) - 3, 14, 'Nest from here', { size: 8.5, anchor: 'end' });
@@ -219,7 +261,7 @@ export function drawOvernight(S) {
   const parts = [base != null && `${f(base)} kW always-on (fridges, network, standby)`, ac >= .05 && `${f(ac)} kW AC`, pump >= .05 && `${f(pump)} kW the pool pump`].filter(Boolean);
   const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0];
   const none = sp.length ? [ac === 0 && 'the AC', pump === 0 && 'the pool pump'].filter(Boolean) : [];   // a part under 0.05 kW that did run is just left out
-  $('nightTxt').innerHTML = `Between 1 and 5 AM your home averaged <b style="color:var(--text)">${f(kw)} kW</b> this week${list ? `: ${list}` : ''}.`
+  $('nightTxt').innerHTML = `Between 1 and 5 AM your home averaged <b>${f(kw)} kW</b> this week${list ? `: ${list}` : ''}.`
     + (none.length ? ` ${none.length === 2 ? "The AC and the pool pump didn’t run" : `${none[0][0].toUpperCase()}${none[0].slice(1)} didn’t run`}.` : '')
     + (base != null ? ' The always-on part is the same figure as in Where your energy goes.' : '')
     + (sp.length ? '' : ' The AC and the pump can’t be split out on nights without thermostat readings.');

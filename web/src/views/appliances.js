@@ -22,8 +22,6 @@ export const poolTwin = () => twin;
 export function releasePoolTwin() { twin?.dispose(); twin = null; }
 
 async function load(S) {
-  const list = await api.appliances().catch(() => null);
-  if (list) { const cur = document.querySelector('#applStrip .app.on')?.dataset.id ?? 'pool'; $('applStrip').innerHTML = list.map(a => `<div class="app ${a.status === 'coming' ? 'dim' : a.id === cur ? 'on' : ''}" data-id="${esc(a.id)}"><i></i>${esc(a.name)}${a.status === 'coming' ? ` · ${esc(a.source ?? '—')}, next` : a.watts != null ? ` · ${Math.round(a.watts)} W` : ''}</div>`).join(''); }
   // a failed refresh keeps the last good reading on screen, with the failure in the card's note, instead of flipping to "Not linked"
   const d = await api.pool().catch(e => S.pool?.current ? { ...S.pool, error: e.message } : { error: e.message }); S.pool = d;
   drawPool(S); S.onPool?.();

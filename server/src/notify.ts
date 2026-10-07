@@ -92,12 +92,12 @@ export async function notifyAnomalies(siteId: string, now = Date.now()) {
     if (v.kind.startsWith('panel.low@')) {   // mockup u-panels: a panel that stays low is the `panel` kind (Settings › Alerts › Panel fault)
       const d = v.detail as { title: string; nLow?: number; window?: number };
       out.push(await notify(siteId, 'panel', `Panel ${d.title}`, `Under 85% of the median panel on ${d.nLow ?? 5} of the last ${d.window ?? 7} days. Tap to see it on the roof.`,
-        { anomaly: v.kind, severity: v.severity, action: 'open_panels' }, { key: `anomaly:${v.kind}:${v.day}`, windowH: 48, url: `/?go=v-roof&panel=${v.kind.slice('panel.low@'.length)}`, now }));
+        { anomaly: v.kind, severity: v.severity, action: 'open_panels' }, { key: `anomaly:${v.kind}:${v.day}`, windowH: 48, url: `/?go=v-sys&p=solar&panel=${v.kind.slice('panel.low@'.length)}`, now }));
       continue;
     }
     const toggle = v.kind.startsWith('solar.') ? 'solar' : v.kind === 'home.always_on_step' ? 'baseline' : undefined;
     out.push(await notify(siteId, 'anomaly', v.detail.title, v.detail.body, { anomaly: v.kind, severity: v.severity, action: v.detail.action ?? null },
-      { key: `anomaly:${v.kind}:${v.day}`, windowH: 48, toggle, url: '/?go=v-ins', now }));
+      { key: `anomaly:${v.kind}:${v.day}`, windowH: 48, toggle, url: '/?go=v-sys&p=home', now }));
   }
   return { opened: rows.length, notified: out.filter(r => r.stored).length };
 }

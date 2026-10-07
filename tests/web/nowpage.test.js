@@ -22,8 +22,9 @@ describe('Now markup (frames 1, 2, 17)', () => {
     expect(tag('synced')).toBeTruthy(); expect(now).not.toContain('connecting…');
     for (const id of ['soc', 'story', 'statusTxt', 'pwPct', 'pwSum', 'fcTxt']) expect(now.slice(now.indexOf(`id="${id}"`), now.indexOf(`id="${id}"`) + 200)).toContain('c-skel');
   });
-  it('the tab bar is the floating glass bar with its five tabs (four come in Batch 4)', () => {
-    expect(html.match(/<button class="c-tab[ "][^>]*data-v="v-(now|hist|roof|ins|set)"/g)).toHaveLength(5);
+  it('the tab bar is the floating glass bar with its four tabs: Now · Systems · History · Settings (Batch 4)', () => {
+    expect([...html.matchAll(/<button class="c-tab[ "][^>]*data-v="(v-[a-z]+)"/g)].map(m => m[1])).toEqual(['v-now', 'v-sys', 'v-hist', 'v-set']);
+    expect(html).not.toContain('id="v-ins"'); expect(html).not.toContain('id="v-roof"');
   });
 });
 

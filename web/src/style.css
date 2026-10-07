@@ -494,13 +494,13 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .veil.wait{animation-play-state:paused}   /* under the Frost wipe until the clear passes it */
 @keyframes veilin{from{opacity:0;filter:blur(6px)}}
 /* locked card: frosted glass over a deterministic skeleton, same height as the owner's card */
-.card.locked{position:relative;overflow:hidden;cursor:help}
-.card.locked>*:not(.h):not(.lock){filter:blur(6px) saturate(.5);opacity:.5;pointer-events:none;user-select:none}
-.card.locked::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--frost);backdrop-filter:blur(var(--frost-blur));-webkit-backdrop-filter:blur(var(--frost-blur))}
-.card.locked>.h{position:relative;z-index:3}
-.card.locked .lock{position:absolute;inset:0;z-index:2;display:grid;place-content:center;gap:6px;text-align:center;font-size:12.5px;color:var(--dim)}
-.card.locked .lock b{display:block;font-size:14px;color:var(--text);font-weight:600}
-.card.locked .lock i{width:26px;height:26px;border-radius:9px;margin:0 auto 4px;display:grid;place-items:center;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);font-style:normal}
+:is(.card,.c-card).locked{position:relative;overflow:hidden;cursor:help}
+:is(.card,.c-card).locked>*:not(.h):not(.lock){filter:blur(6px) saturate(.5);opacity:.5;pointer-events:none;user-select:none}
+:is(.card,.c-card).locked::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--frost);backdrop-filter:blur(var(--frost-blur));-webkit-backdrop-filter:blur(var(--frost-blur))}
+:is(.card,.c-card).locked>.h{position:relative;z-index:3}
+:is(.card,.c-card).locked .lock{position:absolute;inset:0;z-index:2;display:grid;place-content:center;gap:6px;text-align:center;font-size:12.5px;color:var(--dim)}
+:is(.card,.c-card).locked .lock b{display:block;font-size:14px;color:var(--text);font-weight:600}
+:is(.card,.c-card).locked .lock i{width:26px;height:26px;border-radius:9px;margin:0 auto 4px;display:grid;place-items:center;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);font-style:normal}
 .skl{display:block;height:9px;border-radius:5px;background:rgba(255,255,255,.16)}
 .kv .skl{margin-top:3px}.kv b .skl{margin-left:auto}
 /* guests and the owner's preview: owner-only UI is not rendered (the server refuses all of it anyway) */
@@ -609,28 +609,28 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 .mrhead{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .mrhead b{font-size:15px;font-weight:600;line-height:1.3}
 .mrhead .badge{flex:none}
-#learnCard .headline{font-size:13px;color:var(--dim);line-height:1.5;margin-top:8px}
-#learnCard .lrows{margin-top:14px}
-#learnCard .lrow{display:block;padding:10px 0;border-top:1px solid var(--glass-b);cursor:pointer}
-#learnCard .lrow:first-child{border-top:none}
-#learnCard .lrow:active{background:rgba(255,255,255,.04)}
-#learnCard .lrow-top{display:flex;align-items:center;gap:8px;min-width:0}
-#learnCard .lrow-top .lbl{flex:1;font-size:12.5px;color:var(--text);font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#learnCard .lrow .dot{flex:none;width:8px;height:8px;border-radius:50%;box-sizing:border-box}
-#learnCard .lrow .dot.learned{background:var(--batt);box-shadow:0 0 6px var(--batt)}
-#learnCard .lrow .dot.estimated{background:linear-gradient(90deg,var(--solar) 50%,rgba(255,255,255,.1) 50%);border:1px solid var(--solar)}
-#learnCard .lrow .dot.learning{background:transparent;border:1px solid var(--mute)}
-#learnCard .lrow .dot.unscored{background:transparent;border:1px dashed rgba(255,255,255,.35)}
-#learnCard .lrow .dot.measured{background:var(--home);box-shadow:0 0 6px var(--home)}
-#learnCard .lrow-mid{display:flex;align-items:center;gap:8px;margin-top:5px;padding-left:16px}
-#learnCard .lrow-mid svg{flex:none;display:block}
-#learnCard .lrow .bias{flex:none;font:500 10.5px "JetBrains Mono";width:14px;text-align:center}
-#learnCard .lrow .bias.up{color:var(--warn)}#learnCard .lrow .bias.dn{color:var(--home)}#learnCard .lrow .bias.ev{color:var(--mute)}
-#learnCard .lnote{flex:1;font-size:11px;color:var(--mute);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#learnCard .lhelp{padding-left:16px;margin-top:4px;font-size:11px;color:var(--mute);line-height:1.4}
-#learnCard .chev-r{flex:none;color:var(--mute);font-size:13px}
-#learnCard .lanom{margin-top:12px;padding-top:12px;border-top:1px solid var(--glass-b)}
-#learnCard .sect2{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:600;margin:16px 2px 4px}
+.lrep .headline{font-size:13px;color:var(--dim);line-height:1.5;margin-top:8px}
+.lrep .lrows{margin-top:14px}
+.lrep .lrow{display:block;padding:10px 0;border-top:1px solid var(--glass-b);cursor:pointer}
+.lrep .lrow:first-child{border-top:none}
+.lrep .lrow:active{background:rgba(255,255,255,.04)}
+.lrep .lrow-top{display:flex;align-items:center;gap:8px;min-width:0}
+.lrep .lrow-top .lbl{flex:1;font-size:12.5px;color:var(--text);font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lrep .lrow .dot{flex:none;width:8px;height:8px;border-radius:50%;box-sizing:border-box}
+.lrep .lrow .dot.learned{background:var(--batt);box-shadow:0 0 6px var(--batt)}
+.lrep .lrow .dot.estimated{background:linear-gradient(90deg,var(--solar) 50%,rgba(255,255,255,.1) 50%);border:1px solid var(--solar)}
+.lrep .lrow .dot.learning{background:transparent;border:1px solid var(--mute)}
+.lrep .lrow .dot.unscored{background:transparent;border:1px dashed rgba(255,255,255,.35)}
+.lrep .lrow .dot.measured{background:var(--home);box-shadow:0 0 6px var(--home)}
+.lrep .lrow-mid{display:flex;align-items:center;gap:8px;margin-top:5px;padding-left:16px}
+.lrep .lrow-mid svg{flex:none;display:block}
+.lrep .lrow .bias{flex:none;font:500 10.5px "JetBrains Mono";width:14px;text-align:center}
+.lrep .lrow .bias.up{color:var(--warn)}.lrep .lrow .bias.dn{color:var(--home)}.lrep .lrow .bias.ev{color:var(--mute)}
+.lrep .lnote{flex:1;font-size:11px;color:var(--mute);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lrep .lhelp{padding-left:16px;margin-top:4px;font-size:11px;color:var(--mute);line-height:1.4}
+.lrep .chev-r{flex:none;color:var(--mute);font-size:13px}
+.lrep .lanom{margin-top:12px;padding-top:12px;border-top:1px solid var(--glass-b)}
+.lrep .sect2{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:600;margin:16px 2px 4px}
 #learnCard [hidden],#learnCard[hidden]{display:none}
 .sheet .scatter{margin-top:12px}
 .sheet .scatter svg{display:block;width:100%}
@@ -1717,9 +1717,8 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 #chips .c-pill{flex:0 1 auto;max-width:100%}
 .c-pill>.t{min-width:0;overflow:hidden;text-overflow:ellipsis}
 #banSlot:empty{display:none}
-/* the floating glass tab bar keeps five tabs until Batch 4 */
+/* the floating glass tab bar: four tabs (Batch 4), inside the phone frame */
 .phone .c-tabbar{position:absolute;bottom:calc(12px + env(safe-area-inset-bottom,0px))}
-.c-tabbar.five{grid-template-columns:repeat(5,minmax(0,1fr))}
 /* Energy flow: the twin's labels as glass chips, the replay row */
 .c-card.twin{overflow:hidden}
 .c-card.twin .house{margin:12px -16px 0;border-radius:0}
@@ -1781,4 +1780,31 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 html[data-calm] .c-skel::after,html[data-calm] .c-ban.red::after,html[data-calm] .c-badge[data-t=live]::before,html[data-calm] .c-tgl.busy .c-tgl-b{animation:none}
 html[data-calm] .c-seg::before,html[data-calm] .c-sw::after,html[data-calm] .c-chev,html[data-calm] .c-tgl-b,html[data-calm] .c-btn,html[data-calm] .c-tab{transition:none}
 @media (prefers-reduced-motion:reduce){.c-tgl.busy .c-tgl-b{animation:none}.c-tgl-b,.c-btn,.c-tab{transition:none}}
+/* Batch 4 · Systems, History and Settings (approved mockups/al-ia.html v2, frames 9–15 and 18) */
+#v-sys [hidden],#v-hist [hidden],#v-set [hidden]{display:none!important}
+.c-tab{position:relative}
+.c-tabbar .c-tab svg{flex:none}
+.sys-scene{padding:0 16px 16px}
+.sys3d{height:250px;margin:4px 0 0;border-radius:var(--c-r-well)}
+#roof.sys3d{height:230px;margin-top:12px}
+.c-seg.sys button{min-width:0}
+.c-card.flush>.c-sys.static{padding-right:16px}
+.c-sys .c-sys-top .c-sys-v{padding-left:6px}
+/* the roof's one glass call-out (component 13 .c-flab) */
+.roofhud.c-flab{left:50%;top:12px;transform:translateX(-50%);max-width:calc(100% - 24px);padding:6px 12px;text-align:center;white-space:normal;font:inherit;color:var(--text);background:var(--c-bar-bg);border:0}
+.roofhud.c-flab b{font:500 14px var(--c-mono)}
+.roofhud.c-flab em{display:block;font-style:normal;font-size:10.5px;line-height:1.4;color:var(--dim);margin-top:2px}
+.c-dl.ppk,.c-dl.bl{display:none;align-items:center}.c-dl.ppk.on,.c-dl.bl.on{display:flex}
+/* Where your energy goes: rows open in place; Always-on opens the overnight baseline */
+.c-part[role=button]{cursor:pointer;min-height:44px;padding:4px 0}
+.c-part-d{padding:0 0 12px 20px}
+.c-part-d .c-cap{margin-top:-2px}
+.c-part-d #nightBox .c-head{display:none}
+.c-part-d .eg-trend{margin-top:12px}
+.c-hero b#egTotal{min-width:0}
+#learnCard .c-sum .c-badge{margin-right:4px;vertical-align:1px}
+.c-sys .c-end .c-badge{flex:none}
+.cleanrow{gap:14px}
+.ph .tile{height:44px}
+/* end Batch 4 */
 /* end al-app */

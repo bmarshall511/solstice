@@ -128,6 +128,6 @@ export async function soilingNightly(siteId: string, now = Date.now()) {
   if (s.state !== 'dusty' || s.nextRain) return { state: s.state, lossPct: s.lossPct, nextRain: s.nextRain?.day ?? null };
   const r = await notify(siteId, 'panel', 'Panels look dusty',
     `About ${s.lossPct}%${s.lossSd ? ` ± ${s.lossSd}%` : ''} below clean${s.kwhPerDay != null ? ` (≈ ${s.kwhPerDay.toFixed(1)} kWh a day)` : ''}${s.lastRain ? ` after ${s.lastRain.daysAgo} days without 5 mm of rain` : ''}, and none in the 5-day forecast. A rinse would bring it back.`,
-    { lossPct: s.lossPct }, { key: `soiling:${s.resetOn ?? s.ref?.from ?? 'window'}`, windowH: 24 * 120, now, url: '/?go=v-roof' });   // once per dusty spell: the key changes when rain or a cleaning resets it
+    { lossPct: s.lossPct }, { key: `soiling:${s.resetOn ?? s.ref?.from ?? 'window'}`, windowH: 24 * 120, now, url: '/?go=v-sys&p=solar' });   // once per dusty spell: the key changes when rain or a cleaning resets it
   return { state: s.state, lossPct: s.lossPct, pushed: r.pushed, skipped: r.skipped ?? null };
 }

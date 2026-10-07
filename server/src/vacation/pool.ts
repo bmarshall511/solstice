@@ -60,10 +60,10 @@ export async function tripOutsideRun(siteId: string, trip: Trip, now = Date.now(
   if (o.runOnce) {
     await logTrip(trip.id, { at: now, text: `A run-once schedule on the controller ran the pump at ${clock}`, delta: 'pool' });
     await notify(siteId, 'vacation', 'The pool pump ran on a controller schedule', `Seen running at ${clock} on a run-once schedule set on the panel, not Solstice's plan.`, { trip: trip.id },
-      { key: `vac:poolpanel:${trip.id}:${localDay(new Date(now))}`, now, url: '/?go=v-ins&p=appl' });
+      { key: `vac:poolpanel:${trip.id}:${localDay(new Date(now))}`, now, url: '/?go=v-sys&p=pool' });
     return;
   }
   await logTrip(trip.id, { at: now, text: `The pump ran outside the plan at ${clock} (a pool service, or the panel)`, delta: 'pool' });
   await notify(siteId, 'vacation', 'The pool pump was started outside the plan', `Seen running at ${clock}. A pool service visit, or someone at the panel.`, { trip: trip.id },
-    { key: `vac:poolpanel:${trip.id}:${localDay(new Date(now))}`, now, url: '/?go=v-ins&p=appl' });
+    { key: `vac:poolpanel:${trip.id}:${localDay(new Date(now))}`, now, url: '/?go=v-sys&p=pool' });
 }

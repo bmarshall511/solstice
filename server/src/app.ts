@@ -781,7 +781,7 @@ fiveMinuteSteps.watchdog = async (id, now) => {
   const done = await kv.get<number>(SYNC_DONE_KEY); if (done == null) { await kv.set(SYNC_DONE_KEY, now); return { armed: true }; }   // first run after deploy
   const h = (now - done) / 3600e3; if (h <= 26) return { ok: true, hours: Math.round(h * 10) / 10 };
   return notify(id, 'anomaly', 'The nightly update didn\u2019t run', `Solstice's nightly job last finished ${Math.round(h)} hours ago, so history, learning and alerts may be stale. It runs at 5:15 AM; check Vercel's cron logs if this repeats.`,
-    { hours: Math.round(h) }, { key: `watchdog:sync:${localDay(new Date(now))}`, now, url: '/?go=v-ins' });
+    { hours: Math.round(h) }, { key: `watchdog:sync:${localDay(new Date(now))}`, now, url: '/?go=v-set' });
 };   // panels.ts: a panel silent through an hour of daylight, or the relay itself (read-only)
 /**
  * Fires every 5 minutes; sampling.ts decides what is due. Nest (with acTick: AC learning and due plan steps) every 5 minutes 10:00–22:00

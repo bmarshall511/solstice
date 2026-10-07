@@ -39,7 +39,7 @@ export function lockBillCards(S, last) {
   lockCard(cardOf('billChart'), { sub: 'Tesla usage × PEC rates', body: skMonthly(), reason: `Monthly dollars stay with ${nameMid(name)}.`, name });
 }
 
-/** Insights › Planner for a guest: the sliders still replay a year of real data on the server, so kWh, coverage, full-battery
+/** The Planner sheet (Systems › Home › What if you added…) for a guest: the sliders still replay a year of real data on the server, so kWh, coverage, full-battery
  *  days and backup hours stay; every cost is veiled, the recommendation is the kWh-only version and "Your system so far" is locked. */
 export async function guestPlan(S, r, q) {
   const B = r.baseline, U = r.upgraded, k = v => (v >= 1000 ? (v / 1000).toFixed(1) + ' MWh' : Math.round(v) + ' kWh');
@@ -55,8 +55,9 @@ export async function guestPlan(S, r, q) {
     `<span>Est. installed cost</span><span class="n">—</span><b>${q.panels || q.powerwalls ? veil('$•.•k') : '—'}</b>` +
     `<span>Saves per year</span><span class="n">—</span><b>${veil('$•••')}</b><span>Payback</span><span class="n">—</span><b>${veil('•• yrs')}</b>`;
   $('planFine').innerHTML = `Replays ${r.days} days of real 5-minute data. Hardware prices are generic placeholders (${veil('$•.••')}/W for panels, ${veil('$••.•k')} per Powerwall). The PEC rate is private to ${nameMid(S.ownerName)}, so cost rows are veiled.`;
-  lockCard(cardOf('sysPay'), { body: skLines(), reason: `What the system cost and saves stays with ${nameMid(S.ownerName)}.`, name: S.ownerName });
+  lockCard($('sysPayCard'), { title: 'Your system so far', sub: '', body: skLines(), reason: `What the system cost and saves stays with ${nameMid(S.ownerName)}.`, name: S.ownerName });   // the Planner sheet's card
   const [pv, pw] = await Promise.all([api.whatif({ panels: 8, extra: q.extra }), api.whatif({ powerwalls: 1, extra: q.extra })]).catch(() => [null, null]);
+  if (!$('planRec')) return;   // the sheet closed
   $('planRec').innerHTML = pv && pw ? `<b>For this home, panels beat batteries.</b> 8 more panels would cover ${pv.upgraded.selfPowered}% of home use instead of ${pv.baseline.selfPowered}%, ` +
     `and cut about ${n0(Math.round((pv.baseline.importKwh - pv.upgraded.importKwh) / 100) * 100)} kWh a year from PEC. Another Powerwall adds little, because today's batteries only reach full on ${pw.baseline.batteryFullDays} days a year, so there's rarely any surplus to store. ` +
     `Extra batteries would mainly buy outage time: about ${pw.backupHoursEvening.upgraded} h of evening backup instead of ${pw.backupHoursEvening.now} h.` : '';

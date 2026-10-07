@@ -98,6 +98,6 @@ export function cronAlerts(r: Partial<Record<CronName, CronRecord | null>>, now:
 export async function cronWatch(siteId: string, now = Date.now(), which: readonly ('nest' | 'pool' | 'sync')[] = ['nest', 'pool', 'sync']) {
   const [sync, pool, nest] = await Promise.all(CRON_NAMES.map(n => kv.get<CronRecord>(cronKey(n))));
   const alerts = cronAlerts({ sync, pool, nest }, now, which);
-  for (const a of alerts) await notify(siteId, 'anomaly', a.title, a.body, a.data, { key: a.key, now, url: '/?go=v-ins' });
+  for (const a of alerts) await notify(siteId, 'anomaly', a.title, a.body, a.data, { key: a.key, now, url: '/?go=v-sys&p=home' });
   return { alerts: alerts.map(a => a.key.split(':').slice(1, 3).join(':')) };
 }

@@ -111,6 +111,6 @@ export async function loadPowerwallRules(S) {
 
 /** Put the card directly below Outage readiness (views/outage.js mounts that first card on Insights › Home). */
 export function mountPowerwallRules() {
-  const home = $('ip-home'), outage = home.querySelector('.card.outage');
+  const home = $('sp-powerwall'), outage = home.querySelector('.card.outage');
   if (outage) outage.insertAdjacentHTML('afterend', MARKUP); else home.insertAdjacentHTML('afterbegin', MARKUP);
 }

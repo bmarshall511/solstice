@@ -1,57 +1,67 @@
 import { $, niceDate } from '../lib/util.js';
 import { api } from '../lib/api.js';
-import { confChip, biasDir, sparkline, esc } from '../lib/conf.js';
+import { cBadge, badge, biasDir, sparkline, esc } from '../lib/conf.js';
+import { icon } from '../lib/icons.js';
+import { sheet, sheetHead, sheetFoot, closeSheet } from './csheet.js';
 
 /*
- * "How well Solstice knows your home" (Insights → Home, approved mockup r-learning): the model report from the owner-only
- * GET /api/models (server/src/learn/api.ts). It sits below Outage readiness and above Data health, is owner-only
- * ([data-owner], and never fetched for a guest or the owner's guest preview), and a tap on a row opens the shared sheet with
- * that model's last 30 predicted-vs-actual days.
+ * "How well Solstice knows your home" (Systems › Home; approved mockups r-learning, then al frame 9): the model report from the
+ * owner-only GET /api/models (server/src/learn/api.ts). The card shows the headline and the three models that most need data, as
+ * compact rows (dormant ones dashed, with their `why`); "All models ›" opens the whole report as a sheet, and a row opens that
+ * model's last 30 predicted-vs-actual days. Owner-only ([data-owner]); never fetched for a guest or the owner's guest preview.
  */
-const MARKUP = `<div class="card" id="learnCard" data-owner hidden>
-  <div class="mrhead"><b>How well Solstice knows your home</b><span class="badge g" id="lrBadge">—</span></div>
-  <p class="headline" id="lrHead" hidden></p>
-  <div class="lrows" id="lrRows"></div>
-  <div id="lrAnom"></div>
-  <div class="sect2" id="lrLogH" style="margin-top:16px">Learning log</div>
-  <div class="tline" id="lrLog"></div>
-  <p class="fine" id="lrRun" style="margin-top:10px"></p>
-</div>`;
-
-let timer, mounted = false;
+let timer;
 const clockAt = ms => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
+const RANK = { dormant: 0, unscored: 1, learning: 2, estimated: 3, learned: 4, measured: 5 };
+const ACC = id => /pool/.test(id) ? 'c-acc-pool' : /^ac|\.ac|ac\./.test(id) ? 'c-acc-ac' : /solar|pv/.test(id) ? 'c-acc-solar' : /soc|batt|pw/.test(id) ? 'c-acc-batt' : 'c-acc-home';
 
 export function initLearn(S) {
-  if (!mounted) { const dh = $('dhList')?.closest('.card'); if (!dh) return; dh.insertAdjacentHTML('beforebegin', MARKUP); mounted = true;
-    $('lrRows').onclick = e => { const r = e.target.closest('.lrow'); if (r) openModel(S, r.dataset.id); }; }
+  $('lrRows').onclick = e => { const r = e.target.closest('[data-model]'); if (!r) return; r.dataset.model === '*' ? openReport(S) : openModel(S, r.dataset.model); };
   clearInterval(timer);
   if (S.guest) { $('learnCard').hidden = true; return; }   // owner-only route: a guest (or the owner previewing) never asks
   const load = () => api.models().then(m => { S.models = m; drawLearn(S); S.onModels?.(); }).catch(e => console.warn('models', e.message));
   load(); timer = setInterval(load, 15 * 60_000);
 }
 
+/** One model as a compact row: label, its note (a dormant model's `why`), the tier badge. */
+const modelRow = m => `<div class="c-sys compact ${ACC(m.id)}" role="button" tabindex="0" data-model="${esc(m.id)}"><span class="c-ic">${icon('chart')}</span>
+  <div style="min-width:0"><div class="c-sys-top"><b>${esc(m.label)}</b></div><div class="c-sys-l">${esc(m.tier === 'dormant' ? (m.why ?? m.note) : m.note)}</div></div>
+  <span class="c-end">${cBadge(m.tier, m)}<span class="c-chev">${icon('chev')}</span></span></div>`;
+
 export function drawLearn(S) {
   const R = S.models, card = $('learnCard'); if (!R || !card) return;
   card.hidden = false;
   const s = R.summary;
-  $('lrBadge').textContent = `${s.learned} of ${s.active ?? s.total} learned${s.dormant ? ` · ${s.dormant} dormant` : ''}`;   // B2-9: dormant models leave the count
-  $('lrHead').hidden = !s.headline; $('lrHead').textContent = s.headline ?? '';
-  $('lrRows').innerHTML = R.models.map(m => {
+  $('lrHead').innerHTML = `${badge('', `${s.learned} of ${s.active ?? s.total} learned${s.dormant ? ` · ${s.dormant} dormant` : ''}`)} ${esc(s.headline ?? '')}`;   // B2-9: dormant models leave the count
+  const three = [...R.models].sort((a, b) => (RANK[a.tier] ?? 9) - (RANK[b.tier] ?? 9)).slice(0, 3);
+  $('lrRows').innerHTML = three.map(modelRow).join('')
+    + `<div class="c-sys compact c-acc-mute" role="button" tabindex="0" data-model="*" aria-haspopup="dialog"><span class="c-ic">${icon('bars')}</span><div style="min-width:0"><div class="c-sys-top"><b>All models</b></div><div class="c-sys-l">${R.models.length} models · the learning log</div></div><span class="c-chev">${icon('chev')}</span></div>`;
+}
+
+/** The whole report as a sheet: every model (the old rows, with the error sparkline and bias arrow), open anomalies, the log. */
+function openReport(S) {
+  const R = S.models; if (!R) return;
+  const rows = R.models.map(m => {
     const dir = biasDir(m.bias), arrow = dir ? `<span class="bias ${dir}">${dir === 'up' ? '▲' : dir === 'dn' ? '▼' : '→'}</span>` : '<span class="bias"></span>';
-    return `<div class="lrow" data-id="${esc(m.id)}">
-      <div class="lrow-top"><i class="dot ${esc(m.dot)}"></i><span class="lbl">${esc(m.label)}</span>${confChip(m.tier, m)}<span class="chev-r">›</span></div>
-      <div class="lrow-mid">${m.spark?.length ? sparkline(m.spark, 58, 18) : '<span style="width:58px;flex:none"></span>'}${arrow}<span class="lnote">${esc(m.note)}</span></div>
+    return `<div class="lrow" data-model="${esc(m.id)}" role="button" tabindex="0">
+      <div class="lrow-top"><i class="dot ${esc(m.dot)}"></i><span class="lbl">${esc(m.label)}</span>${cBadge(m.tier, m)}<span class="chev-r">›</span></div>
+      <div class="lrow-mid">${m.spark?.length ? sparkline(m.spark, 58, 18) : '<span style="width:58px;flex:none"></span>'}${arrow}<span class="lnote">${esc(m.tier === 'dormant' ? (m.why ?? m.note) : m.note)}</span></div>
       ${m.help ? `<div class="lhelp">What would help: ${esc(m.help)}</div>` : ''}
-    </div>`;
-  }).join('');
+    </div>`; }).join('');
   const now = Date.now();
-  $('lrAnom').innerHTML = (R.anomalies ?? []).map(a => { const d = Math.max(1, Math.round((now - a.openedAt) / 864e5));
-    return `<div class="ins lanom" style="--c:var(--warn)"${a.detail?.action === 'open_panels' ? ' data-go="v-roof"' : ''}><div class="ic">⚠</div><div><b>${esc(a.title ?? a.kind)}</b> <time>· ${d} day${d === 1 ? '' : 's'}</time>${a.body ? `<p>${esc(a.body)}</p>` : ''}</div></div>`; }).join('');
-  const log = (R.log ?? []).slice(0, 6);
-  $('lrLogH').hidden = $('lrLog').hidden = !log.length;
-  $('lrLog').innerHTML = log.map(l => `<div><i></i><span>${niceDate(l.day, { month: 'short', day: 'numeric' })}</span><p>${esc(l.text)}${l.delta ? ` <em>${esc(l.delta)}</em>` : ''}</p></div>`).join('');
-  const r = R.lastRun;
-  $('lrRun').textContent = r ? `Learning · last run ${clockAt(r.at)} · ${r.scored} model${r.scored === 1 ? '' : 's'} scored${r.errors?.length ? ` · ${r.errors.length} error${r.errors.length === 1 ? '' : 's'}` : ''}` : 'Learning · not run yet (nightly, after the history sync)';
+  const anom = (R.anomalies ?? []).map(a => { const d = Math.max(1, Math.round((now - a.openedAt) / 864e5));
+    return `<div class="c-check"><i class="todo" style="color:var(--warn)">!</i><span><b>${esc(a.title ?? a.kind)}</b> · ${d} day${d === 1 ? '' : 's'}${a.body ? `<br><span class="c-cap">${esc(a.body)}</span>` : ''}${a.detail?.action === 'open_panels' ? '<br><button class="c-btn sm line" data-solar>Systems › Solar</button>' : ''}</span></div>`; }).join('');
+  const log = (R.log ?? []).slice(0, 6), r = R.lastRun;
+  sheet(`${sheetHead('How well Solstice knows your home', badge('', `${R.summary.learned} of ${R.summary.active ?? R.summary.total} learned`), esc(R.summary.headline ?? 'Predictions are scored every night.'))}
+    <div class="c-card lrep">${rows}</div>
+    ${anom ? `<div class="c-lab">Open anomalies</div><div class="c-well">${anom}</div>` : ''}
+    ${log.length ? `<div class="c-lab">Learning log</div><div class="c-card" style="padding:4px 14px">${log.map(l => `<div class="c-check" style="grid-template-columns:52px minmax(0,1fr)"><span class="c-num c-cap">${niceDate(l.day, { month: 'short', day: 'numeric' })}</span><span>${esc(l.text)}${l.delta ? ` <span class="c-cap">${esc(l.delta)}</span>` : ''}</span></div>`).join('')}</div>` : ''}
+    <p class="c-fine">${r ? `Learning · last run ${clockAt(r.at)} · ${r.scored} model${r.scored === 1 ? '' : 's'} scored${r.errors?.length ? ` · ${r.errors.length} error${r.errors.length === 1 ? '' : 's'}` : ''}` : 'Learning · not run yet (nightly, after the history sync)'}</p>
+    ${sheetFoot('', 'Done', 'c-acc-batt')}`);
+  const body = $('sheetBody');
+  body.querySelector('[data-f="pri"]').onclick = closeSheet;
+  body.querySelectorAll('.lrow[data-model]').forEach(x => x.onclick = () => openModel(S, x.dataset.model));
+  body.querySelector('[data-solar]')?.addEventListener('click', () => { closeSheet(); S.nav?.sys('solar'); });
 }
 
 /** The tap-through: last 30 predicted-vs-actual days, bias, error by window. */
@@ -94,7 +104,7 @@ function openModel(S, id) {
       <span>Days scored</span><b>${m.n}${m.n < m.need ? ` of ${m.need}` : ""}</b>${win}</div>${m.help ? `<p class="fine" style="margin-top:10px">What would help: ${esc(m.help)}</p>` : ''}`;
   }
   if (id === 'fc48.home' && S.models.home?.fit) body += homeHow(S.models.home);   // mockup ah
-  $('sheetBody').innerHTML = `<div class="shead"><h4>${esc(m.label)}</h4><button class="x" id="sheetX">✕</button></div>${body}`;
-  $('phone').classList.add('open');
-  $('sheetX').onclick = () => $('phone').classList.remove('open');
+  sheet(`${sheetHead(esc(m.label), cBadge(m.tier, m))}${body}${sheetFoot('All models', 'Done', 'c-acc-batt')}`);
+  $('sheetBody').querySelector('[data-f="pri"]').onclick = closeSheet;
+  $('sheetBody').querySelector('[data-f="sec"]').onclick = () => openReport(S);
 }

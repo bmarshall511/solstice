@@ -96,6 +96,6 @@ export async function poolTestReminder(siteId: string, now = Date.now()) {
   const days = Math.floor((now - w.last.at) / 864e5), hrs = Object.entries(w.pumpHours).filter(([d]) => d > w.last!.day).map(([, h]) => h);
   const r = await notify(siteId, 'poolTest', 'Time to test the pool',
     `Last test ${days} days ago.${w.waterF != null ? ` Water is ${Math.round(w.waterF)}°` : ''}${hrs.length ? ` and the pump ran ${Math.round(hrs.reduce((a, v) => a + v, 0) / hrs.length)} h a day since` : ''}.`,
-    { lastTest: w.last.day }, { key: `poolTest:${w.last.id}`, windowH: 24 * 60, now, url: '/?go=v-ins&p=appl' });   // once per test: the next test clears it
+    { lastTest: w.last.day }, { key: `poolTest:${w.last.id}`, windowH: 24 * 60, now, url: '/?go=v-sys&p=pool' });   // once per test: the next test clears it
   return { pushed: r.pushed, skipped: r.skipped ?? null };
 }
