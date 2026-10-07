@@ -40,6 +40,9 @@ describe('change detection', () => {
     expect(changed(R('COOL', 76), R('COOL', 76.3))).toBe(false);
     expect(changed(R('COOL', 76), R('COOL', null, null, true))).toBe(false);
     expect(changed(null, R('COOL', 72))).toBe(false);
+    // Vacation mode turned Eco off: the setpoint comes back in the same mode (not a person), while a mode change still counts
+    expect(changed(R('COOL', null), R('COOL', 78))).toBe(false);
+    expect(changed(R('OFF', null), R('COOL', 78))).toBe(true);
   });
   it('a reading that shows what Solstice sent in the last 45 minutes is ours', () => {
     const now = at('2026-07-15T13:00'), sent = { at: now - 10 * 60_000, by: 'autopilot' as const, mode: 'COOL', coolF: 78, heatF: null };

@@ -1,7 +1,7 @@
 // Google Nest via the Smart Device Management API. Credentials from the environment (NEST_PROJECT_ID, GOOGLE_CLIENT_ID,
 // GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI); the refresh token from the one-time Google consent is kept in the database (kv 'nest:tokens').
 import { q, kv } from '../db.js';
-import { guardCoolSetpoint, guardManual, GuardRefusal, AC_WRITE_INTERVAL_MS, type ManualCommand } from './guards.js';
+import { guardCoolSetpoint, guardHeatSetpoint, guardTripEco, guardManual, GuardRefusal, AC_WRITE_INTERVAL_MS, type ManualCommand } from './guards.js';
 import { recordSent } from './hold.js';
 
 const SDM = 'https://smartdevicemanagement.googleapis.com/v1';
@@ -82,6 +82,29 @@ export async function setCool(deviceId: string, f: number, mode: string) {
   if (!(await claimSetpointWrite(deviceId, f, now))) throw new GuardRefusal('ac', `another setpoint change was just made; one per ${AC_WRITE_INTERVAL_MS / 60_000} min`);
   await recordSent(deviceId, { at: now, by: 'autopilot', mode: 'COOL', coolF: f, heatF: null });   // hold.ts: so the next reading is known as ours
   return exec(deviceId, 'ThermostatTemperatureSetpoint.SetCool', { coolCelsius: fToC(f) });
+}
+
+/* ---------- Vacation mode's two other writes (mockup ak), behind their guards ---------- */
+/**
+ * A heating setpoint for a trip (away heat 50–60 °F, stepped) or the restore of the heat setpoint the trip started with. The same
+ * write slot as setCool, so the two never land within 30 minutes of each other. Refusals throw GuardRefusal and nothing is sent.
+ */
+export async function setHeat(deviceId: string, f: number, mode: string, o: { targetF?: number; restore?: boolean } = {}) {
+  const now = Date.now(), last = await kv.get<NestState>('nest:last'), prev = await lastSetpointWrite(deviceId);
+  const g = guardHeatSetpoint({ mode, targetF: o.targetF ?? f, valueF: f, currentF: last?.deviceId === deviceId ? last.heatF : null, lastWriteAt: prev?.at ?? null, now, restore: o.restore });
+  if (!g.ok) throw new GuardRefusal('ac', g.reason);
+  if (!(await claimSetpointWrite(deviceId, f, now))) throw new GuardRefusal('ac', `another setpoint change was just made; one per ${AC_WRITE_INTERVAL_MS / 60_000} min`);
+  await recordSent(deviceId, { at: now, by: 'autopilot', mode: 'HEAT', coolF: null, heatF: f });
+  await exec(deviceId, 'ThermostatTemperatureSetpoint.SetHeat', { heatCelsius: fToC(f) });
+  if (last?.deviceId === deviceId) await kv.set('nest:last', { ...last, heatF: f });
+}
+/**
+ * Eco off for a trip under way (guardTripEco). `nest:last` is left as it was (in Eco): the next reading brings the setpoint back, and a
+ * reading that follows one in Eco is never taken for somebody's change (hold.ts), so turning Eco off can't start a hold by itself.
+ */
+export async function tripEcoOff(deviceId: string, mode: string, tripAway: boolean) {
+  const g = guardTripEco({ mode, tripAway }); if (!g.ok) throw new GuardRefusal('ac', g.reason);
+  await exec(deviceId, 'ThermostatEco.SetMode', { mode: 'OFF' });
 }
 
 /* ---------- the owner's own commands (mockup v), behind guardManual ---------- */
