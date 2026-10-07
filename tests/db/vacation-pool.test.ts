@@ -61,7 +61,8 @@ describe('Pool Autopilot during a trip', () => {
     expect(c.tomorrow.plan.turnovers).toBeGreaterThanOrEqual(3);
   });
   it('VP-4 a run outside the plan during a trip: in the trip\'s log once an hour, never counted as yours', async () => {
-    const now = Date.now(), t = await createTrip('s', { leaveAt: now - 3600e3, backAt: now + 2 * 864e5, detected: false }, now - 3600e3);
+    const now = Math.floor(Date.now() / 3600e3) * 3600e3 + 10 * 60_000;   // 10 minutes into an hour: the two runs below share it
+    const t = await createTrip('s', { leaveAt: now - 3600e3, backAt: now + 2 * 864e5, detected: false }, now - 3600e3);
     expect(await noteOutsideRun('s', now)).toBe(false);
     expect(await noteOutsideRun('s', now + 60_000)).toBe(false);
     expect(await kv.get('s:pool:outsideRuns')).toBeUndefined();

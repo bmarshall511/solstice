@@ -235,12 +235,16 @@ describe('PNL-2 GET /api/pvs/panels', () => {
     expect(JSON.stringify(b)).not.toContain('TEST-PNL');
   });
   it('the route: 400 on a bad date; the owner gets the alert state; a past day has no "now" values', async () => {
+    // the route reads the clock: pin it to the fixture's day (on the real 2026-10-07 this "past day" was today)
+    vi.useFakeTimers({ toFake: ['Date'], now: NOW });
+    try {
     expect((await call('/api/pvs/panels?date=2026-13-01')).status).toBe(400);
     const b = await (await call('/api/pvs/panels?date=2026-10-07')).json();
     expect(b).toMatchObject({ date: '2026-10-07', today: false, sunDown: true });
     expect(b.panels.every((p: any) => p.kw === null && p.pctNow === null && p.pctToday != null)).toBe(true);
     expect(b.alerts['panel.low@r2c7']).toMatchObject({ pushed: false });
     expect(JSON.stringify(b)).not.toContain('TEST-PNL');
+    } finally { vi.useRealTimers(); }
   });
   it('PNL-3 a relay that went quiet is reported as the relay: no panel is listed as not reporting', async () => {
     const b = await P.panelsDay('2026-10-08', NOW + 40 * 60_000);
