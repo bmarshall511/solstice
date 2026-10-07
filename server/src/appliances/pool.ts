@@ -453,13 +453,20 @@ async function guardedWrite(siteId: string, what: string, opts: Parameters<typeo
   catch (e) { if (e instanceof GuardRefusal) await logPool(siteId, `Refused ${what}: ${e.reason}`, 'refused'); throw e; }
 }
 
+/** A Solstice write that did not finish (kv `pool:writing`): set before the controller is touched, cleared when the write succeeded. */
+export const writingKey = (siteId: string) => `${siteId}:pool:writing`;
+export type PoolWriting = { at: number; what: string; schedules: Array<{ circuitId: number; start: number; stop: number; rpm: number }> };
 export async function applyPlan(siteId: string, plan: Plan, snap: PoolSnapshot, settings: PoolSettings) {
   if (!snap.pump) throw new Error('No pump found on the controller');
   const w = planWrite(plan, snap, settings), replace = w.replaceCircuits;
+  // the intent first: a write cut off part-way (a timeout, Vercel's limit) leaves old and new programs on the controller, which the
+  // evening run must read as its own unfinished work and write again, never as an edit made outside Solstice (audit 10b, C-03)
+  await kv.set(writingKey(siteId), { at: Date.now(), what: 'plan', schedules: plan.schedules.map(s => ({ circuitId: s.circuitId, start: s.start, stop: s.stop, rpm: s.rpm })) } satisfies PoolWriting);
   const r = await guardedWrite(siteId, 'a pool schedule write', w);
   const record = { at: Date.now(), plan: { start: plan.start, stop: plan.stop, boostAt: plan.boostAt, rpm: plan.rpm, boostHours: plan.boostHours, schedules: plan.schedules }, removed: r.removed, added: r.added,
     previousSpeeds: snap.pump.circuits.filter(c => replace.includes(c.circuitId)) };
   await kv.set(`${siteId}:pool:applied`, record);
+  await kv.set(writingKey(siteId), null as any);
   await kv.set(`${siteId}:pool:last`, null as any);
   return record;
 }
