@@ -134,6 +134,11 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS powerwall_log (id bigserial PRIMARY KEY, site_id text NOT NULL, at bigint NOT NULL, rule text, command text NOT NULL,
      value jsonb, result text NOT NULL, reason text, source text NOT NULL)`,
   `DO $$ BEGIN CREATE INDEX IF NOT EXISTS powerwall_log_site_at ON powerwall_log(site_id, at); EXCEPTION WHEN duplicate_table OR unique_violation THEN NULL; END $$`,
+  // Vacation mode (mockup ak; vacation/trip.ts): one row per trip, planned → active → ended (or cancelled). Times are epoch ms; `data`
+  // keeps the trip's log, the departure checklist, what each system remembers for the trip, and the report once it ends.
+  `CREATE TABLE IF NOT EXISTS trips (id serial PRIMARY KEY, site_id text NOT NULL, leave_at bigint NOT NULL, back_at bigint, state text NOT NULL,
+     started_at bigint, ended_at bigint, ended_by text, detected boolean NOT NULL DEFAULT false, data jsonb NOT NULL DEFAULT '{}', created_at timestamptz NOT NULL DEFAULT now())`,
+  `DO $$ BEGIN CREATE INDEX IF NOT EXISTS trips_site_state ON trips(site_id, state); EXCEPTION WHEN duplicate_table OR unique_violation THEN NULL; END $$`,
 ];
 
 /** Run `fn` once and keep its result; a failure is forgotten, so the next call tries again. */

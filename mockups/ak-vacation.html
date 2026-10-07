@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Solstice · Vacation mode</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../web/src/style.css">
+<style>
+/* page scaffolding for the mockup only (same as v–aj) */
+html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+body{background:radial-gradient(1200px 600px at 50% -10%,#10203a 0%,#05060a 60%)}
+.col{width:100%;max-width:393px;margin:0 auto;padding:28px 0 60px}
+.intro{padding:0 20px}
+.intro .k{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:12px}
+.intro h2{font-size:30px;line-height:1.1;font-weight:300;letter-spacing:-.02em;margin-bottom:12px}
+.intro p{font-size:13.5px;color:var(--dim);line-height:1.6}
+.intro p+p{margin-top:8px}
+.intro b{color:var(--text);font-weight:600}
+.frame{margin-top:34px}
+.frame>.sect{margin:0 20px 10px}
+.pagepad{padding:0 20px}
+.cap{margin:12px 20px 0;padding:12px 14px;border-radius:16px;background:rgba(0,0,0,.25);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.55}
+.cap b{color:var(--text);font-weight:600}
+.cap p+p{margin-top:6px}
+.cap .new{color:var(--batt)}.cap .ill{color:#ffc15e}.cap .real{color:#9fd6ff}
+.wrules{margin:34px 20px 0}
+.wrules h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-bottom:10px}
+.wrules ul{list-style:none;display:grid;gap:8px}
+.wrules li{font-size:12.5px;color:var(--dim);line-height:1.55;padding:10px 12px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-b)}
+.wrules li b{color:var(--text);font-weight:600}
+.wrules li ul{display:block;list-style:disc}.wrules li li{padding:0;margin-top:3px;background:none;border:0;border-radius:0}
+.m-sheet{border-radius:24px 24px 18px 18px;padding:8px 16px 16px;background:rgba(20,24,36,.92);border:1px solid var(--glass-b)}
+.m-grab{width:38px;height:4px;border-radius:2px;background:rgba(255,255,255,.2);margin:4px auto 12px}
+.m-sheet h4{font-size:17px;font-weight:600}
+.m-sub{font-size:12px;color:var(--dim);margin-top:4px;line-height:1.5}
+.m-sub b{color:var(--text);font-weight:600}
+.lab{font:600 10.5px Manrope;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin-top:16px}
+.go2{all:unset;box-sizing:border-box;width:100%;cursor:pointer;display:block;text-align:center;margin-top:14px;padding:12px;border-radius:14px;background:var(--vac);color:#06201b;font-weight:700;font-size:14px}
+.wbtn{all:unset;cursor:pointer;font-size:12.5px;font-weight:600;padding:8px 12px;border-radius:12px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);color:var(--text);white-space:nowrap}
+.push{border-radius:18px;padding:12px 14px;background:rgba(30,34,46,.95);border:1px solid var(--glass-b);display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start}
+.push+.push{margin-top:8px}
+.push .ic{width:30px;height:30px;border-radius:8px;background:var(--vac);display:grid;place-items:center;color:#06201b;font-weight:800;font-size:14px}
+.push .ic.r{background:#ff7a66}.push .ic.a{background:#ffc15e}.push .ic.p{background:#c4a2ff}
+.push b{font-size:13px}.push p{font-size:12.5px;color:var(--dim);margin-top:2px;line-height:1.45}.push small{font-size:10.5px;color:var(--mute)}
+.push .acts{display:flex;gap:6px;margin-top:8px}.push .acts span{font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:10px;background:rgba(255,255,255,.08);color:var(--text)}
+
+/* NEW: Vacation mode (a token beside the existing ones, and the banner in the same shape as .hold and .pl-clear) */
+:root{--vac:#7fe0c8}
+.vac{margin-top:12px;padding:12px 14px;border-radius:16px;background:rgba(127,224,200,.08);border:1px solid rgba(127,224,200,.32);font-size:12.5px;line-height:1.5;color:var(--dim)}
+.vac .hh{display:flex;align-items:center;gap:8px}
+.vac .hh i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--vac);box-shadow:0 0 10px var(--vac)}
+.vac .hh b{color:var(--text);font-weight:700;font-size:13.5px;min-width:0}
+.vac .hh em{margin-left:auto;font:500 10.5px "JetBrains Mono";font-style:normal;color:var(--vac);flex:none}
+.vac p{margin-top:4px}.vac p b{color:var(--text);font-weight:600}
+.vac .bar{height:4px;border-radius:2px;background:rgba(255,255,255,.08);margin-top:9px;overflow:hidden}
+.vac .bar i{display:block;height:100%;border-radius:2px;background:var(--vac)}
+.vac .row2{display:flex;gap:8px;margin-top:10px}
+.vac .row2 button{all:unset;cursor:pointer;flex:1;text-align:center;padding:9px 10px;border-radius:12px;background:rgba(255,255,255,.08);border:1px solid var(--glass-b);font-weight:600;font-size:12.5px;color:var(--text)}
+.vac .row2 button.p{background:rgba(127,224,200,.18);border-color:rgba(127,224,200,.42)}
+.chipx.vacc{background:rgba(127,224,200,.1);border-color:rgba(127,224,200,.38);color:#c9f4e9}
+.chipx.vacc i{--c:var(--vac)}
+.chipx.vidle{color:var(--dim)}
+.chipx.vidle i{--c:rgba(242,244,248,.4);box-shadow:none}
+.badge.vb{color:var(--vac);border-color:rgba(127,224,200,.4);background:rgba(127,224,200,.08)}
+/* dates */
+.vd{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.vd div{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);min-width:0}
+.vd small{display:block;font:600 9.5px Manrope;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+.vd b{display:block;font:500 15px "JetBrains Mono";margin-top:3px}
+.vd span{font-size:11px;color:var(--dim)}
+.vd .on{border-color:rgba(127,224,200,.5);background:rgba(127,224,200,.07)}
+/* departure check */
+.chk{display:grid;gap:6px;margin-top:8px}
+.chk div{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:14px;background:rgba(255,255,255,.035);border:1px solid var(--glass-b);font-size:12.5px;color:var(--dim);line-height:1.4}
+.chk div>span{flex:1;min-width:0}
+.chk b{color:var(--text);font-weight:600}
+.chk i{flex:none;width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-style:normal;font-size:11px;font-weight:700}
+.chk .ok i{background:rgba(78,240,166,.15);color:var(--batt)}
+.chk .on i{background:rgba(255,193,94,.18);color:#ffc15e}
+.chk .man i{background:rgba(255,255,255,.08);color:var(--dim)}
+.chk .on{border-color:rgba(255,193,94,.3)}
+.chk button{all:unset;cursor:pointer;flex:none;font-size:11.5px;font-weight:700;padding:6px 10px;border-radius:10px;background:rgba(255,193,94,.16);color:#ffd99b}
+.chk .tick{flex:none;width:18px;height:18px;border-radius:5px;border:1.5px solid rgba(255,255,255,.35);box-sizing:border-box}
+/* the plan */
+.vp{display:grid;gap:8px;margin-top:12px}
+.vp>div{padding:11px 12px;border-radius:14px;background:rgba(255,255,255,.035);border:1px solid var(--glass-b);display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start;font-size:12.5px;color:var(--dim);line-height:1.45}
+.vp i{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-style:normal;font-size:12px;background:color-mix(in srgb,var(--c) 20%,transparent);color:var(--c)}
+.vp b{color:var(--text);font-weight:600}
+.vp em{font:500 12px "JetBrains Mono";font-style:normal;color:var(--vac);text-align:right;white-space:nowrap}
+.vp em small{display:block;font:400 10px Manrope;color:var(--mute)}
+.vp .mode{font:600 9.5px Manrope;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);border:1px solid var(--glass-b);border-radius:999px;padding:1px 6px;margin-left:4px}
+.sum3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}
+.sum3 div{padding:9px 8px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b);text-align:center;min-width:0}
+.sum3 small{display:block;font-size:10px;color:var(--mute);line-height:1.3}
+.sum3 b{display:block;font:300 20px Manrope;letter-spacing:-.02em;margin-top:2px}
+.sum3 b small{display:inline;font-size:10.5px;color:var(--dim)}
+.sum3 .hl{border-color:rgba(127,224,200,.45);background:rgba(127,224,200,.07)}.sum3 .hl b{color:var(--vac)}
+/* bars */
+.bars{display:grid;gap:7px;margin-top:12px}
+.bars div{display:grid;grid-template-columns:88px 1fr 62px;gap:8px;align-items:center;font-size:11.5px;color:var(--dim)}
+.bars s{display:block;height:8px;border-radius:4px;background:rgba(255,255,255,.06);overflow:hidden;text-decoration:none;position:relative}
+.bars s i{position:absolute;left:0;top:0;bottom:0;border-radius:4px}
+.bars s i.cf{background:rgba(255,255,255,.14)}
+.bars em{font:500 11px "JetBrains Mono";font-style:normal;color:var(--text);text-align:right}
+.key{display:flex;gap:12px;flex-wrap:wrap;font-size:10.5px;color:var(--mute);margin-top:8px}
+.key i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.fine2{font-size:11.5px;color:var(--mute);line-height:1.5;margin-top:10px}
+.mini{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.mini div{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b);min-width:0}
+.mini small{display:block;font-size:11px;color:var(--dim)}
+.mini b{display:block;font:300 19px Manrope;letter-spacing:-.02em;margin-top:1px}
+.mini b small{display:inline;font-size:11px;color:var(--dim);letter-spacing:0}
+.mini em{display:block;font-style:normal;font:400 11px Manrope;color:var(--mute);margin-top:3px;line-height:1.35}
+.mini em.g{color:var(--batt)}
+.lockscr{border-radius:22px;padding:22px 18px;background:var(--glass);border:1px solid var(--glass-b);text-align:center}
+.lockscr b{display:block;font-size:17px;margin-top:10px}
+.lockscr p{font-size:12.5px;color:var(--dim);margin-top:6px;line-height:1.5}
+.dot{width:44px;height:44px;border-radius:50%;margin:0 auto;background:rgba(255,255,255,.06);display:grid;place-items:center;font-size:18px}
+.hrow{display:flex;gap:4px;margin-top:10px}
+.hrow span{flex:1;text-align:center;font:500 10px "JetBrains Mono";color:var(--mute);padding:6px 0;border-radius:8px;background:rgba(255,255,255,.04)}
+.hrow span.t{background:rgba(127,224,200,.12);color:var(--vac)}
+</style></head><body>
+<div class="col">
+  <div class="intro">
+    <div class="k">Mockup ak · Vacation mode</div>
+    <h2>Tell Solstice when you're leaving and when you're back. It runs the house on as little as is safe, and has it ready when you walk in.</h2>
+    <p>Built from your answers: everything as recommended, no pets.</p>
+    <p>Colour key for the numbers in the notes:</p>
+    <ul style="font-size:13.5px;color:var(--dim);line-height:1.6;padding-left:18px;margin-top:4px">
+      <li><b style="color:#9fd6ff">blue</b>: measured on this house</li>
+      <li><b>white</b>: Solstice's estimate for a mid-October trip, from the audit's models (Oct day at home ≈ 61 kWh, empty house ≈ 26, with Vacation mode ≈ 20)</li>
+      <li><b style="color:#ffc15e">amber</b>: illustrative (the trip dates Thu Oct 15 → Sun Oct 18, readings during the trip)</li>
+    </ul>
+  </div>
+
+  <!-- ============ 1 ============ -->
+  <div class="frame">
+    <div class="sect">Frame 1 · Start · the Vacation sheet</div>
+    <div class="pagepad"><div class="m-sheet"><div class="m-grab"></div>
+      <h4>Vacation mode</h4>
+      <div class="m-sub">Solstice runs the AC, pool and Powerwalls for an empty house, watches over it, and has it ready when you're back.</div>
+      <div class="vd">
+        <div><small>Leaving</small><b>Thu Oct 15</b><span>7:00 AM</span></div>
+        <div class="on"><small>Back</small><b>Sun Oct 18</b><span>about 6:00 PM</span></div>
+      </div>
+      <div class="lab">Before you go</div>
+      <div class="chk">
+        <div class="on"><i>!</i><span><b>Pool Light is on</b> · 500 W, about 12 kWh a day if it stays on</span><button>Turn off</button></div>
+        <div class="ok"><i>✓</i><span><b>Spa, jets, blower and spa heat are off</b></span></div>
+        <div class="ok"><i>✓</i><span><b>Water looked clear</b> on your last test · no Clear-up running</span></div>
+        <div class="ok"><i>✓</i><span><b>Thermostat linked</b> · Eco will be turned off so Solstice can hold 85°</span></div>
+      </div>
+      <div class="lab">Your checklist · things Solstice can't switch</div>
+      <div class="chk">
+        <div class="man"><span class="tick"></span><span><b>Water heater</b> to its vacation setting · about 1.3 kWh a day while you're away</span></div>
+        <div class="man"><span class="tick"></span><span><b>Unplug what can be</b> · the house drops about 0.4 kW by itself when you leave</span></div>
+        <div class="man"><span class="tick"></span><span><b>Mac</b> that runs the panel relay · staying home? <span style="color:var(--vac)">Yes</span> · No</span></div>
+      </div>
+      <button class="go2">Start Vacation mode · Thu → Sun</button>
+      <p class="fine" style="text-align:center;margin-top:10px">Nothing changes until Thursday 7 AM. You can change the dates or end it from the Now screen.</p>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> opened from the Vacation chip on Now, or from "Vacation…" in the AC card's Away sheet (frame 7).</p>
+      <p><b>Dates:</b> up to 60 days ahead, with an arrival time.</p>
+      <p><b>Before you go:</b> lists whatever is on from the controller and Nest. "Turn off" is your own command through the owner guard, so Solstice never turns anything <i>on</i>, and the Autopilots still never touch the spa, lights or heater.</p>
+      <p><b>The checklist:</b> ticks are kept and shown again next trip.</p>
+      <p><b class="real">Measured:</b> 1.3 kWh a day is one ≈ 4.5 kW water-heater burst a night on a past trip. The 0.4 kW is 0.44–0.49 kW of always-on away, against 0.86 kW at home.</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 1b · Start · detected</div>
+    <div class="pagepad">
+      <div class="push"><div class="ic">✈</div><div><b>Looks like you're away</b><p>Nest has said Away since 8:10 AM and nothing at home has been used since. Start Vacation mode?</p><div class="acts"><span>Start…</span><span>I'm just out</span></div><small>Solstice · example</small></div></div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> sent when <b>both</b> of these hold:</p>
+      <ul style="padding-left:18px;margin-top:4px">
+        <li>Nest Home/Away Assist has been Away for 12 hours</li>
+        <li>the load shows no sign of anyone home for those 12 hours (no short bursts, no evening rise)</li>
+      </ul>
+      <p>"Start…" opens frame 1 with the end date left blank. Vacation mode never starts on its own. "I'm just out" mutes it for 24 h.</p>
+    </div>
+  </div>
+
+  <!-- ============ 2 ============ -->
+  <div class="frame">
+    <div class="sect">Frame 2 · The plan (lower in the same sheet)</div>
+    <div class="pagepad"><div class="m-sheet"><div class="m-grab"></div>
+      <h4>While you're away</h4>
+      <div class="m-sub">Estimated for Thu–Sun. Each line runs through the same safety limits as today.</div>
+      <div class="vp">
+        <div style="--c:#ff9e66"><i>❄</i><span><b>AC</b><span class="mode">Auto</span><br>Hold <b>85°</b>. If humidity stays over 60% for 2 h, step down 2° at a time (never below 80°) until it's under 55%.</span><em>−2.8<small>kWh a day</small></em></div>
+        <div style="--c:var(--home)"><i>≈</i><span><b>Pool</b><span class="mode">Auto</span><br><b>1 turnover</b>, 5 h at 1,500 RPM on the sunniest hours (water 78°). No spare-solar speed-ups. +1 h skim after heavy rain.</span><em>−2.9<small>kWh a day</small></em></div>
+        <div style="--c:var(--batt)"><i>▮</i><span><b>Powerwalls</b><br>Self-powered, solar-only export, 20% reserve. Storm rule raises the reserve <b>without waiting for you</b> on this trip, and lowers it again after.</span><em>—</em></div>
+        <div style="--c:#c4a2ff"><i>!</i><span><b>Alerts</b><br>Grid down, too hot or cold, damp, thermostat offline, pump not running, unexpected power use, someone at the thermostat. Water-test and panel reminders wait until you're back.</span><em>—</em></div>
+        <div style="--c:rgba(242,244,248,.7)"><i>◐</i><span><b>Guest links</b><br>Paused until Mon 6 PM. Guests see the usual "turned off" card.</span><em>—</em></div>
+        <div style="--c:var(--solar)"><i>☀</i><span><b>Welcome home</b><br>Pool back on its normal plan Sat 8:15 PM. AC cools to <b>78°</b> from about 3 PM Sun, on solar.</span><em>—</em></div>
+      </div>
+      <div class="sum3">
+        <div><small>A day at home</small><b>61<small> kWh</small></b></div>
+        <div><small>Empty, no Vacation mode</small><b>26<small> kWh</small></b></div>
+        <div class="hl"><small>With Vacation mode</small><b>20<small> kWh</small></b></div>
+      </div>
+      <p class="fine2">About 71 kWh for the trip instead of about 210 at home. Solstice's own share is about 20 kWh (the AC and pool lines). The rest happens because nobody's home.</p>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> one line per system, with the Autopilot's mode where it has one.</p>
+      <p><b>AC:</b> 85° is the existing guard's ceiling. The 2°-a-step and once-per-30-min limits still apply.</p>
+      <p><b>Winter:</b> the AC line reads "Heat <b>55°</b> (Nest's Eco is 50°)". That needs the new guarded heat range of 50–60°.</p>
+      <p><b>Savings:</b> −2.8 is 85° against Nest Eco's 82°. If Nest wouldn't have gone to Eco on its own, it's −8.8. Summer is about −6 to −9 (−15 to −19). The pool at 4.0 kWh a day now (12 h at 1,750) comes from the measured pump curve.</p>
+      <p><b>Pool in warm water:</b> at 80° or warmer the plan becomes 1.5 turnovers, ≈ 8 h, 1.7 kWh.</p>
+      <p><b>Holding off:</b> it waits while a Clear-up runs or the last test says hazy.</p>
+    </div>
+  </div>
+
+  <!-- ============ 3 ============ -->
+  <div class="frame">
+    <div class="sect">Frame 3 · While you're away · Now screen</div>
+    <div class="pagepad">
+      <div class="chips" style="margin:0 -20px;padding:0 20px">
+        <div class="chipx vacc"><i></i>Vacation · back Sun 6 PM</div>
+        <div class="chipx"><i></i>Powerwalls</div>
+        <div class="chipx"><i style="--c:var(--mute)"></i>No weather alerts</div>
+        <div class="chipx"><i></i>ERCOT normal</div>
+      </div>
+      <div class="vac">
+        <div class="hh"><i></i><b>Vacation mode · day 2 of 4</b><em>back Sun 6 PM</em></div>
+        <p>All quiet. Last check 3 min ago.</p>
+        <div class="bar"><i style="width:38%"></i></div>
+        <div class="mini">
+          <div><small>House</small><b>81°<small> · 54%</small></b><em>AC hasn't needed to run today</em></div>
+          <div><small>Pool</small><b>5 h<small> at 1,500</small></b><em>10 AM–3 PM · water 77°</em></div>
+          <div><small>Powerwalls</small><b>100%<small> by 12:40</small></b><em>sending the rest to PEC</em></div>
+          <div><small>Today so far</small><b>9.6<small> kWh</small></b><em class="g">≈ 26 without Vacation mode</em></div>
+        </div>
+        <div class="row2"><button class="p">I'm home</button><button>Change dates</button></div>
+      </div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> while a trip runs, the chip and this banner sit at the top of Now, in the same shape as the AC hold and pool Clear-up banners, in their own teal. Everything below them on Now stays as it is.</p>
+      <p><b>The tiles:</b> Nest's latest reading, the pump's reads, the Powerwalls, and today's kWh against the empty-house estimate.</p>
+      <p><b>Buttons:</b> "I'm home" ends the trip at once (frame 5). "Change dates" reopens frame 1.</p>
+      <p><b class="ill">Illustrative:</b> every reading here.</p>
+    </div>
+  </div>
+
+  <!-- ============ 4 ============ -->
+  <div class="frame">
+    <div class="sect">Frame 4 · Alerts while away</div>
+    <div class="pagepad">
+      <div class="push"><div class="ic r">⚡</div><div><b>Grid down · house on Powerwalls</b><p>86% left. At the empty house's 0.5 kW that's about 40 hours, longer with the sun. Nothing to do; Solstice will tell you when the grid is back.</p><small>Solstice · example</small></div></div>
+      <div class="push"><div class="ic p">?</div><div><b>Someone set the thermostat to 74°</b><p>At 3:12 PM, at the wall. Is someone home?</p><div class="acts"><span>I'm home</span><span>Someone's allowed</span><span>Not expected</span></div><small>Solstice · example</small></div></div>
+      <div class="push"><div class="ic a">∿</div><div><b>Power use nobody planned</b><p>3.4 kW for 20 min at 1:05 PM. Not the AC, pool or water heater.</p><small>Solstice · example</small></div></div>
+      <div class="push"><div class="ic a">≈</div><div><b>Pool pump didn't run</b><p>Scheduled from 10 AM; the 10:20 and 10:35 reads found it off. Controller online, no error.</p><small>Solstice · example</small></div></div>
+      <div class="push"><div class="ic a">💧</div><div><b>The house is staying damp</b><p>Humidity over 65% for 6 h even at 81°. Solstice is holding 80° to dry it.</p><small>Solstice · example</small></div></div>
+      <div class="push"><div class="ic">▮</div><div><b>Storm warning · reserve raised to 100%</b><p>Your trip rule raised it without waiting. It goes back to 20% when the warning ends.</p><small>Solstice · example</small></div></div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New alerts</b>, only while a trip runs:</p>
+      <ul style="padding-left:18px;margin-top:4px">
+        <li>grid down</li>
+        <li>Powerwalls under 30% while the grid is down</li>
+        <li>inside over 88° or under 50°</li>
+        <li>humidity over 65% for 6 h</li>
+        <li>thermostat offline over 1 h</li>
+        <li>the pump not running in a scheduled hour (read-only check), or a pump error</li>
+        <li>2 kW or more for 15 min that isn't the AC, pool or water heater</li>
+        <li>a change at the thermostat or pool panel</li>
+        <li>a storm raise</li>
+      </ul>
+      <p>Each goes through the existing alert settings and limits. The grid-down text here replaces the usual "turn the AC off" advice, since nobody is there.</p>
+      <p><b>"Someone's allowed"</b> keeps the trip going and doesn't ask again that day.</p>
+      <p><b>Held until you're back</b>, then sent as one summary: the water-test reminder, dusty panels, and "relay gone quiet". There's no daily "all fine" message.</p>
+    </div>
+  </div>
+
+  <!-- ============ 5 ============ -->
+  <div class="frame">
+    <div class="sect">Frame 5 · Welcome home</div>
+    <div class="pagepad">
+      <div class="vac">
+        <div class="hh"><i></i><b>Getting the house ready</b><em>78° by 6 PM</em></div>
+        <p>Cooling from <b>81°</b> since 3:00 PM on spare solar (Powerwalls full). The pool ran its normal plan today.</p>
+        <div class="hrow"><span>3:00<br>81°</span><span>3:30<br>79°</span><span class="t">4:00<br>78°</span><span>6:00<br>you</span></div>
+        <div class="bar"><i style="width:60%"></i></div>
+        <div class="row2"><button class="p">I'm home</button><button>Running late</button></div>
+      </div>
+    </div>
+    <div class="cap">
+      <p><b class="new">New:</b> on the arrival day the banner changes to the welcome-home plan.</p>
+      <p><b>The setpoint steps:</b> 2° each, one every 30 min (the existing guard). They aim at your day target, or your night target if you arrive after 10 PM.</p>
+      <p><b>Start time:</b> when to start comes from how fast this house cools at the forecast temperature. On a 95° day that's about 5 h ahead. Each trip measures it again. Spare solar is used first; otherwise it starts on time anyway, so you walk in within 1° of the target.</p>
+      <p><b>Pool:</b> its normal plan was written Saturday 8:15 PM.</p>
+      <p><b>Early:</b> "I'm home", Nest going Home, or a change at the thermostat or pool panel ends the trip at once. The AC plan resumes and the pool goes back to normal at the next 8:15 PM run.</p>
+      <p><b>Late:</b> "Running late" takes a new time. With no sign of you 2 h after the arrival time, it goes back to 85° and asks whether to extend.</p>
+      <p><b class="real">Measured:</b> 1.6–2° an hour on a September evening, and about 1.3° an hour rise with the AC idle on a 90° afternoon.</p>
+    </div>
+  </div>
+
+  <!-- ============ 6 ============ -->
+  <div class="frame">
+    <div class="sect">Frame 6 · The trip report</div>
+    <div class="pagepad"><div class="card">
+      <div class="h"><b>Your trip · Thu–Sun</b><span class="badge vb">3 days 11 h</span></div>
+      <div class="sum3">
+        <div><small>If you'd been home</small><b>212<small> kWh</small></b></div>
+        <div><small>Empty, no Vacation mode</small><b>90<small> kWh</small></b></div>
+        <div class="hl"><small>Used</small><b>71<small> kWh</small></b></div>
+      </div>
+      <div class="bars">
+        <div><span>AC</span><s><i class="cf" style="width:67%"></i><i style="width:44%;background:#ff9e66"></i></s><em>17 / 26</em></div>
+        <div><span>Pool</span><s><i class="cf" style="width:36%"></i><i style="width:10%;background:var(--home)"></i></s><em>4 / 14</em></div>
+        <div><span>Always-on</span><s><i class="cf" style="width:100%"></i><i style="width:100%;background:var(--batt)"></i></s><em>39 / 39</em></div>
+        <div><span>Water heater</span><s><i class="cf" style="width:10%"></i><i style="width:10%;background:#c4a2ff"></i></s><em>4 / 4</em></div>
+        <div><span>Everything else</span><s><i class="cf" style="width:18%"></i><i style="width:18%;background:rgba(242,244,248,.5)"></i></s><em>7 / 7</em></div>
+      </div>
+      <div class="key"><span><i style="background:rgba(255,255,255,.14)"></i>empty, no Vacation mode</span><span><i style="background:var(--vac)"></i>coloured: used (kWh)</span></div>
+      <div class="tline" style="margin-top:14px">
+        <div><i></i><span>Thu</span><p>Eco off, 85° held. Pool goal 1 turnover. Pool Light was turned off by you.</p></div>
+        <div><i class="w"></i><span>Fri</span><p>Humidity 61% for 2 h: stepped to 83°, back to 85° at 9 PM.</p></div>
+        <div><i></i><span>Sun</span><p>Cooled 81° → 78° from 3:00 to 4:00 PM, 2.1 kWh, all solar.</p></div>
+      </div>
+      <div class="rec" style="background:rgba(127,224,200,.06);border-color:rgba(127,224,200,.28)"><b>Next time</b><br>
+        <ul style="padding-left:18px;margin-top:4px">
+          <li>The house was ready 2 h early, so cooling will start at 4 PM on a day like this.</li>
+          <li>While you were away the house drew 0.47 kW at night, 0.39 kW less than when you're home.</li>
+          <li>Log a pool test so the next trip's pool plan can learn from it.</li>
+        </ul></div>
+    </div></div>
+    <div class="cap">
+      <p><b class="new">New:</b> a push and this card on Now (Insights › Home keeps the list of past trips) the morning after you're back.</p>
+      <p><b>Two comparisons:</b></p>
+      <ul style="padding-left:18px;margin-top:4px">
+        <li><b>at home:</b> the forecast model with that trip's weather</li>
+        <li><b>empty without Vacation mode:</b> the AC model at Nest Eco's 82° and the normal pool plan, with the trip's own measured always-on</li>
+      </ul>
+      <p>Each figure carries the usual measured/estimated badge in the build.</p>
+      <p><b>Kept out of learning:</b> trip days are left out of the home forecast, the always-on baseline, the anomaly rules and the AC control days, and marked "trip" in History.</p>
+      <p><b class="ill">Illustrative:</b> all the figures, built from the October estimates above.</p>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="sect">Frame 6b · Replay of a real past trip</div>
+    <div class="pagepad"><div class="card">
+      <div class="h"><b>A past 3-day trip, replayed</b><span>late spring</span></div>
+      <div class="sum3">
+        <div><small>Used then</small><b>112<small> kWh</small></b></div>
+        <div><small>Today, no Vacation mode</small><b>58<small> kWh</small></b></div>
+        <div class="hl"><small>With Vacation mode</small><b>51<small> kWh</small></b></div>
+      </div>
+      <div class="bars">
+        <div><span>Pool</span><s><i class="cf" style="width:100%"></i><i style="width:8%;background:var(--home)"></i></s><em>5 / 66</em></div>
+        <div><span>Always-on</span><s><i class="cf" style="width:50%"></i><i style="width:50%;background:var(--batt)"></i></s><em>33 / 33</em></div>
+        <div><span>AC</span><s><i class="cf" style="width:1%"></i><i style="width:1%;background:#ff9e66"></i></s><em>0 / 0</em></div>
+        <div><span>Water heater</span><s><i class="cf" style="width:6%"></i><i style="width:6%;background:#c4a2ff"></i></s><em>4 / 4</em></div>
+        <div><span>Everything else</span><s><i class="cf" style="width:14%"></i><i style="width:14%;background:rgba(242,244,248,.5)"></i></s><em>9 / 9</em></div>
+      </div>
+      <div class="key"><span><i style="background:rgba(255,255,255,.14)"></i>used then</span><span><i style="background:var(--vac)"></i>coloured: with Vacation mode (kWh)</span></div>
+      <p class="fine2">Most of the drop is already done: the old night Waterfall and noon High Speed programs used about 22 kWh a day, and today's planner uses 4. Vacation mode takes the pool to 1.7. The AC never ran on that trip, so it saves nothing there.</p>
+    </div></div>
+    <div class="cap">
+      <p><b class="real">Measured</b>, from the 5-minute history:</p>
+      <ul style="padding-left:18px;margin-top:4px">
+        <li>36.6–38.7 kWh a day</li>
+        <li>always-on 0.44–0.49 kW</li>
+        <li>pool programs ≈ 22 kWh a day, from the shape of the load</li>
+        <li>no AC cycles on 89–91° days</li>
+        <li>one water-heater burst a night</li>
+      </ul>
+      <p>The "with Vacation mode" AC figure assumes 85° wouldn't have run the AC either. The thermostat was evidently off or at 85° or higher on that trip.</p>
+      <p>The build has a test that replays this trip and checks this result and the revert on return.</p>
+    </div>
+  </div>
+
+  <!-- ============ 7 ============ -->
+  <div class="frame">
+    <div class="sect">Frame 7 · Where it shows on the screens you have</div>
+    <div class="pagepad">
+      <div class="lab" style="margin-top:0">Now · no trip planned (the chip row, swiped to its end)</div>
+      <div class="chips" style="margin:8px -20px 0;padding:0 20px;justify-content:flex-end;overflow:hidden">
+        <div class="chipx"><i></i>Powerwalls</div>
+        <div class="chipx"><i style="--c:var(--mute)"></i>No weather alerts</div>
+        <div class="chipx"><i></i>ERCOT normal</div>
+        <div class="chipx vidle"><i></i>Vacation…</div>
+      </div>
+      <div class="lab">AC card · the Away sheet you have, one new row at the top</div>
+      <div class="m-sheet" style="margin-top:8px"><div class="m-grab"></div>
+        <h4>Away until…</h4>
+        <div class="aw-pre">
+          <button style="border-color:rgba(127,224,200,.45);background:rgba(127,224,200,.06)"><span class="rd" style="border-color:var(--vac)"></span><span class="rt">Vacation…<small>dates, pool, Powerwalls and alerts too</small></span></button>
+          <button class="on"><span class="rd"></span><span class="rt">Until I'm back<small>no return time</small></span></button>
+          <button><span class="rd"></span><span class="rt">Tonight<small>until 6 PM</small></span></button>
+        </div>
+      </div>
+      <div class="lab">AC card during a trip · the Home/Away switch</div>
+      <div class="seg2 presence" style="margin-top:8px"><button>Home</button><button class="on" style="background:rgba(127,224,200,.18)">Vacation · 85°</button></div>
+      <div class="lab">Pool card · turnover planner during a trip</div>
+      <div class="pl-clear" style="border-color:rgba(127,224,200,.35);background:rgba(127,224,200,.08)"><div class="hh"><i style="background:var(--vac);box-shadow:0 0 10px var(--vac)"></i><b>Trip plan · 1 turnover a day</b><em style="color:var(--vac)">until Sat 8:15 PM</em></div><p style="margin-top:4px">5 h at 1,500 RPM. Your goal of 3 comes back the evening before you do.</p></div>
+      <div class="lab">Powerwall rules · storm rule during a trip</div>
+      <div class="group" style="margin-top:8px"><div class="row"><span class="ri" style="--c:#ffc15e">⛈</span><span class="rt">Reserve before a storm<small>Suggest · acts on its own until Sun 6 PM (trip)</small></span></div></div>
+      <div class="lab">Weekly digest · one line</div>
+      <div class="group" style="margin-top:8px"><div class="row"><span class="ri" style="--c:var(--vac)">✈</span><span class="rt">Away Thu–Sun · 71 kWh<small>Trip report ›</small></span></div></div>
+      <div class="lab">A guest's link during a trip (unchanged screen)</div>
+      <div class="lockscr" style="margin-top:8px"><div class="dot">◐</div><b>This link was turned off</b><p>Ask the owner for a new one.</p></div>
+    </div>
+    <div class="cap">
+      <p><b class="new">Added</b>, and nothing else on these screens changes:</p>
+      <ul style="padding-left:18px;margin-top:4px">
+        <li>a "Vacation…" chip at the end of Now's chip row (it becomes the teal chip in frame 3 during a trip)</li>
+        <li>one row at the top of the existing Away sheet</li>
+        <li>the Away button reads "Vacation · 85°" during a trip</li>
+        <li>a trip banner on the pool planner, like the Clear-up one</li>
+        <li>a "(trip)" note under the storm rule</li>
+        <li>one digest line</li>
+        <li>History days marked "trip"</li>
+      </ul>
+      <p><b>Guests:</b> they get the existing "turned off" card word for word (with your name, as today), so nothing hints at a trip. The same link works again 24 h after you're home; nobody needs a new one.</p>
+      <p><b>Settings › Alerts · push:</b> one new switch, "Vacation alerts".</p>
+    </div>
+  </div>
+
+  <div class="wrules">
+    <h3>The rules</h3>
+    <ul>
+      <li><b>Only your tap starts a trip.</b> Detection asks; it never starts one.</li>
+      <li><b>Inside a trip each system follows its Autopilot</b>, which is Auto for both today.</li>
+      <li><b>The storm rule</b> acts without a tap only during a trip. It only ever raises the reserve (to at least 20%, one change an hour) and puts it back by itself afterwards.</li>
+      <li><b>Limits.</b> They live in guards.ts, as now:
+        <ul style="padding-left:18px;margin-top:4px">
+          <li><b>AC cooling:</b> 80–85° while away, 2° a step, one write per 30 min.</li>
+          <li><b>Heat setback:</b> 50–60° (new). The trip uses 55°.</li>
+          <li><b>Pool:</b> Pool and High Speed programs only, with a goal of 1–1.5 turnovers. Never the spa, lights, heater or freeze protection; the controller's own freeze protection keeps running the pump in a freeze.</li>
+          <li><b>Departure check:</b> it can turn things off, and only when you tap.</li>
+        </ul>
+      </li>
+      <li><b>Everything reverts</b> when the trip ends, whether at the date, early or late, or by "I'm home":
+        <ul style="padding-left:18px;margin-top:4px">
+          <li>the AC plan comes back and the pool returns to its normal goal</li>
+          <li>the storm rule goes back to Suggest</li>
+          <li>held pushes arrive as one summary</li>
+          <li>guests come back after 24 h</li>
+          <li>learning resumes</li>
+        </ul>
+        Each step goes in the AC and pool logs.</li>
+      <li><b>Fixed first</b> (found in the audit):
+        <ul style="padding-left:18px;margin-top:4px">
+          <li>guest reads on an Away day no longer claim AC control days</li>
+          <li>Autopilot no longer sends a setpoint while Nest is in Eco</li>
+          <li>freeze-protection runs no longer count as your pump runs</li>
+        </ul>
+      </li>
+      <li><b>Unchanged:</b> comfort targets, holds, the planner's normal goal, Clear-up, the Powerwall export rule and reserve floor, and every card not listed in frame 7.</li>
+    </ul>
+  </div>
+</div>
+</body></html>

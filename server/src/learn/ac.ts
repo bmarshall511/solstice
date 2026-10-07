@@ -209,9 +209,11 @@ type PlanInput = { date: string; high: number; sunKwhM2: number; humidity: numbe
  * (unless undone); the savings figures carry `conf` (estimated until control days measure them, then measured). Eligible days
  * (pre-cool or control) log both figures as predictions, once per instance. Two kv reads, plus one write on a new eligible day.
  */
-export async function learnedPlan<I extends PlanInput>(siteId: string, input: I, plan: (o: I & { control?: boolean }) => AcPlan, acKw: number): Promise<AcPlan> {
+export async function learnedPlan<I extends PlanInput>(siteId: string, input: I, plan: (o: I & { control?: boolean }) => AcPlan, acKw: number, opts: { readOnly?: boolean } = {}): Promise<AcPlan> {
   const s = input.settings, base = plan(input);
-  const control = base.precool && input.date === localDay() && await claimControlDay(siteId, input.date, true);
+  // readOnly (a guest's or the owner's guest preview, planned as if home): use today's decision if one was made, never claim one or log
+  // a prediction, so an Away day can't become a control day or a pre-cool day through somebody else's read (Vacation audit, §7)
+  const control = base.precool && input.date === localDay() && (opts.readOnly ? !!(await kv.get<ControlState>(controlKey(siteId)))?.days?.[input.date] : await claimControlDay(siteId, input.date, true));
   let p = control ? plan({ ...input, control: true }) : base;
   const learn = await kv.get<LearnAc>(learnAcKey(siteId)) ?? null, t = learn?.trim?.day === input.date ? learn.trim : null;
   if (t && !t.undone) p = applyTrim(p, t, s) ?? p;
@@ -221,7 +223,7 @@ export async function learnedPlan<I extends PlanInput>(siteId: string, input: I,
   const out: AcPlan = { ...p, trim: p.trim ?? null, shiftedKwh: m && p.precool ? m.shiftedKwh ?? est.shiftedKwh : est.shiftedKwh,
     eveningAvoidedKwh: m && p.precool ? m.eveningAvoidedKwh ?? est.eveningAvoidedKwh : est.eveningAvoidedKwh,
     conf: { shiftedKwh: tier, eveningAvoidedKwh: tier } };
-  if (base.precool) {
+  if (base.precool && !opts.readOnly) {
     // the windows that ran (after a trim), or on a control day the pre-cool plan it held back from, which the scoring compares against
     const ran = out.precool ? out : base, mid = bandMid(s), pre = ran.steps.filter(x => x.hour >= s.nightTo && x.hour < ran.coastFrom && x.coolF < mid);
     const inputs = { high: input.high, sunKwhM2: input.sunKwhM2, humidity: input.humidity, precool: out.precool, control, mid, depth: pre.length ? mid - Math.min(...pre.map(x => x.coolF)) : 0,

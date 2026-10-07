@@ -45,6 +45,8 @@ import { presenceRoutes, setPresence } from './appliances/presence.js';
 import { powerwallRoutes, powerwallTick, powerwallNightly } from './powerwall.js';
 import { runLearn } from './learn/nightly.js';
 import { learnRouter } from './learn/api.js';
+import { vacationRoutes, vacationTick, finishTrip } from './vacation/index.js';
+import { liveTrip } from './vacation/trip.js';
 import { confidenceMap } from './learn/confidence.js';
 
 export const app = express();
@@ -614,6 +616,7 @@ app.post('/api/appliances/ac/settings', express.json(), wrap(async (req, res) =>
   const next = patchedAc(cur, patch);   // mockup ag: a target change stores all four targets and the band they stand for
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ ac: next })]);
   else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ac: next });
+  if (patch.presence === 'home' && (await liveTrip(site(req)))?.state === 'active') await finishTrip(site(req), 'you');   // Home during a trip is "I'm home" (mockup ak)
   if (patch.presence) await setPresence(site(req), { state: patch.presence, until: null });   // presence.ts: the switch is the manual mark
   // marking away/home takes effect right away when the plan is approved or Autopilot is Auto
   const id = site(req); if (patch.presence) { const rec = await kv.get<any>(`${id}:ac:plan`); if (rec) { rec.lastStepHour = null; await kv.set(`${id}:ac:plan`, rec); } await acTick(id, await settingsFor(req), await rateFor(id), await acSlope(id)).catch(() => {}); }
@@ -690,6 +693,8 @@ digestRoutes(app);
 /* ---------- presence (appliances/presence.ts): GET/POST /api/presence; a mark re-runs the AC tick like the AC card's switch ---------- */
 presenceRoutes(app, async id => { const rec = await kv.get<any>(`${id}:ac:plan`); if (rec) { rec.lastStepHour = null; await kv.set(`${id}:ac:plan`, rec); }
   const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; return acTick(id, settings, await rateFor(id), await acSlope(id)); });
+/* ---------- Vacation mode (vacation/; mockup ak): GET/POST/PATCH /api/vacation, POST /api/vacation/end; owner-only ---------- */
+vacationRoutes(app);
 /* ---------- Powerwall rules (powerwall.ts, tesla/commands.ts; scope energy_cmds): /api/tesla/scopes, /api/powerwall/rules[/:id[/apply]];
  *  storm every 5 minutes, reserve once after 17:00, export nightly; only Auto rules send, Suggest waits for Apply ---------- */
 powerwallRoutes(app);
@@ -717,6 +722,9 @@ fiveMinuteSteps.watchdog = async (id, now) => {
  */
 app.get('/api/cron/nest', wrap(async (req, res) => {
   if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
+  // vacation/index.ts: a trip whose leave time has come starts before the thermostat sample, so the AC plan goes away in the same tick
+  const vacation: Record<string, unknown> = {};
+  for (const id of await cronSites()) vacation[id] = await vacationTick(id).catch(e => ({ error: (e as Error).message }));
   const tick = await cronTick(Date.now(), {
     sites: async () => (await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL')).map(s => s.id),
     acTick: async id => acTick(id, await kv.get<Record<string, any>>('settings:owner') ?? {}, await rateFor(id), await acSlope(id)),
@@ -724,7 +732,7 @@ app.get('/api/cron/nest', wrap(async (req, res) => {
   // watch.ts: storm, Storm Watch and ERCOT alerts every tick (read-only), plus what other modules register
   const watch: Record<string, unknown> = {};
   for (const id of await cronSites()) watch[id] = await fiveMinuteWatch(id);
-  res.json({ ...tick, watch });
+  res.json({ ...tick, vacation, watch });
 }));
 /* ---------- Nest change events (Google Pub/Sub push; appliances/nestEvents.ts) ----------
  * Open route: Pub/Sub signs each push with the subscription's service account (NEST_EVENTS_SA) for NEST_EVENTS_AUDIENCE, and anything

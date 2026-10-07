@@ -209,6 +209,16 @@ describe('Q18 pool reads: every 15 min of scheduled pump hours at :05/:20/:35/:5
     expect(reads).toEqual(readsFor(480, 1020));   // Pool 8a–5p; the light and freeze programs add nothing
   });
 
+  it('a run outside the schedule during the controller\'s freeze protection is not taken for somebody\'s run; the same run otherwise is', async () => {
+    const run = (freezeMode: boolean) => async () => ({ ...poolSnapshot(H.S.now, { schedules: CURRENT, running: true, rpm: 1000, watts: 45 }), freezeMode });
+    H.S.read = run(true); H.S.now = at('2026-01-15 02:05') + 3_000;
+    expect(await poolTick('s', at('2026-01-15 02:05'))).toMatchObject({ read: true, running: true });
+    expect(H.store.get('s:pool:outsideRuns')).toBeUndefined();
+    H.S.read = run(false); H.S.now = at('2026-01-15 03:05') + 3_000;
+    expect(await poolTick('s', at('2026-01-15 03:05'))).toMatchObject({ read: true, running: true });
+    expect(H.store.get('s:pool:outsideRuns')).toHaveLength(1);
+  });
+
   it('right after Autopilot applied a plan (pool:last cleared) the applied plan’s schedule is used', async () => {
     H.store.set('s:pool:last', null);
     H.store.set('s:pool:applied', { plan: { schedules: CURRENT.map(({ circuitId, start, stop }) => ({ circuitId, start, stop })) } });

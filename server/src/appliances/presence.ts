@@ -9,15 +9,18 @@
 //               which nest.ts already reads (kv 'nest:last'); nothing new is asked of Google. Eco on → away, off → home. A reading older
 //               than 30 minutes, or `settings.ac.nestPresence === false`, is ignored.
 //   3. default  home.
+// A Vacation-mode trip under way (vacation/trip.ts) comes before all three: the house is away, source 'vacation', until the trip ends.
 // Read-only towards Nest. The only effect of "away" is the away setpoint in the AC plan, which acTick still applies only when the
 // plan is approved or AC Autopilot is Auto, through the safety guard (guards.ts).
 import type { Express, Request, Response, NextFunction } from 'express';
 import express from 'express';
 import { one, kv } from '../db.js';
 import type { NestState } from './nest.js';
+import { liveTrip, isAway } from '../vacation/trip.js';
+import { finishTrip } from '../vacation/index.js';
 
 export type PresenceState = 'home' | 'away';
-export type PresenceSource = 'manual' | 'nest' | 'default';
+export type PresenceSource = 'manual' | 'nest' | 'default' | 'vacation';
 export type Presence = { state: PresenceState; source: PresenceSource; since: number | null; until: number | null };
 export type ManualPresence = { state: PresenceState; at: number; until: number | null; nestEco: boolean | null };
 
@@ -50,6 +53,8 @@ async function nestSince(siteId: string, eco: boolean) {
 /** Presence for a site now. `settingsAll` is the owner's settings (settings.ac.presence, settings.ac.nestPresence). */
 export async function presenceFor(siteId: string, settingsAll: Record<string | symbol, any> = {}, now = Date.now()): Promise<Presence> {
   if (settingsAll[PRESENCE_FIXED]) return { state: 'home', source: 'default', since: null, until: null };
+  const trip = await liveTrip(siteId);
+  if (trip && isAway(trip, now)) return { state: 'away', source: 'vacation', since: trip.startedAt ?? trip.leaveAt, until: trip.backAt };
   const [manual, nest] = await Promise.all([kv.get<ManualPresence | null>(presenceKey(siteId)), kv.get<NestState | null>('nest:last')]);
   const useNest = settingsAll.ac?.nestPresence !== false, fresh = useNest && nest && now - nest.at <= NEST_MAX_AGE_MS;
   const since = fresh ? await nestSince(siteId, !!nest!.eco).catch(() => null) : null;
@@ -89,6 +94,9 @@ export function presenceRoutes(app: Express, onChange: (siteId: string) => Promi
   app.post('/api/presence', express.json({ limit: '2kb' }), wrap(async (req, res) => {
     const v = parsePresenceBody(req.body);
     if ('error' in v) return res.status(400).json({ error: v.error });
+    // Home during a trip is "I'm home": it ends Vacation mode (every system's part) before the mark
+    const trip = v.state === 'home' ? await liveTrip(req.siteId!) : null;
+    if (trip?.state === 'active') await finishTrip(req.siteId!, 'you');
     await setPresence(req.siteId!, v);
     await onChange(req.siteId!).catch(() => {});
     res.json(await presenceFor(req.siteId!, await kv.get<Record<string, any>>('settings:owner') ?? {}));

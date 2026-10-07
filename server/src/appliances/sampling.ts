@@ -114,7 +114,8 @@ export async function poolTick(siteId: string, now: number) {
     const snap = await readPool();
     await recordReading(siteId, snap);
     // mockup ae: the pump running in a quarter-hour the schedule doesn't cover was started outside Solstice (the hourly reads see it)
-    if (snap.pump?.running && sched && !scheduledQuarters(sched)[Math.floor(chicago(now).minute / POOL_READ_MIN)]) await noteOutsideRun(siteId, now);
+    // the controller's own freeze protection runs the pump outside the schedule on cold nights: that is not somebody's run (Vacation audit, §7)
+    if (snap.pump?.running && !snap.freezeMode && sched && !scheduledQuarters(sched)[Math.floor(chicago(now).minute / POOL_READ_MIN)]) await noteOutsideRun(siteId, now);
     return { read: true, at: snap.at, running: snap.pump?.running ?? null, rpm: snap.pump?.rpm ?? null, watts: snap.pump?.watts ?? null };
   } catch (e: any) {
     console.warn(`[solstice] cron pool read failed for ${siteId}, skipped until the next due quarter-hour: ${e?.message ?? e}`);
