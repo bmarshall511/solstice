@@ -31,7 +31,7 @@ function fromSource(src, rows) {
     const at = Number.isFinite(r.at) ? r.at : r.day ? Date.parse(`${r.day}T12:00:00Z`) : null; if (at == null) continue;
     const day = Number.isFinite(r.at) ? dayOf(r.at) : r.day;   // the instant decides the day (a row's own `day` can be its plan's date)
     const e = src === 'pw' ? { ...pwEntry(r) } : { text: String(r.text ?? ''), sub: SOURCES[src] + (r.delta && !['you', 'resumed'].includes(r.delta) ? ` · ${r.delta}` : ''), kind: src === 'learn' && logKind(r.text, r.delta) === 'you' ? 'info' : logKind(r.text, r.delta) };
-    out.push({ at, day, src, timed: Number.isFinite(r.at), ...e, n: 1, from: day, to: day });
+    out.push({ at, day, src, timed: Number.isFinite(r.at), delta: r.delta ?? null, ...e, n: 1, from: day, to: day });
   }
   out.sort((a, b) => b.at - a.at);
   return foldRepeats(out);
@@ -50,6 +50,10 @@ export function foldRepeats(entries) {
 export function mergeLog(logs = {}) {
   return ['pool', 'ac', 'pw', 'learn'].flatMap(src => fromSource(src, logs[src])).sort((a, b) => b.at - a.at);
 }
+/** A guest's log (share links): Solstice's own writes, suggestions and notes only. Anything a person did, and any line about a hold,
+ *  Away, a trip or Eco (they say whether someone is home), stays with the owner. */
+const PRIVATE = /\b(hold|holding|held|away|vacation|trip|eco|home|someone|thermostat)\b/i;
+export const guestSafe = entries => entries.filter(e => e.kind !== 'you' && !['hold', 'resumed', 'eco'].includes(e.delta) && !PRIVATE.test(`${e.text} ${e.sub ?? ''}`));
 export const filterLog = (entries, f = 'all') => f === 'all' ? entries : entries.filter(e => f === 'info' ? e.kind === 'info' || e.kind === 'warn' : e.kind === f);
 /** How many entries each filter shows (for the pills' labels and tests). */
 export const filterCounts = entries => Object.fromEntries(FILTERS.map(([id]) => [id, filterLog(entries, id).length]));

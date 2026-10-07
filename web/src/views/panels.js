@@ -140,7 +140,7 @@ function initPerPanel(S, roof) {
   layer = roof?.perPanel ?? null;
   if (layer) layer.onPick = k => select(k == null ? null : pAt(k)?.id ?? null);
   $('phBody').addEventListener('click', e => { const t = e.target.closest('[data-show]'); if (t) showOnRoof(t.dataset.show); });
-  const load = () => api.pvsPanels().then(d => { PD = d; applyPanels(); }).catch(e => { console.warn('pvs/panels', e.message); });
+  const load = () => api.pvsPanels().then(d => { PD = S.pvs = d; applyPanels(); }).catch(e => { console.warn('pvs/panels', e.message); });
   load(); setInterval(load, 5 * 60_000);
 }
 

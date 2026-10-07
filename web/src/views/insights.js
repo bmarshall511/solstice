@@ -296,8 +296,8 @@ export function cronRows(c, now = Date.now()) {
   if (c.pool) out.push({ label: 'Pool plan', ok: c.pool.ok && now - c.pool.at < 26 * 3600e3, v: `${clk(c.pool.at)} ${c.pool.ok ? '✓' : '· failed'}` });
   return out;
 }
-/** The Data health rows ({ ok, label, v } with v as HTML) and the issue count: the Insights › Home card and the Now Conditions sheet
- *  (mockup al frame 4) both draw these. */
+/** The Data health rows ({ ok, label, v } with v as HTML) and the issue count: the Now Conditions sheet (mockup al frame 4) draws these;
+ *  Settings › Connections shows the same services row by row. */
 export function healthRows(S, status) {
   const h = S.now?.health ?? {}, row = (ok, label, v) => ({ ok, label, v });
   const errs = Object.entries(h.errors ?? {}).filter(([k, e]) => k !== 'lastBackups' && e && Date.now() - e.at < 30 * 60_000);
@@ -313,9 +313,4 @@ export function healthRows(S, status) {
   // issues: what used to turn the badge to "check" (Tesla stale, recent errors), plus the backup history, ScreenLogic and Nest once loaded
   const issues = (h.stale ? 1 : 0) + errs.length + (bk ? 1 : 0) + (p && !poolOk ? 1 : 0) + (a && !nestOk && (a.configured || a.error) ? 1 : 0) + crons.filter(c => !c.ok).length;
   return { rows, issues };
-}
-export function drawHealth(S, status) {
-  const { rows, issues: n } = healthRows(S, status);
-  $('dhList').innerHTML = rows.map(r => `<div class="health"><i style="${r.ok ? '' : 'background:var(--warn);box-shadow:0 0 8px var(--warn)'}"></i>${r.label}<b>${r.v}</b></div>`).join('');
-  $('dhBadge').textContent = n ? `${n} issue${n === 1 ? '' : 's'}` : 'all good'; $('dhBadge').className = 'badge' + (n ? '' : ' g');
 }

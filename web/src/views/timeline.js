@@ -4,7 +4,7 @@
 // shown as a CSV on this device (no route: nothing leaves the phone); it is the owner's only. Read-only otherwise.
 import { $, localDate } from '../lib/util.js';
 import { esc } from '../lib/conf.js';
-import { mergeLog, filterLog, groupByDay, timeOf, rangeLabel, timelineCsv, FILTERS, SOURCES } from '../lib/timeline.js';
+import { mergeLog, filterLog, guestSafe, groupByDay, timeOf, rangeLabel, timelineCsv, FILTERS, SOURCES } from '../lib/timeline.js';
 import { sheet, sheetHead, sheetFoot, closeSheet } from './csheet.js';
 
 /** Open the log. `src` ('pool' | 'ac' | 'pw' | 'learn') narrows it to one system; the sheet can widen it again. */
@@ -12,8 +12,8 @@ export function openLog(S, { src = null } = {}) {
   let filter = 'all', only = src;
   const draw = () => {
     const logs = { pool: S.pool?.autopilot?.log, ac: S.ac?.log, pw: S.pwRules?.log, learn: S.models?.log };
-    const all = mergeLog(only ? { [only]: logs[only] } : logs), shown = filterLog(all, filter), days = groupByDay(shown, localDate());
-    const pills = FILTERS.map(([id, label]) => `<button class="c-fpill${id === 'all' ? '' : ` c-k-${id}`}${id === filter ? ' on' : ''}" data-fl="${id}" aria-pressed="${id === filter}">${id === 'all' ? '' : '<i></i>'}${label}</button>`).join('');
+    const merged = mergeLog(only ? { [only]: logs[only] } : logs), all = S.guest ? guestSafe(merged) : merged, shown = filterLog(all, filter), days = groupByDay(shown, localDate());
+    const pills = FILTERS.filter(([id]) => !(S.guest && id === 'you')).map(([id, label]) => `<button class="c-fpill${id === 'all' ? '' : ` c-k-${id}`}${id === filter ? ' on' : ''}" data-fl="${id}" aria-pressed="${id === filter}">${id === 'all' ? '' : '<i></i>'}${label}</button>`).join('');
     const tl = days.map(g => `<div class="c-tl-day">${esc(g.label)}</div><div class="c-tl-g">${g.items.map(e => `<div class="c-tl-e c-k-${e.kind}"><time>${timeOf(e)}</time><i></i><p>${esc(e.text)}${e.n > 1 ? `<span class="c-tl-x">×${e.n}</span>` : ''}<small>${only && e.sub === SOURCES[e.src] && e.n === 1 ? '' : esc(e.sub)}${e.n > 1 ? `${e.sub ? ' · ' : ''}${rangeLabel(e.from, e.to)}` : ''}</small></p></div>`).join('')}</div>`).join('');
     const sub = only ? `${SOURCES[only]} only · <button class="c-btn sm line" data-wide style="margin-left:4px">All systems</button>` : '';
     sheet(`${sheetHead('Log', `<span class="c-badge">${esc(only ? SOURCES[only] : 'all systems')}</span>`)}${sub ? `<p class="c-sheet-sub" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${sub}</p>` : ''}

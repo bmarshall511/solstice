@@ -1,7 +1,7 @@
 // The Log sheet's timeline (approved mockup mockups/al-ia.html v2, frame 18; web/src/lib/timeline.js): four logs merged newest
 // first, each line's kind, repeats folded into "×N", the filter pills, day labels and the CSV Export saves.
 import { describe, it, expect } from 'vitest';
-import { logKind, pwEntry, mergeLog, foldRepeats, filterLog, filterCounts, groupByDay, dayLabel, rangeLabel, timeOf, timelineCsv, FILTERS } from '../../web/src/lib/timeline.js';
+import { logKind, pwEntry, guestSafe, mergeLog, foldRepeats, filterLog, filterCounts, groupByDay, dayLabel, rangeLabel, timeOf, timelineCsv, FILTERS } from '../../web/src/lib/timeline.js';
 
 const at = (day, h, m = 0) => Date.parse(`${day}T00:00:00-05:00`) + (h * 60 + m) * 60_000;   // Chicago (CDT) wall clock
 const logs = {
@@ -78,5 +78,16 @@ describe('day labels and CSV', () => {
     expect(csv[1]).toBe('2026-10-07,7:00 AM,AC Autopilot,wrote,"Set 78° (morning, comfort band)",AC Autopilot,1,2026-10-07');
     expect(csv.some(l => l.includes(',You set 76° in Solstice (5:40 PM). Holding until 7:40 PM,'))).toBe(true);   // no comma: not quoted
     expect(timelineCsv([{ day: 'd', src: 'pool', kind: 'info', text: 'say "hi"', n: 1 }])).toContain('"say ""hi"""');
+  });
+});
+
+describe('a guest’s log', () => {
+  it('keeps Solstice’s own lines and drops what a person did, holds, Away, trips and Eco', () => {
+    const e = mergeLog({ ...logs, ac: [...logs.ac, { at: at('2026-10-05', 9), day: '2026-10-05', text: 'Away: ended the hold on 76°; back to the plan' }, { at: at('2026-10-05', 8), day: '2026-10-05', text: 'Eco on at the thermostat', delta: 'eco' }] });
+    const g = guestSafe(e);
+    expect(g.some(x => x.kind === 'you')).toBe(false);
+    expect(g.some(x => /away|hold|eco/i.test(x.text))).toBe(false);
+    expect(g.map(x => x.text)).toContain('Set 78° (morning, comfort band)');
+    expect(g.map(x => x.text)).toContain('Tomorrow: 12 h at 1,750 RPM + 1 h skim');
   });
 });

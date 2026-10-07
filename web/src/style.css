@@ -1830,5 +1830,20 @@ html[data-calm] .c-seg::before,html[data-calm] .c-sw::after,html[data-calm] .c-c
 /* the scenes' expand button: a 44 px target around the same 30 px glass square */
 .xbtn{width:44px;height:44px;top:1px;right:3px;background:none;border:0;backdrop-filter:none;-webkit-backdrop-filter:none}
 .xbtn::before{content:"";position:absolute;inset:7px;border-radius:10px;background:rgba(8,10,16,.55);box-shadow:inset 0 0 0 1px var(--glass-b);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);z-index:-1}
+/* Settings (frame 15): a row is the switch; the alert groups open their switches in place */
+.sw-row{cursor:pointer}
+.c-sys.static.bar::before{display:block}   /* Connections: the accent bar on read-only rows too, as drawn */
+.sw-row .c-sw,.c-swb .c-sw,.alert-sw .c-sw{--acc:var(--batt)}
+#outSw .c-sw{--acc:var(--out)}
+.sw-row.on .c-sw{background:var(--acc)}.sw-row.on .c-sw::after{transform:translateX(18px)}
+.c-swb{all:unset;box-sizing:border-box;cursor:pointer;width:52px;height:44px;display:grid;place-items:center;border-radius:var(--c-r-pill)}
+.c-swb:focus-visible,.alert-sw:focus-visible,.sw-row:focus-visible{outline:2px solid color-mix(in srgb,var(--home) 70%,transparent);outline-offset:2px}
+.alert-in{padding:2px 16px 8px 60px;background:color-mix(in srgb,var(--text) 3%,transparent)}
+.alert-sw{min-height:52px;cursor:pointer}
+.alert-sw>div{font-weight:500;font-size:13px;color:var(--dim)}
+.alert-sw .c-badge{vertical-align:1px;margin-left:4px}
+#connCard .c-sys-l,#alertCard .c-sys-l{white-space:normal}
+#pushSt.st-warn{color:var(--warn)}
+#connCard .c-btn.sm{min-height:44px}
 /* end Batch 4 */
 /* end al-app */

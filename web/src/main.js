@@ -15,9 +15,9 @@ import { openLog } from './views/timeline.js';
 import { showSeg, segKeys, drawSysHeader, drawHomeLive, drawRingLegend, drawSolarLive, drawPwLive } from './views/systems.js';
 import { initHistory, drawHistoryChart, landscapeData, drawSocHeat, drawRecords, drawOutages, drawBills, openBillSheet } from './views/history.js';
 import { initPanels, drawPerformance, roofHud } from './views/panels.js';
-import { drawAlerts, openPlanner, drawAC, drawOvernight, drawHealth, initOutage, initBreakdown, initSpare, initCapacity } from './views/insights.js';
+import { drawAlerts, openPlanner, drawAC, drawOvernight, initOutage, initBreakdown, initSpare, initCapacity } from './views/insights.js';
 import { initWater } from './views/water.js';
-import { drawSettings, drawConnections, openRawData, applyAlertPrefs } from './views/settings.js';
+import { drawSettings, drawConnections, openRawData, applyAlertPrefs, initAlertGroups } from './views/settings.js';
 import { every } from './lib/poll.js';
 import { initAppliances, poolTwin, drawPool, freshPool, releasePoolTwin } from './views/appliances.js';
 import { initAc, thermalTwin, drawAc, freshAc, releaseThermalTwin } from './views/ac.js';
@@ -213,11 +213,12 @@ function a11y() {
     if (!el.hasAttribute('role')) { el.setAttribute('role', 'switch'); el.tabIndex = 0; const t = el.closest('.row')?.querySelector('.rt'); if (t) el.setAttribute('aria-label', t.firstChild?.textContent?.trim() || t.textContent.trim()); }
     const on = String(el.classList.contains('on')); if (el.getAttribute('aria-checked') !== on) el.setAttribute('aria-checked', on);
   });
+  document.querySelectorAll('.sw-row').forEach(el => { const on = String(el.classList.contains('on')); if (el.getAttribute('aria-checked') !== on) el.setAttribute('aria-checked', on); });   // mockup al: the row is the switch
   const h = $('sheetBody').querySelector('h4'); if (h && $('sheet').getAttribute('aria-label') !== h.textContent) $('sheet').setAttribute('aria-label', h.textContent);
   $('sheet').classList.toggle('is-c', !!$('sheetBody').firstElementChild?.classList.contains('c-sbody'));   // mockup al: the component sheet's look and pinned footer
 }
 new MutationObserver(a11y).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
-document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('.sw[role=switch]')) { e.preventDefault(); e.target.click(); } });
+document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('.sw[role=switch],.sw-row[role=switch]')) { e.preventDefault(); e.target.click(); } });
 new MutationObserver(() => { if ($('phone').classList.contains('open')) setTimeout(() => $('sheetBody').querySelector('button,input,[tabindex]')?.focus({ preventScroll: true }), 50); })
   .observe($('phone'), { attributes: true, attributeFilter: ['class'] });
 a11y();
@@ -225,7 +226,8 @@ a11y();
 ['v-sys', 'v-hist', 'v-set'].forEach(id => wireDisclosures($(id)));   // disclosure cards and their rows open in place   // role=button rows, disclosure headers and date cards answer Enter and Space
 $('scrim').onclick = closeSheet;
 document.addEventListener('click', e => { if (e.target.closest('[data-addbill]')) openBillSheet(S, () => loadHistory()); });
-$('openData').onclick = openRawData;
+$('connCard').addEventListener('click', e => { if (e.target.closest('#openData')) openRawData(); });   // Settings › Connections › All data
+initAlertGroups();
 addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); if (e.key === 'd' && !S.guest && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) openRawData(); });
 /* Calm mode: the owner's is a setting; a guest's lives on the device (it cannot write settings). html[data-calm] stills the veils. */
 const guestCalm = () => { try { const v = localStorage.getItem('solstice:calm'); return v == null ? null : v === '1'; } catch { return null; } };
@@ -263,8 +265,8 @@ const dayRing = createDayRing($('dayRing'), (h, d) => {
   if (h == null) ro.innerHTML = `<b>${(Math.round((d.total ?? sum(d.rest) + sum(d.ac) + sum(d.pool)) * 10) / 10).toFixed(1)}</b><small>kWh ${d.label}</small>`;   // the parts are in the legend under the ring
   else ro.innerHTML = `<b>${(d.rest[h] + d.ac[h] + d.pool[h]).toFixed(1)} kWh</b><small>${h % 12 || 12}${h < 12 ? ' AM' : ' PM'} · solar ${d.solar[h].toFixed(1)} kWh</small>${bd(d.pool[h].toFixed(1), d.ac[h].toFixed(1), d.rest[h].toFixed(1))}`;
 });
-/** Settings › Connections and Data health follow the latest sync, pool and Nest reads (health waits for its first /api/status). */
-const refreshStatus = () => { safe(drawConnections)(S); if ('status' in S) safe(drawHealth)(S, S.status); };
+/** Settings › Connections (with Data health folded in) follows the latest sync, pool and Nest reads and /api/status. */
+const refreshStatus = () => safe(drawConnections)(S);
 S.ringMode = 'now'; S.onPool = () => { safe(drawDayRing)(); refreshStatus(); S.redrawNow(); }; S.onAc = () => { safe(drawDayRing)(); refreshStatus(); S.redrawNow(); };
 initNowTop(S); initAhead(S); initPwDisc();   // mockup al: the pills, banner slot, Autopilot hub, Ahead's 12 h | 48 h and the Powerwall disclosure
 $('drModes').onclick = e => { const b = e.target.closest('[data-m]'); if (!b) return; S.ringMode = b.dataset.m; segSet($('drModes'), b.dataset.m, 'data-m'); drawDayRing(); };
@@ -354,7 +356,7 @@ function drawBillDue() {
   $('billDue').querySelector('[data-b]')?.setAttribute('data-addbill', '1');
   // mockup al: on Now it is the banner slot's plain bill banner (owner only; no dollar figure)
   S.billDue = ready <= today && !S.guest ? { month: niceDate(nextClose, { month: 'long' }), period: `${niceDate(last.period.to)} – ${niceDate(nextClose)}` } : null; S.redrawNow();
-  $('setBills').textContent = ready <= today ? `${niceDate(nextClose, { month: 'long' })} bill ready to add` : `Last: ${niceDate(last.billDate, { month: 'long' })} · next ~${niceDate(ready)}`;
+  S.billsLine = ready <= today ? `${niceDate(nextClose, { month: 'long' })} bill ready to add` : `last ${niceDate(last.billDate, { month: 'long' })} · next ~${niceDate(ready)}`; safe(drawConnections)(S);
 }
 
 /* ---------------- sign-in gate ---------------- */
@@ -479,7 +481,7 @@ async function boot() {
     S.syncInfo = r; $('sideDays').textContent = r?.remaining ? `loading… ${r.remaining} days left` : $('sideDays').textContent; refreshStatus();
     if (!(r?.remaining > 0)) return; await new Promise(res => setTimeout(res, 1500)); } };
   if (!S.guest) every(5 * 60_000, sync); // syncing is a write: the owner's device keeps history current
-  every(60_000, async () => { const s = await api.status().catch(() => null); S.status = s; safe(drawHealth)(S, s); });
+  every(60_000, async () => { const s = await api.status().catch(() => null); S.status = s; safe(drawConnections)(S); });
 }
 boot();
 
