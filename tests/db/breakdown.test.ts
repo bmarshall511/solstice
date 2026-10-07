@@ -114,4 +114,17 @@ describe('on PGlite', () => {
     expect(n.pump!).toBeGreaterThan(0);
     expect(n.pump!).toBeLessThan(0.1);                                    // ~20 of 240 minutes x 0.66 kW, not the whole night
   });
+  it('BD-9 isRunning reads at 0 RPM / 0 W (the IntelliFlo at night) are not pump runs: the night splits as if they were not there', async () => {
+    // two like nights, each with the pump at 0.66 kW 02:00–02:20 (read at 02:05); the second also has "running" reads at 0 RPM / 0 W at 00:05, 03:05 and 04:05
+    for (const [d, zeros] of [['2026-09-26', false], ['2026-09-27', true]] as const) {
+      const t0 = localMidnight(d).getTime();
+      for (let t = t0 + 2 * 3600e3; t < t0 + 2 * 3600e3 + 20 * 60_000; t += B) await q(`UPDATE energy SET home_wh = home_wh + 55 WHERE site_id = 'bd' AND epoch = $1`, [t]);
+      const reads: Array<[number, number, number]> = [[2, 660, 2000], ...(zeros ? [[0, 0, 0], [3, 0, 0], [4, 0, 0]] as Array<[number, number, number]> : [])];
+      for (const [h, w, rpm] of reads) await q(`INSERT INTO pool_readings (site_id, ts, day, hour, running, watts, rpm) VALUES ('bd', $1, $2, $3, true, $4, $5)`, [t0 + h * 3600e3 + 5 * 60_000, d, h, w, rpm]);
+    }
+    const n = await overnightSplit('bd', '2026-09-25'), a = n.find(x => x.date === '2026-09-26')!, b = n.find(x => x.date === '2026-09-27')!;
+    expect(b.split).toBe(true);
+    expect([b.base, b.pump, b.ac]).toEqual([a.base, a.pump, a.ac]);       // counted as runs, the 03:05 hold would take the 03:20 step as pump
+    expect(b.pump!).toBeLessThan(0.1);
+  });
 });

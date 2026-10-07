@@ -5,6 +5,7 @@
 import { q, one } from '../db.js';
 import { localDay, addDays } from '../tesla/client.js';
 import { notify } from '../notify.js';
+import { PUMP_RUNNING_SQL } from './pool.js';
 
 export const CLARITY = ['clear', 'hazy', 'cloudy', 'green'] as const;
 export const ADDED = ['liquid', 'tablets', 'shock', 'acid', 'other'] as const;
@@ -66,7 +67,7 @@ const row = (r: any): PoolTest => ({ id: r.id, at: Number(r.at), day: r.day, fc:
 const waterNow = async (siteId: string) => (await one<{ t: number | null }>(`SELECT water_temp::float8 t FROM pool_readings WHERE site_id = $1 AND water_temp IS NOT NULL ORDER BY ts DESC LIMIT 1`, [siteId]))?.t ?? null;
 /** Hours the pump ran on each day: the quarter-hours whose read found it running (reads are every 15 min in pump hours, hourly outside, so outside runs count low). */
 async function pumpHoursSince(siteId: string, from: string): Promise<Record<string, number>> {
-  const rows = await q<{ day: string; h: number }>(`SELECT day, (COUNT(DISTINCT (hour * 4 + (((ts / 60000) % 60) / 15))) FILTER (WHERE running) / 4.0)::float8 h FROM pool_readings WHERE site_id = $1 AND day >= $2 GROUP BY day`, [siteId, from]);
+  const rows = await q<{ day: string; h: number }>(`SELECT day, (COUNT(DISTINCT (hour * 4 + (((ts / 60000) % 60) / 15))) FILTER (WHERE ${PUMP_RUNNING_SQL}) / 4.0)::float8 h FROM pool_readings WHERE site_id = $1 AND day >= $2 GROUP BY day`, [siteId, from]);
   return Object.fromEntries(rows.map(r => [r.day, r1(r.h)]));
 }
 export async function addTest(siteId: string, b: Record<string, any>, now = Date.now()) {

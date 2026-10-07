@@ -25,6 +25,10 @@ const WATER_BY_MONTH = [55, 57, 62, 70, 78, 84, 88, 88, 84, 75, 65, 58];
 /** Meteorological season of a 0-based month: 0 Dec–Feb, 1 Mar–May, 2 Jun–Aug, 3 Sep–Nov. */
 const seasonOf = (m: number) => Math.floor((m + 1) % 12 / 3);
 export const FREEZE_CIRCUIT = 132; // ScreenLogic's virtual "freeze protection" pump circuit
+/** Whether a pump reading is a run: the IntelliFlo reports isRunning with 0 RPM and 0 W at night (seen 2026-10-07 00:05 and 02:05), which is not. pool_readings keeps the raw values. */
+export const pumpRunning = (p: { running?: boolean | null; rpm?: number | null; watts?: number | null } | null | undefined) => !!p?.running && Number(p.rpm) > 0 && Number(p.watts) > 0;
+/** pumpRunning as a pool_readings predicate (a NULL rpm or watts is not a run). */
+export const PUMP_RUNNING_SQL = '(running AND rpm > 0 AND watts > 0)';
 
 /* ---------- power and flow models ---------- */
 /**

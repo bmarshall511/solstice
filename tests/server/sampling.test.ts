@@ -24,8 +24,8 @@ const H = vi.hoisted(() => {
     get: async (k: string) => { counts.kvGet++; return clone(store.get(k)) as any; },
     set: async (k: string, v: unknown) => { counts.kvSet++; store.set(k, clone(v)); },
   };
-  const S = { nestOn: true, nestLinked: true, poolOn: true, now: 0, read: null as null | (() => Promise<unknown>) };
-  const reset = () => { store.clear(); readings.length = 0; Object.assign(counts, { q: 0, kvGet: 0, kvSet: 0 }); Object.assign(S, { nestOn: true, nestLinked: true, poolOn: true, now: 0, read: null }); };
+  const S = { nestOn: true, nestLinked: true, poolOn: true, now: 0, read: null as null | (() => Promise<unknown>), trip: null as null | { id: number } };
+  const reset = () => { store.clear(); readings.length = 0; Object.assign(counts, { q: 0, kvGet: 0, kvSet: 0 }); Object.assign(S, { nestOn: true, nestLinked: true, poolOn: true, now: 0, read: null, trip: null }); };
   return { store, readings, counts, db: { q, one: async (t: string, p: unknown[] = []) => (await q(t, p))[0], kv, migrate: async () => {} }, S, reset };
 });
 
@@ -36,6 +36,11 @@ vi.mock('../../server/src/appliances/screenlogic.js', () => ({
   writePoolPlan: vi.fn(async () => { throw new Error('writePoolPlan must never run from the cron'); }),
   withUnit: vi.fn(async () => { throw new Error('withUnit must never run from the cron'); }),
 }));
+// Vacation mode: a trip under way when H.S.trip is set; the trip's outside-run line and push (tripOutsideRun) are recorded, not sent
+vi.mock('../../server/src/vacation/pool.js', async importOriginal => {
+  const real = await importOriginal<typeof import('../../server/src/vacation/pool.js')>();
+  return { ...real, awayNow: vi.fn(async () => H.S.trip), tripOutsideRun: vi.fn(async () => {}) };
+});
 vi.mock('../../server/src/appliances/nest.js', async importOriginal => {
   const real = await importOriginal<typeof import('../../server/src/appliances/nest.js')>();
   const blocked = (what: string) => vi.fn(async () => { throw new Error(`${what} must never run in the sampling test`); });
@@ -48,6 +53,7 @@ import {
 } from '../../server/src/appliances/sampling.js';
 import { readPool, writePoolPlan, withUnit } from '../../server/src/appliances/screenlogic.js';
 import { readNest, setCool, ownerCommand } from '../../server/src/appliances/nest.js';
+import { tripOutsideRun } from '../../server/src/vacation/pool.js';
 
 const MIN = 60_000;
 /** A Chicago wall-clock time: '2026-07-15 10:05' in CDT (−05:00) from March 8 to November 1, CST (−06:00) otherwise. */
@@ -218,6 +224,25 @@ describe('Q18 pool reads: every 15 min of scheduled pump hours at :05/:20/:35/:5
     H.S.read = run(false); H.S.now = at('2026-01-15 03:05') + 3_000;
     expect(await poolTick('s', at('2026-01-15 03:05'))).toMatchObject({ read: true, running: true });
     expect(H.store.get('s:pool:outsideRuns')).toHaveLength(1);
+  });
+
+  it('isRunning at 0 RPM / 0 W outside the schedule (the IntelliFlo at night, seen 2026-10-07) is no outside run and no trip push; 1750 RPM / 240 W is', async () => {
+    vi.mocked(tripOutsideRun).mockClear();
+    const read = (rpm: number, watts: number) => async () => poolSnapshot(H.S.now, { schedules: CURRENT, running: true, rpm, watts });
+    const tick = (t: string) => { H.S.now = at(t) + 3_000; return poolTick('s', at(t)); };
+    H.S.read = read(0, 0);
+    expect(await tick('2026-10-07 00:05')).toMatchObject({ read: true, running: true, rpm: 0, watts: 0 });
+    expect(H.readings[0].slice(4, 7)).toEqual([true, 0, 0]);             // pool_readings keeps the raw read
+    H.S.trip = { id: 7 };
+    expect(await tick('2026-10-07 02:05')).toMatchObject({ read: true, running: true, rpm: 0 });
+    expect(H.store.get('s:pool:outsideRuns')).toBeUndefined();
+    expect(tripOutsideRun).not.toHaveBeenCalled();                       // no "started outside the plan" push during a trip
+    H.S.read = read(1750, 240);
+    expect(await tick('2026-10-07 03:05')).toMatchObject({ read: true, rpm: 1750, watts: 240 });
+    expect(tripOutsideRun).toHaveBeenCalledTimes(1);                     // a real run during a trip still goes to the trip
+    H.S.trip = null;
+    expect(await tick('2026-10-07 04:05')).toMatchObject({ read: true, rpm: 1750 });
+    expect(H.store.get('s:pool:outsideRuns')).toHaveLength(1);           // and, with no trip, to the pool's learning as before
   });
 
   it('right after Autopilot applied a plan (pool:last cleared) the applied plan’s schedule is used', async () => {

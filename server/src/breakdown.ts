@@ -8,7 +8,7 @@ import { tripDays } from './vacation/trip.js';
 import { q, kv } from './db.js';
 import { localDay, addDays } from './tesla/client.js';
 import { daySpans } from './flows.js';
-import { poolKwhBetween } from './appliances/pool.js';
+import { poolKwhBetween, pumpRunning } from './appliances/pool.js';
 import { acKwhBetween, learnAcKw, acKwFor } from './appliances/ac.js';
 import { notify } from './notify.js';
 
@@ -53,7 +53,7 @@ export function acMask(readings: Array<{ ts: number; hvac: string }>) {
   return (start: number) => on.some(([a, b]) => a < start + 300_000 && b > start);
 }
 
-/** Whether the pool pump ran during a bucket, from ScreenLogic readings (same holds as acMask; night reads are sparse, so gaps count as off). */
+/** Whether the pool pump ran during a bucket, from ScreenLogic readings (same holds as acMask; night reads are sparse, so gaps count as off). `running` is pumpRunning: 0 RPM / 0 W is off. */
 export const pumpMask = (readings: Array<{ ts: number; running: boolean }>) => acMask(readings.map(r => ({ ts: r.ts, hvac: r.running ? 'COOLING' : 'OFF' })));
 /** The night's base with the AC and the pump masked out; with too few such buckets (a 24-hour pump), the AC-masked base less the pump's average. */
 function nightBase(bs: Bucket[], acOn: (t: number) => boolean, pumpOn: (t: number) => boolean, pumpKw: number) {
@@ -68,11 +68,11 @@ export async function breakdownFor(siteId: string, range: Range, settings: Recor
   const [rows, nest, pumpNight] = await Promise.all([
     q<{ epoch: string; day: string; hour: number; wh: number }>(`SELECT epoch::text, day, hour::int, home_wh::float8 wh FROM energy WHERE site_id = $1 AND day BETWEEN $2 AND $3 AND home_wh IS NOT NULL ORDER BY epoch`, [siteId, from, to]),
     q<{ ts: string; day: string; hvac: string }>(`SELECT ts::text, day, hvac FROM nest_readings WHERE site_id = $1 AND day BETWEEN $2 AND $3 ORDER BY ts`, [siteId, addDays(from, -1), to]),
-    q<{ ts: string; day: string; running: boolean; watts: number }>(`SELECT ts::text, day, running, watts::float8 watts FROM pool_readings WHERE site_id = $1 AND day BETWEEN $2 AND $3 AND hour BETWEEN 0 AND 4 ORDER BY ts`, [siteId, addDays(from, -1), to]),
+    q<{ ts: string; day: string; running: boolean; watts: number; rpm: number }>(`SELECT ts::text, day, running, watts::float8 watts, rpm::float8 rpm FROM pool_readings WHERE site_id = $1 AND day BETWEEN $2 AND $3 AND hour BETWEEN 0 AND 4 ORDER BY ts`, [siteId, addDays(from, -1), to]),
   ]);
   const slope = (await kv.get<{ slope: number }>(`${siteId}:ac:slope`))?.slope ?? 2.5;
   const [pool, ac] = await Promise.all([poolKwhBetween(siteId, spans, settings), acKwhBetween(siteId, spans, slope)]);
-  const nr = nest.map(r => ({ ts: Number(r.ts), day: r.day, hvac: r.hvac })), acOn = acMask(nr), covered = nestCoverage(nr), pr = pumpNight.map(p => ({ ts: Number(p.ts), day: p.day, running: !!p.running, kw: (Number(p.watts) || 0) / 1000 })), pumpOn = pumpMask(pr);
+  const nr = nest.map(r => ({ ts: Number(r.ts), day: r.day, hvac: r.hvac })), acOn = acMask(nr), covered = nestCoverage(nr), pr = pumpNight.map(p => ({ ts: Number(p.ts), day: p.day, running: pumpRunning(p), kw: (Number(p.watts) || 0) / 1000 })), pumpOn = pumpMask(pr);
   const pumpKw = new Map<string, number>(); for (const r of pr) if (r.running) pumpKw.set(r.day, Math.max(pumpKw.get(r.day) ?? 0, r.kw));   // the running draw, for the fallback
   const byDay = new Map<string, Bucket[]>();
   for (const r of rows) { const b = { epoch: Number(r.epoch), day: r.day, hour: r.hour, kw: Number(r.wh) * 12 / 1000 }; const a = byDay.get(r.day); if (a) a.push(b); else byDay.set(r.day, [b]); }
@@ -120,11 +120,11 @@ export async function overnightSplit(siteId: string, from: string) {
   const [rows, nest, pumpNight] = await Promise.all([
     q<{ epoch: string; day: string; hour: number; wh: number }>(`SELECT epoch::text, day, hour::int, home_wh::float8 wh FROM energy WHERE site_id = $1 AND day >= $2 AND hour BETWEEN 1 AND 4 AND home_wh IS NOT NULL ORDER BY epoch`, [siteId, from]),
     q<{ ts: string; day: string; hour: number; hvac: string }>(`SELECT ts::text, day, hour::int, hvac FROM nest_readings WHERE site_id = $1 AND day >= $2 AND hour BETWEEN 0 AND 4 ORDER BY ts`, [siteId, addDays(from, -1)]),
-    q<{ ts: string; day: string; running: boolean; watts: number }>(`SELECT ts::text, day, running, watts::float8 watts FROM pool_readings WHERE site_id = $1 AND day >= $2 AND hour BETWEEN 0 AND 4 ORDER BY ts`, [siteId, addDays(from, -1)]),
+    q<{ ts: string; day: string; running: boolean; watts: number; rpm: number }>(`SELECT ts::text, day, running, watts::float8 watts, rpm::float8 rpm FROM pool_readings WHERE site_id = $1 AND day >= $2 AND hour BETWEEN 0 AND 4 ORDER BY ts`, [siteId, addDays(from, -1)]),
   ]);
   const slope = (await kv.get<{ slope: number }>(`${siteId}:ac:slope`))?.slope ?? 2.5, acKw = acKwFor((await learnAcKw(siteId)).coolKw, slope);
   const nr = nest.map(r => ({ ts: Number(r.ts), day: r.day, hour: r.hour, hvac: r.hvac })), acOn = acMask(nr);
-  const covered = nestCoverage(nr.filter(r => r.hour >= 1 && r.hour <= 4)), pr = pumpNight.map(p => ({ ts: Number(p.ts), day: p.day, running: !!p.running, kw: (Number(p.watts) || 0) / 1000 })), pumpOn = pumpMask(pr);
+  const covered = nestCoverage(nr.filter(r => r.hour >= 1 && r.hour <= 4)), pr = pumpNight.map(p => ({ ts: Number(p.ts), day: p.day, running: pumpRunning(p), kw: (Number(p.watts) || 0) / 1000 })), pumpOn = pumpMask(pr);
   const pumpKw = new Map<string, number>(); for (const r of pr) if (r.running) pumpKw.set(r.day, Math.max(pumpKw.get(r.day) ?? 0, r.kw));   // the running draw, for the fallback
   const byDay = new Map<string, Bucket[]>();
   for (const r of rows) { const b = { epoch: Number(r.epoch), day: r.day, hour: r.hour, kw: Number(r.wh) * 12 / 1000 }; const a = byDay.get(r.day); if (a) a.push(b); else byDay.set(r.day, [b]); }
