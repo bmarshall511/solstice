@@ -19,8 +19,6 @@ export type ModelDef = {
   window: Window;
   /** No scored day for longer than this → unscored. Scores stay fully fresh this many days, then fade to 0 over 27 more. */
   staleDays: number; freshDays: number;
-  /** How a day's hourly pairs roll up into the day's predicted/actual: summed (kWh) or averaged (SOC, kW). */
-  agg: 'sum' | 'mean';
   /** 'estimate': an engineering estimate, badged "estimated" until control days replace it with a measurement ("measured"). */
   kind: 'scored' | 'estimate';
   /** The only keys a prediction's `inputs` may hold (privacy: never a rate, a dollar figure, a name or the system price). */
@@ -31,12 +29,13 @@ export type ModelDef = {
 
 const FC48 = ['k', 'yieldK', 'soc0', 'capKwh', 'maxKw', 'reservePct', 'startHour', 'profile', 'gti'] as const;
 const AC = ['high', 'sunKwhM2', 'humidity', 'precool', 'control', 'depth', 'mid', 'from', 'to', 'coastFrom', 'coastTo', 'coastF', 'acKw', 'slope', 'kPerDegH', 'trim'] as const;
-const base = { abs: false, window: '30d' as Window, staleDays: 14, freshDays: 3, agg: 'mean' as const, kind: 'scored' as const };
+const base = { abs: false, window: '30d' as Window, staleDays: 14, freshDays: 3, kind: 'scored' as const };
 
 export const MODELS: Record<ModelId, ModelDef> = {
-  'fc48.solar': { ...base, id: 'fc48.solar', label: 'Next 48 h solar', unit: 'kWh', floor: .3, need: 14, ceiling: .4, agg: 'sum', inputs: FC48,
+  // fc48.solar / fc48.home are scored on daily totals, one pair per (day, run) (B2-1), so the floor is a day's kWh, not an hour's
+  'fc48.solar': { ...base, id: 'fc48.solar', label: 'Next 48 h solar', unit: 'kWh', floor: 1, need: 14, ceiling: .4, inputs: FC48,
     help: 'needs a few more days of forecasts scored against what the panels made' },
-  'fc48.home': { ...base, id: 'fc48.home', label: 'Next 48 h home use', unit: 'kWh', floor: .3, need: 14, ceiling: .4, agg: 'sum', inputs: FC48,
+  'fc48.home': { ...base, id: 'fc48.home', label: 'Next 48 h home use', unit: 'kWh', floor: 1, need: 14, ceiling: .4, inputs: FC48,
     help: 'needs a few more days of forecasts scored against what the house used' },
   'fc48.soc': { ...base, id: 'fc48.soc', label: 'Next 48 h battery %', unit: 'pts', abs: true, floor: 0, need: 14, ceiling: 20, inputs: FC48,
     help: 'needs a few more days of forecasts scored against the Powerwall charge' },

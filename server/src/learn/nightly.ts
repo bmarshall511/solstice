@@ -38,33 +38,64 @@ type PredRow = { model: ModelId; target_day: string; target_hour: number; horizo
 type Hour = { coolMin: number; coolF: number | null; indoorF: number | null; n: number };
 /** A pair to score: predicted vs measured, plus the forecast's horizon band for the 48-hour models. */
 export type Pair = { predicted: number; actual: number; band?: string };
-export type DayScore = { pred: number; actual: number; err: number; abs: number; ape: number | null; den: number; n: number; bands: Record<string, number> };
+export type BandScore = { abs: number; err: number; ape: number | null; den: number; n: number };
+export type DayScore = { pred: number; actual: number; err: number; abs: number; ape: number | null; den: number; n: number; bands: Record<string, BandScore> };
 
 const hourStart = (day: string, hour: number) => localAt(day, hour);   // DST-aware (tesla/client.ts)
 const expectedBuckets = (day: string) => Math.round((localMidnight(addDays(day, 1)).getTime() - localMidnight(day).getTime()) / 300_000);
-const band = (k: number) => k <= 6 ? 'h1-6' : k <= 24 ? 'h7-24' : 'h25-48';
+export const band = (k: number) => k <= 6 ? 'h1-6' : k <= 24 ? 'h7-24' : 'h25-48';
+/** The 48-hour models scored on daily totals, one pair per (day, run) (B2-1, audit L-03). fc48.soc stays hourly: a charge level has no daily total. */
+export const DAILY_TOTAL_MODELS: readonly ModelId[] = ['fc48.solar', 'fc48.home'];
 
 /**
- * One day's score for a model from its predicted/actual pairs (hourly models have up to 48 × horizons; daily models one):
+ * One day's score for a model from its predicted/actual pairs (the 48-hour kWh models: one pair per run that forecast the day,
+ * each a daily total; battery %: one per run and hour; daily models: one):
  * e = predicted − actual (+ = over-predicts), den = max(|actual|, floor), rel = e / den (absolute-unit models: e itself).
- * Stored: the day's predicted and actual (summed for kWh-per-hour models, averaged otherwise), mean e, mean |e|, mean |rel|,
- * mean den (bias = mean e / mean den over a window), the pair count, and mean |e| per horizon band.
+ * Stored: the day's predicted and actual (the mean over the pairs, so a daily total stays a daily total however many runs
+ * forecast it), mean e, mean |e|, mean |rel|, mean den (bias = mean e / mean den over a window), the pair count, and per horizon
+ * band the same four (mean |e|, mean e, mean |rel|, mean den) and its pair count.
  */
 export function scoreDay(m: ModelDef, pairs: Pair[]): DayScore | null {
   if (!pairs.length) return null;
   const e = pairs.map(p => p.predicted - p.actual), den = pairs.map(p => m.abs ? 1 : Math.max(Math.abs(p.actual), m.floor));
-  const agg = (a: number[]) => m.agg === 'sum' ? a.reduce((s, v) => s + v, 0) : mean(a);
-  const bands: Record<string, number[]> = {};
-  pairs.forEach((p, i) => { if (p.band) (bands[p.band] ??= []).push(Math.abs(e[i])); });
-  return { pred: agg(pairs.map(p => p.predicted)), actual: agg(pairs.map(p => p.actual)), err: mean(e), abs: mean(e.map(Math.abs)),
-    ape: m.abs ? null : mean(e.map((x, i) => Math.abs(x / den[i]))), den: mean(den), n: pairs.length,
-    bands: Object.fromEntries(Object.entries(bands).map(([b, v]) => [b, mean(v)])) };
+  const rel = e.map((x, i) => Math.abs(x / den[i]));
+  const by: Record<string, number[]> = {};
+  pairs.forEach((p, i) => { if (p.band) (by[p.band] ??= []).push(i); });
+  const pick = (a: number[], ix: number[]) => ix.map(i => a[i]);
+  return { pred: mean(pairs.map(p => p.predicted)), actual: mean(pairs.map(p => p.actual)), err: mean(e), abs: mean(e.map(Math.abs)),
+    ape: m.abs ? null : mean(rel), den: mean(den), n: pairs.length,
+    bands: Object.fromEntries(Object.entries(by).map(([b, ix]) => [b, { abs: mean(pick(e, ix).map(Math.abs)), err: mean(pick(e, ix)), ape: m.abs ? null : mean(pick(rel, ix)),
+      den: mean(pick(den, ix)), n: ix.length }])) };
+}
+
+export type RunHour = { hour: number; predicted: number; horizon: number; madeAt: number };
+/**
+ * B2-1 (audit L-03): a 48-hour run's daily total for one day against the day's measured total, as one pair.
+ * Hours that had begun when the run was made count at their measured value on both sides (the "so far + the rest" total), so
+ * `actual` is always the real daily total. Every hour that had not begun must be in the run (so the 2-day-old run, which reaches
+ * only the day's first hours, is not scored), and every hour of the day needs its energy data (`actual` holds 23, 24 or 24 hour
+ * keys on a normal, spring-forward or fall-back day: `hours`). Night solar hours add nothing to either total, so they no longer
+ * count as perfect zero-error hours in the solar error. band = the horizon band of the run's last hour of the day (the 05:15 run:
+ * its own day → h7-24, tomorrow → h25-48).
+ */
+export function runDayPair(day: string, run: RunHour[], actual: ReadonlyMap<number, number>, hours: number): Pair | null {
+  if (!run.length || actual.size < hours) return null;
+  const madeAt = run[0].madeAt, byHour = new Map(run.map(r => [r.hour, r]));
+  let pred = 0, act = 0, last: RunHour | null = null;
+  for (const [h, a] of actual) {
+    act += a;
+    if (hourStart(day, h) < madeAt) { pred += a; continue; }   // under way or done when the run was made: known
+    const r = byHour.get(h); if (!r) return null;
+    pred += r.predicted; if (!last || r.hour > last.hour) last = r;
+  }
+  return last ? { predicted: pred, actual: act, band: band(last.horizon) } : null;
 }
 /** The daily_metrics rows for a day's score (metric names 'score:<model>:<part>'). */
 export const scoreMetrics = (model: ModelId, s: DayScore): Array<[string, number]> => [
   [`score:${model}:pred`, s.pred], [`score:${model}:actual`, s.actual], [`score:${model}:err`, s.err], [`score:${model}:abs`, s.abs], [`score:${model}:den`, s.den],
   [`score:${model}:n`, s.n], ...(s.ape != null ? [[`score:${model}:ape`, s.ape] as [string, number]] : []),
-  ...Object.entries(s.bands).map(([b, v]) => [`score:${model}:abs@${b}`, v] as [string, number])];
+  ...Object.entries(s.bands).flatMap(([b, v]) => [[`score:${model}:abs@${b}`, v.abs], [`score:${model}:err@${b}`, v.err], [`score:${model}:den@${b}`, v.den],
+    [`score:${model}:n@${b}`, v.n], ...(v.ape != null ? [[`score:${model}:ape@${b}`, v.ape]] : [])] as Array<[string, number]>)];
 
 /**
  * Pool kWh for a day from its readings, over the schedule the prediction assumed: the scheduled quarter-hours with a reading use it,
@@ -216,6 +247,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     for (const day of d.poolExtraDays) poolExtra.add(day);
     // scores for the prediction days that are complete: the last SCORE_DAYS days (idempotent, so a missed night catches up)
     const pairs = new Map<string, Pair[]>(); // 'model|day'
+    const runs = new Map<string, RunHour[]>();   // 'model|day|made_at' → the run's hours of that day
     const add = (model: string, day: string, p: Pair) => (pairs.get(`${model}|${day}`) ?? pairs.set(`${model}|${day}`, []).get(`${model}|${day}`)!).push(p);
     const TRIP_UNSCORED = ['fc48.home', 'fc48.soc', 'home.alwaysOn', 'ac.shifted', 'ac.eveningAvoided', 'bill.cycleImport'];
     for (const p of d.preds) {
@@ -225,7 +257,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
       if (p.model.startsWith('fc48.')) {
         if (p.made_at > hourStart(day, p.target_hour)) continue; // a forecast only counts for hours that hadn't started
         if (p.model === 'fc48.soc') { const s = sHour.get(`${day}|${p.target_hour}`); if (s) add(p.model, day, { predicted: p.predicted, actual: s.last, band: band(p.horizon) }); }
-        else { const e = eHour.get(`${day}|${p.target_hour}`); if (e && e.n >= 11) add(p.model, day, { predicted: p.predicted, actual: p.model === 'fc48.solar' ? e.solar : e.home, band: band(p.horizon) }); }
+        else { const k = `${p.model}|${day}|${p.made_at}`; (runs.get(k) ?? runs.set(k, []).get(k)!).push({ hour: p.target_hour, predicted: p.predicted, horizon: p.horizon, madeAt: p.made_at }); }
       } else if (p.model === 'pool.kwhDay') {
         if (p.made_at > hourStart(day, 0)) continue;
         if (poolExtra.has(day)) { put(day, 'pool.extra', 1); continue; }   // mockup ah: the pump ran beyond the plan, so the plan wasn't wrong
@@ -243,6 +275,13 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
         const v = metricRows.get(`${day}|home.alwaysOn_kw`)?.[2];
         if (v != null && p.made_at <= hourStart(day, 1)) add(p.model, day, { predicted: p.predicted, actual: v });
       }
+    }
+    // B2-1: the 48-hour kWh models, one daily-total pair per (day, run)
+    for (const [key, run] of runs) {
+      const [model, day] = key.split('|'), act = new Map<number, number>();
+      for (let h = 0; h < 24; h++) { const e = eHour.get(`${day}|${h}`); if (e && e.n >= 11) act.set(h, model === 'fc48.solar' ? e.solar : e.home); }
+      const pr = runDayPair(day, run, act, Math.min(24, expectedBuckets(day) / 12));
+      if (pr) add(model, day, pr);
     }
     for (const [key, ps] of pairs) {
       const [model, day] = key.split('|') as [ModelId, string], s = scoreDay(MODELS[model], ps);

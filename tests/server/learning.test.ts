@@ -13,7 +13,7 @@ import { confidence, badge } from '../../server/src/learn/confidence.js';
 import { acSavings, controlDecision, CONTROL_EVERY, trimFor, applyTrim, precoolOutcome, measuredSavings, windowKwh, COOLING_HOURS,
   type ControlState, type PrecoolDay, type AcDay } from '../../server/src/learn/ac.js';
 import { pumpRules, acOverrunRule, solarStepRule, alwaysOnRule, dataGapRules, type MetricsByDay, type RuleCtx, type OpenAnomaly } from '../../server/src/learn/rules.js';
-import { scoreDay, scoreMetrics, poolActual } from '../../server/src/learn/nightly.js';
+import { scoreDay, scoreMetrics, poolActual, runDayPair } from '../../server/src/learn/nightly.js';
 import { forecast48, learnYield } from '../../server/src/learn/forecast48.js';
 // @ts-ignore: the browser module is plain JS without types; the twin must match it
 import * as web from '../../web/src/lib/model.js';
@@ -62,15 +62,48 @@ describe('prediction logging', () => {
 
 /* ------------------------------------------------------------------ scoring arithmetic */
 describe('scoring arithmetic', () => {
-  it('a kWh-per-hour model: sums the day, relative error on a floored denominator, and per-band error', () => {
-    const s = scoreDay(MODELS['fc48.solar'], [{ predicted: 2, actual: 1.5, band: 'h1-6' }, { predicted: .1, actual: 0, band: 'h1-6' }, { predicted: 4, actual: 5, band: 'h7-24' }])!;
-    // e = +.5, +.1, −1; den = 1.5, .3 (the floor), 5; |rel| = 1/3, 1/3, .2
-    expect(s.pred).toBeCloseTo(6.1, 10); expect(s.actual).toBeCloseTo(6.5, 10);
-    expect(s.err).toBeCloseTo(-.4 / 3, 10); expect(s.abs).toBeCloseTo(1.6 / 3, 10); expect(s.ape).toBeCloseTo((2 / 3 + .2) / 3, 10); expect(s.den).toBeCloseTo(6.8 / 3, 10);
+  // B2-1 (audit L-03): deliberately replaces "a kWh-per-hour model sums the day": the 48-hour kWh models now score one daily total
+  // per (day, run), so the day's predicted/actual are means over the runs (the real daily total), and each band has its own MAPE.
+  it('a daily-total model: each run is one pair, the day keeps the real total, relative error on a floored denominator, per-band MAE and MAPE', () => {
+    const s = scoreDay(MODELS['fc48.solar'], [{ predicted: 44, actual: 40, band: 'h25-48' }, { predicted: 38, actual: 40, band: 'h7-24' }, { predicted: .5, actual: 0, band: 'h7-24' }])!;
+    // e = +4, −2, +.5; den = 40, 40, 1 (the floor); |rel| = .1, .05, .5
+    expect(s.pred).toBeCloseTo(82.5 / 3, 10); expect(s.actual).toBeCloseTo(80 / 3, 10);
+    expect(s.err).toBeCloseTo(2.5 / 3, 10); expect(s.abs).toBeCloseTo(6.5 / 3, 10); expect(s.ape).toBeCloseTo(.65 / 3, 10); expect(s.den).toBeCloseTo(81 / 3, 10);
     expect(s.n).toBe(3);
-    expect(s.bands['h1-6']).toBeCloseTo(.3, 10); expect(s.bands['h7-24']).toBeCloseTo(1, 10);
+    expect(s.bands['h25-48']).toEqual({ abs: 4, err: 4, ape: .1, den: 40, n: 1 });
+    expect(s.bands['h7-24'].abs).toBeCloseTo(1.25, 10); expect(s.bands['h7-24'].err).toBeCloseTo(-.75, 10); expect(s.bands['h7-24'].ape).toBeCloseTo(.275, 10);
     expect(scoreMetrics('fc48.solar', s).map(m => m[0])).toEqual(['score:fc48.solar:pred', 'score:fc48.solar:actual', 'score:fc48.solar:err', 'score:fc48.solar:abs',
-      'score:fc48.solar:den', 'score:fc48.solar:n', 'score:fc48.solar:ape', 'score:fc48.solar:abs@h1-6', 'score:fc48.solar:abs@h7-24']);
+      'score:fc48.solar:den', 'score:fc48.solar:n', 'score:fc48.solar:ape',
+      'score:fc48.solar:abs@h25-48', 'score:fc48.solar:err@h25-48', 'score:fc48.solar:den@h25-48', 'score:fc48.solar:n@h25-48', 'score:fc48.solar:ape@h25-48',
+      'score:fc48.solar:abs@h7-24', 'score:fc48.solar:err@h7-24', 'score:fc48.solar:den@h7-24', 'score:fc48.solar:n@h7-24', 'score:fc48.solar:ape@h7-24']);
+  });
+  describe('B2-1: one daily-total pair per (day, run)', () => {
+    const day = '2026-09-24', at = (h: number, m = 15) => Date.parse(`${day}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00-05:00`);
+    const sun = Array.from({ length: 24 }, (_, h) => h >= 7 && h <= 18 ? 3 : 0);       // 36 kWh made
+    const actual = new Map(sun.map((v, h) => [h, v]));
+    // yesterday's 05:15 run reaches the whole day (k 19–42); today's covers 6–23 (k 1–18); the one from two days ago only 0–5 (k 43–48)
+    const yRun = sun.map((v, h) => ({ hour: h, predicted: v * 1.1, horizon: 19 + h, madeAt: at(5) - 864e5 }));
+    const tRun = sun.slice(6).map((v, i) => ({ hour: 6 + i, predicted: v + (6 + i === 12 ? 1 : 0), horizon: 1 + i, madeAt: at(5) }));
+    const oldRun = sun.slice(0, 6).map((v, h) => ({ hour: h, predicted: v, horizon: 43 + h, madeAt: at(5) - 2 * 864e5 }));
+    it('two runs forecasting the same day score once each, and actual is the daily total', () => {
+      const a = runDayPair(day, yRun, actual, 24)!, b = runDayPair(day, tRun, actual, 24)!;
+      expect(a).toEqual({ predicted: expect.closeTo(39.6, 10), actual: 36, band: 'h25-48' });
+      expect(b).toEqual({ predicted: 37, actual: 36, band: 'h7-24' });   // hours 0–5 had begun: measured on both sides
+      const s = scoreDay(MODELS['fc48.solar'], [a, b])!;
+      expect([s.n, s.actual]).toEqual([2, 36]);
+      expect(s.ape).toBeCloseTo((.1 + 1 / 36) / 2, 10);
+    });
+    it('a run that doesn’t reach the end of the day, a day with an hour of energy missing, or a run with nothing left to forecast is not scored', () => {
+      expect(runDayPair(day, oldRun, actual, 24)).toBeNull();
+      expect(runDayPair(day, tRun.filter(r => r.hour !== 15), actual, 24)).toBeNull();
+      expect(runDayPair(day, yRun, new Map([...actual].filter(([h]) => h !== 3)), 24)).toBeNull();
+      expect(runDayPair(day, [{ hour: 12, predicted: 99, horizon: 1, madeAt: at(12, 30) }], actual, 24)).toBeNull();
+    });
+    it('a spring-forward day has 23 hours', () => {
+      const d = '2027-03-14', act = new Map([...actual].filter(([h]) => h !== 2));
+      const run = [...act].map(([h, v]) => ({ hour: h, predicted: v, horizon: 19 + h, madeAt: Date.parse('2027-03-13T05:15:00-06:00') }));
+      expect(runDayPair(d, run, act, 23)).toEqual({ predicted: 36, actual: 36, band: 'h25-48' });
+    });
   });
   it('an absolute-unit model (battery %) averages the day and has no percent error', () => {
     const s = scoreDay(MODELS['fc48.soc'], [{ predicted: 80, actual: 75 }, { predicted: 60, actual: 70 }])!;

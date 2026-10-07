@@ -204,7 +204,7 @@ describe('learning layer routes (owner-only)', () => {
     expect(m.models.map((x: any) => x.id)).toEqual(['fc48.solar', 'fc48.home', 'fc48.soc', 'pool.kwhDay', 'ac.shifted', 'ac.eveningAvoided', 'bill.cycleImport', 'home.alwaysOn']);
     // the r-learning mockup's row fields
     expect(Object.keys(m.models[0])).toEqual(['id', 'label', 'unit', 'abs', 'dot', 't', 'v', 'tier', 'confidence', 'n', 'need', 'mape', 'mae', 'mad', 'bias', 'base', 'spark',
-      'improvement', 'bands', 'note', 'help', 'scores', 'days']);
+      'improvement', 'bands', 'bandsPct', 'note', 'help', 'scores', 'days']);   // bandsPct: B2-1's daily-total MAPE per horizon band
     expect(m.models[0]).toMatchObject({ label: 'Next 48 h solar', dot: 'learned', t: 'l', v: '±4%', tier: 'learned', n: 20, need: 14, mape: 4, bias: -1, note: '20 days scored', help: null });
     expect(m.models[3]).toMatchObject({ id: 'pool.kwhDay', dot: 'unscored', t: 'u', v: 'unscored', help: 'needs pool readings through at least 80% of the pump’s scheduled hours' });
     expect(m.models[4]).toMatchObject({ id: 'ac.shifted', dot: 'estimated', v: 'estimated' });

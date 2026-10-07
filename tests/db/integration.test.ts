@@ -621,7 +621,16 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
       daily: { time: wxDays, temperature_2m_max: wxDays.map(() => 95), precipitation_sum: wxDays.map(() => 0) } } });
     // predictions made earlier: yesterday's forecast hours, the pool plan, tonight's always-on, a finished billing cycle, the AC days
     const made = (d: string, h: number, m = 15) => Date.parse(ts(d, h, m));
+    // B2-1: two 05:15 runs forecast all of 2026-09-23: the day before's (k 19–42, solar 10% high, home 1.5 kWh every hour) and
+    // the day's own (k 1–18, exact but for +1 kWh of solar at noon)
+    const solarH = (h: number) => BELL[h] * .96, homeH = (h: number) => h >= 1 && h <= 4 ? .48 : 1.5;
+    const runA = Array.from({ length: 24 }, (_, h) => h), runB = runA.filter(h => h >= 6);
     await logPrediction(S, [
+      ...runA.flatMap(h => [{ model: 'fc48.solar' as const, day: '2026-09-23', hour: h, horizon: 19 + h, value: solarH(h) * 1.1, madeAt: made('2026-09-22', 5) },
+        { model: 'fc48.home' as const, day: '2026-09-23', hour: h, horizon: 19 + h, value: 1.5, madeAt: made('2026-09-22', 5) }]),
+      ...runB.flatMap(h => [{ model: 'fc48.solar' as const, day: '2026-09-23', hour: h, horizon: h - 5, value: solarH(h) + (h === 12 ? 1 : 0), madeAt: made('2026-09-23', 5) },
+        { model: 'fc48.home' as const, day: '2026-09-23', hour: h, horizon: h - 5, value: homeH(h), madeAt: made('2026-09-23', 5) }]),
+      // a run that reaches one hour of 2026-09-24 only (and that day is short): never scored as a daily total
       { model: 'fc48.solar', day: '2026-09-24', hour: 12, horizon: 7, value: 6.76, madeAt: made('2026-09-24', 5) },
       { model: 'fc48.solar', day: '2026-09-24', hour: 12, horizon: 1, value: 99, madeAt: made('2026-09-24', 12, 30) }, // made after the hour began: never scored
       { model: 'fc48.home', day: '2026-09-24', hour: 12, horizon: 7, value: 1.5, madeAt: made('2026-09-24', 5) },
@@ -642,14 +651,20 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
     expect(r.errors).toEqual([]);
     expect(await kv.get(`${S}:error:learn`)).toBeNull();                         // a clean run clears the last error, in its kv write (O-10)
     expect(r.scored.sort()).toEqual(['ac.eveningAvoided', 'ac.shifted', 'bill.cycleImport', 'fc48.home', 'fc48.soc', 'fc48.solar', 'home.alwaysOn', 'pool.kwhDay']);
-    // 48-hour forecast, 12:00 yesterday: 6.76 predicted vs 5.76 kWh made (the 12:30 prediction is not scored)
-    expect(await metric('2026-09-24', 'score:fc48.solar:pred')).toBeCloseTo(6.76, 6);
-    expect(await metric('2026-09-24', 'score:fc48.solar:actual')).toBeCloseTo(5.76, 6);
-    expect(await metric('2026-09-24', 'score:fc48.solar:ape')).toBeCloseTo(1 / 5.76, 6);
-    expect(await metric('2026-09-24', 'score:fc48.solar:n')).toBe(1);
-    expect(await metric('2026-09-24', 'score:fc48.solar:abs@h7-24')).toBeCloseTo(1, 6);
-    expect(await metric('2026-09-24', 'score:fc48.home:abs')).toBe(0);
-    expect(await metric('2026-09-24', 'score:fc48.soc:err')).toBe(6);                  // 70 predicted, 64% measured
+    // 48-hour forecast (B2-1, deliberately replacing the hourly pairs of 12:00 yesterday): 2026-09-23 has 40.32 kWh of solar and
+    // 31.92 kWh of home use; the day-before run said 44.352 / 36 (h25-48), the day's own 41.32 / 31.92 (h7-24). The stored day
+    // keeps the real total; 2026-09-24 (a one-hour run, a short day) isn't scored.
+    expect(await metric('2026-09-23', 'score:fc48.solar:actual')).toBeCloseTo(40.32, 4);
+    expect(await metric('2026-09-23', 'score:fc48.solar:pred')).toBeCloseTo((44.352 + 41.32) / 2, 4);
+    expect(await metric('2026-09-23', 'score:fc48.solar:n')).toBe(2);
+    expect(await metric('2026-09-23', 'score:fc48.solar:ape')).toBeCloseTo((.1 + 1 / 40.32) / 2, 6);
+    expect(await metric('2026-09-23', 'score:fc48.solar:abs@h25-48')).toBeCloseTo(4.032, 4);
+    expect(await metric('2026-09-23', 'score:fc48.solar:ape@h7-24')).toBeCloseTo(1 / 40.32, 6);
+    expect(await metric('2026-09-23', 'score:fc48.home:actual')).toBeCloseTo(31.92, 4);
+    expect(await metric('2026-09-23', 'score:fc48.home:err')).toBeCloseTo(2.04, 4);
+    expect(await metric('2026-09-23', 'score:fc48.home:abs@h7-24')).toBeCloseTo(0, 6);
+    expect(await metric('2026-09-24', 'score:fc48.solar:n')).toBeUndefined();
+    expect(await metric('2026-09-24', 'score:fc48.soc:err')).toBe(6);                  // 70 predicted, 64% measured (battery % stays hourly)
     // pool: 32 quarter-hours at 125 W + 4 at 700 W + the plan's 0.54 kWh of UV = 2.24 kWh, every scheduled quarter-hour covered
     expect(await metric('2026-09-24', 'pool.coverage')).toBe(1);
     expect(await metric('2026-09-24', 'score:pool.kwhDay:actual')).toBeCloseTo(2.24, 6);
@@ -665,8 +680,8 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
     const ms = await q<{ window: string; n: number; mae: number; mape: number; bias: number; last_day: string }>(
       `SELECT "window", n, mae, mape, bias, last_day FROM model_scores WHERE site_id = $1 AND model = 'fc48.solar' ORDER BY "window"`, [S]);
     expect(ms.map(x => x.window)).toEqual(['30d', '365d', '7d']);
-    expect(ms[0]).toMatchObject({ n: 1, last_day: '2026-09-24' });
-    expect([ms[0].mae, ms[0].mape, ms[0].bias]).toEqual([expect.closeTo(1, 6), expect.closeTo(1 / 5.76, 6), expect.closeTo(1 / 5.76, 6)]);
+    expect(ms[0]).toMatchObject({ n: 1, last_day: '2026-09-23' });
+    expect([ms[0].mae, ms[0].mape, ms[0].bias]).toEqual([expect.closeTo(2.516, 4), expect.closeTo((.1 + 1 / 40.32) / 2, 6), expect.closeTo(2.516 / 40.32, 6)]);
     expect(await one(`SELECT COUNT(*)::int n FROM model_scores WHERE site_id = $1`, [S])).toEqual({ n: 24 }); // 8 models × 3 windows
     expect(r.tiers).toMatchObject({ 'fc48.solar': 'learning', 'ac.shifted': 'measured', 'ac.eveningAvoided': 'measured' });
     // budget: a fixed number of round trips, no per-model or per-row queries
@@ -706,7 +721,8 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
     const rows = await q<{ kind: string; open: boolean }>(`SELECT kind, resolved_at IS NULL AS open FROM anomalies WHERE site_id = $1 ORDER BY kind`, [S]);
     expect(rows).toEqual([{ kind: 'data.gap.energy', open: false }, { kind: 'pump.below_baseline@1500', open: true }]);
     expect(await metric('2026-09-24', 'energy.buckets')).toBe(288);
-    expect(await metric('2026-09-24', 'score:fc48.solar:ape')).toBeCloseTo(1 / 5.76, 6);
+    expect(await metric('2026-09-23', 'score:fc48.solar:ape')).toBeCloseTo((.1 + 1 / 40.32) / 2, 6);
+    expect(await metric('2026-09-24', 'score:fc48.solar:ape')).toBeUndefined();   // complete now, but its only run reached one hour
   });
 
   it('the pump anomaly resolves after three covered days back within 5% of the clean baseline, and a new firing opens a new row', async () => {

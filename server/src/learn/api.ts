@@ -9,10 +9,11 @@ import { MODELS, MODEL_IDS, WINDOWS, mean, median, round, type Window } from './
 import { lq } from './store.js';
 import { confidence, badge, type Tier } from './confidence.js';
 import { untrim, learnAcKey, controlKey, CONTROL_EVERY, type LearnAc, type ControlState } from './ac.js';
-import type { LearnRun, LogEntry } from './nightly.js';
+import { DAILY_TOTAL_MODELS, type LearnRun, type LogEntry } from './nightly.js';
 import { homeForecast } from './homeModel.js';
 
 type Score = { mae: number | null; mape: number | null; bias: number | null; n: number; lastDay: string | null };
+const BANDS = ['h1-6', 'h7-24', 'h25-48'];
 const T: Record<Tier, string> = { measured: 'm', learned: 'l', estimated: 'e', learning: 'n', unscored: 'u' };
 /** The Chicago Monday of a day, for weekly sparkline buckets. */
 const monday = (d: string) => addDays(d, -((new Date(d + 'T12:00:00Z').getUTCDay() + 6) % 7));
@@ -53,18 +54,21 @@ export async function modelsReport(siteId: string, today = localDay()) {
     const improvement = recent.length >= 10 && before.length >= 10 && mean(before) > 0 ? round(1 - mean(recent) / mean(before), 2) : null;
     if (improvement != null) improvements.push(improvement);
     const last30 = days.filter(([d]) => d >= from30);
-    const bands = id.startsWith('fc48.') ? Object.fromEntries(['h1-6', 'h7-24', 'h25-48'].map(b => { const v = last30.map(([, x]) => x[`abs@${b}`]).filter(v => v != null);
-      return [b, v.length ? round(mean(v), 2) : null]; })) : undefined;
+    // per horizon band over 30 days: mean |error| (kWh a day for solar/home, pts for the battery) and, for the daily-total models, the MAPE in %
+    const bandOf = (b: string, part: string) => last30.map(([, x]) => x[`${part}@${b}`]).filter(v => v != null);
+    const bands = id.startsWith('fc48.') ? Object.fromEntries(BANDS.map(b => { const v = bandOf(b, 'abs'); return [b, v.length ? round(mean(v), 2) : null]; })) : undefined;
+    const bandsPct = DAILY_TOTAL_MODELS.includes(id) ? Object.fromEntries(BANDS.map(b => { const v = bandOf(b, 'ape'); return [b, v.length ? round(mean(v) * 100, 1) : null]; })) : undefined;
     const base = last30.length ? round(mean(last30.map(([, x]) => x.actual)), 2) : null;
     const note = m.kind === 'estimate'
       ? ac?.measured ? `${ac.measured.precoolDays} pre-cool · ${ac.measured.controlDays} control days compared` : 'estimated from the plan until control days measure it'
       : tier === 'unscored' ? (main?.n ? `last scored ${main.lastDay}` : 'no scored days yet') : `${main?.n ?? 0} ${m.window === '365d' ? 'cycles' : 'days'} scored`;
     return { id, label: m.label, unit: m.unit, abs: m.abs, dot: tier, t: T[tier], v: badge(m, tier, main), tier, confidence: c, n: main?.n ?? 0, need: m.need,
       mape: main?.mape != null ? round(main.mape * 100, 1) : null, mae: main?.mae != null ? round(main.mae, 2) : null, mad: m.abs && main?.mae != null ? round(main.mae, 1) : null,
-      bias: main?.bias != null ? round(main.bias * (m.abs ? 1 : 100), 1) : null, base, spark, improvement, bands, note,
+      bias: main?.bias != null ? round(main.bias * (m.abs ? 1 : 100), 1) : null, base, spark, improvement, bands, bandsPct, note,
       help: tier === 'learning' || tier === 'unscored' || (m.kind === 'estimate' && tier !== 'measured') ? m.help : null,
       scores: Object.fromEntries(WINDOWS.map(([w]) => { const s = sc(w); return [w, s && { mae: s.mae, mape: s.mape, bias: s.bias, n: s.n }]; })),
       // the last 30 days of this model's daily metrics: predicted (p) vs measured (a), signed error, relative error, pairs scored
+      // (fc48.solar / fc48.home: p is the mean of the runs' daily totals, a the day's real total, n the runs scored; B2-1)
       days: last30.map(([day, x]) => ({ day, p: round(x.pred, 2), a: round(x.actual, 2), err: round(x.err, 3), ape: x.ape != null ? round(x.ape, 3) : null, n: x.n })) };
   });
   const med = improvements.length >= 2 ? median(improvements) : null;
