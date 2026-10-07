@@ -18,7 +18,7 @@ import { drawAlerts, openPlanner, drawAC, drawOvernight, drawHealth, initOutage,
 import { initWater } from './views/water.js';
 import { drawSettings, drawConnections, openRawData, applyAlertPrefs } from './views/settings.js';
 import { every } from './lib/poll.js';
-import { initAppliances, poolTwin, drawPool, freshPool, tickBoost, releasePoolTwin } from './views/appliances.js';
+import { initAppliances, poolTwin, drawPool, freshPool, releasePoolTwin } from './views/appliances.js';
 import { initAc, thermalTwin, drawAc, freshAc, releaseThermalTwin } from './views/ac.js';
 import { initLearn } from './views/learn.js';
 import { createDayRing } from './scenes/dayring.js';
@@ -331,7 +331,7 @@ function frame(now) {
   }
 }
 requestAnimationFrame(frame);
-setInterval(() => { if (document.hidden) return; safe(renderLive)(S); safe(sideSummary)(); safe(freshness)(S); safe(freshPool)(S); safe(tickBoost)(S); safe(freshAc)(S);
+setInterval(() => { if (document.hidden) return; safe(renderLive)(S); safe(sideSummary)(); safe(freshness)(S); safe(freshPool)(S); safe(freshAc)(S);
   if (isOn('v-sys')) { safe(drawSysHeader)(S, sysSeg); if (sysSeg === 'home') safe(drawHomeLive)(S); if (sysSeg === 'solar') safe(drawSolarLive)(S); if (sysSeg === 'powerwall') safe(drawPwLive)(S); } }, 1000);
 
 function sideSummary() {

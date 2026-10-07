@@ -1806,5 +1806,9 @@ html[data-calm] .c-seg::before,html[data-calm] .c-sw::after,html[data-calm] .c-c
 .c-sys .c-end .c-badge{flex:none}
 .cleanrow{gap:14px}
 .ph .tile{height:44px}
+.c-inner .c-head h5{white-space:nowrap}.c-inner .c-head .c-fig{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.c-stagerow .c-btn.pri{flex:2;min-width:0;overflow:hidden;text-overflow:ellipsis}
+#plDay{margin-top:0}
+.pl-nums{margin-top:12px}
 /* end Batch 4 */
 /* end al-app */
