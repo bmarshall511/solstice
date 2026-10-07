@@ -40,7 +40,7 @@ export function applyRole({ guest, preview = false, ownerName, expiresAt = null 
   if (!S.guest) unlockCards();
   $('guestSw').classList.toggle('on', S.asGuest); $('guestSw').setAttribute('aria-checked', String(S.asGuest));
   const by = `Shared by ${nameMidText(S.ownerName)}`, exp = expiresAt ? `link expires ${day(expiresAt)}` : 'link never expires';
-  $('chipGuest').innerHTML = `<i></i>${esc(by)} · live`;   // no span: .chips span is the Autopilot chip style
+  $('chipGuest').innerHTML = `<span class="d"></span><span class="t">${esc(by)} <small>· live</small></span>`;   // mockup al frame 17: the guest pill
   $('setGuestSub').textContent = `${by} · ${S.asGuest ? 'preview' : exp}`;
   $('sharedBy').textContent = by;
   $('sharedExp').textContent = S.asGuest ? 'guests see their link’s expiry here' : exp;

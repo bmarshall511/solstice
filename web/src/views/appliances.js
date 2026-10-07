@@ -106,7 +106,7 @@ function drawControls(S) {
   };
 }
 /* frame 3: Boost runs the boost circuit (High Speed) for 1–4 h on its timer; while it runs the button shows the time left and ends it */
-const boostId = S => S.pool?.settings?.boostCircuit ?? 8;
+export const boostId = S => S.pool?.settings?.boostCircuit ?? 8;
 const leftText = ms => { const m = Math.max(1, Math.round(ms / 60_000)); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} m` : `${m} m`; };
 function drawBoost(S) {
   const d = S.pool, row = $('poolBoost'), id = boostId(S), c = d.snapshot?.circuits.find(x => x.id === id); if (!row) return;
@@ -220,10 +220,10 @@ function openEditor(S) {
 /* frame 6: Clear-up — the Pool circuit all day for 1–3 days, then back to the planner by itself; only End now ends it early */
 const endsLabel = ms => `${new Date(ms).toLocaleDateString('en-US', { weekday: 'short' })} ${clockAt(ms)}`;
 const poolRunAfter = t => { const d = new Date(t); d.setUTCHours(1, 15, 0, 0); if (d.getTime() < t) d.setUTCDate(d.getUTCDate() + 1); return d.getTime(); };   // as the server
-async function clearUpSend(S, body) {
+export async function clearUpSend(S, body) {
   pc.clearBusy = true; pc.err = null; drawControls(S);
   try { S.pool = await api.poolClearUp(body); } catch (e) { pc.err = `Clear-up: ${e.message}`; }
-  pc.clearBusy = false; drawPool(S);
+  pc.clearBusy = false; drawPool(S); S.onPool?.();
 }
 export function openClearUp(S) {   // also offered after a hazy test (water.js, mockup aj)
   const d = S.pool, rates = d.clearUpRates ?? []; if (!rates.length) return;
@@ -270,14 +270,14 @@ function drawClearBanner(S) {
   if ($('cuMore')) { $('cuMore').onclick = () => clearUpSend(S, { action: 'extend' }); $('cuEnd').onclick = () => { if (confirm('End the Clear-up now? The planner\u2019s schedule goes back on the controller.')) clearUpSend(S, { action: 'end' }); }; }
 }
 /** Send one or more commands for a circuit in order; the tile says "sending…" until the controller's read-back answers. */
-async function poolSend(S, ...cmds) {
+export async function poolSend(S, ...cmds) {
   const id = cmds.find(c => c.id != null)?.id ?? 1, name = S.pool.snapshot?.circuits.find(c => c.id === id)?.name ?? 'Pool';
   pc.sending.add(id); pc.err = null; drawControls(S);
   try { for (const c of cmds) S.pool = await api.poolCommand(c); }
   catch (e) { pc.err = `${name}: ${e.message}`; }
-  pc.sending.delete(id); drawPool(S);
+  pc.sending.delete(id); drawPool(S); S.onPool?.();
 }
-function openCircuit(S, id) {
+export function openCircuit(S, id) {
   const d = S.pool, snap = d.snapshot, c = snap?.circuits.find(x => x.id === id); if (!c || S.guest) return;
   const rpm0 = speedsOf(snap).get(id), lim = { min: snap.pump?.minRpm ?? 450, max: snap.pump?.maxRpm ?? 3450 };
   const runs = /light/i.test(c.name) || isSpa(c) ? [...RUNS, LONG_RUN] : RUNS, sched = (d.current?.schedules ?? []).filter(x => x.circuitId === id);

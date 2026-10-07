@@ -255,7 +255,7 @@ function hotDay(v, P) {
 }
 const DAYC = { n: '#b8a6ff', d: '#ffd27a', p: '#7cc4ff', c: '#ffb08a' };
 /* the Comfort sheet. Saving writes only Solstice's settings; the plan uses them from its next step. */
-function openComfort(S) {
+export function openComfort(S) {
   const s = S.ac.settings, v = { dayF: s.dayF, nightF: s.nightF, precoolDepth: s.precoolDepth, driftF: s.driftF, awayF: s.awayF, nightFrom: s.nightFrom, nightTo: s.nightTo };
   const HOURS = { nightFrom: [18, 23], nightTo: [4, 11] };
   const row = (label, sub, ctl) => `<div class="ag-row"><span class="tl">${label}<small>${sub}</small></span>${ctl}</div>`;
@@ -293,7 +293,7 @@ function openComfort(S) {
   draw(); $('phone').classList.add('open');
 }
 /* "Too cold" (dir +1) / "Too warm" (dir −1): the target for this part of the day, or just for now */
-function openNudge(S, dir) {
+export function openNudge(S, dir) {
   const d = S.ac, s = d.settings, st = d.state;
   if (!st || st.mode !== 'COOL' || st.coolF == null) return alert('The thermostat isn’t cooling right now, so there is nothing to nudge.');
   const h = localHour(), night = isNightAt(h, s), t = night ? s.nightF : s.dayF, aim = [...d.plan.steps].reverse().find(x => x.hour <= h)?.coolF ?? t;
@@ -330,7 +330,7 @@ let timer;
 /** Started by main.js once the role is known (and again when it changes); every 3 minutes while the tab is visible. */
 export function initAc(S) { stop(timer); timer = every(3 * 60_000, () => loadAc(S)); S.reloadAc = () => loadAc(S); }
 // a failed refresh keeps the last good plan and reading, with the failure in the card's note, instead of showing "Not set up"
-async function loadAc(S) { S.ac = await api.ac().catch(e => S.ac?.plan ? { ...S.ac, error: e.message } : { error: e.message, configured: false, linked: false }); if (S.ac.plan) drawAc(S); else { $('acBadge').textContent = 'Not set up'; $('acLink').hidden = false; $('acLinkTxt').textContent = S.ac.error ?? 'Nest is not configured.'; } S.onAc?.(); }
+export async function loadAc(S) { S.ac = await api.ac().catch(e => S.ac?.plan ? { ...S.ac, error: e.message } : { error: e.message, configured: false, linked: false }); if (S.ac.plan) drawAc(S); else { $('acBadge').textContent = 'Not set up'; $('acLink').hidden = false; $('acLinkTxt').textContent = S.ac.error ?? 'Nest is not configured.'; } S.onAc?.(); }
 
 /* ---------- presence (t-enhancements frame 4): the line under Home/Away and the "Away until…" sheet ---------- */
 const NEST_SAYS = pr => `<b>Nest says Away</b>${pr.since ? ` since ${when(pr.since)}` : ''} (Home/Away Assist)`;

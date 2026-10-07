@@ -7,7 +7,9 @@ import { createAurora } from './scenes/aurora.js';
 import { createOrb } from './scenes/orb.js';
 import { createLandscape } from './scenes/landscape.js';
 import { createHomeView } from './scenes/home.js';
-import { renderLive, renderStatic, renderWeather, freshness } from './views/now.js';
+import { renderLive, renderStatic, renderWeather, freshness, initAhead, initPwDisc } from './views/now.js';
+import { initNowTop, redrawNowTop } from './views/nowhub.js';
+import { keyActivate } from './views/csheet.js';
 import { initHistory, drawHistoryChart, landscapeData, drawSocHeat, drawRecords, drawOutages, drawBills, openBillSheet } from './views/history.js';
 import { initPanels, drawPerformance, roofHud } from './views/panels.js';
 import { drawAlerts, initPlanner, drawAC, drawOvernight, drawHealth, initOutage, initBreakdown, initSpare, initCapacity } from './views/insights.js';
@@ -23,7 +25,7 @@ import { fillGuestBill } from './views/guest.js';
 import { initShare, applyRole, refreshSharing, showGate, markWelcome, pendingWelcome, ensurePreviewChrome } from './views/share.js';
 import { loadDigest } from './views/digest.js';
 import { mountPowerwallRules, loadPowerwallRules, drawPowerwallRules } from './views/powerwall.js';
-import { initVacation, drawNow as drawVacation } from './views/vacation.js';
+import { initVacation } from './views/vacation.js';
 
 /* Owner link (https://<app>/#owner=<OWNER_KEY>) or share link (https://<app>/#s=<token>): take the secret and strip it from
    the address bar before anything else in this module runs, so it never lingers in history or bookmarks. boot() trades it
@@ -43,9 +45,16 @@ const isOn = id => $(id).classList.contains('on');
 async function loadNow() {
   try { S.now = await api.now(); S.nowOffline = false; } catch (e) { S.nowOffline = true; safe(freshness)(S); throw e; }   // mockup x: "Can't reach Solstice"
   api.day(localDate()).then(d => { S.today = d; safe(drawDayRing)(); }).catch(() => {});
+  loadYesterday().catch(() => {});
   if (!S.live || (S.now.reading && S.now.reading.ts >= S.live.ts)) S.live = S.now.reading;
   updateOutage();
-  safe(renderStatic)(S); safe(drawPowerwallRules)(S); if (S.vac) safe(drawVacation)(S);
+  safe(renderStatic)(S); safe(drawPowerwallRules)(S);
+}
+/** Yesterday's 5-minute day (/api/day), once per date: the Today tiles' "vs the same time yesterday" (mockup al frame 2). */
+async function loadYesterday() {
+  const date = addDays(localDate(), -1); if (S.yday?.date === date || S.ydayAsked === date) return;
+  S.ydayAsked = date;
+  try { S.yday = await api.day(date); safe(renderStatic)(S); } catch (e) { S.ydayAsked = null; throw e; }
 }
 
 async function loadHistory() {
@@ -145,6 +154,7 @@ function updateOutage() {
   const r = S.live, real = !!r && ((!!r.gridStatus && r.gridStatus !== 'Active') || /off_grid/.test(r.islandStatus ?? '')) || !!S.now?.outage?.active;   // an empty grid status is unknown, not an outage (gridwatch.ts isDown)
   S.outageActive = real || S.preview; S.realOutage = real;
   if (wasOut !== null && S.outageActive !== wasOut) {
+    safe(redrawNowTop)(S);
     if (S.outageActive) { toast('⚡', 'rgba(255,90,78,.25)', S.preview ? 'Outage preview' : 'Grid outage detected', `${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} · your Powerwalls took over`); go('v-now'); }
     else toast('✓', 'rgba(78,240,166,.2)', 'Grid restored', `Back on PEC. Your home never lost power.`);
   }
@@ -163,7 +173,7 @@ function syncTwins() {
 
 /* ---------------- navigation ---------------- */
 function go(v, anchor) {
-  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x.dataset.v === v));
+  document.querySelectorAll('.c-tab').forEach(x => { const on = x.dataset.v === v; x.classList.toggle('on', on); if (on) x.setAttribute('aria-current', 'page'); else x.removeAttribute('aria-current'); });
   document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === v));
   // the Now twin keeps a WebGL context only while Now is open: disposed on leaving, rebuilt (live framing) on return
   if (v === 'v-now') { house ??= createHomeView($('house'), 'flow', { onLink: openAppliance }); loadApplDay().catch(() => {}); } else if (house) { house.dispose(); house = null; S.twinReplay = false; }
@@ -172,7 +182,16 @@ function go(v, anchor) {
   const sc = $('screen');
   if (anchor) setTimeout(() => sc.scrollTo({ top: $(anchor).getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 50, behavior: 'smooth' }), 60); else sc.scrollTo({ top: 0 });
 }
-document.querySelectorAll('.tab[data-v]').forEach(t => t.onclick = () => go(t.dataset.v));
+document.querySelectorAll('.c-tab[data-v]').forEach(t => t.onclick = () => go(t.dataset.v));
+/** Links out of Now's sheets: an Insights panel (and an appliance), scrolled to a card. Links only; nothing is written. */
+function openInsights(panel, anchor, appl) {
+  go('v-ins'); $('insSeg').querySelector(`[data-p="${panel}"]`)?.click();
+  if (appl) $('applStrip').querySelector(`.app[data-id="${appl}"]`)?.click();
+  const el = anchor === 'outage' ? document.querySelector('#ip-home .card.outage') : $(anchor);
+  if (el) setTimeout(() => { const sc = $('screen'); sc.scrollTo({ top: el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 50, behavior: 'smooth' }); }, 80);
+}
+S.nav = { go, insights: openInsights };
+S.redrawNow = () => safe(redrawNowTop)(S);
 document.addEventListener('click', e => { const el = e.target.closest('[data-go]'); if (el) go(el.dataset.go, el.dataset.land ? 'landSect' : el.dataset.bills ? 'billSect' : null); });
 const closeSheet = () => $('phone').classList.remove('open');
 /* accessibility (October audit): every .sw toggle is a keyboard-reachable switch with its state announced, and the bottom sheet is a
@@ -183,12 +202,14 @@ function a11y() {
     const on = String(el.classList.contains('on')); if (el.getAttribute('aria-checked') !== on) el.setAttribute('aria-checked', on);
   });
   const h = $('sheetBody').querySelector('h4'); if (h && $('sheet').getAttribute('aria-label') !== h.textContent) $('sheet').setAttribute('aria-label', h.textContent);
+  $('sheet').classList.toggle('is-c', !!$('sheetBody').firstElementChild?.classList.contains('c-sbody'));   // mockup al: the component sheet's look and pinned footer
 }
 new MutationObserver(a11y).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
 document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('.sw[role=switch]')) { e.preventDefault(); e.target.click(); } });
 new MutationObserver(() => { if ($('phone').classList.contains('open')) setTimeout(() => $('sheetBody').querySelector('button,input,[tabindex]')?.focus({ preventScroll: true }), 50); })
   .observe($('phone'), { attributes: true, attributeFilter: ['class'] });
 a11y();
+keyActivate($('v-now')); keyActivate($('sheet'));   // role=button rows, disclosure headers and date cards answer Enter and Space
 $('scrim').onclick = closeSheet;
 document.addEventListener('click', e => { if (e.target.closest('[data-addbill]')) openBillSheet(S, () => loadHistory()); });
 $('openData').onclick = openRawData;
@@ -235,7 +256,8 @@ const dayRing = createDayRing($('dayRing'), (h, d) => {
 });
 /** Settings › Connections and Data health follow the latest sync, pool and Nest reads (health waits for its first /api/status). */
 const refreshStatus = () => { safe(drawConnections)(S); if ('status' in S) safe(drawHealth)(S, S.status); };
-S.ringMode = 'now'; S.onPool = () => { safe(drawDayRing)(); refreshStatus(); }; S.onAc = () => { safe(drawDayRing)(); refreshStatus(); if (S.vac) safe(drawVacation)(S); };
+S.ringMode = 'now'; S.onPool = () => { safe(drawDayRing)(); refreshStatus(); S.redrawNow(); }; S.onAc = () => { safe(drawDayRing)(); refreshStatus(); S.redrawNow(); };
+initNowTop(S); initAhead(S); initPwDisc();   // mockup al: the pills, banner slot, Autopilot hub, Ahead's 12 h | 48 h and the Powerwall disclosure
 $('drModes').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.ringMode = b.dataset.m; document.querySelectorAll('#drModes button').forEach(x => x.classList.toggle('on', x === b)); drawDayRing(); };
 /**
  * Today's hourly loads (B2-7, audit L-13/L-14, O-11): the AC from Nest's cooling minutes × the learned kW (/api/appliances/day), the pool
@@ -318,7 +340,9 @@ function drawBillDue() {
   const card = ready <= today
     ? `<div class="card due"><div class="h"><b>Your ${niceDate(nextClose, { month: 'long' })} PEC bill should be ready</b><span>${niceDate(last.period.to)} – ${niceDate(nextClose)}</span></div>
         <p>Download it from SmartHub or myPEC.com and add it. Solstice checks it against Tesla and updates your rates.</p><button class="link" data-addbill="1">+ Add the bill</button></div>` : '';
-  $('billDue').innerHTML = card; $('billDueNow').innerHTML = card;
+  $('billDue').innerHTML = card;
+  // mockup al: on Now it is the banner slot's plain bill banner (owner only; no dollar figure)
+  S.billDue = ready <= today && !S.guest ? { month: niceDate(nextClose, { month: 'long' }), period: `${niceDate(last.period.to)} – ${niceDate(nextClose)}` } : null; S.redrawNow();
   $('setBills').textContent = ready <= today ? `${niceDate(nextClose, { month: 'long' })} bill ready to add` : `Last: ${niceDate(last.billDate, { month: 'long' })} · next ~${niceDate(ready)}`;
 }
 

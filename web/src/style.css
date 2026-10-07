@@ -535,7 +535,7 @@ html[data-calm] .veil::after,html[data-calm] .veil{animation:none}
 .authcard form[hidden]{display:none}
 .authcard .err:empty{display:none}
 .authlogo.off{filter:grayscale(1) brightness(.8);box-shadow:none}
-html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.side){visibility:hidden}   /* nothing behind these two: no data, no site name */
+html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side){visibility:hidden}   /* nothing behind these two: no data, no site name */
 /* Preview as a guest: the Frost wipe and the pill */
 .frostwipe{position:absolute;inset:0;z-index:40;border-radius:inherit;pointer-events:none;visibility:hidden;
   background:linear-gradient(180deg,rgba(242,244,248,.09),rgba(242,244,248,.04));
@@ -1706,3 +1706,78 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .c-steps>div time{font:500 11px var(--c-mono);color:var(--dim)}
 .c-steps>div b{font-size:20px;font-weight:300}
 /* end al-components */
+
+/* al-app ---------------------------------------------------------------------------------------------------------------------
+   How the component system sits in the app (Batch 3 · Now; approved mockups/al-ia.html v2). Only tokens, no new palette. */
+#v-now [hidden],.sheet [hidden],.c-tabbar [hidden]{display:none!important}
+.c-skel.skel-in{display:inline-block;vertical-align:middle}
+:is(.c-btn,.c-pill,.c-seg button,.c-preset,.c-tgl,.c-x,.c-step,.c-play,.c-fpill,.c-tab,.c-nudge button,.c-choice button,.c-date,.c-swp,.c-sys[role=button],.c-disc-h,.c-check[role=button],.c-dial svg):focus-visible{outline:2px solid color-mix(in srgb,var(--home) 70%,transparent);outline-offset:2px}
+.c-btn:disabled,.c-btn[disabled]{opacity:.55;cursor:default}
+/* the two pills */
+#chips .c-pill{flex:0 1 auto;max-width:100%}
+.c-pill>.t{min-width:0;overflow:hidden;text-overflow:ellipsis}
+#banSlot:empty{display:none}
+/* the floating glass tab bar keeps five tabs until Batch 4 */
+.phone .c-tabbar{position:absolute;bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+.c-tabbar.five{grid-template-columns:repeat(5,minmax(0,1fr))}
+/* Energy flow: the twin's labels as glass chips, the replay row */
+.c-card.twin{overflow:hidden}
+.c-card.twin .house{margin:12px -16px 0;border-radius:0}
+.twin .hlbl{--acc:var(--text);padding:5px 9px;border-radius:12px;background:var(--c-bar-bg);box-shadow:inset 0 0 0 1px var(--glass-b);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);text-shadow:none}
+.twin .hlbl small{font-size:9.5px;font-weight:700;letter-spacing:.1em;color:var(--acc)}
+.twin .hlbl b{font:500 13px var(--c-mono);color:var(--text);margin-top:1px}
+.twin .hlbl b i{font-size:10px}
+.twin .hlbl.k-solar{--acc:var(--solar)} .twin .hlbl.k-pw{--acc:var(--batt)} .twin .hlbl.k-grid{--acc:var(--grid)} .twin .hlbl.k-ac{--acc:var(--ac)} .twin .hlbl.k-pool{--acc:var(--home)}
+.c-scrub.twin-row{display:flex;height:auto;margin-top:12px}
+.c-scrub.twin-row .c-play{all:unset;box-sizing:border-box;cursor:pointer;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--c-fill-2);color:var(--text);flex:none}
+.c-play svg{width:16px;height:16px}.c-play .pa,.c-play.playing .pl{display:none}.c-play.playing .pa{display:block}
+.c-scrub.twin-row input[type=range]{-webkit-appearance:none;appearance:none;flex:1;min-width:0;height:44px;margin:0;border-radius:0;outline:none;cursor:pointer;
+  background:linear-gradient(90deg,var(--c-fill-2),var(--c-fill-2));background-size:100% 4px!important;background-position:center!important;background-repeat:no-repeat!important}
+.c-scrub.twin-row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:var(--text);box-shadow:0 2px 8px color-mix(in srgb,var(--bg) 60%,transparent);cursor:pointer}
+.c-scrub.twin-row input[type=range]::-moz-range-thumb{width:20px;height:20px;border:0;border-radius:50%;background:var(--text)}
+.c-scrub.twin-row input[type=range]:focus-visible{outline:2px solid color-mix(in srgb,var(--home) 70%,transparent);outline-offset:2px;border-radius:8px}
+.c-scrub.twin-row .tm{min-width:56px;text-align:right}
+.c-scrub.twin-row .livep{height:auto;min-height:44px;padding:0 12px;gap:6px;border:0;font-size:12.5px;background:transparent;box-shadow:inset 0 0 0 1px var(--glass-b);color:var(--dim)}
+.c-scrub.twin-row .livep i{width:6px;height:6px;border-radius:50%;background:var(--mute)}
+.c-scrub.twin-row .livep.on{background:color-mix(in srgb,var(--batt) 16%,transparent);box-shadow:none;color:var(--batt)}
+.c-scrub.twin-row .livep.on i{background:var(--batt);box-shadow:0 0 6px var(--batt)}
+.twin .landtip.c-fine,#ah48 .landtip{min-height:0;padding:0;background:none;border:0;border-radius:0;font:12px/1.5 Manrope,system-ui,sans-serif;color:var(--mute)}
+.twin .landtip.c-fine b,#ah48 .landtip b{font-family:var(--c-mono)}
+/* Today tiles: an empty sparkline keeps the tile's height */
+.c-tile span.c-spark{height:30px}
+/* the Powerwall disclosure's body */
+#pwBody .pwunits{margin-top:0}
+/* Ahead: twelve hours in one row */
+.c-hours.h12{grid-template-columns:repeat(12,minmax(0,1fr));gap:3px}
+.c-hours.h12 .k,.c-hours.h12 .t{font-size:10px}
+.c-hours.h12 .h{font-size:10.5px}
+.c-hours.h12 .b{max-width:22px;border-radius:6px 6px 3px 3px}
+.c-hours.h12 .c-skel.o{margin-top:0}
+#ah48 .road{margin-top:12px;border-radius:var(--c-r-well)}
+#ah48 .landtip{margin-top:8px;text-align:center}
+#fcAcc .c-badge{vertical-align:1px}
+/* the component sheet in the app's one #sheet: edge to edge at the bottom, the pinned glass footer */
+.sheet.is-c{left:0;right:0;bottom:0;border:0;border-radius:30px 30px 0 0;padding:8px 16px 0;background:var(--c-sheet-bg);
+  box-shadow:inset 0 1px 0 var(--glass-b),0 -20px 60px color-mix(in srgb,var(--bg) 70%,transparent)}
+.sheet.is-c .grab{width:40px;height:5px;border-radius:3px;background:var(--c-fill-2);margin:0 auto 6px}
+.sheet.is-c .c-card{background:color-mix(in srgb,var(--text) 4%,transparent)}
+.sheet.is-c .c-sheet-f{margin-bottom:0}
+.c-sheet-f .c-btn{display:block;min-width:0;text-align:center;line-height:44px;overflow:hidden;text-overflow:ellipsis}
+.sheet.is-c .c-ban:first-child{margin-top:4px}
+/* sheet parts */
+.c-date{position:relative;display:block}
+.c-date input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;border:0;padding:0}
+.c-date.off{cursor:default;opacity:.8}
+.c-choice button:disabled{opacity:.55;cursor:default}
+.c-check[role=button]{cursor:pointer;min-height:44px}
+.c-fpill{min-width:44px;justify-content:center}
+.c-check .c-seg.sm button{min-width:52px}
+.c-tgl.stg .c-tgl-b{box-shadow:inset 0 0 0 2px var(--acc);color:var(--acc)}
+.c-tgl.stg .c-tgl-s{color:var(--acc)}
+.c-swp[role=switch]{cursor:pointer}
+.c-dial svg{-webkit-user-select:none;user-select:none}
+/* calm mode stills the shimmer and the springs, as reduced motion does */
+html[data-calm] .c-skel::after,html[data-calm] .c-ban.red::after,html[data-calm] .c-badge[data-t=live]::before,html[data-calm] .c-tgl.busy .c-tgl-b{animation:none}
+html[data-calm] .c-seg::before,html[data-calm] .c-sw::after,html[data-calm] .c-chev,html[data-calm] .c-tgl-b,html[data-calm] .c-btn,html[data-calm] .c-tab{transition:none}
+@media (prefers-reduced-motion:reduce){.c-tgl.busy .c-tgl-b{animation:none}.c-tgl-b,.c-btn,.c-tab{transition:none}}
+/* end al-app */
