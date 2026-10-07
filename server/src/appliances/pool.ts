@@ -1,5 +1,6 @@
 // Pool pump appliance: what the IntelliFlo is doing, what the current schedule costs, and a season-aware smarter schedule.
 import { q, kv, hourWh } from '../db.js';
+import { patchSettings } from '../settings.js';
 import { readPool, writePoolPlan, writeOwnerPool, configured, type PoolSnapshot } from './screenlogic.js';
 import { noteYouRun, endYouRun, poolChanges } from './poolLearn.js';
 import { localDay, addDays, rfc3339 } from '../tesla/client.js';
@@ -377,10 +378,9 @@ export async function finishClearUpIfDue(siteId: string, settingsAll: Record<str
 
 /* ---------- mockup w frame 7: the schedule editor ---------- */
 export const EDIT_RUNS_MAX = 6;
-/** The owner's Pool Autopilot mode, written where the routes keep it (single-owner kv settings). */
-export async function setPoolAutopilot(mode: 'off' | 'suggest' | 'auto') {
-  const cur = await kv.get<Record<string, any>>('settings:owner') ?? {};
-  await kv.set('settings:owner', { ...cur, pool: { ...(cur.pool ?? {}), autopilot: mode } });
+/** The owner's Pool Autopilot mode, written where the routes keep it (single-owner kv settings; B2-10: atomically, and logged). */
+export async function setPoolAutopilot(mode: 'off' | 'suggest' | 'auto', by = 'autopilot') {
+  await patchSettings(['pool', 'autopilot'], mode, { by });
 }
 /** Programs compared by what they run when: circuit, start and stop (speeds can change from the circuit sheets or a boost). */
 export const programKey = (xs: Array<{ circuitId: number; start: number; stop: number }>, circuits: number[]) =>
@@ -419,7 +419,7 @@ export async function saveSchedule(siteId: string, b: { schedules: EditRun[]; sp
   const schedules = b.schedules.map(x => ({ ...x, rpm: speeds.get(x.circuitId) ?? 0 }));
   await kv.set(`${siteId}:pool:applied`, { at: Date.now(), by: 'you', plan: { schedules }, removed: r.removed, added: r.added, previousSpeeds: snap.pump.circuits.filter(c => managed.includes(c.circuitId)) });
   await kv.set(`${siteId}:pool:last`, null as any); await kv.set(`${siteId}:pool:pending`, null as any);
-  const toSuggest = settings.autopilot === 'auto'; if (toSuggest) await setPoolAutopilot('suggest');
+  const toSuggest = settings.autopilot === 'auto'; if (toSuggest) await setPoolAutopilot('suggest', 'your schedule');
   await logPool(siteId, `You saved the pump schedule (${b.schedules.length} run${b.schedules.length === 1 ? '' : 's'})${toSuggest ? '; Autopilot moved to Suggest' : ''}`, 'you');
   return schedules;
 }

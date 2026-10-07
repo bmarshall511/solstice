@@ -11,6 +11,7 @@
 // (scope check, guards, hourly slot) and every outcome is in `powerwall_log`.
 import express, { type Express, type Request, type Response, type NextFunction } from 'express';
 import { q, one, kv, hourWh } from './db.js';
+import { patchSettings } from './settings.js';
 import { localDay, addDays, rfc3339 } from './tesla/client.js';
 import { currentTariff } from './tariff.js';
 import type { Tariff } from './bills.js';
@@ -207,8 +208,7 @@ export function powerwallRoutes(app: Express) {
     const id = String(req.params.id), mode = String(req.body?.mode ?? '');
     if (!isRule(id)) return res.status(404).json({ error: `no rule ${id.replace(/[^\w-]/g, '')}; rules are ${PW_RULES.join(', ')}` });
     if (!['off', 'suggest', 'auto'].includes(mode)) return res.status(400).json({ error: 'mode must be off, suggest or auto' });
-    const s = await settingsNow(), pw = s.powerwall ?? {};
-    await kv.set('settings:owner', { ...s, powerwall: { ...pw, rules: { ...(pw.rules ?? {}), [id]: mode } } });
+    await patchSettings(['powerwall', 'rules', id], mode, { by: 'you' });   // B2-10: only this rule's mode
     res.json({ ok: true, id, mode });
   }));
   app.post('/api/powerwall/rules/:id/apply', wrap(async (req, res) => {

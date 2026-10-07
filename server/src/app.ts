@@ -56,6 +56,7 @@ import { vacationWatch, heldSummary } from './vacation/watch.js';
 import { tripReport, reportPush, estimateTrip } from './vacation/report.js';
 import { tripPlanDay } from './appliances/autopilot.js';
 import { confidenceMap } from './learn/confidence.js';
+import { patchSettings, changedKeys, PREV_KEY } from './settings.js';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -286,7 +287,7 @@ export function settingsPatchError(b: unknown): string | null {
 app.put('/api/settings', express.json({ limit: '8kb' }), wrap(async (req, res) => {
   const bad = settingsPatchError(req.body); if (bad) return res.status(400).json({ error: bad });
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify(req.body)]);
-  else { const cur = await kv.get<object>('settings:owner') ?? {}; await kv.set('settings:owner:prev', cur); await kv.set('settings:owner', { ...cur, ...req.body }); }   // one level of undo
+  else { const { before } = await patchSettings([], req.body, { by: 'you' }); await kv.set(PREV_KEY, before); }   // B2-10: one atomic merge; one level of undo
   res.json({ ok: true });
 }));
 
@@ -545,7 +546,7 @@ app.post('/api/appliances/pool/suggestion', express.json({ limit: '1kb' }), wrap
   if (action === 'dismiss') await dismissPoolSuggestion(sid, key);
   else {
     const patch = m[1] === 'skim' ? { skimAt: Number(m[2]) } : { turnoverGoal: Number(m[2]) }, bad = m[1] === 'goal' ? goalPatchError(patch) : null; if (bad) return res.status(400).json({ error: bad });
-    await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), pool: { ...(settings.pool ?? {}), ...patch } });
+    await patchSettings(['pool'], patch, { merge: true, by: 'you' });   // B2-10: only the accepted key
   }
   res.json(await poolDetail(sid, await settingsFor(req), await rateFor(sid)));
 }));
@@ -575,7 +576,7 @@ app.post('/api/appliances/pool/goal', express.json({ limit: '1kb' }), wrap(async
   const patch = Object.fromEntries(['turnoverGoal', 'skimHours'].filter(k => k in req.body).map(k => [k, req.body[k]]));
   const cur = (await settingsFor(req)).pool ?? {};
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ pool: { ...cur, ...patch } })]);
-  else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), pool: { ...cur, ...patch } });
+  else await patchSettings(['pool'], patch, { merge: true, by: 'you' });   // B2-10: only the goal's keys
   const sid = site(req);
   res.json(await poolDetail(sid, await settingsFor(req), await rateFor(sid)));
 }));
@@ -583,7 +584,7 @@ app.post('/api/appliances/pool/autopilot', express.json(), wrap(async (req, res)
   const mode = String(req.body?.mode ?? ''); if (!['off', 'suggest', 'auto'].includes(mode)) return res.status(400).json({ error: 'mode must be off, suggest or auto' });
   const cur = (await settingsFor(req)).pool ?? {};
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ pool: { ...cur, autopilot: mode } })]);
-  else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), pool: { ...cur, autopilot: mode } });
+  else await patchSettings(['pool', 'autopilot'], mode, { by: 'you' });   // B2-10: atomic, and logged in settings:changes
   // choosing Auto means "plan over what runs now": the controller's programs become the baseline, so they are not taken for an outside edit
   const snap = mode === 'auto' ? await kv.get<any>(`${site(req)}:pool:last`) : null;
   if (snap?.schedules) await rebaseline(site(req), snap, { ...POOL_DEFAULTS, ...cur }, 'auto');
@@ -632,7 +633,7 @@ app.post('/api/appliances/ac/settings', express.json(), wrap(async (req, res) =>
   const bad = acPatchError(patch, cur); if (bad) return res.status(400).json({ error: bad });   // ac.ts: known keys, 65–85°, lows ≤ highs
   const next = patchedAc(cur, patch);   // mockup ag: a target change stores all four targets and the band they stand for
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ ac: next })]);
-  else await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ac: next });
+  else await patchSettings(['ac'], changedKeys(cur, next), { merge: true, by: 'you' });   // B2-10: only the keys this change touched
   if (patch.presence === 'home' && (await liveTrip(site(req)))?.state === 'active') await finishTrip(site(req), 'you');   // Home during a trip is "I'm home" (mockup ak)
   if (patch.presence) await setPresence(site(req), { state: patch.presence, until: null });   // presence.ts: the switch is the manual mark
   // marking away/home takes effect right away when the plan is approved or Autopilot is Auto
@@ -681,7 +682,7 @@ app.post('/api/appliances/ac/nudge', express.json({ limit: '1kb' }), wrap(async 
   const h = new Date().toLocaleString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hourCycle: 'h23' }), night = +h >= d.settings.nightFrom || +h < d.settings.nightTo;
   const cur = settings.ac ?? {}, patch = night ? { nightF: d.settings.nightF + dir } : { dayF: d.settings.dayF + dir }, bad = acPatchError(patch, cur);
   if (bad) return res.status(400).json({ error: bad });
-  await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ac: patchedAc(cur, patch) });
+  await patchSettings(['ac'], changedKeys(cur, patchedAc(cur, patch)), { merge: true, by: 'you' });   // B2-10
   const now = await settingsFor(req);
   if (d.settings.autopilot === 'auto') { await resumeHold(id); const rec = await kv.get<any>(`${id}:ac:plan`); if (rec) { rec.lastStepHour = null; await kv.set(`${id}:ac:plan`, rec); }
     await acTick(id, now, rate, slope).catch(e => console.warn(`[solstice] tick after nudge: ${e?.message ?? e}`)); }
@@ -696,7 +697,7 @@ app.post('/api/appliances/ac/suggestion', express.json({ limit: '1kb' }), wrap(a
   if (action === 'dismiss') await dismissSuggestion(id, key);
   else if (action === 'accept') {
     const cur = settings.ac ?? {}, patch = suggestionPatch(sg), bad = acPatchError(patch, cur); if (bad) return res.status(400).json({ error: bad });
-    await kv.set('settings:owner', { ...(await kv.get<object>('settings:owner') ?? {}), ac: patchedAc(cur, patch) });
+    await patchSettings(['ac'], changedKeys(cur, patchedAc(cur, patch)), { merge: true, by: 'you' });   // B2-10
     await dismissSuggestion(id, key);   // accepted: don't offer it again
   } else return res.status(400).json({ error: 'action must be accept or dismiss' });
   res.json(await acDetail(id, await settingsFor(req), rate, slope));
