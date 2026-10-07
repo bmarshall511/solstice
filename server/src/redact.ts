@@ -196,7 +196,7 @@ export const GUEST_GET: ReadonlyMap<string, View> = new Map<string, View>([
     correction: { solar: { 'h1-6': true, 'h7-24': true, 'h25-48': true }, home: { 'h1-6': true, 'h7-24': true, 'h25-48': true } } })],   // B2-2: bias factors, no personal data
   ['/api/grid-days', view({ dates: true, solar: true, soc: true })],
   // mockup ai: the Cleaning check card; the $ figure is the owner's (from the bill), never a guest's
-  ['/api/soiling', b => b == null ? null : pick(b, { state: true, lossPct: true, score: true, kwhPerDay: true, ref: { from: true, to: true, y: true, after: true }, now: true, resetOn: true, resetBy: true,
+  ['/api/soiling', b => b == null ? null : pick(b, { state: true, lossPct: true, lossSd: true, score: true, kwhPerDay: true, ref: { from: true, to: true, y: true, after: true }, now: true, resetOn: true, resetBy: true,
     lastRain: { day: true, mm: true, daysAgo: true }, nextRain: { day: true, mm: true }, clearSince: true, points: [{ day: true, y: true }], rains: [{ day: true, mm: true }], at: true })],
   ['/api/overnight', view([{ date: true, kw: true, base: true, ac: true, pump: true, split: true }])],
   ['/api/records', view({ bestSolarDay: { date: true, kwh: true }, biggestUsageDay: { date: true, kwh: true }, lowestImportDay: { date: true, kwh: true },

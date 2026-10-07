@@ -1,7 +1,7 @@
 // Panel cleanliness (approved mockup ai, server/src/soiling.ts): clear days, the clean level after rain or a logged cleaning, the loss,
 // the states and the push. The 8/26/2026 replay uses the real temperature-adjusted clear days from the mockup.
 import { describe, it, expect } from 'vitest';
-import { clearDays, soiling, mergeRain, type SoilWx } from '../../server/src/soiling.js';
+import { clearDays, soiling, mergeRain, yieldSd, type SoilWx } from '../../server/src/soiling.js';
 
 // real (mockup ai): clear days since July and rains of 5 mm or more
 const C: Array<[string, number]> = [['07-03', 8.8], ['07-09', 8.4], ['07-20', 8.3], ['07-23', 8.65], ['07-26', 8.29], ['07-27', 8.37], ['07-28', 8.12], ['08-02', 8.1], ['08-04', 8.25], ['08-08', 8.15],
@@ -12,10 +12,12 @@ const at = (today: string, o: Partial<Parameters<typeof soiling>[0]> = {}) =>
   soiling({ points: pts.filter(p => p.day < today), rains: RAINS, cleanings: [], today, solarRecent: 43.8, rate: null, ...o });
 
 describe('soiling', () => {
-  it('SO-1 the 8/26 replay: 5.5% below the clean level of the 3 clear days after the 7/16 rain, dusty, about 2.5 kWh a day', () => {
+  it('SO-1 the 8/26 replay: 5.5% ± 3.3% below the clean level of the 3 clear days after the 7/16 rain, about 2.5 kWh a day', () => {
     const s = at('2026-08-27');
     expect(s.ref).toEqual({ from: '2026-07-20', to: '2026-07-26', y: 8.3, after: 'rain' });
-    expect([s.now, s.lossPct, s.state, s.score, s.kwhPerDay]).toEqual([7.84, 5.5, 'dusty', 55, 2.55]);
+    // B2-13 (deliberate update, was 'dusty'): these clear days move about 3.3% from one to the next, so 5.5% is inside 3% + one SD
+    // (and 5% + one SD): no longer reported as dust
+    expect([s.now, s.lossPct, s.lossSd, s.state, s.score, s.kwhPerDay]).toEqual([7.84, 5.5, 3.3, 'clean', 55, 2.55]);
     expect(s.lastRain).toEqual({ day: '2026-07-16', mm: 19, daysAgo: 42 });
   });
   it('SO-2 a rain of 5 mm or more resets: the next 3 clear days set the new level; a forecast rain within 5 days is reported', () => {
@@ -40,6 +42,23 @@ describe('soiling', () => {
   });
 });
 
+
+describe('B2-13: the noise band', () => {
+  it('SO-9 the day-to-day SD: robust to the dust step itself, skipping pairs a rain or a cleaning falls between; null under 4 pairs', () => {
+    const p = (ys: number[]) => ys.map((y, i) => ({ day: `2026-09-${String(i + 1).padStart(2, '0')}`, y }));
+    expect(yieldSd(p([8, 8.2, 8, 8.2, 8, 8.2]), [], 8)).toBe(2.6);                        // 1.4826 × 0.2 ÷ √2 ÷ 8 = 2.6%
+    expect(yieldSd(p([8, 8.2, 8, 8.2, 7.2, 7.4, 7.2, 7.4]), [], 8)).toBe(2.6);              // one 1.0 step among 0.2 moves: still 2.6
+    expect(yieldSd(p([8, 9, 8, 9, 8]), ['2026-09-02', '2026-09-03'], 8)).toBeNull();         // two pairs span a reset: 2 left
+    expect(yieldSd(p([8, 8.2, 8]), [], 8)).toBeNull();
+  });
+  it('SO-10 getting dusty and dusty need the loss to clear the threshold plus one SD; the payload carries lossSd', () => {
+    // a reset-free window: 3 clean days at 8.0 ±0.2, a noisy middle, then the latest 3
+    const mk = (now: number) => soiling({ points: [8, 8.2, 8, 8.2, 8, 8.2, now, now, now].map((y, i) => ({ day: `2026-09-0${i + 1}`, y })), rains: [], cleanings: [], today: '2026-09-12', solarRecent: 40, rate: null });
+    expect(mk(7.6)).toMatchObject({ lossPct: 5, lossSd: 2.6, state: 'clean' });              // 5 < 3 + 2.6: inside the noise (it was "dusty")
+    expect(mk(7.4)).toMatchObject({ lossPct: 7.5, state: 'getting' });                       // ≥ 5.6, < 7.6
+    expect(mk(7.3)).toMatchObject({ lossPct: 8.8, state: 'dusty' });                         // ≥ 7.6
+  });
+});
 
 describe('soiling: rain from the archive', () => {
   it('SO-8 past days use the archive where it has them; recent and future days keep the forecast service', () => {
