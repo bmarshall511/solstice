@@ -332,7 +332,10 @@ describe('bills and the AC card', () => {
     expect(JSON.stringify(g)).not.toMatch(/marked away|Away:|mark Home/i);
     expect(g.plan.steps.map((s: any) => s.why)).not.toContain('marked away');
     expect(g.log).toEqual([{ at: expect.any(Number), day: today, text: 'Set 76° (morning, comfort band)' }]);
-    expect(g.state).toEqual({ at: expect.any(Number), name: 'Thermostat', online: true, indoorF: 76, humidity: 45, mode: 'COOL', hvac: 'OFF', coolF: 80, heatF: null });
+    // S-03: the thermostat's own setpoint (80° here, in Eco) never reaches a guest; the as-if-home plan's step for this hour stands in
+    expect(o.state.coolF).toBe(80);
+    expect(g.settings).not.toHaveProperty('awayF');
+    expect(g.state).toEqual({ at: expect.any(Number), name: 'Thermostat', online: true, indoorF: 76, humidity: 45, mode: 'COOL', hvac: 'OFF', coolF: g.currentStep.coolF, heatF: null });
     expect(g.learned).not.toHaveProperty('source');
     // the learning layer replaced the dollar savings (costSavedMonth, gone at the source) with two kWh figures and their
     // confidence tiers: kWh and tiers reach the guest; no money-named key is on the plan at all
