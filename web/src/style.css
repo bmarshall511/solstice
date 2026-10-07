@@ -1782,4 +1782,21 @@ html[data-calm] .c-seg::before,html[data-calm] .c-sw::after,html[data-calm] .c-c
 /* the Planner sheet's sliders: a 44 px track to touch, drawn 6 px high */
 #planner .slider input{height:44px;margin-top:0;background:linear-gradient(rgba(255,255,255,.12),rgba(255,255,255,.12)) center/100% 6px no-repeat;border-radius:0}
 /* end Batch 4 */
+/* Batch 5 · the older small sheets on the component system (Log a test, Pump schedule, Comfort, a circuit, a bill, Sharing):
+   stepper rows, segments, toggle pills and a text/time field, every control at least 44 px */
+.c-stepper>b.off{color:var(--mute)}
+.c-stepper.off{opacity:.55}
+.c-stepper>.c-btn,.c-stepper>.c-badge,.c-stepper>.c-cap,.c-stepper>[data-c]{flex:none}
+.c-stepper>.c-btn.sm{padding:0 12px}
+.c-part[role=button].c-open{margin:0 -10px;padding:4px 10px;border-radius:12px;background:color-mix(in srgb,var(--acc) 12%,transparent)}
+.c-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.c-field{display:flex;flex-direction:column;gap:6px;min-width:0;margin-top:12px;font-size:12px;font-weight:600;color:var(--dim)}
+.c-field small{font-size:12px}
+.c-input{all:unset;-webkit-appearance:none;appearance:none;box-sizing:border-box;display:block;width:100%;min-width:0;min-height:44px;line-height:44px;padding:0 14px;border-radius:var(--c-r-well);
+  background:var(--c-fill);box-shadow:inset 0 0 0 1px var(--glass-b);font:500 14px var(--c-mono);color:var(--text);cursor:text}
+.c-input::placeholder{color:var(--mute)}
+.c-input[type=time]{color-scheme:dark}
+.c-input:focus-visible{outline:2px solid color-mix(in srgb,var(--home) 70%,transparent);outline-offset:2px}
+.c-well .c-btns .c-btn{min-width:0}
+/* end Batch 5 */
 /* end al-app */
