@@ -246,7 +246,9 @@ export function billDetailHtml(r) {
 }
 function openBillDetail(S, r) {
   sheet(billDetailHtml(r));
-  $('sheetBody').querySelector('[data-f="pri"]').onclick = async () => {
+  const rm = $('sheetBody').querySelector('[data-f="pri"]');
+  rm.id = 'billRemove';   // the guest CSS (q-share) still hides it by this id
+  rm.onclick = async () => {
     if (!confirm(`Remove the ${niceDate(r.billDate, { month: 'long', year: 'numeric' })} bill? You can add it again from the PDF.`)) return;
     await api.deleteBill(r.billDate);
     closeSheet();
