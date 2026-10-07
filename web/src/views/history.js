@@ -12,7 +12,7 @@ async function drawDay(S) {
   day ??= localDate();
   const d = await api.day(day), svg = $('hchart'), r0 = 62, rs = 88;
   svg.setAttribute('viewBox', '-165 -165 330 330'); svg.setAttribute('height', 310);
-  $('dayLabel').textContent = day === localDate() ? 'Today' : niceDate(day, { weekday: 'short', month: 'short', day: 'numeric' });
+  $('dayLabel').textContent = (day === localDate() ? 'Today' : niceDate(day, { weekday: 'short', month: 'short', day: 'numeric' })) + ((S.daily ?? []).find(r => r.date === day)?.trip ? ' \u00b7 trip' : '');   // mockup ak: a trip day
   $('dayNext').disabled = day >= localDate();
   const pol = (h, r) => { const a = h / 24 * Math.PI * 2 - Math.PI / 2; return [Math.cos(a) * r, Math.sin(a) * r]; };
   const B = d.buckets, maxKw = Math.max(6, ...B.map(b => Math.max(b.solar, b.home)));

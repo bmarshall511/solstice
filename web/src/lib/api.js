@@ -106,5 +106,15 @@ export const api = {
   pwRules: () => get('powerwall/rules'),
   pwRuleMode: (id, mode) => send('POST', `powerwall/rules/${encodeURIComponent(id)}`, { mode }),
   pwApply: id => send('POST', `powerwall/rules/${encodeURIComponent(id)}/apply`),
+  // mockup ak: Vacation mode (all owner-only)
+  vacation: () => get('vacation'),
+  vacationStart: body => send('POST', 'vacation', body),
+  vacationPatch: body => send('PATCH', 'vacation', body),
+  vacationEnd: () => send('POST', 'vacation/end'),
+  vacationCheck: () => get('vacation/check'),
+  vacationEstimate: (leaveAt, backAt) => get(`vacation/estimate?leaveAt=${Math.round(leaveAt)}${backAt ? `&backAt=${Math.round(backAt)}` : ''}`),
+  vacationTrips: () => get('vacation/trips'),
+  vacationSnooze: () => send('POST', 'vacation/snooze'),
+  vacationAnswer: answer => send('POST', 'vacation/answer', { answer }),
 };
 

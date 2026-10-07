@@ -6,13 +6,15 @@
 //   PATCH /api/vacation                {leaveAt?, backAt?}: change the dates (the leave time only before it starts)
 //   POST /api/vacation/end             end it ("I'm home"), or cancel one that hasn't started
 //   GET  /api/vacation/check           "Before you go": the pool circuits left on, the water, a Clear-up, the thermostat (reads only)
+//   GET  /api/vacation/estimate        ?leaveAt=&backAt=: frame 2's estimate (a day at home, empty, with Vacation mode; what each system saves)
+//   GET  /api/vacation/trips           the past trips with their reports
 //   POST /api/vacation/snooze          "I'm just out": no "Looks like you're away" push for 24 h
 //   POST /api/vacation/answer          {answer: 'allowed' | 'unexpected'} to "Someone set the thermostat"
 // Owner-only: none is in redact.ts GUEST_GET, so the gate answers 401 to a guest (a guest must never learn the house is empty).
 import express, { type Express, type Request, type Response, type NextFunction } from 'express';
-import { kv } from '../db.js';
+import { q, kv } from '../db.js';
 import { localDay } from '../tesla/client.js';
-import { liveTrip, lastEnded, createTrip, updateTrip, endTrip, tripTick, tripPhase, logTrip, patchTripData, parseTripBody, parsePatch, TripConflict, type Trip, type TripEndedBy } from './trip.js';
+import { liveTrip, lastEnded, createTrip, updateTrip, endTrip, tripTick, tripPhase, logTrip, patchTripData, parseTripBody, parsePatch, TripConflict, MAX_TRIP_MS, type Trip, type TripEndedBy } from './trip.js';
 
 export type TripHook = (siteId: string, trip: Trip, now: number) => Promise<unknown>;
 /** Each system's part of a trip's start and end, registered at import (app.ts). Run in registration order; a failure is logged, never thrown. */
@@ -53,7 +55,7 @@ export async function vacationState(siteId: string, now = Date.now()) {
 }
 
 /** Injected by app.ts: the departure check (vacation/pool.ts leftOn, the water and the thermostat), read-only. */
-export const departure: { check: ((siteId: string) => Promise<unknown>) | null } = { check: null };
+export const departure: { check: ((siteId: string) => Promise<unknown>) | null; estimate: ((siteId: string, leaveAt: number, backAt: number | null) => Promise<unknown>) | null } = { check: null, estimate: null };
 
 const wrap = (fn: (req: Request, res: Response) => Promise<unknown>) => (req: Request, res: Response, next: NextFunction) => fn(req, res).catch(next);
 /** Mounted by app.ts after requireSite (owner-only through the gate). */
@@ -75,6 +77,20 @@ export function vacationRoutes(app: Express) {
     if ('error' in v) return res.status(400).json({ error: v.error });
     await updateTrip(t.id, v, now);
     res.json(await vacationState(req.siteId!));
+  }));
+  /** Frame 2's estimate for these dates (vacation/report.ts estimateTrip): ?leaveAt=&backAt= (epoch ms; backAt optional). */
+  app.get('/api/vacation/estimate', wrap(async (req, res) => {
+    const now = Date.now(), leave = Number(req.query.leaveAt ?? now), back = req.query.backAt == null || req.query.backAt === '' ? null : Number(req.query.backAt);
+    if (!Number.isFinite(leave) || (back != null && !Number.isFinite(back))) return res.status(400).json({ error: 'leaveAt and backAt are epoch ms' });
+    if (back != null && back <= Math.max(leave, now)) return res.status(400).json({ error: 'backAt must be after leaveAt' });
+    if (back != null && back - leave > MAX_TRIP_MS) return res.status(400).json({ error: 'a trip is at most 60 days' });
+    res.json(departure.estimate ? await departure.estimate(req.siteId!, leave, back) : null);
+  }));
+  /** The past trips with their reports (Insights › Home), newest first. */
+  app.get('/api/vacation/trips', wrap(async (req, res) => {
+    const rows = await q<{ id: number; started_at: string; ended_at: string; back_at: string | null; report: unknown }>(`SELECT id, started_at::text, ended_at::text, back_at::text, data->'report' report FROM trips
+      WHERE site_id = $1 AND state = 'ended' ORDER BY ended_at DESC LIMIT 12`, [req.siteId]);
+    res.json(rows.map(r => ({ id: r.id, startedAt: Number(r.started_at), endedAt: Number(r.ended_at), backAt: r.back_at == null ? null : Number(r.back_at), report: r.report ?? null })));
   }));
   /** "I'm just out" on the "Looks like you're away" push: no more of those for 24 h. */
   app.post('/api/vacation/snooze', wrap(async (req, res) => { await kv.set(`${req.siteId}:vacation:snooze`, Date.now() + 864e5); res.json({ ok: true }); }));

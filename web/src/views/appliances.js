@@ -1,5 +1,6 @@
 import { $, money, money2, niceDate, localHour } from '../lib/util.js';
 import { api } from '../lib/api.js';
+import { poolBackLabel } from '../lib/vacation.js';
 import { every, stop } from '../lib/poll.js';
 import { createPoolTwin } from '../scenes/pooltwin.js';
 import { veil, nameStart, esc } from '../lib/frost.js';
@@ -246,12 +247,21 @@ export function openClearUp(S) {   // also offered after a hazy test (water.js, 
   $('pcGo').onclick = () => { $('phone').classList.remove('open'); clearUpSend(S, { action: 'start', days, rpm }); };
   draw(); $('phone').classList.add('open');
 }
+/** Mockup ak frame 7: the banner on the planner while a trip's pool plan is on (Pool Autopilot plans trip days at the trip goal). */
+function tripBanner(S) {
+  const v = S.vac, t = v?.trip, ap = S.pool?.autopilot; if (!t || !ap?.week?.some(w => w.trip)) return '';
+  const why = ap.tomorrow?.why?.[0] ?? '', waits = /^Vacation: the trip plan waits/.test(why), goal = /^Vacation: ([\d.]+ turnovers?)/.exec(why)?.[1], p = ap.tomorrow?.plan;
+  const until = t.backAt ? poolBackLabel(t.backAt) : null;
+  if (waits) return `<div class="pl-clear vtrip"><div class="hh"><i></i><b>Trip plan waits</b><em>${until ? `until ${esc(until)}` : ''}</em></div><p>${esc(why.replace(/^Vacation: /, '').replace(/^the trip plan waits/, 'The trip plan waits'))}. The normal plan runs until a clear test.</p></div>`;
+  return `<div class="pl-clear vtrip"><div class="hh"><i></i><b>Trip plan · ${esc(goal ?? 'trip goal')} a day</b><em>${until ? `until ${esc(until)}` : 'until you’re back'}</em></div>
+    <p>${p ? `${p.hours} h at ${p.rpm.toLocaleString()} RPM. ` : ''}Your goal of ${S.pool.settings?.turnoverGoal ?? 3} comes back the evening before you do.</p></div>`;
+}
 /** The banner on the planner while a Clear-up runs (and its badge). */
 function drawClearBanner(S) {
   const cu = S.pool.clearUp, box = $('plClear'); if (!box) return;
   $('plMode').className = cu ? 'badge cu' : 'badge g';
   if (cu) $('plMode').textContent = 'Clear-up';
-  if (!cu) { box.innerHTML = ''; return; }
+  if (!cu) { box.innerHTML = tripBanner(S); return; }
   const f = Math.min(1, Math.max(0, (Date.now() - cu.startedAt) / (cu.until - cu.startedAt)));
   box.innerHTML = `<div class="pl-clear"><div class="hh"><i></i><b>Clear-up \u00b7 day ${cu.day} of ${cu.days}</b><em>ends ${endsLabel(cu.until)}</em></div>
     <p>Pool on all day at ${cu.rpm.toLocaleString()} RPM. The planner and Autopilot leave the schedule alone until it ends, then the next evening plan takes over. Brush the walls and backwash the DE filter when the pressure climbs.</p>
