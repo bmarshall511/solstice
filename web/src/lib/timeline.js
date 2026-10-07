@@ -29,7 +29,7 @@ function fromSource(src, rows) {
   const out = [];
   for (const r of rows ?? []) {
     const at = Number.isFinite(r.at) ? r.at : r.day ? Date.parse(`${r.day}T12:00:00Z`) : null; if (at == null) continue;
-    const day = r.day ?? dayOf(at);
+    const day = Number.isFinite(r.at) ? dayOf(r.at) : r.day;   // the instant decides the day (a row's own `day` can be its plan's date)
     const e = src === 'pw' ? { ...pwEntry(r) } : { text: String(r.text ?? ''), sub: SOURCES[src] + (r.delta && !['you', 'resumed'].includes(r.delta) ? ` · ${r.delta}` : ''), kind: src === 'learn' && logKind(r.text, r.delta) === 'you' ? 'info' : logKind(r.text, r.delta) };
     out.push({ at, day, src, timed: Number.isFinite(r.at), ...e, n: 1, from: day, to: day });
   }

@@ -11,6 +11,7 @@ import { renderLive, renderStatic, renderWeather, freshness, initAhead, initPwDi
 import { initNowTop, redrawNowTop } from './views/nowhub.js';
 import { keyActivate, wireDisclosures, segSet } from './views/csheet.js';
 import { route, fromInsights, fromQuery } from './lib/sysui.js';
+import { openLog } from './views/timeline.js';
 import { showSeg, segKeys, drawSysHeader, drawHomeLive, drawRingLegend, drawSolarLive, drawPwLive } from './views/systems.js';
 import { initHistory, drawHistoryChart, landscapeData, drawSocHeat, drawRecords, drawOutages, drawBills, openBillSheet } from './views/history.js';
 import { initPanels, drawPerformance, roofHud } from './views/panels.js';
@@ -200,6 +201,7 @@ document.querySelectorAll('.c-tab[data-v]').forEach(t => t.onclick = () => go(t.
 $('sysSeg').onclick = e => { const b = e.target.closest('[data-seg]'); if (b) setSeg(b.dataset.seg); };
 segKeys($('sysSeg'), setSeg);
 /** Links out of Now's sheets: a Systems segment, scrolled to a card. The old Insights form (panel, anchor, appliance) still works. */
+S.openLog = opts => openLog(S, opts);   // mockup al frame 18: every Autopilot's Log row
 S.nav = { go, sys: (seg, anchor) => go('v-sys', anchor, seg), insights: (panel, anchor, appl) => { const r = fromInsights(panel, anchor, appl); go('v-sys', r.anchor, r.seg); } };
 S.redrawNow = () => safe(redrawNowTop)(S);
 document.addEventListener('click', e => { const el = e.target.closest('[data-go]'); if (el) go(el.dataset.go, el.dataset.land ? 'landSect' : el.dataset.bills ? 'billSect' : null, el.dataset.p); });
