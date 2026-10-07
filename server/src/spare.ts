@@ -1,6 +1,7 @@
 // Spare solar (mockup ad): solar is spare only when the Powerwalls are nearly full and power is going out to PEC. Anything else is
 // the Powerwalls charging for the evening, which is not free. Used by the AC pre-cool test (appliances/ac.ts), the pool speed-up below
 // (the 5-minute watch, Auto only) and the Insights › Home card (GET /api/spare). Reads the live readings the watch already takes.
+import { awayNow } from './vacation/pool.js';
 import { q, one, kv } from './db.js';
 import { localDay, addDays } from './tesla/client.js';
 import { writeOwnerPool, configured, type PoolSnapshot } from './appliances/screenlogic.js';
@@ -59,9 +60,11 @@ export async function spareWatch(siteId: string, now = Date.now(), write: typeof
   const st = await kv.get<SpeedUp | null>(key(siteId)), live = await spareNow(siteId, now), snap = await kv.get<PoolSnapshot | null>(`${siteId}:pool:last`);
   const boostOn = !!snap?.circuits.find(c => c.id === s.boostCircuit)?.on, can = write !== writeOwnerPool || configured();
   const turn = async (on: boolean) => { const after = await write(on ? { kind: 'circuit', id: s.boostCircuit, on: true, minutes: SPEEDUP_RUN_MIN } : { kind: 'circuit', id: s.boostCircuit, on: false }); await recordReading(siteId, after); };
+  // Vacation mode: no speed-ups while a trip is under way (the spare goes to PEC; one under way ends at its next check)
+  const away = !!(await awayNow(siteId, now));
   // a speed-up of ours is under way (until > 0): renew it near the end of its timer while the spare lasts, end it when the spare goes
   if (st && st.until > 0) {
-    if (isSpare(live, SPARE_KEEP_W) && s.autopilot === 'auto' && !(await activeClearUp(siteId, now))) {
+    if (isSpare(live, SPARE_KEEP_W) && s.autopilot === 'auto' && !away && !(await activeClearUp(siteId, now))) {
       if (st.until - now > 10 * 60_000 || !can) return { running: true };
       await turn(true); await kv.set(key(siteId), { ...st, until: now + SPEEDUP_RUN_MIN * 60_000 });
       return { renewed: true };
@@ -74,6 +77,7 @@ export async function spareWatch(siteId: string, now = Date.now(), write: typeof
     return { ended: true, kwh };
   }
   if (!isSpare(live)) return { spare: false };
+  if (away) return { spare: true, skipped: 'vacation' };
   if (s.autopilot !== 'auto') {   // Suggest notes it once a day; Off does nothing
     if (s.autopilot !== 'suggest' || await kv.get<string>(`${siteId}:pool:spareNoted`) === localDay(new Date(now))) return { spare: true, mode: s.autopilot };
     await kv.set(`${siteId}:pool:spareNoted`, localDay(new Date(now)));

@@ -17,6 +17,7 @@ const H = vi.hoisted(() => {
       store.set(key, JSON.parse(String(params[1]))); return [{ key }];
     }
     if (/^INSERT INTO pool_readings/.test(text)) { readings.push(params); return []; }
+    if (/FROM trips WHERE site_id = \$1 AND state IN \('planned', 'active'\)/.test(text)) return [];   // Vacation mode: no trip (an outside run asks)
     throw new Error(`unexpected query in sampling test: ${text.slice(0, 60)}`);
   };
   const kv = {

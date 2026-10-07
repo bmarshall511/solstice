@@ -332,6 +332,22 @@ describe('storm reserve: escalation, the automatic way back, heat (docs/audit-20
   });
 });
 
+describe('Vacation mode (mockup ak)', () => {
+  it('PW-12 during a trip the storm rule raises without a tap (with a push) and still reverts by itself; the reserve rule rests', async () => {
+    await setScope(WITH); await db.q('DELETE FROM trips');
+    await db.q(`INSERT INTO trips (site_id, leave_at, back_at, state, started_at) VALUES ('s', $1, $2, 'active', $1)`, [Date.now() - 3600e3, Date.now() + 3 * 864e5]);
+    try {
+      await storm([{ event: 'Tornado Warning', severity: 'Extreme' }]);
+      expect(await PW.evaluatePowerwall('s', {}, ['storm', 'reserve'])).toMatchObject({ storm: { mode: 'suggest', action: 'set', value: 100, result: 'sent', trip: true }, reserve: { mode: 'suggest', skipped: 'vacation' } });
+      expect(tesla.at(-1)).toMatchObject({ body: { backup_reserve_percent: 100 } });
+      expect(await db.q(`SELECT kind, title, body FROM alerts WHERE kind = 'storm'`)).toEqual([{ kind: 'storm', title: 'Storm warning · reserve raised to 100%', body: 'Your trip rule raised it without waiting. It goes back to 20% when the warning ends.' }]);
+      expect(await (await call('/api/powerwall/rules')).json()).toMatchObject({ trip: { backAt: expect.any(Number) } });
+      await db.kv.set('s:pw:last:backup', { at: Date.now() - PW_CHANGE_INTERVAL_MS - 1000 }); await storm([]);
+      expect(await PW.evaluatePowerwall('s', {}, ['storm'])).toMatchObject({ storm: { action: 'set', value: 20, autoRevert: true } });
+    } finally { await db.q('DELETE FROM trips'); }
+  });
+});
+
 describe('the nightly watchdog (5-minute cron)', () => {
   it('WD-1 quiet while the nightly run is recent; one alert a day once it is more than 26 hours old', async () => {
     await db.kv.set('ercot', { at: Date.now(), data: { condition: 'normal', title: 'Normal', note: null, eea: 0, demandMw: 1, capacityMw: 2, at: 'x' } });
