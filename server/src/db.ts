@@ -35,6 +35,15 @@ export const one = async <T extends Row = Row>(text: string, params: unknown[] =
 export const kv = {
   async get<T>(key: string): Promise<T | undefined> { return (await one('SELECT value FROM kv WHERE key = $1', [key]))?.value as T | undefined; },
   async set(key: string, value: unknown) { await q('INSERT INTO kv (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = excluded.value', [key, JSON.stringify(value)]); },
+  /**
+   * Single-flight claim (S-07): true for exactly one caller while `key` holds no claim newer than `minAgeMs`, and that caller's
+   * claim ({at: now}) is stored; false for everyone else, who should serve the stored value instead of calling the device or Tesla.
+   * One upsert, so concurrent callers are serialised by the row lock (Neon and PGlite alike): N stale requests, one upstream call.
+   */
+  async claim(key: string, minAgeMs: number, now = Date.now()): Promise<boolean> {
+    return !!(await one(`INSERT INTO kv (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = excluded.value
+      WHERE COALESCE((kv.value->>'at')::bigint, 0) <= $3 RETURNING key`, [key, JSON.stringify({ at: now }), now - minAgeMs]));
+  },
 };
 
 const SCHEMA = [

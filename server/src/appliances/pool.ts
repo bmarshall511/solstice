@@ -10,6 +10,7 @@ import { GuardRefusal, type PoolGuardContext, type PoolOwnerCommand } from './gu
 import { usd } from '../tariff.js';
 import { confidenceFor } from '../learn/confidence.js';
 import { filterForecast } from './poolFilter.js';
+import { PRESENCE_FIXED } from './presence.js';
 
 export type PoolSettings = { gallons: number; spaGallons: number; designGpm: number; filterRpm: number; boostRpm: number; poolCircuit: number; boostCircuit: number; featureCircuits: number[]; autopilot: Mode; uv: boolean;
   heaterBtu: number; propaneUsdPerGal: number; loads: Record<string, number>; turnoverGoal: number; skimHours: number; skimAt: number | null };
@@ -245,10 +246,19 @@ export async function poolKwhBetween(siteId: string, spans: DaySpan[], settingsA
 }
 
 /* ---------- the appliance ---------- */
-export async function poolDetail(siteId: string, settingsAll: Record<string, any>, rate: number | null, opts: { fresh?: boolean; act?: boolean } = {}) {
+/** How long a stored controller snapshot serves a read before ScreenLogic is asked again (one ask per window: S-07's single flight). */
+export const POOL_READ_MS = 60_000;
+/**
+ * The Pool card. `fresh` (the crons, apply, the departure check, ?fresh=1) always reads the controller. Otherwise it is read only when
+ * the stored snapshot is over a minute old AND this caller wins the `<site>:pool:readClaim` single flight, so N concurrent stale
+ * requests open one ScreenLogic connection and the rest serve the stored snapshot. `readOnly` (a guest, or the owner previewing as
+ * one; S-07) never contacts the controller.
+ */
+export async function poolDetail(siteId: string, settingsAll: Record<string, any>, rate: number | null, opts: { fresh?: boolean; act?: boolean; readOnly?: boolean } = {}) {
   const settings: PoolSettings = { ...DEFAULTS, ...(settingsAll.pool ?? {}) };
   let snap = await kv.get<PoolSnapshot>(`${siteId}:pool:last`) ?? null, error: string | null = null;
-  if (configured() && (opts.fresh || !snap || Date.now() - snap.at > 60_000)) {
+  const due = !opts.readOnly && configured() && (opts.fresh || !snap || Date.now() - snap.at > POOL_READ_MS);
+  if (due && (opts.fresh || await kv.claim(`${siteId}:pool:readClaim`, POOL_READ_MS))) {
     try { snap = await readPool(); await recordReading(siteId, snap); } catch (e: any) { error = e.message; }
   }
   const points = await measuredPoints(siteId);   // once per poolDetail: the power model and the card's measured points
@@ -504,7 +514,8 @@ export const poolAppliance: Appliance = {
   id: 'pool', name: 'Pool pump', source: 'Pentair ScreenLogic',
   available: () => configured(),
   summary: async (siteId, settings, rate): Promise<ApplianceSummary> => {
-    const d = await poolDetail(siteId, settings, rate);
+    // a guest's list (app.ts passes presenceHidden settings, which carry PRESENCE_FIXED for a guest view) never reads the controller
+    const d = await poolDetail(siteId, settings, rate, { readOnly: !!settings[PRESENCE_FIXED as any] });
     return { id: 'pool', name: 'Pool pump', status: d.linked ? 'linked' : 'estimated', watts: d.live?.watts ?? null, kwhPerDay: d.current.kwhPerDay, savesPerMonth: d.current.costPerMonth != null && d.plan.costPerMonth != null ? Math.max(0, d.current.costPerMonth - d.plan.costPerMonth) : null };
   },
 };

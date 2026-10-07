@@ -384,14 +384,23 @@ export function fcInfo(fc: { stale: boolean; ageMs: number | null; unavailable?:
     : fc.stale ? `Forecast is ${ageH} h old (Open-Meteo unreachable)` : null;
   return { stale: fc.stale, ageH, unavailable: !!fc.unavailable, note };
 }
-export async function acDetail(siteId: string, settingsAll: Record<string, any>, rate: number | null, slope: number, opts: { fresh?: boolean } = {}) {
+/** How long a stored thermostat reading serves a read before Nest is asked again (one ask per window: S-07's single flight). */
+export const NEST_READ_MS = 60_000;
+/**
+ * The AC card. `fresh` (the crons through acTick, owner commands, ?fresh=1) always reads Nest. Otherwise Nest is read only when the
+ * stored reading is over a minute old AND this caller wins the `nest:readClaim` single flight, so N concurrent stale requests make one
+ * SDM call and the rest serve the stored reading (SDM allows about 5 queries a minute). `readOnly` (a guest, or the owner previewing
+ * as one; S-07/S-10) never contacts Nest and writes no hold, hold history or AC log line: it serves the stored state and hold as they are.
+ */
+export async function acDetail(siteId: string, settingsAll: Record<string, any>, rate: number | null, slope: number, opts: { fresh?: boolean; readOnly?: boolean } = {}) {
   const settings = acSettingsOf(settingsAll);   // mockup ag: with the targets
   const presence = await presenceFor(siteId, settingsAll);   // presence.ts: manual "Away until", then Nest Eco, then home
   settings.presence = presence.state;
   const configured = nestConfigured(), linked = configured && await nestLinked();
   let st = await kv.get<NestState>('nest:last') ?? null, error: string | null = null;
   const prev = st; let fresh = false;
-  if (linked && (opts.fresh || !st || Date.now() - st.at > 60_000)) { try { st = await readNest(); fresh = true; await recordNest(siteId, st); } catch (e: any) { error = e.message; } }
+  const due = !opts.readOnly && linked && (opts.fresh || !st || Date.now() - st.at > NEST_READ_MS);
+  if (due && (opts.fresh || await kv.claim('nest:readClaim', NEST_READ_MS))) { try { st = await readNest(); fresh = true; await recordNest(siteId, st); } catch (e: any) { error = e.message; } }
   const learned = await learnAcKw(siteId), rt = await runtimeToday(siteId);
   // code review C-04: Open-Meteo down → the last forecast up to 12 h old (stale); with none, a neutral day (high 90, sun 5), and
   // acTick sends no plan step, while Nest sampling, holds, Eco and Vacation mode carry on

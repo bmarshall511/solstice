@@ -7,7 +7,7 @@ vi.mock(import('../../server/src/db.js'), () => {
   const pure = (what: string) => () => { throw new Error(`db in pure test (${what})`); };
   return {
     q: vi.fn(pure('q')), one: vi.fn(pure('one')), migrate: vi.fn(pure('migrate')),
-    kv: { get: vi.fn(pure('kv.get')), set: vi.fn(pure('kv.set')) },
+    kv: { get: vi.fn(pure('kv.get')), set: vi.fn(pure('kv.set')), claim: vi.fn(pure('kv.claim')) },
   };
 });
 

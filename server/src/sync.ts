@@ -34,10 +34,15 @@ export async function siteAccount(siteId: string) {
 export const clearError = (siteId: string, key: string) =>
   q(`UPDATE kv SET value = 'null'::jsonb WHERE key = $1 AND value <> 'null'::jsonb`, [`${siteId}:error:${key}`]);
 
-/** Latest live_status, fetched from Tesla only when the stored one is older than ~25 s. */
-export async function refreshLive(siteId: string, maxAgeMs = config.liveMaxAgeMs) {
+/**
+ * Latest live_status, fetched from Tesla only when the stored one is older than ~25 s. With `single` (the app's GET /api/now; S-07)
+ * the caller must also win the `<site>:live:claim` single flight for that window, so N concurrent stale requests make one Tesla
+ * call and the rest return false (they serve the stored reading). The crons and the sync call it without `single`, as before.
+ */
+export async function refreshLive(siteId: string, maxAgeMs = config.liveMaxAgeMs, o: { single?: boolean } = {}) {
   const last = await one<{ ts: string }>('SELECT ts FROM readings WHERE site_id = $1 ORDER BY ts DESC LIMIT 1', [siteId]);
   if (last && Date.now() - Number(last.ts) < maxAgeMs) return false;
+  if (o.single && !(await kv.claim(`${siteId}:live:claim`, maxAgeMs))) return false;
   const s = await teslaFor((await siteAccount(siteId)).tesla_account_id).liveStatus(siteId);
   const ts = Date.parse(s.timestamp) || Date.now(), nums = [s.solar_power, s.battery_power, s.grid_power, s.load_power, s.percentage_charged];
   // a payload with no grid status and none of the power/charge fields (seen 2026-10-07 08:25) read as "grid down at 0%": not stored, kept for Data health
