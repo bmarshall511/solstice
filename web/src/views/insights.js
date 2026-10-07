@@ -103,7 +103,7 @@ export function openPlanner(S) {
 }
 
 /* ---------- outage readiness: the first card on Home, above Heat & your AC (views/outage.js, mockup n-outage) ---------- */
-export const initOutage = S => mountOutageCard(S, $('sp-powerwall'));
+export const initOutage = S => mountOutageCard(S, $('sysOutageSlot'));
 
 /* ---------- Heat & your AC (frame 9): every 80°F+ day as a dot, the fitted trend as a gradient line with its direct label ---------- */
 export function drawAC(S) {
@@ -148,12 +148,16 @@ export function initSpare(S, every) {
 const MON = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'], MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 function drawSpare(d) {
   const top = Math.max(1, ...d.months.map(m => m.days));
-  $('spDays').textContent = d.days; $('spSub').textContent = `days with spare solar · ${d.exportKwh.toLocaleString()} kWh sent to PEC`;
-  $('spBars').innerHTML = d.months.map(m => `<div><em>${m.days || ''}</em><i class="${m.days ? '' : 'z'}" style="height:${m.days / top * 60}px"></i><small>${MON[+m.month.slice(5) - 1]}</small></div>`).join('');
+  $('spDays').textContent = d.days; $('spSub').innerHTML = `days in the<br>last 12 months · ${d.exportKwh.toLocaleString()} kWh sent to PEC`;
+  // mockup al frame 11: the shared bar chart, gradient bars with their values on top and the month under each
+  const bw = 329 / Math.max(1, d.months.length);
+  $('spBars').innerHTML = `<defs><linearGradient id="spg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--batt)"/><stop offset="1" style="stop-color:var(--batt);stop-opacity:.25"/></linearGradient></defs>`
+    + d.months.map((m, i) => { const x = i * bw + bw / 2, h = m.days ? Math.max(4, m.days / top * 78) : 2;
+      return `<rect x="${(x - 9).toFixed(1)}" y="${(98 - h).toFixed(1)}" width="18" height="${h.toFixed(1)}" rx="5" ${m.days ? 'fill="url(#spg)"' : 'style="fill:var(--c-fill-2)"'}/>${m.days ? `<text class="v" x="${x.toFixed(1)}" y="${(92 - h).toFixed(1)}" text-anchor="middle">${m.days}</text>` : ''}<text x="${x.toFixed(1)}" y="112" text-anchor="middle">${MON[+m.month.slice(5) - 1]}</text>`; }).join('');
   const best = [...d.months].filter(m => m.days).sort((a, b) => b.days - a.days).slice(0, 2).map(m => MONTH[+m.month.slice(5) - 1]);
   const n = d.now, h = localHour(), day = h >= 8 && h < 18;
-  $('spNow').innerHTML = n?.spare ? `<i class="on"></i><span><b>Spare now.</b> Powerwalls ${n.soc}%, ${(n.exportW / 1000).toFixed(1)} kW going to PEC.</span>`
-    : `<i></i><span><b>None now.</b>${n ? ` Powerwalls ${n.soc}%${day && n.surplusW <= 0 ? ', and the house is using all the solar' : ''}.` : ''}${best.length ? ` Spare solar shows up on mild sunny days, mostly ${best.join(' and ')}.` : ''}</span>`;
+  $('spNow').innerHTML = n?.spare ? `<b style="color:var(--batt)">Spare now.</b> Powerwalls ${n.soc}%, ${(n.exportW / 1000).toFixed(1)} kW going to PEC.`
+    : `<b>None now.</b>${n ? ` Powerwalls ${n.soc}%${day && n.surplusW <= 0 ? ', and the house is using all the solar' : ''}.` : ''}${best.length ? ` Spare solar shows up on mild sunny days, mostly ${best.join(' and ')}.` : ''}`;
 }
 /* ---------- mockup af: Powerwall capacity (owner only; recomputed nightly) ---------- */
 let bcTimer = null;
@@ -166,14 +170,15 @@ export function initCapacity(S, every) {
 function drawCapacity(S, c) {
   const site = S.now?.site ?? {}, name = c?.nameplateKwh || site.capacityKwh || 27;
   $('bcName').textContent = `${name} kWh`;
+  const tag = t => { $('bcTag').innerHTML = cBadge(t); };
   if (!c?.measuredKwh) {
-    $('bcTag').textContent = 'learning'; $('bcKwh').textContent = '—'; $('bcFill').style.width = '0';
+    tag('learning'); $('bcKwh').textContent = '—'; $('bcFill').style.width = '0';
     $('bcSub').textContent = `${c?.count ?? 0} of 5 discharges measured in the last 90 days`;
     $('bcTxt').textContent = 'Measured from evening discharges of 2 h or more that use 25% of the charge or more. Until there are 5 in 90 days, the estimates use the nameplate × 95%.';
   } else {
     const pct = Math.round(c.measuredKwh / name * 100);
-    $('bcTag').textContent = 'measured'; $('bcKwh').textContent = c.measuredKwh.toFixed(1); $('bcFill').style.width = `${Math.min(100, c.measuredKwh / name * 100)}%`;
-    $('bcSub').textContent = `kWh a full charge delivers \u00b7 ${pct}% of the ${name} kWh nameplate`;
+    tag('measured'); $('bcKwh').textContent = c.measuredKwh.toFixed(1); $('bcFill').style.width = `${Math.min(100, c.measuredKwh / name * 100)}%`;
+    $('bcSub').innerHTML = `of ${name} kWh · ${pct}%<br>what a full charge delivers`;
     const since = c.since ? new Date(`${c.since}T12:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '', [lo, hi] = c.range ?? [];
     const inst = site.installed ? new Date(site.installed).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : null, n = site.batteries?.length;
     $('bcTxt').textContent = `From ${c.countAll} evening discharges since ${since} (each 2 h or longer, 25% of charge or more); the figure uses the last 90 days (${c.count}). `

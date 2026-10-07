@@ -354,19 +354,38 @@
 
         <!-- Systems › Powerwall (frame 11) -->
         <div class="sys-page" id="sp-powerwall" role="tabpanel" aria-label="Powerwall" hidden>
-          <div class="card" id="spCard" data-owner hidden>
-            <div class="h"><b>Spare solar</b><span>last 12 months</span></div>
-            <div class="sp-big"><b id="spDays">—</b><span id="spSub"></span></div>
-            <div class="sp-bars" id="spBars"></div>
-            <div class="sp-now" id="spNow"></div>
+          <div class="c-card flush" id="pwLive">
+            <div class="c-sys static c-acc-batt" id="pwSys"><span class="c-skel" style="width:40px;height:40px;border-radius:12px"></span><div><div class="c-skel" style="width:60%;height:14px"></div><div class="c-skel" style="width:85%;height:10px;margin-top:8px"></div><div class="c-skel r" style="height:6px;margin-top:10px"></div></div><span></span></div>
+            <div class="sys-scene">
+              <div class="c-hero" style="margin-top:4px"><b id="pwHero"><span class="c-skel skel-in" style="width:64px;height:36px"></span></b><span id="pwHeroL"></span></div>
+              <div class="c-units" id="pwUnitBars"></div>
+              <div class="c-kv" style="margin-top:10px" id="pwKv"></div>
+              <p class="c-fine" id="pwSysModel"></p>
+            </div>
           </div>
-          <div class="card" id="bcCard" data-owner hidden>
-            <div class="h"><b>Powerwall capacity</b><span id="bcTag">measured</span></div>
-            <div class="bc-big"><b id="bcKwh">—</b><span id="bcSub"></span></div>
-            <div class="bc-meter"><i id="bcFill"></i><s style="left:70%"></s></div>
-            <div class="bc-lab"><span>0</span><em>70% warranty floor</em><span id="bcName">27 kWh</span></div>
+          <div class="c-tiles" id="pwTiles">
+            <div class="c-tile c-acc-batt"><div class="c-skel" style="width:70%;height:12px"></div><div class="c-skel" style="width:55%;height:30px;margin-top:10px"></div><div class="c-skel" style="height:30px;margin:10px -14px 0;border-radius:0"></div></div>
+            <div class="c-tile c-acc-warn"><div class="c-skel" style="width:70%;height:12px"></div><div class="c-skel" style="width:55%;height:30px;margin-top:10px"></div><div class="c-skel" style="height:30px;margin:10px -14px 0;border-radius:0"></div></div>
+          </div>
+          <div class="c-card flush" id="sysRules" data-owner>
+            <div class="c-head" style="padding:12px 16px 2px"><h5>Rules</h5><span class="c-fig" id="pwrFig">—</span></div>
+            <div id="pwrRows"><div class="c-sys static"><span class="c-skel" style="width:32px;height:32px;border-radius:10px"></span><div><div class="c-skel" style="width:60%;height:14px"></div><div class="c-skel" style="width:85%;height:10px;margin-top:8px"></div></div><span></span></div></div>
+            <div id="pwrScope"></div>
+          </div>
+          <div id="sysOutageSlot"></div>
+          <div class="c-card c-acc-batt" id="bcCard" data-owner hidden>
+            <div class="c-head"><h5>Capacity</h5><span id="bcTag" style="margin-left:auto"></span></div>
+            <div class="c-hero"><b id="bcKwh">—</b><span id="bcSub"></span></div>
+            <div class="c-meter"><i id="bcFill" style="width:0"></i><s style="left:70%"></s></div>
+            <div class="c-meter-lab"><span style="left:0">0</span><span style="left:70%">70% floor</span><span style="left:100%" id="bcName">— kWh</span></div>
             <div class="bc-months" id="bcMonths"></div>
-            <p class="fine" id="bcTxt" style="margin-top:10px"></p>
+            <p class="c-fine" id="bcTxt"></p>
+          </div>
+          <div class="c-card" id="spCard" data-owner hidden>
+            <div class="c-head"><h5>Spare solar</h5><span class="c-fig">last 12 months</span></div>
+            <div class="c-hero"><b id="spDays">—</b><span id="spSub"></span></div>
+            <svg class="c-chart" id="spBars" viewBox="0 0 329 116" aria-label="Days with spare solar, each month"></svg>
+            <p class="c-fine" id="spNow"></p>
           </div>
         </div>
 

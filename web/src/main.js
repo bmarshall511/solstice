@@ -11,7 +11,7 @@ import { renderLive, renderStatic, renderWeather, freshness, initAhead, initPwDi
 import { initNowTop, redrawNowTop } from './views/nowhub.js';
 import { keyActivate, wireDisclosures, segSet } from './views/csheet.js';
 import { route, fromInsights, fromQuery } from './lib/sysui.js';
-import { showSeg, segKeys, drawSysHeader, drawHomeLive, drawRingLegend, drawSolarLive } from './views/systems.js';
+import { showSeg, segKeys, drawSysHeader, drawHomeLive, drawRingLegend, drawSolarLive, drawPwLive } from './views/systems.js';
 import { initHistory, drawHistoryChart, landscapeData, drawSocHeat, drawRecords, drawOutages, drawBills, openBillSheet } from './views/history.js';
 import { initPanels, drawPerformance, roofHud } from './views/panels.js';
 import { drawAlerts, openPlanner, drawAC, drawOvernight, drawHealth, initOutage, initBreakdown, initSpare, initCapacity } from './views/insights.js';
@@ -193,7 +193,7 @@ function go(v, anchor, p) {
 function setSeg(seg, top = true) {
   sysSeg = S.sysSeg = showSeg(seg);
   setTimeout(syncTwins); setTimeout(() => { dayRing.resize(); poolTwin()?.resize(); thermalTwin()?.resize(); });
-  safe(drawSysHeader)(S, sysSeg); safe(drawHomeLive)(S); safe(drawSolarLive)(S);
+  safe(drawSysHeader)(S, sysSeg); safe(drawHomeLive)(S); safe(drawSolarLive)(S); safe(drawPwLive)(S);
   if (top) $('screen').scrollTo({ top: 0 });
 }
 document.querySelectorAll('.c-tab[data-v]').forEach(t => t.onclick = () => go(t.dataset.v));
@@ -332,7 +332,7 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 setInterval(() => { if (document.hidden) return; safe(renderLive)(S); safe(sideSummary)(); safe(freshness)(S); safe(freshPool)(S); safe(tickBoost)(S); safe(freshAc)(S);
-  if (isOn('v-sys')) { safe(drawSysHeader)(S, sysSeg); if (sysSeg === 'home') safe(drawHomeLive)(S); if (sysSeg === 'solar') safe(drawSolarLive)(S); } }, 1000);
+  if (isOn('v-sys')) { safe(drawSysHeader)(S, sysSeg); if (sysSeg === 'home') safe(drawHomeLive)(S); if (sysSeg === 'solar') safe(drawSolarLive)(S); if (sysSeg === 'powerwall') safe(drawPwLive)(S); } }, 1000);
 
 function sideSummary() {
   const r = S.live; if (!r) return;

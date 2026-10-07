@@ -5,7 +5,7 @@
 import { $, clamp, localDate, localHour, addDays } from '../lib/util.js';
 import { cBadge } from '../lib/conf.js';
 import { SEGS, SEG_IDS, segIndex, k1 } from '../lib/sysui.js';
-import { nowPct, scheduleBlocks, acBlocks, hourBlocks, tileDelta, sumUntil } from '../lib/nowui.js';
+import { nowPct, scheduleBlocks, acBlocks, hourBlocks, tileDelta, sumUntil, chargeBlocks, peakToday, rulesPill } from '../lib/nowui.js';
 import { sysTop, planStrip, tileHtml, modePill } from './csheet.js';
 
 const set = (id, prop, v) => { const el = $(id); if (el && el[prop] !== v) el[prop] = v; };
@@ -88,3 +88,40 @@ function drawSolarTiles(S) {
       chip: dp == null ? null : dp === 0 ? { t: 'flat', text: '— same' } : { t: dp > 0 ? 'good' : 'bad', text: `${dp > 0 ? '▲' : '▼'} ${Math.abs(dp)} pts` }, spark: ratios }));
 }
 
+
+/* ======================= Powerwall (frame 11) ======================= */
+const MODE_WORD = { autonomous: 'Time-Based Control', self_consumption: 'Self-Powered', backup: 'Backup-only' };
+/** Charge and discharge so far today and at the same time yesterday, from the 5-minute days (battery > 0 is discharging). */
+export function batteryUntil(day, hour) {
+  if (!day?.buckets?.length) return null;
+  const len = (day.bucketMinutes ?? 5) / 60, out = { charge: 0, discharge: 0 };
+  for (const b of day.buckets) { const f = Math.max(0, Math.min(1, (hour - b.t) / len)); if (!f) continue; const v = (b.battery ?? 0) * len * f; if (v > 0) out.discharge += v; else out.charge -= v; }
+  return out;
+}
+const dur = h => h == null || !isFinite(h) ? '—' : h >= 1 ? `${Math.floor(h)}h ${String(Math.round(h % 1 * 60)).padStart(2, '0')}m` : `${Math.round(h * 60)}m`;
+/** The Powerwall system card (rules mode, charge, time to full or reserve, the charging window), the hero, the unit bars, three rows. */
+export function drawPwLive(S) {
+  const r = S.live, site = S.now?.site; if (!r || !site) return;
+  const out = S.outageActive, cap = site.capacityKwh || 27, mcap = site.modelKwh || cap, reserve = site.reservePct ?? 20, soc = Math.round(r.soc);
+  const toFull = r.batteryKw < -.05 ? (100 - r.soc) / 100 * mcap / (-r.batteryKw * .95) : null, toRes = r.batteryKw > .05 ? Math.max(0, r.soc - (out ? 0 : reserve)) / 100 * mcap * .95 / r.batteryKw : null;
+  const line = r.batteryKw < -.05 ? `Charging ${(-r.batteryKw).toFixed(1)} kW · full in ${dur(toFull)}` : r.batteryKw > .05 ? `${out ? 'Powering home' : 'Discharging'} ${r.batteryKw.toFixed(1)} kW · ${dur(toRes)} to ${out ? 'empty' : 'reserve'}` : r.soc > 99 ? 'Full · standing by' : 'Standing by';
+  const blocks = chargeBlocks(S.today, S.fc48?.points, localHour(), localDate());
+  same('pwSys', sysTop({ ic: 'batt', title: 'Powerwalls', mode: S.guest ? '' : modePill(rulesPill(S.pwRules?.rules)), value: `${soc}%`, line, plan: planStrip(nowPct(localHour()), blocks, [], true) }));
+  const d = S.daily?.at(-1), range = d?.socMin != null && d.date === localDate() ? `${Math.round(d.socMin)}–${Math.round(d.socMax)}%` : null;
+  same('pwHero', `${soc}<small>%</small>`);
+  same('pwHeroL', `≈ ${(r.soc / 100 * mcap).toFixed(1)} of ${mcap} kWh stored<br>reserve ${reserve}%${range ? ` · range today ${range}` : ''}`);
+  same('pwUnitBars', (site.batteries?.length ? site.batteries : [{}, {}]).map((b, i) => `<div class="c-unit" title="${b.kwh ? `${b.kwh} kWh · ${b.kw} kW` : ''}"><i style="width:${Math.max(0, Math.min(100, r.soc))}%"></i><s style="left:${reserve}%"></s><em>PW ${i + 1}</em><span>${soc}%</span></div>`).join(''));
+  same('pwKv', `<span>Mode</span><b>${out ? 'Backup (islanded)' : MODE_WORD[site.mode] ?? site.mode ?? '—'}</b><span>Backup reserve</span><b>${reserve}%</b><span>Storm Watch</span><b>${r.stormActive ? 'active' : site.stormWatch ? 'standby' : 'off'}</b>`);
+  same('pwSysModel', site.batteries?.length ? `${site.batteries.length} × ${site.batteries[0].name} · ${site.batteries[0].kwh} kWh · ${site.batteries[0].kw} kW each${site.modelKwh ? ` · a full charge delivers about ${site.modelKwh} kWh` : ''}` : '');
+  drawPwTiles(S, { mcap });
+}
+function drawPwTiles(S, { mcap }) {
+  const t = S.now?.today ?? {}, r = S.live, now = localDate(), y = S.yday?.date === addDays(now, -1) ? batteryUntil(S.yday, localHour()) : null;
+  const week = (S.daily ?? []).filter(d => d.date < now).slice(-7), d = S.daily?.at(-1), today = d?.date === now ? d : null;
+  const pk = peakToday(S.fc48?.points, now, r?.soc), net = r ? r.homeKw - r.solarKw : null;
+  const neutral = (a, b) => { const x = tileDelta(a, b, 'up'); return x && { ...x, t: 'flat' }; };   // more charge or discharge is neither good nor bad: the arrow, no colour
+  same('pwTiles', tileHtml({ id: 'ptIn', acc: 'c-acc-batt', k: 'Charged today', v: k1(t.charge), unit: 'kWh', chip: neutral(t.charge, y?.charge ?? null), spark: week.map(x => x.charge) })
+    + tileHtml({ id: 'ptOut', acc: 'c-acc-warn', k: 'Discharged today', v: k1(t.discharge), unit: 'kWh', chip: neutral(t.discharge, y?.discharge ?? null), spark: week.map(x => x.discharge) })
+    + tileHtml({ id: 'ptRange', acc: 'c-acc-batt', k: 'Today’s range', v: today?.socMin != null ? `${Math.round(today.socMin)}–${Math.round(today.socMax)}` : '—', unit: today?.socMin != null ? '%' : '', chip: pk ? { t: 'flat', text: `peak ~${pk.pct}% at ${pk.hour % 12 || 12} ${pk.hour < 12 ? 'AM' : 'PM'}` } : null, spark: week.map(x => x.socMax) })
+    + tileHtml({ id: 'ptBack', acc: 'c-acc-home', k: 'Backup at current use', v: !r ? '—' : net <= .05 ? 'solar' : dur(Math.max(0, r.soc) / 100 * mcap * .95 / net), note: !r ? '' : net <= .05 ? 'covering the house now' : `at ${net.toFixed(1)} kW, no sun` }));
+}
