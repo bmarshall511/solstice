@@ -4,7 +4,8 @@
 // Backtested on 13 months (Open-Meteo archive): about −2 %/week in hot dry spells, none in winter; 5 % below clean fired twice, both real.
 // Reads Tesla history (energy), the logged cleanings (events) and Open-Meteo (fetched once a night into kv). Writes no device.
 // B2-13 (audit L-29, owner Q14): a noise band. `lossSd` is the day-to-day spread of the clear-day yield (a robust SD from consecutive
-// clear days, as % of clean); "getting dusty" and "dusty" need the loss to clear their threshold by one SD, and the card says "X% ± Y%".
+// clear days, as % of clean); "getting dusty" and "dusty" need the loss to clear the larger of their threshold and one SD (so a real step
+// such as the 8/26 dust event, 5.5% against a 3.3% spread, still reads as dust), and the card says "X% ± Y%".
 import { q, kv } from './db.js';
 import { localDay, addDays } from './tesla/client.js';
 import { siteLocation } from './site.js';
@@ -64,7 +65,7 @@ export function soiling(o: { points: ClearPoint[]; rains: Array<{ day: string; m
   const lossSd = ref ? yieldSd(o.points, [...past.map(r => r.day), ...o.cleanings], ref.y) : null, band = lossSd ?? 0;   // B2-13
   const kwhPerDay = lossPct != null && o.solarRecent != null ? r2(o.solarRecent * lossPct / (100 - lossPct)) : null;
   return {
-    state: lossPct == null ? 'measuring' : lossPct >= DUSTY + band ? 'dusty' : lossPct >= GETTING + band ? 'getting' : 'clean',
+    state: lossPct == null ? 'measuring' : lossPct >= Math.max(DUSTY, band) ? 'dusty' : lossPct >= Math.max(GETTING, band) ? 'getting' : 'clean',
     lossPct, lossSd, score: lossPct == null ? null : Math.min(100, Math.round(lossPct * 10)), kwhPerDay, dollarsPerMonth: kwhPerDay != null && o.rate ? Math.round(kwhPerDay * 30 * o.rate) : null,
     ref, now, resetOn, resetBy, clearSince: after.length,
     lastRain: lastRain ? { ...lastRain, daysAgo: Math.round((Date.parse(o.today) - Date.parse(lastRain.day)) / 864e5) } : null, nextRain,

@@ -12,12 +12,11 @@ const at = (today: string, o: Partial<Parameters<typeof soiling>[0]> = {}) =>
   soiling({ points: pts.filter(p => p.day < today), rains: RAINS, cleanings: [], today, solarRecent: 43.8, rate: null, ...o });
 
 describe('soiling', () => {
-  it('SO-1 the 8/26 replay: 5.5% ± 3.3% below the clean level of the 3 clear days after the 7/16 rain, about 2.5 kWh a day', () => {
+  it('SO-1 the 8/26 replay: 5.5% ± 3.3% below the clean level of the 3 clear days after the 7/16 rain, dusty, about 2.5 kWh a day', () => {
     const s = at('2026-08-27');
     expect(s.ref).toEqual({ from: '2026-07-20', to: '2026-07-26', y: 8.3, after: 'rain' });
-    // B2-13 (deliberate update, was 'dusty'): these clear days move about 3.3% from one to the next, so 5.5% is inside 3% + one SD
-    // (and 5% + one SD): no longer reported as dust
-    expect([s.now, s.lossPct, s.lossSd, s.state, s.score, s.kwhPerDay]).toEqual([7.84, 5.5, 3.3, 'clean', 55, 2.55]);
+    // B2-13: these clear days move about 3.3% from one to the next; 5.5% clears both the 5% threshold and that spread, so it is still dust
+    expect([s.now, s.lossPct, s.lossSd, s.state, s.score, s.kwhPerDay]).toEqual([7.84, 5.5, 3.3, 'dusty', 55, 2.55]);
     expect(s.lastRain).toEqual({ day: '2026-07-16', mm: 19, daysAgo: 42 });
   });
   it('SO-2 a rain of 5 mm or more resets: the next 3 clear days set the new level; a forecast rain within 5 days is reported', () => {
@@ -51,12 +50,15 @@ describe('B2-13: the noise band', () => {
     expect(yieldSd(p([8, 9, 8, 9, 8]), ['2026-09-02', '2026-09-03'], 8)).toBeNull();         // two pairs span a reset: 2 left
     expect(yieldSd(p([8, 8.2, 8]), [], 8)).toBeNull();
   });
-  it('SO-10 getting dusty and dusty need the loss to clear the threshold plus one SD; the payload carries lossSd', () => {
-    // a reset-free window: 3 clean days at 8.0 ±0.2, a noisy middle, then the latest 3
-    const mk = (now: number) => soiling({ points: [8, 8.2, 8, 8.2, 8, 8.2, now, now, now].map((y, i) => ({ day: `2026-09-0${i + 1}`, y })), rains: [], cleanings: [], today: '2026-09-12', solarRecent: 40, rate: null });
-    expect(mk(7.6)).toMatchObject({ lossPct: 5, lossSd: 2.6, state: 'clean' });              // 5 < 3 + 2.6: inside the noise (it was "dusty")
-    expect(mk(7.4)).toMatchObject({ lossPct: 7.5, state: 'getting' });                       // ≥ 5.6, < 7.6
-    expect(mk(7.3)).toMatchObject({ lossPct: 8.8, state: 'dusty' });                         // ≥ 7.6
+  it('SO-10 getting dusty and dusty need the loss to clear the larger of the threshold and one SD; the payload carries lossSd', () => {
+    // a reset-free window: 3 clean days at 8.0 ±0.2, a noisy middle, then the latest 3 (spread 2.6%: the thresholds 3 and 5 still rule)
+    const mk = (now: number, wobble = .2) => soiling({ points: [8, 8 + wobble, 8, 8 + wobble, 8, 8 + wobble, now, now, now].map((y, i) => ({ day: `2026-09-0${i + 1}`, y })), rains: [], cleanings: [], today: '2026-09-12', solarRecent: 40, rate: null });
+    expect(mk(7.8)).toMatchObject({ lossPct: 2.5, lossSd: 2.6, state: 'clean' });            // under both
+    expect(mk(7.7).state).toBe('getting');                                                   // ~3.75%: ≥ max(3, 2.6), < 5
+    expect(mk(7.6)).toMatchObject({ lossPct: 5, state: 'dusty' });                           // ≥ max(5, 2.6)
+    // noisier clear days (spread 6.6%): a 5% loss is inside the noise, so it stays clean; 7.5% clears the spread and reads dusty
+    expect(mk(7.6, .5)).toMatchObject({ lossPct: 5, lossSd: 6.6, state: 'clean' });
+    expect(mk(7.4, .5)).toMatchObject({ lossPct: 7.5, state: 'dusty' });
   });
 });
 
