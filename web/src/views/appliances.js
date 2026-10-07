@@ -8,7 +8,7 @@ import { cBadge, badge, modelOf } from '../lib/conf.js';
 import { icon } from '../lib/icons.js';
 import { gauge } from '../lib/sysui.js';
 import { nowPct, scheduleBlocks, autopilotStage } from '../lib/nowui.js';
-import { sheet, sheetHead, sheetFoot, modePill, seg, banner, sysTop, planStrip, tileHtml } from './csheet.js';
+import { sheet, sheetHead, sheetFoot, modePill, seg, segSet, banner, sysTop, planStrip, tileHtml, closeSheet } from './csheet.js';
 import { mountPoolPanel, redrawPoolPanels } from './nowsheets.js';
 
 /*
@@ -158,7 +158,21 @@ function openPoolChanges(S) {
 /* frame 7: the schedule editor — Pool and High Speed runs; saving writes them and moves Autopilot from Auto to Suggest */
 const toTime = m => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 const fromTime = v => { const [h, m] = String(v).split(':').map(Number); return h * 60 + m; };
-const PL_COLOR = { pool: 'var(--home)', skim: 'var(--warn)' };
+const PL_ACC = { pool: 'c-acc-home', skim: 'c-acc-warn' };
+/** The Pump schedule sheet in the component system (mockup al, component 11): the runs as rows, the run being edited (its circuit as
+ *  a segment, start and stop, its circuit's speed), Delete this run and Save to the controller in the pinned footer. */
+export function scheduleHtml({ runs, sel, names, speeds, P, B }) {
+  const r = runs[sel], acc = c => c === B ? PL_ACC.skim : PL_ACC.pool;
+  return `${sheetHead('Pump schedule', '', 'What the controller runs every day')}
+    ${runs.length ? `<div class="c-card" style="padding:4px 16px"><div class="c-parts" style="margin:0">${runs.map((x, i) => `<div class="c-part ${acc(x.circuitId)}${i === sel ? ' c-open' : ''}" role="button" tabindex="0" aria-pressed="${i === sel}" data-i="${i}"><i></i><span>${esc(names[x.circuitId])}</span><b>${hm(x.start)} – ${hm(x.stop)} · ${speeds[x.circuitId].toLocaleString()}</b></div>`).join('')}</div></div>` : ''}
+    ${runs.length < 6 ? '<div class="c-btns"><button class="c-btn line" id="seAdd">+ Add a run</button></div>' : ''}
+    ${r ? `<div class="c-lab">Editing ${esc(names[r.circuitId])}</div>
+      <div id="seCirc">${seg([P, B].map(c => [c, esc(names[c])]), r.circuitId, { acc: 'c-acc-batt', attr: 'data-c', label: 'Circuit' })}</div>
+      <div class="c-fields"><label class="c-field"><small>Start</small><input class="c-input" type="time" step="900" id="seStart" value="${toTime(r.start)}"></label><label class="c-field"><small>Stop</small><input class="c-input" type="time" step="900" id="seStop" value="${toTime(r.stop === 1439 ? 1440 : r.stop)}"></label></div>
+      <div class="c-card" style="padding:4px 16px"><div class="c-stepper"><div>Speed<small>${esc(names[r.circuitId])}'s saved speed</small></div><button class="c-step" id="seDn" aria-label="Slower">−</button><b>${speeds[r.circuitId].toLocaleString()}</b><button class="c-step" id="seUp" aria-label="Faster">+</button></div></div>` : ''}
+    <p class="c-fine" id="seNote">Saving keeps your schedule: Autopilot switches to Suggest and offers its plan instead of writing over yours. ${esc(names[P])} and ${esc(names[B])} only (Waterfall is a switch only). New runs are added before old ones are removed.</p>
+    ${sheetFoot(r ? 'Delete this run' : '', 'Save to the controller', 'c-acc-batt', { del: true })}`;
+}
 function openEditor(S) {
   const d = S.pool, sp = d.settings, P = sp.poolCircuit ?? 6, B = sp.boostCircuit ?? 8, snap = d.snapshot;
   if (d.clearUp) { toast('!', 'rgba(255,193,94,.2)', 'Clear-up is running', 'End it first to edit the schedule.'); return; }
@@ -166,22 +180,11 @@ function openEditor(S) {
   const speeds0 = speedsOf(snap), speeds = { [P]: speeds0.get(P) ?? 1800, [B]: speeds0.get(B) ?? 2400 }, lim = { min: snap?.pump?.minRpm ?? 450, max: snap?.pump?.maxRpm ?? 3450 };
   const runs = d.current.schedules.filter(x => x.circuitId === P || x.circuitId === B).map(x => ({ circuitId: x.circuitId, start: x.start, stop: x.stop }));
   let sel = runs.length ? 0 : -1;
-  const color = c => c === B ? PL_COLOR.skim : PL_COLOR.pool;
+  const go = () => $('sheetBody').querySelector('[data-f="pri"]');
   const draw = () => {
     const r = runs[sel];
-    $('sheetBody').innerHTML = `<div class="shead"><h4>Pump schedule</h4><button class="x" id="seX" aria-label="Close">\u2715</button></div>
-      <p class="sub">What the controller runs every day</p>
-      <div class="se-list">${runs.map((x, i) => `<button class="se-row${i === sel ? ' on' : ''}" data-i="${i}"><i style="background:${color(x.circuitId)}"></i><b>${esc(names[x.circuitId])}</b><em>\u203a</em><small>${hm(x.start)} \u2013 ${hm(x.stop)} \u00b7 ${speeds[x.circuitId].toLocaleString()}</small></button>`).join('')}</div>
-      ${runs.length < 6 ? '<button class="se-add" id="seAdd">+ Add a run</button>' : ''}
-      ${r ? `<div class="pc-lbl">Editing ${esc(names[r.circuitId])}</div>
-        <div class="seg2 wide" id="seCirc" style="display:flex;margin-top:10px">${[P, B].map(c => `<button data-c="${c}" style="flex:1;text-align:center" class="${c === r.circuitId ? 'on' : ''}">${esc(names[c])}</button>`).join('')}</div>
-        <div class="se-time"><label><small>Start</small><input type="time" step="900" id="seStart" value="${toTime(r.start)}"></label><label><small>Stop</small><input type="time" step="900" id="seStop" value="${toTime(r.stop === 1439 ? 1440 : r.stop)}"></label></div>
-        <div class="pc-rpm"><div class="bt">Speed<small>${esc(names[r.circuitId])}'s saved speed</small></div><div class="stp"><button id="seDn" aria-label="Slower">\u2212</button><b>${speeds[r.circuitId].toLocaleString()}</b><button id="seUp" aria-label="Faster">+</button></div></div>` : ''}
-      <button class="primary" id="seGo" style="width:100%;box-sizing:border-box;margin-top:14px;background:var(--batt);color:#04140c">Save to the controller</button>
-      ${r ? '<button class="link" id="seDel">Delete this run</button>' : ''}
-      <p class="fine" id="seNote" style="margin-top:10px">Saving keeps your schedule: Autopilot switches to Suggest and offers its plan instead of writing over yours. ${esc(names[P])} and ${esc(names[B])} only (Waterfall is a switch only). New runs are added before old ones are removed.</p>`;
-    document.querySelectorAll('.se-row').forEach(b => b.onclick = () => { sel = +b.dataset.i; draw(); });
-    $('seX').onclick = () => $('phone').classList.remove('open');
+    sheet(scheduleHtml({ runs, sel, names, speeds, P, B }), { keepScroll: true });
+    $('sheetBody').querySelectorAll('[data-i]').forEach(b => b.onclick = () => { sel = +b.dataset.i; draw(); });
     if ($('seAdd')) $('seAdd').onclick = () => { runs.push({ circuitId: P, start: 600, stop: 900 }); sel = runs.length - 1; draw(); };
     if (r) {
       $('seCirc').onclick = e => { const b = e.target.closest('button'); if (!b) return; r.circuitId = +b.dataset.c; draw(); };
@@ -190,18 +193,18 @@ function openEditor(S) {
       $('seStop').onchange = e => { const m = q15(fromTime(e.target.value)); r.stop = m === 0 || m >= 1440 ? 1439 : m; draw(); };
       const step = dv => { speeds[r.circuitId] = Math.max(lim.min, Math.min(lim.max, Math.round((speeds[r.circuitId] + dv) / 50) * 50)); draw(); };
       $('seDn').onclick = () => step(-50); $('seUp').onclick = () => step(50);
-      $('seDel').onclick = () => { runs.splice(sel, 1); sel = Math.min(sel, runs.length - 1); save(); };
+      $('sheetBody').querySelector('[data-f="sec"]').onclick = () => { runs.splice(sel, 1); sel = Math.min(sel, runs.length - 1); save(); };   // Delete this run
     }
-    $('seGo').onclick = save;
+    go().onclick = save;
   };
   const save = async () => {
     const bad = runs.find(x => x.start === x.stop); if (bad) { $('seNote').textContent = 'A run needs a stop after its start.'; return; }
     const used = [...new Set(runs.map(x => x.circuitId))], body = { schedules: runs, speeds: used.filter(c => speeds[c] !== speeds0.get(c)).map(c => ({ circuitId: c, rpm: speeds[c] })) };
-    $('seGo').textContent = 'Saving\u2026';
-    try { S.pool = await api.poolSchedule(body); $('phone').classList.remove('open'); drawPool(S); }
-    catch (e) { $('seGo').textContent = 'Save to the controller'; $('seNote').textContent = `Couldn\u2019t save: ${e.message}`; }
+    go().textContent = 'Saving\u2026';
+    try { S.pool = await api.poolSchedule(body); closeSheet(); drawPool(S); }
+    catch (e) { go().textContent = 'Save to the controller'; $('seNote').textContent = `Couldn\u2019t save: ${e.message}`; }
   };
-  draw(); $('phone').classList.add('open');
+  draw();
 }
 
 /* frame 6: Clear-up — the Pool circuit all day for 1–3 days, then back to the planner by itself; only End now ends it early */
@@ -261,6 +264,17 @@ export async function poolSend(S, ...cmds) {
   catch (e) { pc.err = `${name}: ${e.message}`; }
   pc.sending.delete(id); drawPool(S); S.onPool?.();
 }
+/** One circuit's sheet in the component system (mockup al, component 11): the spa's heat as a segment and a stepper, Run for as a
+ *  segment, the speed stepper, the primary write and Turn off in the pinned footer. */
+export function circuitHtml({ c, sched, body, runs, pick, rpm0, lim }) {
+  return `${sheetHead(esc(c.name), '', `${c.on ? 'On' : 'Off'} · ${sched.length ? `on schedule ${sched.map(x => `${hm(x.start)}–${hm(x.stop)}`).join(', ')}` : 'not on any schedule'}`)}
+    ${body ? `<div class="c-lab">Spa heat</div><div id="pcHeat">${seg([['0', 'Off'], ['1', 'On']], body.heatMode === 3 ? '1' : '0', { acc: 'c-acc-warn', attr: 'data-h', label: 'Spa heat' })}</div>
+      <div class="c-card" id="pcDial" style="padding:4px 16px"><div class="c-stepper"><div>Heat to<small>${body.heating ? 'heating now' : 'heater off now'}</small></div><button class="c-step" id="pcHdn" aria-label="Cooler">−</button><b id="pcSet"></b><button class="c-step" id="pcHup" aria-label="Warmer">+</button></div></div>` : ''}
+    <div id="pcRun"${c.on ? ' hidden' : ''}><div class="c-lab">Run for</div><div id="pcRuns">${seg(runs.map(([m, l]) => [String(m), l]), String(pick), { acc: 'c-acc-pool', attr: 'data-m', label: 'Run for' })}</div></div>
+    ${!body && rpm0 != null ? `<div class="c-card" style="padding:4px 16px"><div class="c-stepper"><div>Speed<small>whenever ${esc(c.name)} runs · ${lim.min.toLocaleString()}–${lim.max.toLocaleString()}</small></div><button class="c-step" id="pcDn" aria-label="Slower">−</button><b id="pcRpm"></b><button class="c-step" id="pcUp" aria-label="Faster">+</button></div></div>` : ''}
+    <p class="c-fine" id="pcNote"></p>
+    ${sheetFoot(c.on ? 'Turn off' : '', '', 'c-acc-pool', { del: true })}`;
+}
 export function openCircuit(S, id) {
   const d = S.pool, snap = d.snapshot, c = snap?.circuits.find(x => x.id === id); if (!c || S.guest) return;
   const rpm0 = speedsOf(snap).get(id), lim = { min: snap.pump?.minRpm ?? 450, max: snap.pump?.maxRpm ?? 3450 };
@@ -270,23 +284,17 @@ export function openCircuit(S, id) {
   // frame 4: the spa's heat (heater mode 3 = on, 0 = off) and setpoint 80–104°; the heater only runs while the Spa circuit is on
   const body = isSpa(c) ? snap.bodies?.[1] : null, heat0 = body?.heatMode === 3, set0 = Math.min(104, Math.max(80, body?.setPoint || 100));
   let heat = heat0, setF = set0;
-  $('sheetBody').innerHTML = `<div class="shead"><h4>${esc(c.name)}</h4><button class="x" id="pcX" aria-label="Close">✕</button></div>
-    <p class="sub">${c.on ? 'On' : 'Off'} · ${sched.length ? `on schedule ${sched.map(x => `${hm(x.start)}–${hm(x.stop)}`).join(', ')}` : 'not on any schedule'}</p>
-    ${body ? `<div class="pc-heat"><div class="pc-lbl">Spa heat</div><div class="seg2 wide" id="pcHeat"><button data-h="0">Off</button><button data-h="1">On</button></div>
-      <div class="tstat" id="pcDial"><div class="dial"><button class="step" id="pcHdn" aria-label="Cooler">\u2212</button><div class="sp"><small>Heat to</small><b class="heat" id="pcSet"></b><span>${body.heating ? 'heating now' : 'heater off now'}</span></div><button class="step" id="pcHup" aria-label="Warmer">+</button></div></div></div>` : ''}
-    <div id="pcRun"${c.on ? ' hidden' : ''}><div class="pc-lbl">Run for</div><div class="pc-runs${runs.length > 4 ? ' five' : ''}" id="pcRuns">${runs.map(([m, l]) => `<button data-m="${m}">${l}</button>`).join('')}</div></div>
-    ${!body && rpm0 != null ? `<div class="pc-rpm"><div class="bt">Speed<small>whenever ${esc(c.name)} runs · ${lim.min.toLocaleString()}–${lim.max.toLocaleString()}</small></div><div class="stp"><button id="pcDn" aria-label="Slower">−</button><b id="pcRpm"></b><button id="pcUp" aria-label="Faster">+</button></div></div>` : ''}
-    <button class="primary" id="pcGo"></button>${c.on ? '<button class="link" id="pcOff" hidden>Turn off</button>' : ''}
-    <p class="fine" id="pcNote" style="margin-top:10px"></p>`;
+  sheet(circuitHtml({ c, sched, body, runs, pick, rpm0, lim }));
+  const box = $('sheetBody'), go = box.querySelector('[data-f="pri"]'), off = box.querySelector('[data-f="sec"]');
   const draw = () => {
-    document.querySelectorAll('#pcRuns button').forEach(b => b.classList.toggle('on', +b.dataset.m === pick));
+    if ($('pcRuns')) segSet($('pcRuns').firstElementChild, String(pick), 'data-m');
     if ($('pcRpm')) $('pcRpm').textContent = rpm.toLocaleString();
     const sped = rpm0 != null && rpm !== rpm0, heated = !!body && (heat !== heat0 || (heat && setF !== set0));
-    if (body) { document.querySelectorAll('#pcHeat button').forEach(b => b.classList.toggle('on', +b.dataset.h === +heat)); $('pcDial').hidden = !heat; $('pcSet').innerHTML = `${setF}<sup>\u00b0</sup>`; }
-    $('pcGo').textContent = c.on ? (heated ? (heat ? `Save heat \u00b7 ${setF}\u00b0` : 'Turn spa heat off') : sped ? `Save ${rpm.toLocaleString()} RPM` : 'Turn off')
-      : body ? `Spa on${heat ? ` \u00b7 heat to ${setF}\u00b0` : ''} for ${runLabel(pick)}` : `Turn on for ${runLabel(pick)}`;
-    if ($('pcOff')) $('pcOff').hidden = !(sped || heated);
-    $('pcNote').textContent = body ? `The heater only runs while the Spa circuit is on. Setpoint 80\u2013104\u00b0. Autopilot never touches the spa, its heat, the lights or the heater; only you do.`
+    if (body) { segSet($('pcHeat').firstElementChild, heat ? '1' : '0', 'data-h'); $('pcDial').hidden = !heat; $('pcSet').textContent = `${setF}°`; }
+    go.textContent = c.on ? (heated ? (heat ? `Save heat · ${setF}°` : 'Turn spa heat off') : sped ? `Save ${rpm.toLocaleString()} RPM` : 'Turn off')
+      : body ? `Spa on${heat ? ` · heat to ${setF}°` : ''} for ${runLabel(pick)}` : `Turn on for ${runLabel(pick)}`;
+    if (off) off.hidden = !(sped || heated);
+    $('pcNote').textContent = body ? `The heater only runs while the Spa circuit is on. Setpoint 80–104°. Autopilot never touches the spa, its heat, the lights or the heater; only you do.`
       : c.on ? (sped ? `The new speed applies now and whenever ${c.name} runs, schedules included.` : '')
       : `Turns itself off at ${clockAt(Date.now() + pick * 60_000)} (the controller's own timer, so it stops even if Solstice is offline).`;
   };
@@ -297,16 +305,14 @@ export function openCircuit(S, id) {
     $('pcHeat').onclick = e => { const b = e.target.closest('button'); if (!b) return; heat = b.dataset.h === '1'; draw(); };
     $('pcHdn').onclick = () => { setF = Math.max(80, setF - 1); draw(); }; $('pcHup').onclick = () => { setF = Math.min(104, setF + 1); draw(); };
   }
-  $('pcX').onclick = () => $('phone').classList.remove('open');
-  const close = () => $('phone').classList.remove('open');
-  $('pcGo').onclick = () => {
+  go.onclick = () => {
     const sped = rpm0 != null && rpm !== rpm0, heated = !!body && (heat !== heat0 || (heat && setF !== set0));
     const cmds = [...(heated ? [heat ? { kind: 'spaHeat', on: true, setF } : { kind: 'spaHeat', on: false }] : []), ...(sped ? [{ kind: 'speed', id, rpm }] : [])];
     if (!c.on) cmds.push({ kind: 'circuit', id, on: true, minutes: pick }); else if (!sped && !heated) cmds.push({ kind: 'circuit', id, on: false });
-    close(); poolSend(S, ...cmds);
+    closeSheet(); poolSend(S, ...cmds);
   };
-  if ($('pcOff')) $('pcOff').onclick = () => { close(); poolSend(S, { kind: 'circuit', id, on: false }); };
-  draw(); $('phone').classList.add('open');
+  if (off) off.onclick = () => { closeSheet(); poolSend(S, { kind: 'circuit', id, on: false }); };   // Turn off (shown while a speed or heat change is staged)
+  draw();
 }
 
 /* ---------- the Pool Autopilot card (mockup al frames 12, 12b; the turnover planner of mockup w frame 5 lives in it) ---------- */

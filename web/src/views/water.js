@@ -5,7 +5,7 @@ import { $, toast } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { openClearUp } from './appliances.js';
 import { badge } from '../lib/conf.js';
-import { banner } from './csheet.js';
+import { banner, sheet, sheetHead, sheetFoot, seg, segSet, closeSheet } from './csheet.js';
 
 const W = { data: null, timer: null };
 const FIELDS = [['fc', 'Free chlorine', 'ppm', .5, [0, 20], true], ['ph', 'pH', '', .1, [6.4, 8.6], true], ['cc', 'Combined chlorine', 'ppm · optional', .5, [0, 5]],
@@ -42,22 +42,27 @@ function draw(S) {
   $('pwVals').onclick = () => openHistory(S);
 }
 
+/** The "Log a test" sheet in the component system (mockup al, component 11): steppers in a card, the water and the source as
+ *  sliding segments, Added today as toggle pills, Save test in the pinned footer. `v` is the staged test. */
+export function logTestHtml(v, now, waterF = null) {
+  return `${sheetHead('Log a test', '', `Today, ${now}${waterF != null ? ` · water ${Math.round(waterF)}° (from the controller)` : ''}`)}
+    <div class="c-card" id="plRows" style="padding:4px 16px">${FIELDS.map(([k, l, u]) => `<div class="c-stepper"><div>${l}${u ? `<small>${u}</small>` : ''}</div><button class="c-step" data-k="${k}" data-d="-1" aria-label="Lower">−</button><b id="pv_${k}"></b><button class="c-step" data-k="${k}" data-d="1" aria-label="Higher">+</button></div>`).join('')}</div>
+    <div class="c-lab">The water</div><div id="plClar">${seg(CLAR, v.clarity, { acc: 'c-acc-pool', attr: 'data-c', label: 'The water' })}</div>
+    <div class="c-lab">Added today</div><div class="c-fpills" id="plAdd" role="group" aria-label="Added today">${ADD.map(([k, l]) => `<button class="c-fpill" data-a="${k}" aria-pressed="${v.added.includes(k)}">${l}</button>`).join('')}</div>
+    <div class="c-lab">Tested with</div><div id="plSrc">${seg(SRC, v.source, { acc: 'c-acc-pool', attr: 'data-s', label: 'Tested with' })}</div>
+    <p class="c-fine" style="text-align:center">Chlorine and pH start at your last test. Leave the optional ones at "—".</p>
+    ${sheetFoot('', 'Save test', 'c-acc-pool')}`;
+}
 function openLog(S) {
   const last = W.data?.last, v = { fc: last?.fc ?? 3, ph: last?.ph ?? 7.5, cc: null, ta: null, cya: null, ch: null, clarity: 'clear', added: [], source: last?.source ?? 'kit' };
   const now = new Date().toLocaleString('en-US', { weekday: undefined, hour: 'numeric', minute: '2-digit' });
-  $('sheetBody').innerHTML = `<div class="shead"><h4>Log a test</h4><button class="x" id="plX" aria-label="Close">✕</button></div>
-    <p class="sub">Today, ${now}${W.data?.waterF != null ? ` · water ${Math.round(W.data.waterF)}° (from the controller)` : ''}</p>
-    <div id="plRows" style="margin-top:6px">${FIELDS.map(([k, l, u]) => `<div class="pw-row"><span class="tl">${l}${u ? `<small>${u}</small>` : ''}</span><span class="pw-step"><button data-k="${k}" data-d="-1" aria-label="Lower">−</button><b id="pv_${k}"></b><button data-k="${k}" data-d="1" aria-label="Higher">+</button></span></div>`).join('')}</div>
-    <div class="pw-lab">The water</div><div class="pw-chips" id="plClar">${CLAR.map(([k, l]) => `<button data-c="${k}">${l}</button>`).join('')}</div>
-    <div class="pw-lab">Added today</div><div class="pw-chips" id="plAdd">${ADD.map(([k, l]) => `<button data-a="${k}">${l}</button>`).join('')}</div>
-    <div class="pw-lab">Tested with</div><div class="pw-chips" id="plSrc">${SRC.map(([k, l]) => `<button data-s="${k}">${l}</button>`).join('')}</div>
-    <button class="primary" id="plGo">Save test</button>
-    <p class="fine" style="text-align:center;margin-top:10px">Chlorine and pH start at your last test. Leave the optional ones at "—".</p>`;
+  sheet(logTestHtml(v, now, W.data?.waterF));
+  const body = $('sheetBody'), go = body.querySelector('[data-f="pri"]');
   const drawS = () => {
     FIELDS.forEach(([k]) => { const b = $(`pv_${k}`); b.textContent = fmt(k, v[k]); b.classList.toggle('off', v[k] == null); });
-    document.querySelectorAll('#plClar button').forEach(b => b.classList.toggle('on', b.dataset.c === v.clarity));
-    document.querySelectorAll('#plAdd button').forEach(b => b.classList.toggle('on', v.added.includes(b.dataset.a)));
-    document.querySelectorAll('#plSrc button').forEach(b => b.classList.toggle('on', b.dataset.s === v.source));
+    segSet($('plClar').firstElementChild, v.clarity, 'data-c');
+    body.querySelectorAll('#plAdd button').forEach(b => { const on = v.added.includes(b.dataset.a); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+    segSet($('plSrc').firstElementChild, v.source, 'data-s');
   };
   $('plRows').onclick = e => { const b = e.target.closest('[data-k]'); if (!b) return;
     const [k, , , step, [lo, hi], req] = FIELDS.find(f => f[0] === b.dataset.k), d = +b.dataset.d;
@@ -69,11 +74,10 @@ function openLog(S) {
   $('plClar').onclick = e => { const b = e.target.closest('[data-c]'); if (b) { v.clarity = b.dataset.c; drawS(); } };
   $('plAdd').onclick = e => { const b = e.target.closest('[data-a]'); if (!b) return; v.added = v.added.includes(b.dataset.a) ? v.added.filter(a => a !== b.dataset.a) : [...v.added, b.dataset.a]; drawS(); };
   $('plSrc').onclick = e => { const b = e.target.closest('[data-s]'); if (b) { v.source = b.dataset.s; drawS(); } };
-  $('plX').onclick = () => $('phone').classList.remove('open');
-  $('plGo').onclick = async () => { const go = $('plGo'); go.textContent = 'Saving…';
-    try { W.data = await api.addPoolTest(v); $('phone').classList.remove('open'); draw(S); toast('✓', 'rgba(78,240,166,.2)', 'Test logged', 'Tap the values on the Water card to see the history.'); }
+  go.onclick = async () => { go.textContent = 'Saving…';
+    try { W.data = await api.addPoolTest(v); closeSheet(); draw(S); toast('✓', 'rgba(78,240,166,.2)', 'Test logged', 'Tap the values on the Water card to see the history.'); }
     catch (e) { alert(e.message); go.textContent = 'Save test'; } };
-  drawS(); $('phone').classList.add('open');
+  drawS();
 }
 
 function openHistory(S) {

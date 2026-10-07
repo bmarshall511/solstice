@@ -233,21 +233,25 @@ function openBills(S) {
   body.querySelectorAll('[data-bill]').forEach(el => el.onclick = () => openBillDetail(S, R.find(r => r.billDate === el.dataset.bill)));
 }
 
+/** One bill's sheet in the component system (mockup al, component 11): its lines as a key/value card, Remove this bill as the
+ *  pinned footer's one write. */
+export function billDetailHtml(r) {
+  return `${sheetHead(`${niceDate(r.billDate, { month: 'long', year: 'numeric' })} bill`, '', `${niceDate(r.period.from)} – ${niceDate(r.period.to)} · ${r.period.days} days`)}
+    <div class="c-card" style="padding:4px 16px"><div class="c-kv">
+      <span>Bought from PEC</span><b>${r.pec.deliveredKwh.toLocaleString()} kWh</b><span>Sent to PEC</span><b>${esc(r.pec.receivedKwh)} kWh</b>
+      <span>Tesla measured bought / sent</span><b>${r.tesla.importKwh == null ? '—' : Math.round(r.tesla.importKwh).toLocaleString()} / ${r.tesla.exportKwh == null ? '—' : Math.round(r.tesla.exportKwh)} kWh</b>
+      ${r.charges.map(c => `<span>${esc(c.label)}${c.kwh ? ` · ${c.kwh.toLocaleString()} kWh @ $${esc(c.rate)}` : ''}</span><b>${money2(c.amount)}</b>`).join('')}
+      <span><b style="color:var(--text)">Total</b></span><b>${money2(r.total)}</b></div></div>
+    ${sheetFoot('', 'Remove this bill', 'c-acc-out')}`;
+}
 function openBillDetail(S, r) {
-  $('sheetBody').innerHTML = `<div class="shead"><h4>${niceDate(r.billDate, { month: 'long', year: 'numeric' })} bill</h4><button class="x" id="sheetX" aria-label="Close">×</button></div>
-    <p class="sub">${niceDate(r.period.from)} – ${niceDate(r.period.to)} · ${r.period.days} days</p>
-    <table class="btable">
-      <tr><td>Bought from PEC</td><td>${r.pec.deliveredKwh.toLocaleString()} kWh</td></tr><tr><td>Sent to PEC</td><td>${esc(r.pec.receivedKwh)} kWh</td></tr>
-      <tr><td>Tesla measured bought / sent</td><td>${r.tesla.importKwh == null ? '—' : Math.round(r.tesla.importKwh).toLocaleString()} / ${r.tesla.exportKwh == null ? '—' : Math.round(r.tesla.exportKwh)} kWh</td></tr>
-      ${r.charges.map(c => `<tr><td>${esc(c.label)}${c.kwh ? ` · ${c.kwh.toLocaleString()} kWh @ $${esc(c.rate)}` : ''}</td><td>${money2(c.amount)}</td></tr>`).join('')}
-      <tr><td><b style="color:var(--text)">Total</b></td><td><b>${money2(r.total)}</b></td></tr></table>
-    <button class="danger" id="billRemove">Remove this bill</button>`;
-  $('phone').classList.add('open');
-  $('sheetX').onclick = () => $('phone').classList.remove('open');
-  $('billRemove').onclick = async () => {
+  sheet(billDetailHtml(r));
+  const rm = $('sheetBody').querySelector('[data-f="pri"]');
+  rm.id = 'billRemove';   // the guest CSS (q-share) still hides it by this id
+  rm.onclick = async () => {
     if (!confirm(`Remove the ${niceDate(r.billDate, { month: 'long', year: 'numeric' })} bill? You can add it again from the PDF.`)) return;
     await api.deleteBill(r.billDate);
-    $('phone').classList.remove('open');
+    closeSheet();
     toast('✓', 'rgba(255,255,255,.12)', 'Bill removed', `${niceDate(r.billDate, { month: 'long', year: 'numeric' })} · ${money2(r.total)}`);
     S.reconcile = await api.reconcile(); S.tariff = S.reconcile.findLast(x => x.tariff?.importRateAllIn > 0)?.tariff ?? null; drawBills(S);
   };
