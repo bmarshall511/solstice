@@ -30,6 +30,10 @@ export async function siteAccount(siteId: string) {
   return s;
 }
 
+/** Clear a recorded `error:<key>` after a success: one statement, and no write when there is nothing to clear. */
+export const clearError = (siteId: string, key: string) =>
+  q(`UPDATE kv SET value = 'null'::jsonb WHERE key = $1 AND value <> 'null'::jsonb`, [`${siteId}:error:${key}`]);
+
 /** Latest live_status, fetched from Tesla only when the stored one is older than ~25 s. */
 export async function refreshLive(siteId: string, maxAgeMs = config.liveMaxAgeMs) {
   const last = await one<{ ts: string }>('SELECT ts FROM readings WHERE site_id = $1 ORDER BY ts DESC LIMIT 1', [siteId]);
@@ -40,7 +44,7 @@ export async function refreshLive(siteId: string, maxAgeMs = config.liveMaxAgeMs
   if (!s.grid_status && nums.every(v => typeof v !== 'number')) { await kv.set(`${siteId}:error:live`, { at: Date.now(), message: LIVE_EMPTY }); throw new Error(LIVE_EMPTY); }
   await q(`INSERT INTO readings VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (site_id, ts) DO NOTHING`,
     [siteId, ts, ...nums.map(nul), String(s.grid_status ?? ''), String(s.island_status ?? ''), !!s.storm_mode_active]);
-  await kv.set(`${siteId}:lastLive`, Date.now());
+  await kv.set(`${siteId}:lastLive`, Date.now()); await clearError(siteId, 'live');
   return true;
 }
 
@@ -220,7 +224,8 @@ export async function syncSite(siteId: string, budgetMs = 8_000, opts: { nightly
   const t0 = Date.now(), acct = await siteAccount(siteId), a = acct.tesla_account_id, today = localDay();
   const done: string[] = [], errors: string[] = [];
   const due = async (key: string, everyMs: number) => { const last = await kv.get<number>(`${siteId}:${key}`); return !last || Date.now() - last > everyMs; };
-  const run = async (key: string, fn: () => Promise<unknown>) => { try { await fn(); await kv.set(`${siteId}:${key}`, Date.now()); done.push(key); } catch (e) { errors.push(`${key}: ${(e as Error).message}`); await kv.set(`${siteId}:error:${key}`, { at: Date.now(), message: (e as Error).message }); } };
+  // a success clears the step's recorded error, so /api/now health and Data health stop showing it (orchestrator O-10)
+  const run = async (key: string, fn: () => Promise<unknown>) => { try { await fn(); await kv.set(`${siteId}:${key}`, Date.now()); await clearError(siteId, key); done.push(key); } catch (e) { errors.push(`${key}: ${(e as Error).message}`); await kv.set(`${siteId}:error:${key}`, { at: Date.now(), message: (e as Error).message }); } };
 
   await refreshLive(siteId).catch(e => errors.push(`live: ${e.message}`));
   if (!acct.info_at || Date.now() - Date.parse(acct.info_at) > 6 * 3600e3) await run('siteInfo', () => refreshSiteInfo(siteId, a));

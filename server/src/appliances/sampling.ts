@@ -132,13 +132,16 @@ export async function poolTick(siteId: string, now: number) {
 /**
  * One cron tick for every site: the Nest sample (with acTick) and the pool read run side by side, each only when due.
  * `sites` and `acTick` come from app.ts (the site list and acTick with the owner's settings, rate and heat slope).
+ * The pool read is bounded by readPool's session deadline (20 s, screenlogic.ts withUnit), and anything the pool half throws
+ * is reported in its result, so a hung or failing controller never holds or fails the Nest half (code review C-01).
  */
 export async function cronTick(now: number, o: { sites: () => Promise<string[]>; acTick: (siteId: string) => Promise<unknown> }) {
   if (!nestConfigured() && !poolConfigured()) return { skipped: 'nest and pool not configured' };
   if (!tickMayBeDue(now)) { debug(now, 'nothing due'); return { skipped: 'not due' }; }
   const out: Record<string, unknown> = {};
   for (const id of await o.sites()) {
-    const [nest, pool] = await Promise.all([nestTick(id, now, () => o.acTick(id)), poolTick(id, now)]);
+    const [nest, pool] = await Promise.all([nestTick(id, now, () => o.acTick(id)),
+      poolTick(id, now).catch((e: any) => ({ read: false, error: String(e?.message ?? e) }))]);
     out[id] = { nest, pool };
   }
   return out;

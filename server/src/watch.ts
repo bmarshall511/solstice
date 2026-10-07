@@ -110,6 +110,9 @@ export const nightlySteps: Record<string, (siteId: string, now: number, o: Night
   billDue: billDueCheck, anomalies: notifyAnomalies,
 };
 export const fiveMinuteWatch = (siteId: string, now = Date.now()) => run(Object.fromEntries(Object.entries(fiveMinuteSteps).map(([k, f]) => [k, () => f(siteId, now)])));
-export const nightlyWatch = (siteId: string, now = Date.now(), o: NightlyOpts = {}) => run(Object.fromEntries(Object.entries(nightlySteps).map(([k, f]) => [k, () => f(siteId, now, o)])));
+/** A nightly step doesn't start with less than this left before `o.deadline`; it is recorded as skipped (code review C-06). */
+export const NIGHTLY_STEP_MIN_MS = 5_000;
+export const nightlyWatch = (siteId: string, now = Date.now(), o: NightlyOpts = {}) => run(Object.fromEntries(Object.entries(nightlySteps).map(([k, f]) => [k,
+  () => o.deadline != null && o.deadline - Date.now() < NIGHTLY_STEP_MIN_MS ? Promise.resolve({ skipped: 'out of time' }) : f(siteId, now, o)])));
 /** The sites the crons act for. */
 export const cronSites = async () => (await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL')).map(s => s.id);

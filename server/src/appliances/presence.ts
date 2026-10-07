@@ -43,10 +43,14 @@ export function resolvePresence(o: { manual: ManualPresence | null; legacy?: str
   return { state: 'home', source: 'default', since: null, until: null };
 }
 
-/** When the thermostat's current Eco state began, from the stored Nest readings (null when unknown). */
-async function nestSince(siteId: string, eco: boolean) {
-  const r = await one<{ ts: string | null }>(`SELECT MIN(ts)::text ts FROM nest_readings WHERE site_id = $1 AND eco = $2
-    AND ts > COALESCE((SELECT MAX(ts) FROM nest_readings WHERE site_id = $1 AND eco IS DISTINCT FROM $2), 0)`, [siteId, eco]);
+/** How far back nestSince looks for the last reading in the other Eco state (code review C-11: it walked the whole table). */
+export const NEST_SINCE_DAYS = 30;
+/** When the thermostat's current Eco state began, from the stored Nest readings: the first reading in this state after the last one
+ *  in the other state within 30 days; a state that has held longer than that reads "since" its earliest reading in the window
+ *  (at least 30 days). Null only when there is no reading in the state. */
+export async function nestSince(siteId: string, eco: boolean, now = Date.now()) {
+  const r = await one<{ ts: string | null }>(`SELECT (SELECT MIN(ts) FROM nest_readings WHERE site_id = $1 AND eco = $2 AND ts > COALESCE(x.t, $3))::text ts
+    FROM (SELECT MAX(ts) t FROM nest_readings WHERE site_id = $1 AND eco IS DISTINCT FROM $2 AND ts > $3) x`, [siteId, eco, now - NEST_SINCE_DAYS * 864e5]);
   return r?.ts != null ? Number(r.ts) : null;
 }
 
@@ -57,7 +61,7 @@ export async function presenceFor(siteId: string, settingsAll: Record<string | s
   if (trip && isAway(trip, now)) return { state: 'away', source: 'vacation', since: trip.startedAt ?? trip.leaveAt, until: trip.backAt };
   const [manual, nest] = await Promise.all([kv.get<ManualPresence | null>(presenceKey(siteId)), kv.get<NestState | null>('nest:last')]);
   const useNest = settingsAll.ac?.nestPresence !== false, fresh = useNest && nest && now - nest.at <= NEST_MAX_AGE_MS;
-  const since = fresh ? await nestSince(siteId, !!nest!.eco).catch(() => null) : null;
+  const since = fresh ? await nestSince(siteId, !!nest!.eco, now).catch(() => null) : null;
   return resolvePresence({ manual: manual ?? null, legacy: settingsAll.ac?.presence ?? null, nest: nest ?? null, useNest, now, nestSince: since });
 }
 

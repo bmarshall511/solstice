@@ -80,8 +80,8 @@ vi.mock('../../server/src/appliances/nest.js', async importOriginal => {
 import { writePoolPlan } from '../../server/src/appliances/screenlogic.js';
 import { setCool, lastSetpointWrite, ownerCommand } from '../../server/src/appliances/nest.js';
 import { applyPlan, restorePrevious, planFor, powerModel, type PoolSettings } from '../../server/src/appliances/pool.js';
-import { autopilot } from '../../server/src/appliances/autopilot.js';
-import { acTick, resumeHold, dayInputs } from '../../server/src/appliances/ac.js';
+import { autopilot, forecastAged } from '../../server/src/appliances/autopilot.js';
+import { acTick, acDetail, resumeHold, dayInputs, dayInputsKey } from '../../server/src/appliances/ac.js';
 import { getHold, lastSent } from '../../server/src/appliances/hold.js';
 import { presenceKey } from '../../server/src/appliances/presence.js';
 import { localDay, addDays } from '../../server/src/tesla/client.js';
@@ -591,6 +591,78 @@ describe('write paths call the guard (fake ScreenLogic session, fake SDM, in-mem
       H.readings.spare = [];
       vi.setSystemTime(at('16:05')); await tick();
       expect(H.sdm).toEqual([]);                                                                 // stays 76, no 78 coast
+    });
+  });
+  describe('AC: an Open-Meteo outage (code review C-04)', () => {
+    // a mild day at home (plan 76° from 07:00); NOW is 13:00 Central; the thermostat reads 80°, so a fresh plan steps to 78°
+    const home = { ac: { autopilot: 'auto', presence: 'home' } };
+    const tick = () => acTick(SITE, home, .1064, 2.5);
+    const acLog = async () => ((await H.db.kv.get(`${SITE}:ac:log`)) ?? []) as Array<{ text: string; delta?: string }>;
+    const cacheFrom = async (ageH: number) => {
+      const today = localDay();
+      await H.db.kv.set('pool:forecast', { at: NOW - ageH * 3600e3, days: [-1, 0, 1].map(k => ({ date: addDays(today, k), high: 75, rainMm: 0, rainPct: 0, sunKwhM2: 3, hourlySun: Array(24).fill(0) })) });
+    };
+    // the write-paths beforeEach fakes fetch for the SDM URL only, so every Open-Meteo call fails, as in an outage
+    beforeEach(() => { process.env.SITE_LAT = '30.0'; process.env.SITE_LON = '-97.0'; H.nestState.coolF = 80; });
+    afterEach(() => { delete process.env.SITE_LAT; delete process.env.SITE_LON; });
+
+    it('F1 fetch fails, cache 3 h old: the plan runs on it, flagged stale, and the log says so once', async () => {
+      await cacheFrom(3);
+      expect(await forecastAged()).toMatchObject({ stale: true, ageMs: 3 * 3600e3, error: expect.stringContaining('unexpected fetch') });
+      const d = await acDetail(SITE, home, .1064, 2.5);
+      expect(d.forecast).toEqual({ stale: true, ageH: 3, unavailable: false, note: 'Forecast is 3 h old (Open-Meteo unreachable)' });
+      expect(d.plan.why).toContain('Forecast is 3 h old (Open-Meteo unreachable)');
+      expect(d.error).toBeNull();
+      expect(await tick()).toMatchObject({ sampled: true, applied: true });
+      expect(H.sdm.map(s => s.body.params.coolCelsius)).toEqual([25.56]);                      // 80 → 78
+      vi.setSystemTime(NOW + 5 * MIN); await tick();
+      expect((await acLog()).filter(l => l.text === 'Forecast is 3 h old (Open-Meteo unreachable)')).toHaveLength(1);
+      expect(H.sdm).toHaveLength(1);                                                            // one write; the next waits 30 min
+    });
+    it('F2 fetch fails, cache 14 h old: Nest is still sampled, nothing is sent, the card gets an error, nothing is frozen', async () => {
+      await cacheFrom(14);
+      await expect(forecastAged()).rejects.toThrow('unexpected fetch');
+      const d = await acDetail(SITE, home, .1064, 2.5);
+      expect(d.forecast).toMatchObject({ unavailable: true });
+      expect(d.error).toMatch(/^No forecast \(Open-Meteo unreachable for over 12 h\)/);
+      expect(await tick()).toEqual({ sampled: true, applied: false, noForecast: true });
+      expect(setCool).not.toHaveBeenCalled(); expect(H.sdm).toEqual([]);
+      expect(((await H.db.kv.get('nest:last')) as any).at).toBe(NOW);                             // the thermostat was read and stored
+      expect(await H.db.kv.get(dayInputsKey(SITE))).toBeUndefined();                               // the neutral day is not frozen for today
+      expect(await H.db.kv.get(`${SITE}:ac:control`)).toBeUndefined();                             // nor does it claim a control day (readOnly plan)
+      expect((await acLog())[0].text).toMatch(/^No forecast/);
+    });
+    it('F3 fetch fails, cache 14 h old: a wall change still starts a hold, and Eco is still handled', async () => {
+      await cacheFrom(14);
+      await tick();
+      H.nestState.coolF = 72; vi.setSystemTime(NOW + 5 * MIN);
+      expect(await tick()).toMatchObject({ sampled: true, held: true });
+      expect(await getHold(SITE)).toMatchObject({ by: 'wall', coolF: 72 });
+      await resumeHold(SITE);
+      (H.nestState as any).eco = true;
+      try { vi.setSystemTime(NOW + 10 * MIN); expect(await tick()).toMatchObject({ eco: true }); }
+      finally { (H.nestState as any).eco = false; }
+      expect(H.sdm).toEqual([]);
+    });
+    it('F4 a fresh cache is unchanged: not stale, no note, no log line', async () => {
+      await cacheFrom(0.5);
+      const d = await acDetail(SITE, home, .1064, 2.5);
+      expect(d.forecast).toEqual({ stale: false, ageH: 1, unavailable: false, note: null });
+      expect(d.plan.why.some((w: string) => /Forecast is|No forecast/.test(w))).toBe(false);
+      await tick();
+      expect(H.sdm).toHaveLength(1);
+      expect((await acLog()).some(l => /Forecast is|No forecast/.test(l.text))).toBe(false);
+    });
+    it('F5 a stale cache and a working Open-Meteo: refetched, not stale', async () => {
+      await cacheFrom(3);
+      const today = localDay();
+      vi.mocked(globalThis.fetch).mockImplementationOnce(async () => new Response(JSON.stringify({
+        hourly: { time: [`${today}T12:00`], shortwave_radiation: [800] },
+        daily: { time: [today], temperature_2m_max: [91], precipitation_sum: [0], precipitation_probability_max: [0], shortwave_radiation_sum: [21.6] } }), { status: 200 }));
+      const f = await forecastAged();
+      expect(f).toMatchObject({ stale: false, ageMs: 0 });
+      expect(f.days[0]).toMatchObject({ date: today, high: 91, sunKwhM2: 6 });
+      expect(((await H.db.kv.get('pool:forecast')) as any).at).toBe(NOW);
     });
   });
 });

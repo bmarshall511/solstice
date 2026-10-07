@@ -66,6 +66,8 @@ const SCHEMA = [
   `DO $$ BEGIN CREATE INDEX IF NOT EXISTS energy_site_epoch ON energy(site_id, epoch); EXCEPTION WHEN duplicate_table OR unique_violation THEN NULL; END $$`,
   `CREATE TABLE IF NOT EXISTS soe (site_id text NOT NULL, ts text NOT NULL, epoch bigint NOT NULL, day text NOT NULL, hour smallint NOT NULL, soe real NOT NULL, PRIMARY KEY (site_id, ts))`,
   `CREATE INDEX IF NOT EXISTS soe_site_day ON soe(site_id, day)`,
+  // capacity's 400-day read and the outage view's newest battery % order by epoch (code review §3b)
+  `DO $$ BEGIN CREATE INDEX IF NOT EXISTS soe_site_epoch ON soe(site_id, epoch); EXCEPTION WHEN duplicate_table OR unique_violation THEN NULL; END $$`,
   `CREATE TABLE IF NOT EXISTS backup_events (site_id text NOT NULL, ts text NOT NULL, epoch bigint NOT NULL, duration_s int NOT NULL, PRIMARY KEY (site_id, ts))`,
   `CREATE TABLE IF NOT EXISTS bills (
      site_id text NOT NULL, bill_date text NOT NULL, period_from text NOT NULL, period_to text NOT NULL,

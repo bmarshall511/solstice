@@ -371,6 +371,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
       const writes: Array<[string, unknown]> = [[keys.last, out], [keys.log, [...log.reverse(), ...prevLog].slice(0, 40)]];
       if (ac) writes.push([keys.ac, ac.record]);
       if (d && pump) writes.push([keys.pump, pump]);
+      if (!errors.length) writes.push([`${siteId}:error:learn`, null]);   // a clean run clears the last error, in the same write (orchestrator O-10)
       out.ms = Math.round(performance.now() - t0); out.queries = learnStats.queries + 1;
       await lq(`INSERT INTO kv (key, value) SELECT * FROM unnest($1::text[], $2::jsonb[]) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
         [writes.map(w => w[0]), writes.map(w => JSON.stringify(w[1]))]);

@@ -361,3 +361,30 @@ describe('the nightly watchdog (5-minute cron)', () => {
     expect((await call('/api/cron/nest', { cookie: '', headers: { authorization: 'Bearer wrong' } })).status).toBe(401);
   });
 });
+
+describe('the nightly cron\'s tail (code review C-06)', () => {
+  it('NW-1 with the deadline passed every nightly step is skipped and said so, and nightlyWatch still returns', async () => {
+    const W = await import('../../server/src/watch.js'), probe = vi.fn(async () => ({ ran: true }));
+    W.nightlySteps.zzProbe = probe;
+    try {
+      const out = await W.nightlyWatch('s', Date.now(), { deadline: Date.now() + 4_000 });   // under the 5 s a step needs
+      expect(Object.keys(out).sort()).toEqual(Object.keys(W.nightlySteps).sort());
+      for (const v of Object.values(out)) expect(v).toEqual({ skipped: 'out of time' });
+      expect(probe).not.toHaveBeenCalled();
+      expect((await W.nightlyWatch('s', Date.now(), { deadline: Date.now() + 30_000 })).zzProbe).toEqual({ ran: true });   // with time, it runs
+    } finally { delete W.nightlySteps.zzProbe; }
+  });
+  it('NW-2 the done marker is written once the sync and learning finish, before the tail, so a failing tail leaves it set', async () => {
+    const W = await import('../../server/src/watch.js');
+    await db.kv.set('cron:sync:done', 1);
+    let seen: number | undefined;
+    W.nightlySteps.zzProbe = async () => { seen = await db.kv.get<number>('cron:sync:done'); throw new Error('tail failed'); };
+    try {
+      const t0 = Date.now(), r = await call('/api/cron/sync', { cookie: '', headers: { authorization: `Bearer ${CRON}` } });
+      expect(r.status).toBe(200);
+      expect((await r.json())['watch:s'].zzProbe).toEqual({ error: 'tail failed' });
+      expect(seen).toBeGreaterThanOrEqual(t0);                              // already written when the tail ran
+      expect(await db.kv.get<number>('cron:sync:done')).toBe(seen);         // and not written again after it
+    } finally { delete W.nightlySteps.zzProbe; }
+  });
+});

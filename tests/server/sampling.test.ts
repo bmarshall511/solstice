@@ -396,3 +396,140 @@ describe('no path reaches a real device', () => {
     await expect(unit.conn.schedule.deleteScheduleEventByIdAsync(1)).rejects.toThrow('not a read');
   });
 });
+
+/* ---------------------------------------------------------------- C-01: a session that never answers */
+/**
+ * Fake node-screenlogic classes (no sockets): the dispatcher, or the unit, never answers. The unit behaves like the library on a
+ * refused connection: every second its socket errors and reconnectAsync opens a new connection, forever.
+ */
+function silentController(stage: 'dispatcher' | 'unit') {
+  const seen = { gwDestroyed: 0, unitDestroyed: 0, unitConnects: 0, units: 0 };
+  class FakeRemoteLogin {
+    _client = { destroy: () => { seen.gwDestroyed++; }, removeAllListeners: () => {} };
+    constructor(_name: string) {}
+    connectAsync() { return stage === 'dispatcher' ? new Promise(() => {}) : Promise.resolve({ gatewayFound: true, ipAddr: '192.0.2.1', port: 80 }); }
+    closeAsync() { return Promise.resolve(true); }
+    removeAllListeners() {}
+  }
+  class FakeUnit {
+    client: any = null;
+    reconnectAsync = async () => { await this.connectAsync(); };   // as in node-screenlogic: the 'error' handler reconnects
+    constructor() { seen.units++; }
+    init() {}
+    connectAsync() {
+      seen.unitConnects++;
+      const t = setTimeout(() => { this.client = null; void this.reconnectAsync(); }, 1_000);   // ECONNREFUSED a second later
+      this.client = { destroy: () => { clearTimeout(t); seen.unitDestroyed++; }, removeAllListeners: () => {} };
+      return new Promise(() => {});
+    }
+    closeAsync() { return Promise.resolve(true); }
+    removeAllListeners() {}
+  }
+  return { lib: { RemoteLogin: FakeRemoteLogin, UnitConnection: FakeUnit } as any, seen };
+}
+
+describe('C-01: a ScreenLogic session has one overall deadline', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }); });
+  afterEach(() => { vi.useRealTimers(); });
+  const real = () => vi.importActual<typeof import('../../server/src/appliances/screenlogic.js')>('../../server/src/appliances/screenlogic.js');
+
+  it('a dispatcher that never answers: readPool rejects at 20 s, not before, and its socket is destroyed', async () => {
+    const sl = await real(), fake = silentController('dispatcher');
+    let settled: string | null = null;
+    const p = sl.readPool((fn, ms) => sl.withUnit(fn, ms, fake.lib)).then(() => 'resolved', (e: Error) => e.message).then(r => { settled = r; });
+    await vi.advanceTimersByTimeAsync(19_900);
+    expect(settled).toBeNull();
+    await vi.advanceTimersByTimeAsync(200);
+    await p;
+    expect(settled).toBe('ScreenLogic: no answer within 20 s');
+    expect(fake.seen.gwDestroyed).toBe(1);
+    expect(fake.seen.units).toBe(0);   // the unit was never reached
+  });
+
+  it('a unit that refuses: readPool rejects at 20 s and the reconnect loop stops', async () => {
+    const sl = await real(), fake = silentController('unit');
+    const p = sl.readPool((fn, ms) => sl.withUnit(fn, ms, fake.lib)).then(() => 'resolved', (e: Error) => e.message);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(await p).toBe('ScreenLogic: no answer within 20 s');
+    expect(fake.seen.unitConnects).toBeGreaterThan(10);   // the library kept reconnecting until the deadline
+    expect(fake.seen.unitDestroyed).toBe(1);
+    const n = fake.seen.unitConnects;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fake.seen.unitConnects).toBe(n);              // and not once after it
+  });
+
+  it('writes get 40 s', async () => {
+    const sl = await real(), fake = silentController('dispatcher');
+    const p = sl.withUnit(async () => 'done', sl.WRITE_DEADLINE_MS, fake.lib).then(() => 'resolved', (e: Error) => e.message);
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(await p).toBe('ScreenLogic: no answer within 40 s');
+  });
+
+  it('cronTick with a silent controller: the Nest half is done and the tick returns once the pool read gives up', async () => {
+    const sl = await real(), fake = silentController('unit');
+    H.store.set('s:pool:last', poolSnapshot(at('2026-07-15 09:30'), { schedules: CURRENT }));
+    H.S.read = () => sl.readPool((fn, ms) => sl.withUnit(fn, ms, fake.lib));
+    const acTick = vi.fn(async () => ({ sampled: true }));
+    let out: unknown = null;
+    const p = cronTick(at('2026-07-15 10:05'), { sites: async () => ['s'], acTick }).then(r => { out = r; });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(acTick).toHaveBeenCalledWith('s');   // the Nest sample ran without waiting for the pool
+    await vi.advanceTimersByTimeAsync(19_000);
+    await p;
+    expect(out).toEqual({ s: { nest: { every: 5, tick: { sampled: true } }, pool: { read: false, error: 'ScreenLogic: no answer within 20 s' } } });
+    expect(H.readings).toHaveLength(0);
+  });
+
+  it('cronTick: a pool half that throws outside the read is reported, not thrown', async () => {
+    vi.useRealTimers();
+    const get = H.db.kv.get;
+    vi.spyOn(H.db.kv, 'get').mockImplementation(async (k: string) => { if (k === 's:pool:last') throw new Error('database hiccup'); return get(k); });
+    const acTick = vi.fn(async () => ({ sampled: true }));
+    expect(await cronTick(at('2026-07-15 10:05'), { sites: async () => ['s'], acTick }))
+      .toEqual({ s: { nest: { every: 5, tick: { sampled: true } }, pool: { read: false, error: 'database hiccup' } } });
+  });
+});
+
+/* ---------------------------------------------------------------- C-09: a failed pump-status read is unknown, not "off" */
+describe('C-09: a failed pump-status read', () => {
+  const real = () => vi.importActual<typeof import('../../server/src/appliances/screenlogic.js')>('../../server/src/appliances/screenlogic.js');
+  /** The read-only fake, with the pump-status request timing out. */
+  const noStatus = () => {
+    const unit = readOnlyUnit();
+    const conn = new Proxy(unit.conn, { get: (t, k) => k === 'pump' ? { getPumpStatusAsync: async () => { throw new Error('time out waiting for pump status'); } } : t[k] });
+    return { run: async <T>(fn: (c: any) => Promise<T>) => fn(conn) };
+  };
+  const unknownSnap = (at: number) => { const s = poolSnapshot(at, { schedules: CURRENT }); s.pump = { ...s.pump!, running: null, watts: null, rpm: null, status: 'unknown' }; return s; };
+
+  it('readPool marks the pump unknown with running, watts and rpm null; the circuits come from the configuration', async () => {
+    const sl = await real();
+    const snap = await sl.readPool(noStatus().run as any);
+    expect(snap.pump).toMatchObject({ id: 1, status: 'unknown', running: null, watts: null, rpm: null, gpm: null });
+    expect((await sl.readPool(readOnlyUnit().run as any)).pump).not.toHaveProperty('status');   // a good read has none
+  });
+  it('pumpRunning: unknown is never a run', async () => {
+    const { pumpRunning } = await import('../../server/src/appliances/pool.js');
+    expect(pumpRunning({ running: true, rpm: 1500, watts: 150, status: 'unknown' })).toBe(false);
+    expect(pumpRunning({ running: null, rpm: null, watts: null })).toBe(false);
+    expect(pumpRunning({ running: true, rpm: 1500, watts: 150 })).toBe(true);
+  });
+  it('poolTick in pump hours: no pool_readings row, the time is kept, pool:last still updates', async () => {
+    H.store.set('s:pool:last', poolSnapshot(at('2026-09-26 09:30'), { schedules: CURRENT }));
+    H.S.now = at('2026-09-26 10:05:02'); H.S.read = async () => unknownSnap(H.S.now);
+    expect(await poolTick('s', at('2026-09-26 10:05'))).toEqual({ read: true, at: H.S.now, running: null, rpm: null, watts: null });
+    expect(H.readings).toHaveLength(0);
+    expect(H.store.get('s:pool:statusUnknownAt')).toBe(H.S.now);
+    expect((H.store.get('s:pool:last') as any).pump.status).toBe('unknown');
+  });
+  it('poolTick outside pump hours: an unknown read is not an outside run', async () => {
+    vi.mocked(tripOutsideRun).mockClear();
+    H.store.set('s:pool:last', poolSnapshot(at('2026-09-26 05:30'), { schedules: CURRENT }));
+    H.S.read = async () => { const s = unknownSnap(H.S.now); s.pump!.running = true; return s; };   // even with a stray flag
+    H.S.trip = { id: 1 }; H.S.now = at('2026-09-26 06:05:02');
+    expect(await poolTick('s', at('2026-09-26 06:05'))).toMatchObject({ read: true });
+    expect(tripOutsideRun).not.toHaveBeenCalled();                       // no trip push
+    H.S.trip = null; H.S.now = at('2026-09-26 07:05:02');
+    expect(await poolTick('s', at('2026-09-26 07:05'))).toMatchObject({ read: true });
+    expect(H.store.get('s:pool:outsideRuns')).toBeUndefined();           // nor the pool's learning
+  });
+});
