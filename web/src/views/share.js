@@ -9,6 +9,9 @@ import { $, niceDate, localDate, toast } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { esc, nameStart, nameMid, nameMidText, holdVeils, unlockCards } from '../lib/frost.js';
 import { qrSvg } from '../lib/qr.js';
+import { badge } from '../lib/conf.js';
+import { unsubscribePush } from '../lib/push.js';
+import { sheet, sheetHead, sheetFoot, seg, segSet, closeSheet } from './csheet.js';
 
 const day = iso => niceDate(localDate(new Date(iso)));
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -57,8 +60,9 @@ export async function refreshSharing() {
   if (devices) $('devN').textContent = `Owner on ${plural(devices.length, 'device')}`;
 }
 
-const sheet = html => { $('sheetBody').innerHTML = html; $('phone').classList.add('open'); $('sheetX').onclick = () => $('phone').classList.remove('open'); };
-const head = title => `<div class="shead"><h4>${title}</h4><button class="x" id="sheetX" aria-label="Close">×</button></div>`;
+// the three Sharing sheets are component sheets (mockup al, component 11): csheet.js's shell, header and pinned footer
+const body = () => $('sheetBody');
+const field = (label, input) => `<label class="c-field">${label}${input}</label>`;
 
 /* ---------- Share sheet ---------- */
 const EXPIRY = [['24h', '24h'], ['7d', '7d'], ['30d', '30d'], ['1yr', '1 yr'], ['never', 'Never']];
@@ -68,50 +72,57 @@ const opened = l => (l.openedCount ? `opened ${l.openedCount}× · last ${day(l.
 function linkRow(l) {
   const live = l.state === 'active';
   const when = live ? (l.expiresAt ? `expires ${day(l.expiresAt)}` : 'never expires') : l.state === 'revoked' ? `revoked ${day(l.revokedAt)}` : `expired ${day(l.expiresAt)}`;
-  return `<div class="lrow${live ? '' : ' off'}"><div class="lm"><b>${esc(l.label)}</b>created ${day(l.createdAt)} · ${when} · ${opened(l)}</div>${live ? `<button class="link rvk" data-rvk="${esc(l.id)}">Revoke</button>` : ''}</div>`;
+  return `<div class="c-stepper${live ? '' : ' off'}"><div>${esc(l.label)}<small>created ${day(l.createdAt)} · ${when} · ${opened(l)}</small></div>${live ? `<button class="c-btn sm line" data-rvk="${esc(l.id)}">Revoke</button>` : ''}</div>`;
+}
+/** The Share sheet's markup: the link just made (shown once) or the new-link form, then the links; Create link (or Done) in the
+ *  pinned footer, Revoke all links beside it. */
+export function shareHtml({ created = null, active = [], old = [], expires = expiresIn } = {}) {
+  const top = created
+    ? `<p class="c-sheet-sub">Link for <b style="color:var(--text)">${esc(created.label)}</b> · ${created.expiresAt ? `expires ${day(created.expiresAt)}` : 'never expires'}.</p>
+      <div class="c-well"><code class="c-num" style="font-size:12.5px;word-break:break-all">${esc(shortUrl(created.url))}</code>
+        <div class="c-btns"><button class="c-btn sm line" id="lnkCopy">Copy</button><button class="c-btn sm line" id="lnkShare">Share…</button><button class="c-btn sm line" id="lnkQr" aria-expanded="false">QR</button></div>
+        <div id="lnkQrBox" hidden>${qrSvg(created.url)}</div>
+        <p class="c-fine">Shown once. Solstice keeps only a fingerprint.</p></div>`
+    : `<p class="c-sheet-sub">Anyone with a link sees live energy. Never dollars, never controls.</p>
+      ${field('Label · private, the guest never sees it', '<input class="c-input" id="shareLabel" maxlength="40" autocomplete="off" placeholder="e.g. Dad">')}
+      <div class="c-lab">Expires</div>
+      <div id="expSeg">${seg(EXPIRY, expires, { attr: 'data-e', label: 'Expires' })}</div>
+      <p class="c-fine" id="shareErr" style="color:var(--out)" hidden></p>
+      <p class="c-fine">Links can be opened again until they expire or you revoke them. Each one opens the guest view: live kWh, no dollars, no controls.</p>`;
+  return `${sheetHead('Share Solstice')}${top}
+    ${active.length ? `<div class="c-lab">Active links</div><div class="c-card" style="padding:4px 16px">${active.map(linkRow).join('')}</div>` : ''}
+    ${old.length ? `<div class="c-lab">Revoked · 30 days</div><div class="c-card" style="padding:4px 16px">${old.map(linkRow).join('')}</div>` : ''}
+    ${sheetFoot(active.length ? 'Revoke all links' : '', created ? 'Done' : 'Create link', 'c-acc-house', { del: true })}`;
 }
 
 /** The Share sheet. `created` is the link just made: its URL is shown this once and never stored. */
 export async function openShareSheet(created = null) {
   const links = await api.shares().catch(() => []), active = links.filter(l => l.state === 'active'), old = links.filter(l => l.state !== 'active');
-  const top = created
-    ? `<p class="sub">Link for <b style="color:var(--text)">${esc(created.label)}</b> · ${created.expiresAt ? `expires ${day(created.expiresAt)}` : 'never expires'}.</p>
-      <div class="lnk"><code>${esc(shortUrl(created.url))}</code>
-        <div class="lb"><button class="link" id="lnkCopy">Copy</button><button class="link" id="lnkShare">Share…</button><button class="link" id="lnkQr" aria-expanded="false">QR</button></div>
-        <div id="lnkQrBox" hidden>${qrSvg(created.url)}</div>
-        <p class="fine" style="margin-top:10px">Shown once. Solstice keeps only a fingerprint.</p></div>`
-    : `<p class="sub">Anyone with a link sees live energy. Never dollars, never controls.</p>
-      <div class="fields" style="grid-template-columns:1fr"><label>Label · private, the guest never sees it<input id="shareLabel" maxlength="40" autocomplete="off" placeholder="e.g. Dad"></label></div>
-      <span class="lbl">Expires</span>
-      <div class="seg2 exp" id="expSeg">${EXPIRY.map(([v, l]) => `<button data-e="${v}" class="${v === expiresIn ? 'on' : ''}">${l}</button>`).join('')}</div>
-      <button class="primary" id="shareCreate">Create link</button><p class="err" id="shareErr" hidden></p>
-      <p class="fine" style="margin-top:10px;line-height:1.5">Links can be opened again until they expire or you revoke them. Each one opens the guest view: live kWh, no dollars, no controls.</p>`;
-  sheet(`${head('Share Solstice')}${top}
-    ${active.length ? `<div class="sect" style="margin-top:20px">Active links</div><div>${active.map(linkRow).join('')}</div>` : ''}
-    ${old.length ? `<div class="sect">Revoked · 30 days</div><div>${old.map(linkRow).join('')}</div>` : ''}
-    ${active.length ? '<button class="danger" id="revokeAll">Revoke all links</button>' : ''}`);
+  sheet(shareHtml({ created, active, old }));
+  const pri = body().querySelector('[data-f="pri"]');
   if (created) {
     $('lnkCopy').onclick = () => copy(created.url, created.label);
     $('lnkShare').onclick = () => (navigator.share ? navigator.share({ title: 'Solstice', url: created.url }).catch(() => {}) : copy(created.url, created.label));
     $('lnkQr').onclick = () => { const box = $('lnkQrBox'); box.hidden = !box.hidden; $('lnkQr').setAttribute('aria-expanded', String(!box.hidden)); };
+    pri.onclick = closeSheet;
   } else {
-    $('expSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; expiresIn = b.dataset.e; $('expSeg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
+    $('expSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; expiresIn = b.dataset.e; segSet($('expSeg').firstElementChild, expiresIn, 'data-e'); };
     const say = t => { $('shareErr').textContent = t; $('shareErr').hidden = !t; };
-    $('shareCreate').onclick = async () => {
+    pri.onclick = async () => {
       const label = $('shareLabel').value.trim();
       if (!label) { say('Give the link a label, so you know whose it is.'); $('shareLabel').focus(); return; }
-      $('shareCreate').textContent = 'Creating…';
-      const c = await api.createShare(label, expiresIn).catch(e => { say(e.message); $('shareCreate').textContent = 'Create link'; return null; });
+      pri.textContent = 'Creating…';
+      const c = await api.createShare(label, expiresIn).catch(e => { say(e.message); pri.textContent = 'Create link'; return null; });
       if (c) { openShareSheet(c); refreshSharing(); }
     };
   }
-  document.querySelectorAll('#sheetBody [data-rvk]').forEach(b => b.onclick = async () => {
+  body().querySelectorAll('[data-rvk]').forEach(b => b.onclick = async () => {
     const l = links.find(x => x.id === b.dataset.rvk);
     if (!l || !confirm(`Turn off the link for ${l.label}? Anyone using it loses access on their next refresh.`)) return;
     await api.revokeShare(l.id).then(() => toast('✓', 'rgba(255,255,255,.12)', 'Link turned off', l.label), e => toast('!', 'rgba(255,90,78,.25)', 'Couldn’t turn it off', e.message));
     openShareSheet(created); refreshSharing();
   });
-  const all = $('revokeAll');
+  const all = body().querySelector('[data-f="sec"]');   // Revoke all links
   if (all) all.onclick = async () => {
     if (!confirm(`Turn off all ${plural(active.length, 'link')}?`)) return;
     await api.revokeAllShares().then(r => toast('✓', 'rgba(255,255,255,.12)', 'All links turned off', plural(r.revoked, 'link')), e => toast('!', 'rgba(255,90,78,.25)', 'Couldn’t turn them off', e.message));
@@ -126,39 +137,75 @@ async function copy(text, label) {
 
 /* ---------- Name shown on invites ---------- */
 function openNameSheet() {
-  sheet(`${head('Name shown on invites')}<p class="sub">Guests see it on the welcome card, the Now tab and in Settings: “Shared by ${nameMid(S.ownerName)}”.</p>
-    <div class="fields" style="grid-template-columns:1fr"><label>Name<input id="nameIn" maxlength="40" autocomplete="off" value="${esc(S.ownerName)}"></label></div>
-    <button class="primary" id="nameSave">Save</button>`);
-  $('nameSave').onclick = async () => {
+  sheet(`${sheetHead('Name shown on invites', '', `Guests see it on the welcome card, the Now tab and in Settings: “Shared by ${nameMid(S.ownerName)}”.`)}
+    ${field('Name', `<input class="c-input" id="nameIn" maxlength="40" autocomplete="off" value="${esc(S.ownerName)}">`)}
+    ${sheetFoot('', 'Save')}`);
+  body().querySelector('[data-f="pri"]').onclick = async () => {
     const v = $('nameIn').value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 40) || 'The owner';
-    await api.saveSettings({ ownerName: v }).then(() => { S.ownerName = v; $('nameVal').textContent = v; $('phone').classList.remove('open'); toast('✓', 'rgba(255,255,255,.12)', 'Saved', `Guests see “${v}”`); },
+    await api.saveSettings({ ownerName: v }).then(() => { S.ownerName = v; $('nameVal').textContent = v; closeSheet(); toast('✓', 'rgba(255,255,255,.12)', 'Saved', `Guests see “${v}”`); },
       e => toast('!', 'rgba(255,90,78,.25)', 'Couldn’t save', e.message));
   };
 }
 
 /* ---------- Owner devices ---------- */
 const since = iso => { const s = (Date.now() - Date.parse(iso)) / 1000; return s < 3600 ? `${Math.max(1, Math.round(s / 60))} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : day(iso); };
-async function openDevicesSheet() {
-  const list = (await api.devices().catch(() => null)) ?? [], others = list.filter(d => !d.current);
+/** The Owner devices sheet's markup: this device first (with Sign out this device), then the others, each with its Sign out;
+ *  Sign out other devices and Done in the pinned footer. `list` is null when the devices couldn't be read. */
+export function devicesHtml(list) {
+  const all = list ?? [], others = all.filter(d => !d.current);
   const parts = d => { const [dev, br] = String(d.label ?? 'Device').split(' · '); return [esc(dev), br ? esc(br) + ' · ' : '']; };
-  const rows = [...list.filter(d => d.current), ...others].map(d => { const [dev, br] = parts(d);
-    return d.current ? `<div class="lrow"><div class="lm"><b>This ${dev}</b>${br}now</div><span class="badge g" style="flex:none">this device</span></div>`
-      : `<div class="lrow" data-d="${esc(d.id)}"><div class="lm"><b>${dev}</b>${br}${since(d.lastSeen)}</div><button class="link rvk" data-dev="${esc(d.id)}">Sign out</button></div>`; });
-  sheet(`${head('Owner devices')}<p class="sub">Each device unlocked with the owner key stays signed in for 400 days after it was last used.</p>
-    <div style="margin-top:10px">${rows.join('') || '<div class="empty">Couldn’t load the devices.</div>'}</div>
-    ${others.length ? '<button class="danger" id="devOthers">Sign out other devices</button>' : ''}
-    <p class="fine" style="margin-top:10px;line-height:1.5">The key lives in your password manager. Rotating it signs every device out; this list signs them out one at a time.</p>`);
-  document.querySelectorAll('#sheetBody [data-dev]').forEach(b => b.onclick = async () => {
-    const r = b.closest('.lrow'), name = r.querySelector('b').textContent;
+  const rows = [...all.filter(d => d.current), ...others].map(d => { const [dev, br] = parts(d);
+    return d.current ? `<div class="c-stepper"><div>This ${dev}<small>${br}now</small></div>${badge('learned', 'this device')}</div>`
+      : `<div class="c-stepper" data-d="${esc(d.id)}"><div>${dev}<small>${br}${since(d.lastSeen)}</small></div><button class="c-btn sm line" data-dev="${esc(d.id)}" data-name="${dev}">Sign out</button></div>`; });
+  return `${sheetHead('Owner devices', '', 'Each device unlocked with the owner key stays signed in for 400 days after it was last used.')}
+    ${rows.length ? `<div class="c-card" style="padding:4px 16px">${rows.join('')}</div>` : '<p class="c-fine">Couldn’t load the devices.</p>'}
+    <div class="c-btns"><button class="c-btn del block" id="devSelf" data-arm="">${SELF.label}</button></div>
+    <p class="c-fine">The key lives in your password manager. Rotating it signs every device out; this list signs them out one at a time.</p>
+    ${sheetFoot(others.length ? 'Sign out other devices' : '', 'Done', 'c-acc-house', { del: true })}`;
+}
+async function openDevicesSheet() {
+  const list = await api.devices().catch(() => null), others = (list ?? []).filter(d => !d.current);
+  sheet(devicesHtml(list));
+  body().querySelector('[data-f="pri"]').onclick = closeSheet;
+  $('devSelf').onclick = () => signOutTap($('devSelf'));
+  body().querySelectorAll('[data-dev]').forEach(b => b.onclick = async () => {
+    const r = b.closest('.c-stepper'), name = b.dataset.name;
     await api.signOutDevice(b.dataset.dev).then(() => { r.classList.add('off'); toast('✓', 'rgba(255,255,255,.12)', 'Signed out', name); refreshSharing(); },
       e => toast('!', 'rgba(255,90,78,.25)', 'Couldn’t sign it out', e.message));
   });
-  const all = $('devOthers');
+  const all = body().querySelector('[data-f="sec"]');   // Sign out other devices
   if (all) all.onclick = async () => {
     if (!confirm(`Sign out ${plural(others.length, 'other device')}? ${others.length === 1 ? 'It needs' : 'They need'} the owner key to get back in.`)) return;
     await api.signOutOthers().then(r => { toast('✓', 'rgba(255,255,255,.12)', 'Signed out', plural(r.signedOut, 'other device')); openDevicesSheet(); refreshSharing(); },
       e => toast('!', 'rgba(255,90,78,.25)', 'Couldn’t sign them out', e.message));
   };
+}
+
+/* ---------- S-15 · Sign out this device ---------- */
+const SELF = { label: 'Sign out this device', confirm: 'Tap again to sign out', busy: 'Signing out…', ms: 4000 };
+/**
+ * The first tap arms the button (it asks "Tap again to sign out" for 4 s); the second signs this device out. Returns the sign-out's
+ * promise on the second tap, false on the first.
+ */
+export function signOutTap(btn, go = signOutHere) {
+  if (btn.dataset.arm !== '1') {
+    btn.dataset.arm = '1'; btn.textContent = SELF.confirm; btn.setAttribute('aria-live', 'polite');
+    clearTimeout(btn._disarm); btn._disarm = setTimeout(() => { btn.dataset.arm = ''; btn.textContent = SELF.label; }, SELF.ms);
+    return false;
+  }
+  clearTimeout(btn._disarm); btn.dataset.arm = ''; btn.disabled = true; btn.textContent = SELF.busy;
+  return go().catch(e => { btn.disabled = false; btn.textContent = SELF.label; toast('!', 'rgba(255,90,78,.25)', 'Couldn’t sign out', e.message); });
+}
+/**
+ * Sign this device out: drop its push subscription first (it needs the owner cookie; a failure is ignored), then POST
+ * /api/auth/signout, forget the owner's name on this device and reload, which lands on the "Solstice is private" card.
+ */
+export async function signOutHere({ unsub = unsubscribePush, reload = () => location.replace(location.pathname) } = {}) {
+  await Promise.resolve().then(unsub).catch(() => {});
+  await api.signOut();
+  store('solstice:ownerName', null);
+  if (S) { S.guest = false; S.asGuest = false; S.ownerName = 'The owner'; }
+  reload();
 }
 
 /* ======================= a guest leaving ======================= */

@@ -50,6 +50,8 @@ export const api = {
   devices: () => get('auth/devices'),
   signOutDevice: id => send('POST', `auth/devices/${encodeURIComponent(id)}/signout`),
   signOutOthers: () => send('POST', 'auth/signout-others'),
+  /** Sign this device out (ends its owner session and clears the solstice_owner cookie). */
+  signOut: () => send('POST', 'auth/signout'),
   preview: on => send('POST', 'auth/preview', { on }),
   shares: () => get('share'),
   createShare: (label, expiresIn) => send('POST', 'share', { label, expiresIn }),
