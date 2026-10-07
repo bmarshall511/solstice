@@ -652,7 +652,7 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
     expect(r.tiers).toMatchObject({ 'fc48.solar': 'learning', 'ac.shifted': 'measured', 'ac.eveningAvoided': 'measured' });
     // budget: a fixed number of round trips, no per-model or per-row queries
     expect(r.queries).toBeLessThanOrEqual(24);
-    expect(queries).toBeLessThanOrEqual(27);   // mockup ah: + the pool days already marked extra
+    expect(queries).toBeLessThanOrEqual(28);   // mockup ah: + the pool days already marked extra; mockup ak: + the trip days
     expect(r.ms).toBeLessThan(5000);
     console.info(`[learning] nightly job on seeded data: ${queries} PGlite round trips (${r.queries} counted by the job), ${r.ms} ms`);
   });

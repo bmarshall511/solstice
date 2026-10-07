@@ -48,8 +48,9 @@ import { runLearn } from './learn/nightly.js';
 import { learnRouter } from './learn/api.js';
 import { vacationRoutes, vacationTick, finishTrip, tripHooks, departure } from './vacation/index.js';
 import { leftOn, cloudyWater } from './vacation/pool.js';
-import { liveTrip, patchTripData } from './vacation/trip.js';
+import { liveTrip, patchTripData, tripDays } from './vacation/trip.js';
 import { freshTripAc, tripAcEnd } from './vacation/ac.js';
+import { vacationWatch, heldSummary } from './vacation/watch.js';
 import { confidenceMap } from './learn/confidence.js';
 
 export const app = express();
@@ -369,8 +370,9 @@ app.get('/api/monthly', wrap(async (req, res) => {
 
 app.get('/api/profile', wrap(async (req, res) => {
   const days = Number(req.query.days ?? 14), to = localDay(), from = addDays(to, -days);
-  res.json({ days, hours: await q(`SELECT hour::int, (SUM(h) / 1000.0 / $4)::float8 home, (SUM(s) / 1000.0 / $4)::float8 solar
-    FROM (SELECT day, hour, ${hourWh('home_wh')} h, ${hourWh('solar_wh')} s FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day, hour) x GROUP BY hour ORDER BY hour`, [site(req), from, to, days]),
+  const trips = [...await tripDays(site(req), from, to)].filter(d => d < to);   // mockup ak: home use is an at-home day's; solar keeps every day
+  res.json({ days, hours: await q(`SELECT hour::int, (SUM(h) FILTER (WHERE NOT (day = ANY($5::text[]))) / 1000.0 / GREATEST(1, $4 - cardinality($5::text[])))::float8 home, (SUM(s) / 1000.0 / $4)::float8 solar
+    FROM (SELECT day, hour, ${hourWh('home_wh')} h, ${hourWh('solar_wh')} s FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day, hour) x GROUP BY hour ORDER BY hour`, [site(req), from, to, days, trips]),
     conf: await confidenceMap(site(req), ['fc48.solar', 'fc48.home', 'fc48.soc']),   // learning layer: trust in the 48-hour forecast built on this profile
     scale: (await homeForecast(site(req)).catch(() => null))?.scale ?? {} }); // mockup ah: each day's total from its forecast high (learn/homeModel.ts)
 }));
@@ -721,6 +723,8 @@ fiveMinuteSteps.powerwall = powerwallTick; nightlySteps.powerwall = powerwallNig
 fiveMinuteSteps.digest = maybeWeeklyDigest; nightlySteps.digest = maybeWeeklyDigest;
 fiveMinuteSteps.panels = panelWatch;
 fiveMinuteSteps.grid = gridWatch;
+fiveMinuteSteps.vacation = (id, now) => vacationWatch(id, now, (sid, text) => finishTrip(sid, 'home', Date.now(), text));   // mockup ak: trip alerts, "Looks like you're away"
+tripHooks.end.held = (id, trip, now) => heldSummary(id, trip, now);   // the pushes held during the trip, as one summary
 fiveMinuteSteps.spare = spareWatch;   // mockup ad: the pool speeds up on real spare solar (Auto only)   // mockup ab: grid down / Powerwalls low / grid back (after the storm step's live read)
 nightlySteps.soiling = soilingNightly;
 nightlySteps.poolTest = poolTestReminder;   // poolTests.ts (mockup aj): one "time to test" push per test, 4 days warm / 7 cool   // soiling.ts (mockup ai): the weather for the Cleaning check card, and one push per dusty spell

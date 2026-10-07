@@ -120,6 +120,23 @@ describe('the trip routes', () => {
   });
 });
 
+describe('the learning layer', () => {
+  it('VAC-6 /api/profile: home use is the average at-home day, trip days left out; solar keeps every day', async () => {
+    const { localDay, addDays, localAt } = await import('../../server/src/tesla/client.js');
+    const today = localDay(), days = Array.from({ length: 14 }, (_, i) => addDays(today, -14 + i)), tripD = new Set([days[5], days[6]]);
+    await db.q('DELETE FROM energy');
+    for (const day of days) for (let h = 0; h < 24; h++)
+      await db.q(`INSERT INTO energy (site_id, ts, epoch, day, hour, solar_wh, home_wh) VALUES ('s', $1, $2, $3, $4, $5, $6)`, [`${day}T${String(h).padStart(2, '0')}:00:00`, localAt(day, h), day, h, 1000, tripD.has(day) ? 500 : 3000]);
+    const before = await (await call('/api/profile')).json();
+    expect(before.hours[0].home).toBeCloseTo((12 * 3 + 2 * .5) / 14, 5);
+    await db.q(`INSERT INTO trips (site_id, leave_at, back_at, state, started_at, ended_at) VALUES ('s', $1, $2, 'ended', $1, $2)`, [localAt(days[5], 0), localAt(days[7], 0)]);
+    const after = await (await call('/api/profile')).json();
+    expect(after.hours[0].home).toBeCloseTo(3, 5);
+    expect(after.hours[0].solar).toBeCloseTo(1, 5);
+    await db.q('DELETE FROM energy');
+  });
+});
+
 describe('the audit fix', () => {
   it('VAC-5 a guest\'s read on a hot, sunny Away day claims no control day and logs no prediction; the owner\'s read does', async () => {
     const { learnedPlan } = await import('../../server/src/learn/ac.js');

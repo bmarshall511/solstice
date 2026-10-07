@@ -4,6 +4,7 @@
 import { one, kv } from './db.js';
 import { notify } from './notify.js';
 import { outageDetail } from './outage.js';
+import { tripAway } from './vacation/trip.js';
 
 export const LOW_SOC_PCT = 30, FRESH_MS = 10 * 60_000;
 type OutageState = { since: number; minSoc: number | null; warned: boolean };
@@ -35,9 +36,11 @@ export async function gridWatch(siteId: string, now = Date.now(), estimate: (sit
     const since = Number(first?.ts ?? at);
     await kv.set(key, { since, minSoc: soc, warned: false } satisfies OutageState);
     const e = await estimate(siteId).catch(() => ({ hours: null, hoursNoAc: null, drawKw: null }));
-    const kw = e.drawKw ?? (r.load_w != null ? r.load_w / 1000 : null), h = hoursText(e.hours);
-    const res = await notify(siteId, 'grid', 'Grid down · on Powerwalls',
-      `Since ${clock(since)}. Powerwalls ${soc ?? '?'}%${h ? `, about ${h} at ${kw?.toFixed(1)} kW now; longer with the AC off` : ''}. Tap for the outage view.`,
+    const kw = e.drawKw ?? (r.load_w != null ? r.load_w / 1000 : null), h = hoursText(e.hours), away = await tripAway(siteId, now);
+    // mockup ak frame 4: during a trip nobody can switch the AC off, so the push says there is nothing to do
+    const res = await notify(siteId, 'grid', away ? 'Grid down · house on Powerwalls' : 'Grid down · on Powerwalls',
+      away ? `Since ${clock(since)}. Powerwalls ${soc ?? '?'}%${h ? `: about ${h} at the empty house's ${kw?.toFixed(1)} kW, longer with the sun` : ''}. Nothing to do; Solstice will tell you when the grid is back.`
+        : `Since ${clock(since)}. Powerwalls ${soc ?? '?'}%${h ? `, about ${h} at ${kw?.toFixed(1)} kW now; longer with the AC off` : ''}. Tap for the outage view.`,
       { event: 'down', since, soc }, { key: `grid:down:${since}`, windowH: 72, now, url });
     return { event: 'down', since, notified: res.stored };
   }
@@ -47,7 +50,7 @@ export async function gridWatch(siteId: string, now = Date.now(), estimate: (sit
       await kv.set(key, { ...st, minSoc, warned: true });
       const e = await estimate(siteId).catch(() => ({ hours: null, hoursNoAc: null, drawKw: null }));
       const kw = e.drawKw ?? (r.load_w != null ? r.load_w / 1000 : null), h = hoursText(e.hours);
-      const gain = e.hours != null && e.hoursNoAc != null && e.hoursNoAc - e.hours >= .5 ? hoursText(e.hoursNoAc - e.hours) : null;
+      const gain = e.hours != null && e.hoursNoAc != null && e.hoursNoAc - e.hours >= .5 && !(await tripAway(siteId, now)) ? hoursText(e.hoursNoAc - e.hours) : null;
       const res = await notify(siteId, 'gridLow', `Powerwalls at ${soc}% · grid still down`,
         `${h ? `About ${h} left at ${kw?.toFixed(1)} kW. ` : ''}${gain ? `AC off adds about ${gain}. ` : ''}Down since ${clock(st.since)}.`,
         { event: 'low', since: st.since, soc }, { key: `grid:low:${st.since}`, windowH: 72, now, url });

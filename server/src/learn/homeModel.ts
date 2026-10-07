@@ -5,6 +5,7 @@
 import { q, kv, hourWh } from '../db.js';
 import { localDay, addDays } from '../tesla/client.js';
 import { WX_KEY, type Wx } from './wx.js';
+import { tripDays } from '../vacation/trip.js';
 
 export const BASE_F = 70, FIT_DAYS = 14, MIN_DAYS = 10, MIN_SPREAD = 6, SCALE_MIN = .5, SCALE_MAX = 1.5;
 export type HomePoint = { day: string; high: number; kwh: number };
@@ -52,11 +53,13 @@ export const forecastDays = (today: string) => [0, 1, 2, 3].map(i => addDays(tod
 export async function homeForecast(siteId: string, now = Date.now()) {
   // the weather the learning layer already cached (wx.ts, refreshed by the nightly job and the reserve rule): a request never fetches Open-Meteo
   const today = localDay(new Date(now)), w = (await kv.get<{ at: number; w: Wx }>(WX_KEY))?.w ?? null, highs = highsOf(w);
-  const hourly = await q<{ day: string; hour: number; home: number }>(`SELECT day, hour::int, (${hourWh('home_wh')} / 1000.0)::float8 home FROM energy
+  const hourlyAll = await q<{ day: string; hour: number; home: number }>(`SELECT day, hour::int, (${hourWh('home_wh')} / 1000.0)::float8 home FROM energy
     WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day, hour`, [siteId, addDays(today, -(FIT_DAYS + 5)), today]);
-  const sums = new Map<number, number>(), lo = addDays(today, -FIT_DAYS);
+  // mockup ak: trip days are left out of the profile and the fit (an empty house says nothing about a day at home)
+  const trips = await tripDays(siteId, addDays(today, -(FIT_DAYS + 5)), today, now), hourly = hourlyAll.filter(r => !trips.has(r.day));
+  const sums = new Map<number, number>(), lo = addDays(today, -FIT_DAYS), n = Math.max(1, FIT_DAYS - [...trips].filter(d => d >= lo && d < today).length);
   for (const r of hourly) if (r.day >= lo) sums.set(r.hour, (sums.get(r.hour) ?? 0) + r.home);
-  const profile = Array.from({ length: 24 }, (_, h) => sums.has(h) ? sums.get(h)! / FIT_DAYS : 2);   // nightly.ts fc48Inputs: the same profile
+  const profile = Array.from({ length: 24 }, (_, h) => sums.has(h) ? sums.get(h)! / n : 2);   // nightly.ts fc48Inputs: the same profile
   const fit = fitHome(homePoints(hourly, highs, today)), tomorrow = addDays(today, 1);
   const check = [4, 3, 2, 1].map(i => addDays(today, -i)).flatMap(day => {
     const pts = homePoints(hourly, highs, day), f = fitHome(pts), own = homePoints(hourly, highs, addDays(day, 1)).find(p => p.day === day);

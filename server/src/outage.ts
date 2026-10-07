@@ -2,6 +2,7 @@
 // how long would the Powerwalls carry the house, which loads stretch it, and would tomorrow's sun refill them.
 // Read-only: the database and the caches the app already keeps (Open-Meteo 'pool:forecast', 'ercot', 'nws').
 // It never calls ScreenLogic, Nest or Tesla, so it adds no SDM queries and writes nothing to any device.
+import { tripDays, tripAway } from './vacation/trip.js';
 import { q, one, kv, hourWh } from './db.js';
 import { localDay, addDays, rfc3339 } from './tesla/client.js';
 import { forecast } from './appliances/autopilot.js';
@@ -123,11 +124,13 @@ export async function nwsAlerts(): Promise<NwsAlert[]> {
 /** Everything the Outage readiness card shows. `settingsAll` is the owner's settings (pool pump circuits and speeds). */
 export async function outageDetail(siteId: string, settingsAll: Record<string, any> = {}, now = new Date()) {
   const today = localDay(now), tomorrow = addDays(today, 1), stamp = rfc3339(now), startHour = +stamp.slice(11, 13) + +stamp.slice(14, 16) / 60;
+  // mockup ak: the typical hour is an at-home day's, without trip days; during a trip it is the trip days' own (an empty house lasts longer)
+  const [trips, away] = await Promise.all([tripDays(siteId, addDays(today, -14), today, now.getTime()), tripAway(siteId, now.getTime())]);
   const [site, reading, profileRows, nights, events] = await Promise.all([
     one<{ info: any }>('SELECT info FROM sites WHERE id = $1', [siteId]),
     one<{ ts: string; load_w: number; soc: number; storm_mode_active: boolean }>('SELECT ts, load_w, soc, storm_mode_active FROM readings WHERE site_id = $1 ORDER BY ts DESC LIMIT 1', [siteId]),
     q<{ hour: number; kw: number }>(`SELECT hour::int, AVG(kwh)::float8 kw FROM (SELECT day, hour, ${hourWh('home_wh')} / 1000.0 kwh FROM energy
-      WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day, hour) x GROUP BY hour`, [siteId, addDays(today, -14), today]),
+      WHERE site_id = $1 AND day >= $2 AND day < $3 AND (day = ANY($4::text[])) = $5 GROUP BY day, hour) x GROUP BY hour`, [siteId, addDays(today, -14), today, [...trips], away && trips.size > 0]),
     // 1–5 AM means of the last 30 complete nights (at least 36 of the 48 five-minute buckets)
     q<{ kw: number }>(`SELECT (SUM(home_wh) / 1000.0 / 4)::float8 kw FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 AND hour BETWEEN 1 AND 4
       GROUP BY day HAVING COUNT(*) >= 36`, [siteId, addDays(today, -30), today]),

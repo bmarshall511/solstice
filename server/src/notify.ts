@@ -11,8 +11,9 @@
 import express, { type Express, type Request, type Response, type NextFunction } from 'express';
 import { q, one, kv } from './db.js';
 import { sendPush, subscriptionProblem, vapidPublicKey, type PushSubscriptionJson } from './push.js';
+import { tripAway } from './vacation/trip.js';
 
-export const ALERT_KINDS = ['approval', 'billDue', 'anomaly', 'storm', 'ercot', 'panel', 'digest', 'grid', 'gridLow', 'poolTest'] as const;
+export const ALERT_KINDS = ['approval', 'billDue', 'anomaly', 'storm', 'ercot', 'panel', 'digest', 'grid', 'gridLow', 'poolTest', 'vacation'] as const;
 export type AlertKind = typeof ALERT_KINDS[number];
 
 /** The Settings → Alerts switches that silence each kind (`alerts[key] === false`). The existing keys are reused where they
@@ -21,18 +22,21 @@ export const TOGGLES: Record<AlertKind, string[]> = {
   approval: ['approval'], billDue: ['billDue'], anomaly: ['anomaly'], storm: ['storm', 'nws'], ercot: ['ercot'], panel: ['panel'], digest: ['digest'],
   grid: ['outage'], gridLow: ['lowBatt'],   // mockup ab: the two switches that were already in Settings › Alerts
   poolTest: ['poolTest'],   // mockup aj: "Time to test the pool"
+  vacation: ['vacation'],   // mockup ak: "Vacation alerts"
 };
 /** Pushes per kind per window (the feed always keeps the alert; only the phone buzz is limited). */
 export const PUSH_LIMITS: Record<AlertKind, { max: number; hours: number }> = {
   approval: { max: 3, hours: 24 }, billDue: { max: 1, hours: 24 * 7 }, anomaly: { max: 3, hours: 24 }, storm: { max: 6, hours: 24 },
   ercot: { max: 3, hours: 24 }, panel: { max: 2, hours: 24 }, digest: { max: 1, hours: 24 * 6 }, grid: { max: 6, hours: 24 }, gridLow: { max: 2, hours: 24 },
-  poolTest: { max: 1, hours: 24 },
+  poolTest: { max: 1, hours: 24 }, vacation: { max: 6, hours: 24 },
 };
+/** Mockup ak: pushes you can't act on from a trip (the water test, the panels) wait until you're back; the feed keeps them, marked held. */
+export const HELD_ON_TRIP: readonly AlertKind[] = ['poolTest', 'panel'];
 /** How long the same `key` stays a duplicate when the caller doesn't say. */
 export const DEDUPE_HOURS = 24;
 
 export type NotifyOpts = { key?: string; windowH?: number; toggle?: string; url?: string; now?: number };
-export type NotifyResult = { stored: boolean; id?: number; pushed: number; failed: number; pruned: number; skipped?: 'off' | 'duplicate'; limited?: boolean; push?: string };
+export type NotifyResult = { stored: boolean; id?: number; pushed: number; failed: number; pruned: number; skipped?: 'off' | 'duplicate'; limited?: boolean; push?: string; held?: boolean };
 
 const settings = async () => (await kv.get<Record<string, any>>('settings:owner')) ?? {};
 export const kindOff = (alerts: Record<string, unknown> | undefined, kind: AlertKind, toggle?: string) =>
@@ -48,8 +52,10 @@ export async function notify(siteId: string, kind: AlertKind, title: string, bod
       [siteId, kind, key, new Date(now - (opts.windowH ?? DEDUPE_HOURS) * 3600e3).toISOString()]);
     if (dup) return { ...none, skipped: 'duplicate' };
   }
+  const held = HELD_ON_TRIP.includes(kind) && await tripAway(siteId, now);
   const row = (await one<{ id: number }>(`INSERT INTO alerts (site_id, kind, title, body, data, created_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id::int id`,
-    [siteId, kind, title.slice(0, 200), body.slice(0, 2000), JSON.stringify({ ...data, ...(key ? { key } : {}) }), new Date(now).toISOString()]))!;
+    [siteId, kind, title.slice(0, 200), body.slice(0, 2000), JSON.stringify({ ...data, ...(key ? { key } : {}), ...(held ? { held: true } : {}) }), new Date(now).toISOString()]))!;
+  if (held) return { stored: true, id: row.id, pushed: 0, failed: 0, pruned: 0, held: true };
   const lim = PUSH_LIMITS[kind];
   const recent = await one<{ n: number }>(`SELECT COUNT(*)::int n FROM alerts WHERE site_id = $1 AND kind = $2 AND pushed > 0 AND created_at > $3`,
     [siteId, kind, new Date(now - lim.hours * 3600e3).toISOString()]);

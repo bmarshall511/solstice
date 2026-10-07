@@ -6,9 +6,13 @@
 //   PATCH /api/vacation                {leaveAt?, backAt?}: change the dates (the leave time only before it starts)
 //   POST /api/vacation/end             end it ("I'm home"), or cancel one that hasn't started
 //   GET  /api/vacation/check           "Before you go": the pool circuits left on, the water, a Clear-up, the thermostat (reads only)
+//   POST /api/vacation/snooze          "I'm just out": no "Looks like you're away" push for 24 h
+//   POST /api/vacation/answer          {answer: 'allowed' | 'unexpected'} to "Someone set the thermostat"
 // Owner-only: none is in redact.ts GUEST_GET, so the gate answers 401 to a guest (a guest must never learn the house is empty).
 import express, { type Express, type Request, type Response, type NextFunction } from 'express';
-import { liveTrip, lastEnded, createTrip, updateTrip, endTrip, tripTick, tripPhase, logTrip, parseTripBody, parsePatch, TripConflict, type Trip, type TripEndedBy } from './trip.js';
+import { kv } from '../db.js';
+import { localDay } from '../tesla/client.js';
+import { liveTrip, lastEnded, createTrip, updateTrip, endTrip, tripTick, tripPhase, logTrip, patchTripData, parseTripBody, parsePatch, TripConflict, type Trip, type TripEndedBy } from './trip.js';
 
 export type TripHook = (siteId: string, trip: Trip, now: number) => Promise<unknown>;
 /** Each system's part of a trip's start and end, registered at import (app.ts). Run in registration order; a failure is logged, never thrown. */
@@ -70,6 +74,18 @@ export function vacationRoutes(app: Express) {
     const v = parsePatch(req.body, t, now);
     if ('error' in v) return res.status(400).json({ error: v.error });
     await updateTrip(t.id, v, now);
+    res.json(await vacationState(req.siteId!));
+  }));
+  /** "I'm just out" on the "Looks like you're away" push: no more of those for 24 h. */
+  app.post('/api/vacation/snooze', wrap(async (req, res) => { await kv.set(`${req.siteId}:vacation:snooze`, Date.now() + 864e5); res.json({ ok: true }); }));
+  /** The answer to "Is someone home?" during a trip: {answer: 'allowed'} (no more asks today) or {answer: 'unexpected'}; "I'm home" is /end. */
+  app.post('/api/vacation/answer', express.json({ limit: '1kb' }), wrap(async (req, res) => {
+    const t = await liveTrip(req.siteId!), a = String(req.body?.answer ?? '');
+    if (!t || t.state !== 'active') return res.status(409).json({ error: 'No trip is under way' });
+    if (a !== 'allowed' && a !== 'unexpected') return res.status(400).json({ error: 'answer must be allowed or unexpected' });
+    const now = Date.now();
+    if (a === 'allowed') await patchTripData(t.id, { watch: { ...((t.data.watch as object) ?? {}), allowedDay: localDay(new Date(now)) } });
+    await logTrip(t.id, { at: now, text: a === 'allowed' ? 'You said someone is allowed in today' : 'You said nobody was expected', delta: 'you' });
     res.json(await vacationState(req.siteId!));
   }));
   /** The sheet's "Before you go": what is left on at the pool, the water, a Clear-up, the thermostat (reads only). */

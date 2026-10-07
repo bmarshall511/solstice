@@ -22,7 +22,10 @@ import { measuredSavings, trimFor, ranPrecool, learnAcKey, type AcDay, type Prec
 import { evaluateRules, type MetricsByDay, type OpenAnomaly, type Verdict } from './rules.js';
 import { wxGti, gtiByDay, type Wx } from './wx.js';
 import { panelMetrics, LAYOUT_KEY, type Layout } from '../panels.js';
+import { tripDays } from '../vacation/trip.js';
 
+/** The metrics an empty house would teach the at-home rules wrong (mockup ak): left out of the rules and the always-on prediction on trip days. */
+export const TRIP_METRICS = ['home.alwaysOn_kw', 'home.overnight_kw', 'home.kwh', 'ac.runtime_min', 'ac.degree_hours', 'ac.cool_f', 'ac.overnight_min'];
 export const LOOKBACK_DAYS = 60, SCORE_DAYS = 3, RETAIN_DAYS = 400, ALWAYS_ON_NIGHTS = 7, ALWAYS_ON_MIN = 5;
 export type LogEntry = { at: number; day: string; text: string; delta?: string };
 export type LearnRun = { at: number; ms: number; queries: number; scored: string[]; predicted: number; waiting: string[];
@@ -126,7 +129,9 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     for (const r of nestHourly) (nest.get(r.day) ?? nest.set(r.day, {}).get(r.day)!)[r.hour] = { coolMin: r.cool_min, coolF: r.cool_f, indoorF: r.indoor_f, n: r.n };
     learnStats.queries++; // learnAcKw: one kv read (it recomputes at most hourly)
     const coolKw = (await learnAcKw(siteId)).coolKw;
-    return { kvs, energyDaily, energyHourly, soeHourly, nest, pool, poolExtraDays: extraRows.map(r => r.day), preds, coolKw, wx: await wxGti(now) };
+    learnStats.queries++; // mockup ak: the trip days in the window (4 h or more away), kept out of every at-home model below
+    const trips = await tripDays(siteId, from, today, now);
+    return { kvs, energyDaily, energyHourly, soeHourly, nest, pool, poolExtraDays: extraRows.map(r => r.day), preds, coolKw, wx: await wxGti(now), trips };
   }, null);
   if (!d) return finish();
   const prevLast = d.kvs[keys.last] as LearnRun | undefined, prevAc = d.kvs[keys.ac] as LearnAc | undefined;
@@ -192,6 +197,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
       const acMin = metricRows.get(`${r.day}|ac.overnight_min`)?.[2] ?? 0;
       put(r.day, 'home.alwaysOn_kw', Math.max(0, r.overnight_kw - acMin / (r.overnight_n * 5) * kw));   // the window's own minutes (300 on fall-back night)
     }
+    for (const day of d.trips) if (past(day)) put(day, 'trip.day', 1);   // mockup ak: shown as "trip" in History, skipped by the at-home models
     // per-panel days (mockup u-panels): the last 21 days of PVS readings by roof position, one query (none before the relay's first poll)
     const layout = d.kvs[keys.pvsLayout] as Layout | undefined;
     if (layout) { learnStats.queries++; for (const [day, metric, v] of await panelMetrics(addDays(today, -21), today, layout)) if (past(day)) put(day, metric, v); }
@@ -211,9 +217,11 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     // scores for the prediction days that are complete: the last SCORE_DAYS days (idempotent, so a missed night catches up)
     const pairs = new Map<string, Pair[]>(); // 'model|day'
     const add = (model: string, day: string, p: Pair) => (pairs.get(`${model}|${day}`) ?? pairs.set(`${model}|${day}`, []).get(`${model}|${day}`)!).push(p);
+    const TRIP_UNSCORED = ['fc48.home', 'fc48.soc', 'home.alwaysOn', 'ac.shifted', 'ac.eveningAvoided', 'bill.cycleImport'];
     for (const p of d.preds) {
       if (p.target_day >= today || p.target_day < addDays(today, -SCORE_DAYS)) continue;
       const day = p.target_day;
+      if (d.trips.has(day) && TRIP_UNSCORED.includes(p.model)) continue;   // mockup ak: an empty house says nothing about the at-home models
       if (p.model.startsWith('fc48.')) {
         if (p.made_at > hourStart(day, p.target_hour)) continue; // a forecast only counts for hours that hadn't started
         if (p.model === 'fc48.soc') { const s = sHour.get(`${day}|${p.target_hour}`); if (s) add(p.model, day, { predicted: p.predicted, actual: s.last, band: band(p.horizon) }); }
@@ -242,6 +250,8 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     }
     const skipped = [...poolExtra].filter(x => x >= addDays(today, -SCORE_DAYS) && x < today);   // a score from before the extra run was known goes
     if (skipped.length) await lq(`DELETE FROM daily_metrics WHERE site_id = $1 AND day = ANY($2::text[]) AND metric LIKE 'score:pool.kwhDay:%'`, [siteId, skipped]);
+    const tripScored = [...d.trips].filter(x => x >= addDays(today, -SCORE_DAYS) && x < today);   // and one scored before the trip was known
+    if (tripScored.length) await lq(`DELETE FROM daily_metrics WHERE site_id = $1 AND day = ANY($2::text[]) AND split_part(metric, ':', 2) = ANY($3::text[]) AND metric LIKE 'score:%'`, [siteId, tripScored, TRIP_UNSCORED]);
     if (!metricRows.size) return;
     const rows = [...metricRows.values()];
     await lq(`INSERT INTO daily_metrics (site_id, day, metric, value) SELECT $1, * FROM unnest($2::text[], $3::text[], $4::float8[])
@@ -294,6 +304,8 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
   await step('rules', async () => {
     for (const r of await lq<{ day: string; metric: string; value: number }>(`SELECT day, metric, value FROM daily_metrics WHERE site_id = $1 AND day >= $2 AND day < $3 AND metric NOT LIKE 'score:%'`, [siteId, from, today]))
       (metrics.get(r.day) ?? metrics.set(r.day, {}).get(r.day)!)[r.metric] = r.value;
+    // mockup ak: the baselines the rules compare against (always-on, AC run time, use) leave the trip days out, so a trip can't move them
+    for (const day of d.trips) { const m = metrics.get(day); if (m) for (const k of TRIP_METRICS) delete m[k]; }
     const open = new Map((await lq<OpenAnomaly>(`SELECT id::int id, kind, day, severity, detail FROM anomalies WHERE site_id = $1 AND resolved_at IS NULL`, [siteId])).map(a => [a.kind, a]));
     const days = Array.from({ length: LOOKBACK_DAYS }, (_, i) => addDays(from, i)).filter(x => x < today);
     const verdicts = evaluateRules({ days, m: metrics, open, pumpBaseline: pump?.baseline ?? {}, expectedBuckets });
@@ -315,7 +327,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
   await step('predict', async () => {
     const preds: Prediction[] = [];
     // 48-hour forecast: the browser's model (forecast48.ts twin) on the same inputs the Now tab uses
-    const fc = fc48Inputs(d.wx, d.energyDaily, d.energyHourly, d.soeHourly, today);
+    const fc = fc48Inputs(d.wx, d.energyDaily, d.energyHourly.filter(r => !d.trips.has(r.day)), d.soeHourly, today, d.trips);   // mockup ak: trip days aren't at-home days
     if (!fc.ready) waiting.push(`fc48: ${fc.why}`);
     else {
       const info = (await lq<{ info: any }>(`SELECT info FROM sites WHERE id = $1`, [siteId]))[0]?.info ?? {};
@@ -370,14 +382,15 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
 
 /** The 48-hour forecast's inputs as the browser builds them: yield from the last 30 days, the 14-day hourly home profile, battery % now. */
 export function fc48Inputs(w: Wx | null, daily: Array<{ day: string; solar: number }>, hourly: Array<{ day: string; hour: number; home: number }>,
-  soe: Array<{ day: string; hour: number; last: number; at: number }>, today: string):
+  soe: Array<{ day: string; hour: number; last: number; at: number }>, today: string, trips?: ReadonlySet<string>):
   { ready: true; w: Wx; yieldK: number; profile: number[]; soc0: number; dayScale: Record<string, number> } | { ready: false; why: string } {
   if (!w) return { ready: false, why: 'no weather (SITE_LAT/SITE_LON unset or Open-Meteo down)' };
   const yieldK = learnYield(daily.filter(r => r.day >= addDays(today, -30) && r.day < today).map(r => ({ date: r.day, solar: Math.round(r.solar * 100) / 100 })), gtiByDay(w));
   if (!yieldK) return { ready: false, why: 'no solar yield learned yet' };
   const lo = addDays(today, -14), sums = new Map<number, number>();
   for (const r of hourly) if (r.day >= lo && r.day < today) sums.set(r.hour, (sums.get(r.hour) ?? 0) + r.home);
-  const profile = Array.from({ length: 24 }, (_, h) => sums.has(h) ? sums.get(h)! / 14 : 2);
+  // mockup ak: the caller leaves trip days out of `hourly`, so the average is over the other days of the 14
+  const n = Math.max(1, 14 - [...(trips ?? [])].filter(d => d >= lo && d < today).length), profile = Array.from({ length: 24 }, (_, h) => sums.has(h) ? sums.get(h)! / n : 2);
   const latest = soe.reduce<{ last: number; at: number } | null>((a, r) => !a || r.at > a.at ? r : a, null);
   if (!latest) return { ready: false, why: 'no battery % yet' };
   // mockup ah: each day's total from the forecast high (homeModel.ts); the hours keep this profile's shape
