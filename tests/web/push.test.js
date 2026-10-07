@@ -55,3 +55,30 @@ describe('VAPID key', () => {
     expect([...keyBytes(b64u)]).toEqual([...raw]);
   });
 });
+
+// S-04 (audit 10b): an owner device with push already on re-posts its subscription, so the server ties it to the owner session.
+describe('rebindPush', () => {
+  it('posts the existing subscription when permission is granted, never subscribes or prompts, and stays quiet otherwise', async () => {
+    const { vi } = await import('vitest');
+    vi.resetModules();
+    const posted = [];
+    vi.doMock('../../web/src/lib/api.js', () => ({ api: { pushSubscribe: async s => { posted.push(s); return { ok: true }; } } }));
+    const sub = { toJSON: () => ({ endpoint: 'https://push.invalid/x', keys: { p256dh: 'p', auth: 'a' } }) };
+    let subscribeCalls = 0, prompts = 0;
+    const reg = { pushManager: { getSubscription: async () => sub, subscribe: async () => { subscribeCalls++; return sub; } } };
+    vi.stubGlobal('navigator', { serviceWorker: { ready: Promise.resolve(reg) }, userAgent: 'test' });
+    vi.stubGlobal('window', { PushManager: function () {}, Notification: {} });
+    vi.stubGlobal('Notification', { permission: 'granted', requestPermission: async () => { prompts++; return 'granted'; } });
+    try {
+      const { rebindPush } = await import('../../web/src/lib/push.js');
+      expect(await rebindPush()).toBe(true);
+      expect(posted).toEqual([{ endpoint: 'https://push.invalid/x', keys: { p256dh: 'p', auth: 'a' } }]);
+      expect([subscribeCalls, prompts]).toEqual([0, 0]);
+      Notification.permission = 'default';
+      expect(await rebindPush()).toBe(false);
+      Notification.permission = 'granted'; reg.pushManager.getSubscription = async () => null;
+      expect(await rebindPush()).toBe(false);
+      expect(posted).toHaveLength(1);
+    } finally { vi.unstubAllGlobals(); vi.doUnmock('../../web/src/lib/api.js'); vi.resetModules(); }
+  });
+});

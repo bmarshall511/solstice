@@ -13,7 +13,7 @@ import { teslaFor, localDay, addDays } from './tesla/client.js';
 import { refreshLive, refreshSiteInfo, syncSite } from './sync.js';
 import { listBills, parsePecPdf, saveBill, type Bill } from './bills.js';
 import { reconcile } from './reconcile.js';
-import { SOLAR, warrantedDcPct, systemYear } from './system.js';
+import { SOLAR, warrantedDcPct, systemYear, yearsSinceInstall } from './system.js';
 import { siteLocation, exactLocation } from './site.js';
 import { currentTariff, netEnergyCost, NO_TARIFF } from './tariff.js';
 import { appliances, comingSoon } from './appliances/index.js';
@@ -514,11 +514,11 @@ app.get('/api/whatif', wrap(async (req, res) => {
   const savesNow = tariff ? noSystem.netCost! - baseline.netCost! : null;
   let system = null;
   if (sys?.priceUsd) {
-    const net = Math.round(sys.priceUsd * (1 - (sys.taxCreditPct ?? 0) / 100)), years = (Date.now() - Date.parse(SOLAR.installedOn)) / (365.25 * 864e5);
+    const net = Math.round(sys.priceUsd * (1 - (sys.taxCreditPct ?? 0) / 100)), years = yearsSinceInstall();
     const r = (sys.loanRatePct ?? 0) / 100 / 12, n = (sys.loanYears ?? 0) * 12;
     const payment = n && r ? Math.round(sys.priceUsd * r / (1 - (1 + r) ** -n)) : n ? Math.round(sys.priceUsd / n) : null;
     system = { priceUsd: sys.priceUsd, taxCreditPct: sys.taxCreditPct ?? 0, netUsd: net, loanYears: sys.loanYears ?? null, loanRatePct: sys.loanRatePct ?? null, monthlyPayment: payment,
-      savesPerYear: savesNow, yearsSinceInstall: Math.round(years * 10) / 10, paybackYears: savesNow != null && savesNow > 0 ? Math.round(net / savesNow * 10) / 10 : null, installedOn: SOLAR.installedOn };
+      savesPerYear: savesNow, yearsSinceInstall: years, paybackYears: savesNow != null && savesNow > 0 ? Math.round(net / savesNow * 10) / 10 : null, installedOn: SOLAR.installedOn };
   }
   res.json({ days, kwpNow, acKw: SOLAR.acKw, panels: SOLAR.panels, panelWdc: SOLAR.panelWdc, assumptions: { panelW, dollarsPerW: 2.75, powerwallCost: 11500, tariff },
     actual, baseline, upgraded, noSystem, cost, savesPerYear: saves, paybackYears: saves != null && saves > 0 && cost ? Math.round(cost / saves * 10) / 10 : null, system, ...(tariff ? {} : { reason: NO_TARIFF }),

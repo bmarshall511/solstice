@@ -68,7 +68,9 @@ export function drawAc(S) {
 function drawAcSys(S) {
   const d = S.ac, st = d.state, s = d.settings ?? {};
   if (!d.linked || !st) { $('acSys').innerHTML = sysTop({ ic: 'ac', title: 'AC', value: '—', line: d.configured === false ? 'Nest not set up' : 'Nest not linked', plan: planStrip(nowPct(localHour()), [], [], true) }); return; }
-  const mode = st.eco ? 'ECO' : st.mode, verb = { COOL: `Cool to ${Math.round(st.coolF)}°`, HEAT: `Heat to ${Math.round(st.heatF)}°`, HEATCOOL: `${Math.round(st.heatF)}–${Math.round(st.coolF)}°`, OFF: 'Thermostat off', ECO: 'Eco · Away' }[mode] ?? mode;
+  const mode = st.eco ? 'ECO' : st.mode, deg = v => (v == null ? null : Math.round(v)), cf = deg(st.coolF), hf = deg(st.heatF);
+  // a guest gets no thermostat setpoint (only the plan's step, S-03), so a missing one reads as the mode alone, never "0°"
+  const verb = { COOL: cf != null ? `Cool to ${cf}°` : 'Cooling', HEAT: hf != null ? `Heat to ${hf}°` : 'Heating', HEATCOOL: hf != null && cf != null ? `${hf}–${cf}°` : cf != null ? `Cool to ${cf}°` : 'Heat · Cool', OFF: 'Thermostat off', ECO: 'Eco · Away' }[mode] ?? mode;
   const hv = String(st.hvac ?? 'off').toLowerCase(), ab = s.autopilot === 'off' ? { blocks: [], ticks: [] } : acBlocks(d.plan?.steps, s.nightFrom, s.nightTo);
   $('acSys').innerHTML = sysTop({ ic: 'ac', title: 'AC', mode: modePill(MODE_CLS[s.autopilot]), value: st.indoorF != null ? `${st.indoorF}°` : '—',
     line: `${verb} · ${hv === 'off' ? 'idle' : hv}${st.humidity != null ? ` · ${st.humidity}% humidity` : ''}`, plan: planStrip(nowPct(localHour()), ab.blocks, ab.ticks, true) });
