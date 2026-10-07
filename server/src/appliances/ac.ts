@@ -13,6 +13,8 @@ import type { Tier } from '../learn/confidence.js';
 import { presenceFor, PRESENCE_FIXED } from './presence.js';
 import { changed, ours, holdUntil, holdOver, morningAfter, getHold, setHold, lastSent, SAME_F, type Hold, type HoldBy } from './hold.js';
 import { SPARE_SOC } from '../spare.js';
+import { liveTrip } from '../vacation/trip.js';
+import { tripAcTick, tripAcView } from '../vacation/ac.js';
 
 export type AcSettings = { band: { homeLo: number; homeHi: number; nightLo: number; nightHi: number }; awayF: number; nightFrom: number; nightTo: number; precoolDepth: number; coastF: number; maxStepF: number; humidityCap: number; autopilot: Mode; presence: 'home' | 'away';
   /** mockup ag: the comfort targets (°F); the band is derived from them (withTargets). Missing on settings saved before ag. */
@@ -379,8 +381,12 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
   // The day's weather inputs are frozen at the first plan from 06:00 on, so a refreshed forecast or a humidity reading near the
   // cap can't flip the plan back and forth during the day (it used to re-plan every 5 minutes).
   const inputs = await dayInputs(siteId, today, { high: days[ti]?.high ?? 90, sunKwhM2: days[ti]?.sunKwhM2 ?? 5, hourlySun: days[ti]?.hourlySun ?? Array(24).fill(0), humidity: st?.humidity ?? null });
-  const plan = await learnedPlan(siteId, { date: today, ...inputs, settings, acKw: learned.coolKw, slope, rate },
+  let plan = await learnedPlan(siteId, { date: today, ...inputs, settings, acKw: learned.coolKw, slope, rate },
     planFor, learned.coolKw ?? (slope ? Math.max(2, Math.min(5, slope * 1.3)) : 3.4), { readOnly: !!settingsAll[PRESENCE_FIXED as any] });
+  // Vacation mode (mockup ak): during a trip the plan is the trip's setting now (the hold, or the welcome home), computed in vacation/ac.ts
+  const trip = presence.source === 'vacation' ? await liveTrip(siteId) : null, vacation = trip ? tripAcView(trip, settings) : null;
+  if (vacation) plan = { ...plan, steps: [{ hour: 0, coolF: vacation.now.coolF, why: vacation.now.why }], precool: false, shiftedKwh: 0, eveningAvoidedKwh: 0, control: false,
+    why: [vacation.now.welcome ? `Welcome home: cooling to ${vacation.arrivalF}°` : `Vacation: holding ${vacation.holdF}°${vacation.humid ? ' to keep the house dry' : ''} while you're away`] };
   const hold = await observeHold(siteId, fresh ? prev : null, st, plan, settings, presence);
   const week = days.slice(ti, ti + 7).map(d => { const p = planFor({ date: d.date, high: d.high, sunKwhM2: d.sunKwhM2, hourlySun: d.hourlySun, settings, acKw: learned.coolKw, slope, rate, humidity: null }); return { date: d.date, high: Math.round(d.high), sunKwhM2: Math.round(d.sunKwhM2 * 10) / 10, precool: p.precool, depth: p.precool ? settings.precoolDepth : 0, shiftedKwh: p.shiftedKwh, eveningAvoidedKwh: p.eveningAvoidedKwh, precoolFrom: p.precoolFrom, precoolTo: p.precoolTo, coastFrom: p.coastFrom, coastTo: p.coastTo }; });
   const applied = await kv.get<AcRecord>(`${siteId}:ac:plan`) ?? null;
@@ -393,7 +399,7 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
   const holds = await kv.get<HoldRecord[]>(holdHistoryKey(siteId)) ?? [], since = addDays(today, -6);
   const changes = { recent: holds.filter(h => h.day >= since).map(h => ({ at: h.at, by: h.by ?? null, coolF: Math.round(h.coolF), planF: Math.round(h.planF) })),
     patterns: changePatterns(holds, settings, today).slice(0, 4).map(p => ({ hour: p.hour, f: p.f, from: p.from, planF: p.planF, dir: p.dir, days: p.days, need: 4, window: p.window, set: p.set })) };
-  return { id: 'ac', name: 'AC', configured, linked, error, settings, state: st, hold, suggestion, changes, learned: { ...learned, acKw, source: learned.coolKw ? 'measured' : 'estimated' }, runtime: rt, todayKwh, shareOfHomePct: home[0]?.kwh ? Math.round(todayKwh / home[0].kwh * 100) : null,
+  return { id: 'ac', name: 'AC', configured, linked, error, settings, state: st, hold, suggestion, changes, vacation, learned: { ...learned, acKw, source: learned.coolKw ? 'measured' : 'estimated' }, runtime: rt, todayKwh, shareOfHomePct: home[0]?.kwh ? Math.round(todayKwh / home[0].kwh * 100) : null,
     plan, currentStep: stepAt(plan, hourNow()), week, presence, applied: applied?.date === today ? applied : null, log, outdoorF: days[ti] ? Math.round(days[ti].high) : null, hourlyOutdoor: null,
     equipment: { airHandler: 'Trane TEM4A0C42 · 3.5 ton variable-speed (2018)', heat: 'electric strips (staged)',
       outdoor: learned.heatKw != null ? (learned.heatKw < 5 ? `heat pump (measured ${learned.heatKw.toFixed(1)} kW when heating)` : `straight AC, heating on the strips (measured ${learned.heatKw.toFixed(1)} kW)`) : 'outdoor unit type: Solstice will measure it from the first heating steps this winter' } };
@@ -407,6 +413,8 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
 export async function acTick(siteId: string, settingsAll: Record<string, any>, rate: number | null, slope: number) {
   const d = await acDetail(siteId, settingsAll, rate, slope, { fresh: true });
   if (!d.linked || !d.state) return { sampled: false };
+  // a Vacation-mode trip under way runs its own step (holds, Eco, humidity, the welcome), through the same guards
+  if (d.vacation) { const trip = await liveTrip(siteId); if (trip) return { sampled: true, ...(await tripAcTick(siteId, d, trip)) }; }
   if (d.hold) return { sampled: true, applied: !!d.applied?.approved, held: true };   // hold.ts: a manual change is in force; skip the plan
   // Nest refuses a setpoint while Eco is on, so nothing is sent until Eco is off (it used to try, and fail, every 5 minutes). Logged once a day.
   if (d.state.eco) {

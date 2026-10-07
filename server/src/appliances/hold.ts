@@ -24,9 +24,14 @@ export const holdKey = (siteId: string) => `${siteId}:ac:hold`;
 export const sentKey = (deviceId: string) => `nest:lastSent:${deviceId}`;
 
 const same = (a: number | null | undefined, b: number | null | undefined) => a == null || b == null ? a == b : Math.abs(a - b) < SAME_F;
-/** Whether the thermostat's mode or setpoints differ between two readings (Eco on either side never counts: presence handles Eco). */
+/**
+ * Whether the thermostat's mode or setpoints differ between two readings (Eco on either side never counts: presence handles Eco). A
+ * reading after one that showed no setpoint at all in the same mode (the moment Eco ends, before its setpoint arrives) is the setpoint
+ * coming back, not somebody's change.
+ */
 export function changed(prev: Reading | null | undefined, next: Reading | null | undefined) {
   if (!prev || !next || prev.eco || next.eco) return false;
+  if (prev.mode === next.mode && prev.coolF == null && prev.heatF == null) return false;
   return prev.mode !== next.mode || !same(prev.coolF, next.coolF) || !same(prev.heatF, next.heatF);
 }
 /** Whether a reading shows what Solstice itself last sent (recently enough to be that send). */

@@ -45,8 +45,9 @@ import { presenceRoutes, setPresence } from './appliances/presence.js';
 import { powerwallRoutes, powerwallTick, powerwallNightly } from './powerwall.js';
 import { runLearn } from './learn/nightly.js';
 import { learnRouter } from './learn/api.js';
-import { vacationRoutes, vacationTick, finishTrip } from './vacation/index.js';
-import { liveTrip } from './vacation/trip.js';
+import { vacationRoutes, vacationTick, finishTrip, tripHooks } from './vacation/index.js';
+import { liveTrip, patchTripData } from './vacation/trip.js';
+import { freshTripAc, tripAcEnd } from './vacation/ac.js';
 import { confidenceMap } from './learn/confidence.js';
 
 export const app = express();
@@ -695,6 +696,12 @@ presenceRoutes(app, async id => { const rec = await kv.get<any>(`${id}:ac:plan`)
   const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; return acTick(id, settings, await rateFor(id), await acSlope(id)); });
 /* ---------- Vacation mode (vacation/; mockup ak): GET/POST/PATCH /api/vacation, POST /api/vacation/end; owner-only ---------- */
 vacationRoutes(app);
+// the AC's part: remember the setpoints the trip starts from, then the first trip step at once; at the end, heat put back and the plan resumes
+const ownerSettings = async () => await kv.get<Record<string, any>>('settings:owner') ?? {};
+tripHooks.start.ac = async (id, trip) => { await patchTripData(trip.id, { ac: freshTripAc(await kv.get<NestState>('nest:last') ?? null) });
+  return nestConfigured() ? acTick(id, await ownerSettings(), await rateFor(id), await acSlope(id)) : { skipped: 'nest not configured' }; };
+tripHooks.end.ac = async (id, trip) => { if (!nestConfigured()) return { skipped: 'nest not configured' };
+  const s = await ownerSettings(), r = await tripAcEnd(id, trip, { ...AC_DEFAULTS, ...(s.ac ?? {}) }.autopilot); await acTick(id, s, await rateFor(id), await acSlope(id)).catch(() => {}); return r; };
 /* ---------- Powerwall rules (powerwall.ts, tesla/commands.ts; scope energy_cmds): /api/tesla/scopes, /api/powerwall/rules[/:id[/apply]];
  *  storm every 5 minutes, reserve once after 17:00, export nightly; only Auto rules send, Suggest waits for Apply ---------- */
 powerwallRoutes(app);

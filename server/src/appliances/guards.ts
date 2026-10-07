@@ -54,6 +54,38 @@ export function guardCoolSetpoint(o: { mode: string; targetF: number; valueF?: n
   return allow(step, `stepped: ${deg(cur)} → ${deg(value)} is more than ${AC_MAX_STEP_F}°, so ${deg(step)} now`, true);
 }
 
+/* ---------- AC during a Vacation-mode trip (mockup ak; owner, 2026-10-06) ---------- */
+/** While away: cooling held 80–85 °F (85 by default; the humidity guard steps it down, never below 80); heating set back to 50–60 °F. */
+export const TRIP_COOL = { min: 80, max: 85 }, TRIP_HEAT = { min: 50, max: 60 };
+/**
+ * A heating-setpoint write by Vacation mode. Away: the target must be inside 50–60 °F, and `valueF` (what is written now) must be a step
+ * of at most 2 °F from the current setpoint toward it (so 68 → 66 → … → 55 passes through values above 60 on the way down). Restore:
+ * the heat setpoint the thermostat had when the trip started, put back at the welcome or the end; it is the owner's own setting, so it is
+ * checked against 50–80 °F only and goes in one write, as their own tap would. Both: Autopilot Off refuses, one write per 30 minutes,
+ * an unknown current setpoint refuses.
+ */
+export function guardHeatSetpoint(o: { mode: string; targetF: number; valueF?: number; currentF: number | null | undefined; lastWriteAt: number | null | undefined; now: number; restore?: boolean }): Verdict<number> {
+  const target = o.targetF, value = o.valueF ?? o.targetF, cur = o.currentF;
+  if (o.mode === 'off') return refuse(AUTOPILOT_OFF);
+  if (o.mode !== 'suggest' && o.mode !== 'auto') return refuse(`the AC Autopilot mode "${String(o.mode).replace(/[^\w -]/g, '')}" is not Off, Suggest or Auto`);
+  if (!Number.isFinite(target) || !Number.isFinite(value)) return refuse(`the heat setpoint ${value} is not a temperature`);
+  if (o.restore ? target < TRIP_HEAT.min || target > MANUAL_HEAT.max || value !== target : target < TRIP_HEAT.min || target > TRIP_HEAT.max)
+    return refuse(`heat ${deg(target)} is outside the ${TRIP_HEAT.min}–${o.restore ? MANUAL_HEAT.max : TRIP_HEAT.max}° ${o.restore ? 'heat' : 'away heat'} range`);
+  if (o.lastWriteAt != null && Number.isFinite(o.lastWriteAt) && o.now - o.lastWriteAt < AC_WRITE_INTERVAL_MS)
+    return refuse(`one setpoint change per ${AC_WRITE_INTERVAL_MS / 60_000} min; the last was at ${clock(o.lastWriteAt)}`);
+  if (cur == null || !Number.isFinite(cur)) return refuse(`the thermostat's current heat setpoint is unknown, so the ${AC_MAX_STEP_F}° step limit can't be checked`);
+  if (o.restore) return allow(value);
+  const lo = Math.min(cur, target) - EPS, hi = Math.max(cur, target) + EPS;
+  if (value < lo || value > hi || Math.abs(value - cur) > AC_MAX_STEP_F + EPS) return refuse(`heat ${deg(value)} is not a ${AC_MAX_STEP_F}° step from ${deg(cur)} toward ${deg(target)}`);
+  return allow(value, value === target ? null : `stepped: heat ${deg(cur)} → ${deg(target)} is more than ${AC_MAX_STEP_F}°, so ${deg(value)} now`, value !== target);
+}
+/** Vacation mode turning Nest's Eco off so it can hold its own setpoint: only during a trip under way, never with Autopilot Off. */
+export function guardTripEco(o: { mode: string; tripAway: boolean }): Verdict<true> {
+  if (o.mode === 'off') return refuse(AUTOPILOT_OFF);
+  if (!o.tripAway) return refuse('Eco is only turned off for Vacation mode, while a trip is under way');
+  return allow(true);
+}
+
 /* ---------- AC: the owner's own thermostat commands (mockup v; owner, 2026-10-04) ---------- */
 // The owner's taps are checked only against these ranges: no 2 °F step and no 30-minute slot, and they never use up Autopilot's slot.
 export const MANUAL_COOL = { min: 65, max: 85 }, MANUAL_HEAT = { min: 55, max: 80 }, RANGE_GAP_F = 3, FAN_MAX_S = 12 * 3600;
