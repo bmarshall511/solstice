@@ -181,8 +181,11 @@ export function pumpSchedules(snap: PoolSnapshot | null) {
   const pumpCircuits = new Set(speeds.keys()); pumpCircuits.delete(FREEZE_CIRCUIT);
   return { speeds, schedules: (snap?.schedules ?? []).filter(s => pumpCircuits.has(s.circuitId)) };
 }
-export const measuredPoints = (siteId: string) => q<{ rpm: number; watts: number }>(`SELECT rpm::int rpm, PERCENTILE_CONT(.5) WITHIN GROUP (ORDER BY watts)::float8 watts
-  FROM pool_readings WHERE site_id = $1 AND running AND rpm > 0 AND watts > 0 GROUP BY rpm HAVING COUNT(*) >= 3`, [siteId]);
+/** Days of readings measuredPoints uses (code review C-12: it read every reading ever, on every pool read). */
+export const MEASURED_POINTS_DAYS = 30;
+/** The pump's measured watts at each RPM: the median of the last 30 days of running readings, for RPMs read at least 3 times. */
+export const measuredPoints = (siteId: string, now = Date.now()) => q<{ rpm: number; watts: number }>(`SELECT rpm::int rpm, PERCENTILE_CONT(.5) WITHIN GROUP (ORDER BY watts)::float8 watts
+  FROM pool_readings WHERE site_id = $1 AND day >= $2 AND running AND rpm > 0 AND watts > 0 GROUP BY rpm HAVING COUNT(*) >= 3`, [siteId, addDays(localDay(new Date(now)), -MEASURED_POINTS_DAYS)]);
 const solarProfile = async (siteId: string) => {
   const rows = await q<{ hour: number; kw: number }>(`SELECT hour::int, (SUM(s) / 1000.0 / 14)::float8 kw FROM (SELECT day, hour, ${hourWh('solar_wh')} s FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day, hour) x GROUP BY hour`, [siteId, addDays(localDay(), -14), localDay()]);
   const out = Array(24).fill(0); rows.forEach(r => out[r.hour] = r.kw); return out;
@@ -240,7 +243,8 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   if (configured() && (opts.fresh || !snap || Date.now() - snap.at > 60_000)) {
     try { snap = await readPool(); await recordReading(siteId, snap); } catch (e: any) { error = e.message; }
   }
-  const W = powerModel(await measuredPoints(siteId)), solarKw = await solarProfile(siteId), month = Number(localDay().slice(5, 7)) - 1; // Chicago month, not the host's
+  const points = await measuredPoints(siteId);   // once per poolDetail: the power model and the card's measured points
+  const W = powerModel(points), solarKw = await solarProfile(siteId), month = Number(localDay().slice(5, 7)) - 1; // Chicago month, not the host's
   const names = new Map((snap?.circuits ?? []).map(c => [c.id, c.name]));
   const { speeds, schedules: pumpSched } = pumpSchedules(snap);
   const current = pumpSched.map(s => ({ ...s, rpm: speeds.get(s.circuitId) ?? 0, name: names.get(s.circuitId) ?? `Circuit ${s.circuitId}` }));
@@ -290,7 +294,7 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   return { id: 'pool', water, clearUp, clearUpRates, changes, runFor: await kv.get<Record<string, number>>(`${siteId}:pool:runFor`) ?? {}, until, autopilot: auto, pending, extras: { hourlyToday: extraHourly.map(v => Math.round(v * 1000) / 1000), todayKwh: Math.round(extraKwh * 100) / 100, nowW: extraNowW, loads: settings.loads, uvW: settings.uv ? UV_W : 0, lightReadings30d: lightH[0]?.h ?? 0 }, spaSession, name: 'Pool pump', linked: configured() && !!snap, error, settings, snapshot: snap,
     live: snap?.pump ? { watts: snap.pump.watts, rpm: snap.pump.rpm, running: snap.pump.running, gpm: snap.pump.gpm, at: snap.at, waterTemp, airTemp: snap.airTemp, freezeMode: snap.freezeMode,
       on: snap.circuits.filter(c => c.on).map(c => c.name), activeRpm: Math.max(0, ...snap.circuits.filter(c => c.on).map(c => speeds.get(c.id) ?? 0)) } : null,
-    model: { measured: await measuredPoints(siteId), curve: [1000, 1500, 1800, 2400, 3000, 3450].map(r => ({ rpm: r, watts: Math.round(W(r)) })) },
+    model: { measured: points, curve: [1000, 1500, 1800, 2400, 3000, 3450].map(r => ({ rpm: r, watts: Math.round(W(r)) })) },
     current: { schedules: current, hours: Math.round(hoursOn(prof) * 10) / 10, kwhPerDay: Math.round(kwh * 10) / 10, costPerMonth: usd(kwh * 30.4, rate), onSolarPct: onSolarPct(prof, W, solarKw),
       turnoverPerDay: Math.round(prof.reduce((a, h) => a + h.slices.reduce((b, r) => b + gpmAt(r, settings.designGpm) * 15, 0), 0) / settings.gallons * 100) / 100, hourly: prof,
       byProgram: current.map(s => { const p = hourlyRpm([s], speeds); return { name: s.name, rpm: s.rpm, start: s.start, stop: s.stop, kwhPerDay: Math.round(dayKwh(p, W) * 10) / 10 }; }) },

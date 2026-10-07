@@ -11,7 +11,8 @@ export const PVS_LIMITS = {
   maxInverters: 60,              // 30 on this roof; room for an expansion, not for junk
   futureMs: 5 * 60_000,          // clock skew allowed between the relay's Mac and the server
   pastMs: 7 * 864e5,             // a batch older than this is refused (the relay only ever sends the current poll)
-  latestLookbackMs: 7 * 864e5,   // /latest looks back this far from the newest reading
+  latestRecentMs: 864e5,         // /latest reads the last day first…
+  latestLookbackMs: 7 * 864e5,   // …and, with nothing in it, looks back this far from the newest reading
 };
 const BUCKET_MS = 5 * 60_000;
 
@@ -154,14 +155,16 @@ export async function pvsDay(date: string) {
   };
 }
 
-/** The newest reading of each inverter seen within 7 days of the newest reading overall, with its age in seconds.
- *  (Bounded so the query stays a range scan on the primary key; an inverter silent for longer drops out, which a
- *  count below the expected 30 shows.) */
+/** The newest reading of each inverter seen within the last 24 hours, with its age in seconds; with none in that window (the
+ *  relay quiet for a day), within 7 days of the newest reading overall. (Bounded so the query stays a range scan on the primary key
+ *  and the 5-minute watch sorts a day of rows, not a week (code review C-12); an inverter silent for longer drops out, which a count
+ *  below the expected 30 shows.) */
 export async function pvsLatest(now = Date.now()) {
-  const rows = await q<{ sn: string; ms: number; kw: number | null; kw_dc: number | null; v: number | null; t: number | null; kwh: number | null }>(
-    `SELECT DISTINCT ON (sn) sn, (extract(epoch FROM ts) * 1000)::float8 AS ms, kw::float8 AS kw, kw_dc::float8 AS kw_dc, v::float8 AS v,
-            temp_c::float8 AS t, kwh_lifetime::float8 AS kwh
-       FROM pvs_readings WHERE ts >= (SELECT max(ts) FROM pvs_readings) - $1::interval ORDER BY sn, ts DESC`,
+  type Row = { sn: string; ms: number; kw: number | null; kw_dc: number | null; v: number | null; t: number | null; kwh: number | null };
+  const cols = `DISTINCT ON (sn) sn, (extract(epoch FROM ts) * 1000)::float8 AS ms, kw::float8 AS kw, kw_dc::float8 AS kw_dc, v::float8 AS v,
+            temp_c::float8 AS t, kwh_lifetime::float8 AS kwh`;
+  let rows = await q<Row>(`SELECT ${cols} FROM pvs_readings WHERE ts >= $1::timestamptz ORDER BY sn, ts DESC`, [new Date(now - PVS_LIMITS.latestRecentMs).toISOString()]);
+  if (!rows.length) rows = await q<Row>(`SELECT ${cols} FROM pvs_readings WHERE ts >= (SELECT max(ts) FROM pvs_readings) - $1::interval ORDER BY sn, ts DESC`,
     [`${PVS_LIMITS.latestLookbackMs / 1000} seconds`]);
   const age = (ms: number) => Math.max(0, Math.round((now - ms) / 1000));
   const newest = rows.length ? Math.max(...rows.map(r => Number(r.ms))) : null;

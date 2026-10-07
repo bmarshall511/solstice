@@ -688,6 +688,18 @@ describe('GET /api/pvs/day and /api/pvs/latest', () => {
     await db.q('DELETE FROM pvs_readings');
     expect(await (await api('/api/pvs/latest')).json()).toEqual({ at: null, ageS: null, count: 0, inverters: [] });
   });
+
+  it('LATEST-2 the last 24 hours first; the week back from the newest reading only when the last day has none (code review C-12)', async () => {
+    await db.q('DELETE FROM pvs_readings');
+    const t = Date.now(), iso = (ms: number) => new Date(ms).toISOString(), sns = async () => (await (await api('/api/pvs/latest')).json()).inverters.map((i: any) => i.sn);
+    await put(iso(t - 2 * 864e5), [R('TEST-L2-OLD', 0.2)]);
+    await put(iso(t - 600_000), [R('TEST-L2-NEW', 0.15)]);
+    expect(await sns()).toEqual(['TEST-L2-NEW']);                         // a day's rows: the 2-day-old inverter is not in the window
+    await db.q(`DELETE FROM pvs_readings WHERE sn = 'TEST-L2-NEW'`);
+    await put(iso(t - 4 * 864e5), [R('TEST-L2-OLDER', 0.1)]);
+    expect(await sns()).toEqual(['TEST-L2-OLD', 'TEST-L2-OLDER']);         // the relay quiet for 2 days: as before, the week back from its last poll
+    await db.q('DELETE FROM pvs_readings');
+  });
 });
 
 describe('retention', () => {

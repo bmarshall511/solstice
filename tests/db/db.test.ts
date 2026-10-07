@@ -4,6 +4,7 @@ import { q, one, kv, migrate } from '../../server/src/db.js';
 import { saveEnergyRows } from '../../server/src/sync.js';
 import { recordReading, measuredPoints } from '../../server/src/appliances/pool.js';
 import { useDays } from '../../server/src/appliances/autopilot.js';
+import { nestSince } from '../../server/src/appliances/presence.js';
 import { saveBill, listBills, parsePecText } from '../../server/src/bills.js';
 import { poolSnapshot } from '../fixtures/screenlogic.js';
 import { PEC_BILL } from '../fixtures/pec-bill.js';
@@ -26,6 +27,7 @@ describe('schema and kv', () => {
     const tables = (await q<{ t: string }>(`SELECT table_name t FROM information_schema.tables WHERE table_schema = 'public' ORDER BY 1`)).map(r => r.t);
     expect(tables).toEqual(['access_tokens', 'alerts', 'anomalies', 'backup_events', 'bills', 'daily_metrics', 'digests', 'energy', 'events', 'kv', 'login_attempts', 'model_scores', 'nest_readings', 'owner_sessions',
       'pool_readings', 'pool_tests', 'powerwall_log', 'predictions', 'push_subscriptions', 'pvs_readings', 'readings', 'sessions', 'sites', 'soe', 'synced_days', 'tesla_accounts', 'trips', 'users']);
+    expect(await q(`SELECT indexdef FROM pg_indexes WHERE indexname = 'soe_site_epoch'`)).toEqual([{ indexdef: expect.stringMatching(/ON public\.soe USING btree \(site_id, epoch\)/) }]);
   });
   it('31: kv round-trips JSON, stores null, and returns undefined for a missing key', async () => {
     await kv.set('test:obj', { x: 1 });
@@ -72,6 +74,27 @@ describe('pool readings', () => {
     await read(i++, { rpm: 1500, watts: 999, running: false });                        // not running: ignored
     const pts = (await measuredPoints('meas')).sort((a, b) => a.rpm - b.rpm);
     expect(pts).toEqual([{ rpm: 1500, watts: 153 }, { rpm: 1800, watts: 287 }]);
+  });
+  it('measuredPoints uses the last 30 days only: three readings 40 days old are ignored (code review C-12)', async () => {
+    for (const [k, watts] of [600, 610, 620].entries()) await recordReading('meas40', poolSnapshot(NOW - 40 * 864e5 + k * minute, { rpm: 2000, watts }));
+    for (const [k, watts] of [150, 153, 160].entries()) await recordReading('meas40', poolSnapshot(NOW - 10 * 864e5 + k * minute, { rpm: 1500, watts }));
+    expect(await measuredPoints('meas40')).toEqual([{ rpm: 1500, watts: 153 }]);
+  });
+});
+
+describe('nestSince: when the current Eco state began, within 30 days (code review C-11)', () => {
+  const at = async (site: string, ts: number, eco: boolean) => q(`INSERT INTO nest_readings (site_id, ts, day, hour, eco) VALUES ($1, $2, '2026-09-25', 0, $3)`, [site, ts, eco]);
+  it('finds the first reading after the last one in the other state', async () => {
+    const H = 3600e3;
+    for (const [ts, eco] of [[NOW - 20 * 864e5, false], [NOW - 3 * H, false], [NOW - 2 * H, true], [NOW - H, true], [NOW, true]] as const) await at('ns', ts, eco);
+    expect(await nestSince('ns', true, NOW)).toBe(NOW - 2 * H);
+    expect(await nestSince('ns', false, NOW)).toBeNull();                         // not in that state now: no later reading in it
+  });
+  it('returns null when the other state was last seen more than 30 days ago', async () => {
+    await at('ns40', NOW - 40 * 864e5, true);
+    for (const d of [39, 20, 1]) await at('ns40', NOW - d * 864e5, false);
+    expect(await nestSince('ns40', false, NOW)).toBeNull();
+    expect(await nestSince('ns40', false, NOW - 25 * 864e5)).toBe(NOW - 39 * 864e5);   // within 30 days of an earlier clock it is found
   });
 });
 
