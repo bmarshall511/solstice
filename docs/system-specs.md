@@ -1,6 +1,6 @@
 # As-built system specs
 
-From the installer contract (Freedom Solar, October 2020), the SunPower E-Series AC module datasheet (531948 RevA) and the SunPower AC module warranty (526082 RevD). The code copy lives in `server/src/system.ts` and reaches the web app as `site.solar` on `/api/now`. Price, incentives and loan terms are **not** here: they sit in the owner's settings row in the database (`system` key), so nothing personal is in the repo.
+From the installer's contract (2020), the SunPower E-Series AC module datasheet (531948 RevA) and the SunPower AC module warranty (526082 RevD). The code copy lives in `server/src/system.ts` and reaches the web app as `site.solar` on `/api/now`. Price, incentives and loan terms are **not** here: they sit in the owner's settings row in the database (`system` key), so nothing personal is in the repo.
 
 ## Solar array
 
@@ -13,7 +13,7 @@ From the installer contract (Freedom Solar, October 2020), the SunPower E-Series
 | Temperature coefficient | −0.35 %/°C (power) |
 | Module size | 1558 × 1046 × 46 mm, 19.5 kg, recommended spacing 33 mm |
 | Racking / monitoring | SunPower InvisiMount; SunPower monitoring system (PVS). Per-module data would come from the PVS, not from Tesla. |
-| Installed | Tesla reports 2020-12-15. Contract signed 2020-10-01. Permission-to-operate date unknown. |
+| Installed | 2020. The exact date is Tesla's (`site.installed` on `/api/now`, owner only) or the optional `SOLAR_INSTALLED_ON` env var; it is kept out of the repo. |
 | Orientation | Still a satellite estimate: tilt 27°, azimuth 244°, all 30 modules on one roof face in 3 rows × 10. No permit drawing yet. |
 
 ## Storage
@@ -23,7 +23,7 @@ From the installer contract (Freedom Solar, October 2020), the SunPower E-Series
 ## Warranties
 
 - **SunPower 25-year limited product and power warranty** (AC modules, starts at interconnection): DC power ≥ 98% of minimum peak power in year 1, then declining no more than 0.25%/yr, so ≥ 92% at year 25. AC system power ≥ 90% of peak system power (sum of the module AC ratings) for all 25 years.
-- **Freedom Solar**: 25-year labour warranty; equipment carries the manufacturers' warranties.
+- **Installer**: 25-year labour warranty (the name is the optional `SOLAR_INSTALLER` env var, not in the repo); equipment carries the manufacturers' warranties.
 
 The Panels tab compares the learned full-sun output (kWh per kWh/m² of plane-of-array sunlight, roughly kW at 1000 W/m²) with these floors. The measured figure is a system-level AC number that also includes soiling, temperature and shading, so it is context for the warranty, not a formal test.
 

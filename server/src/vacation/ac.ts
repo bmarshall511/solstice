@@ -82,12 +82,13 @@ export function tripTarget(o: { phase: TripPhase; ac: TripAc; target: number }):
 
 /* ---------- the step acTick runs during a trip ---------- */
 type AcDetailLike = { settings: { autopilot: string; dayF: number; nightF: number; nightFrom: number; nightTo: number }; state: NestState | null; hold: unknown;
-  log: Array<{ at: number; day: string; text: string; delta?: string }>; outdoorF: number | null };
+  log: Array<{ at: number; day: string; text: string; delta?: string; private?: boolean }>; outdoorF: number | null };
 export const pulldownKey = (siteId: string) => `${siteId}:vacation:pulldown`;
+/** Every line a trip writes to the AC log is `private: true`: a guest never sees it, whatever its text (redact.ts guestLogEntry, S-02). */
 async function logAc(siteId: string, text: string, delta?: string, onceToday = false) {
   const log = await kv.get<AcDetailLike['log']>(`${siteId}:ac:log`) ?? [];
   if (onceToday && log.some(l => l.text === text && l.day === localDay())) return false;
-  log.unshift({ at: Date.now(), day: localDay(), text, delta }); await kv.set(`${siteId}:ac:log`, log.slice(0, 40));
+  log.unshift({ at: Date.now(), day: localDay(), text, delta, private: true }); await kv.set(`${siteId}:ac:log`, log.slice(0, 40));
   return true;
 }
 /**

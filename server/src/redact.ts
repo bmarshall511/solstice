@@ -9,8 +9,9 @@
 //  - no identifiers: site id, serials, DINs, gateway, firmware, the Nest device path (it holds the Google project id), row
 //    ids, the ScreenLogic system, the utility account. Error text becomes a fixed string, because Tesla and Nest errors
 //    embed the site id and the device path;
-//  - no occupancy: the AC plan is computed as if the owner were home (app.ts), and presence, Eco and the log lines that
-//    mention away or home are dropped;
+//  - no occupancy: the AC plan is computed as if the owner were home (app.ts), and presence, Eco, the away setpoint, the
+//    thermostat's own setpoints (the plan's step stands in), and the log lines and reasons that mention away, home, a trip,
+//    the welcome or the trip's drying hold are dropped, as is every log entry a trip writes (S-02, S-03);
 //  - history at hourly resolution only: /api/day's five-minute buckets are summed into hours here (the CSV is owner-only);
 //  - the location coarse (site.ts coarseLocation), and bills as a skeleton: month, period, kWh bought and sent, and
 //    whether the meter matched Tesla.
@@ -51,8 +52,9 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
 /* ---------- shared shapes ---------- */
 const kwh = { solar: true, home: true, import: true, export: true, charge: true, discharge: true } as const;
 const errorEntry = { at: true, message: fixed(UNAVAILABLE) } as const;
-const SOLAR = { installer: true, module: true, panels: true, panelWdc: true, panelVaAc: true, microinverter: true, efficiencyPct: true, tempCoefPctPerC: true,
-  moduleM: { w: true, h: true }, dcKw: true, acKw: true, installedOn: true, year: true, warrantedDcPct: true,
+// the installer's name, the install date and Tesla's install timestamp are quasi-identifiers: a guest gets the install year only (S-09)
+const SOLAR = { module: true, panels: true, panelWdc: true, panelVaAc: true, microinverter: true, efficiencyPct: true, tempCoefPctPerC: true,
+  moduleM: { w: true, h: true }, dcKw: true, acKw: true, year: true, warrantedDcPct: true,
   warranty: { years: true, dcYear1Pct: true, dcDeclinePctPerYear: true, acFloorPct: true, labourYears: true } } as const;
 const log = { at: true, day: true, text: true, delta: true } as const;
 
@@ -89,13 +91,30 @@ export const guestBills = (rows: unknown) => (Array.isArray(rows) ? rows : []).m
 
 /* ---------- appliances ---------- */
 const POOL_ERROR = 'Couldn’t reach the pool controller.';
+/* ---------- presence and trips (audit 10b, S-02) ---------- */
+/** Log lines and reasons that mention presence ("marked away", "until you mark Home"), Nest's Eco (an occupancy signal), a trip
+ *  ("Vacation: …", "trip plan"), the welcome home, or the trip's humidity hold ("holding 83° to dry the house", "drying the house")
+ *  never reach a guest. */
+export const PRESENCE_WORDS = /\b(away|home|eco|vacation|trips?|travel(?:l?ing)?|welcome|dry the house|drying the house|keep the house dry|drying)\b/i;
+export const noPresence = (v: unknown) => (typeof v === 'string' ? !PRESENCE_WORDS.test(v) : true);
+/** Log entries a guest never gets, whatever their text: the ones a trip writes (`delta` trip, welcome or humidity), Nest's Eco (an
+ *  occupancy signal, presence.ts), and any entry its writer marked `private: true` (every line vacation/ac.ts logs carries it). */
+export const PRIVATE_DELTAS: ReadonlySet<string> = new Set(['trip', 'welcome', 'humidity', 'eco']);
+export const guestLogEntry = (x: any) => isObject(x) && x.private !== true && !(typeof x.delta === 'string' && PRIVATE_DELTAS.has(x.delta)) && noPresence(x.text);
+const whyList = (w: unknown) => (Array.isArray(w) ? w.filter(x => typeof x === 'string' && noPresence(x)) : []);
+/** A pool day's reasons come as a set: when one names the trip the others are the trip's too ("+0.5 turnover: water at 88°F" follows
+ *  "Vacation: 1 turnover a day"), so the whole list is dropped. */
+const whySet = (w: unknown) => (Array.isArray(w) && w.every(x => typeof x === 'string' && noPresence(x)) ? w : []);
+const whyText = (v: unknown) => (typeof v === 'string' && noPresence(v) ? v : null);
+const guestLog = (l: unknown) => (Array.isArray(l) ? l.filter(guestLogEntry).map(x => pick(x, log)) : []);
+
 const schedule = { name: true, rpm: true, start: true, stop: true } as const;
 const hourly = [{ rpm: true, frac: true }] as const;
 const poolPlan = { month: true, waterTemp: true, turnovers: true, goal: true, rpm: true, hours: true, boostHours: true, start: true, stop: true, boostAt: true,
-  schedules: [{ ...schedule, why: true }], kwhPerDay: true, costPerMonth: 'veil', onSolarPct: true, turnoverPerDay: true, hourly, uvKwh: true } as const;
+  schedules: [{ ...schedule, why: whyText }], kwhPerDay: true, costPerMonth: 'veil', onSolarPct: true, turnoverPerDay: true, hourly, uvKwh: true } as const;
 const autopilot = { mode: true, nextRunAt: true, pending: true, filterHours: true, filterCleanedOn: true,
   signals: { waterTemp: true, sunKwhM2: true, sunPct: true, high: true, heatDays: true, rainPct: true, rainMm: true, rainYesterdayMm: true, useDays: true, pollen: true },
-  tomorrow: { date: true, plan: poolPlan, why: true }, week: [{ date: true, hours: true, boost: true, sunKwhM2: true, rainPct: true, high: true }], log: [log] } as const;
+  tomorrow: { date: true, plan: poolPlan, why: whySet }, week: [{ date: true, hours: true, boost: true, sunKwhM2: true, rainPct: true, high: true }], log: guestLog } as const;
 /**
  * A guest's view of Pool Autopilot never shows a trip (audit 10b, S-01): trip days show the plan as if the owner were home
  * (`ifHome` / `tomorrowIfHome` from autopilot.ts), and reasons or log lines that name the trip are dropped.
@@ -106,15 +125,13 @@ const guestAutopilot = (a: any) => {
   const g = pick(a, autopilot) as any;
   if (isObject(a.tomorrowIfHome)) g.tomorrow = pick(a.tomorrowIfHome, autopilot.tomorrow);
   if (Array.isArray(a.week)) g.week = a.week.map((w: any) => { const p = pick(w, autopilot.week[0]) as any; return isObject(w?.ifHome) ? { ...p, hours: w.ifHome.hours, boost: w.ifHome.boost } : p; });
-  if (isObject(g.tomorrow) && Array.isArray(g.tomorrow.why)) g.tomorrow.why = g.tomorrow.why.filter(noPresence);
-  if (Array.isArray(g.log)) g.log = g.log.filter((x: any) => noPresence(x?.text));
-  return g;
+  return g;   // tomorrow.why, each schedule's why and the log go through whySet, whyText and guestLog (S-02)
 };
 const POOL: Rule = {
   id: true, name: true, linked: true, error: fixed(POOL_ERROR),
   autopilot: guestAutopilot,
   // a suggested plan whose reasons name a trip is withheld from guests altogether
-  pending: (p: any) => (isObject(p) && Array.isArray(p.why) && !p.why.every(noPresence) ? null : pick(p, { date: true, plan: poolPlan, why: true })),
+  pending: (p: any) => (isObject(p) && Array.isArray(p.why) && !p.why.every(noPresence) ? null : pick(p, { date: true, plan: poolPlan, why: whySet })),
   extras: { hourlyToday: true, todayKwh: true, nowW: true, uvW: true, lightReadings30d: true },
   spaSession: { spaGallons: true, spaTemp: true, spaSet: true, riseF: true, heatMinutes: true, propaneGal: true, pumpWattsAtSpa: true, blowerWatts: true, electricUsdPerHour: 'veil' },
   settings: { gallons: true, spaGallons: true, designGpm: true, filterRpm: true, boostRpm: true, uv: true, autopilot: true, turnoverGoal: true, skimHours: true, boostCircuit: true },
@@ -131,29 +148,41 @@ const POOL: Rule = {
   applied: { at: true },
   conf: { kwhPerDay: true },   // learning layer: the confidence tier of the kWh/day figures
 };
-/** Log lines and reasons that mention presence ("marked away", "until you mark Home") or a trip ("Vacation: …", "trip plan") never reach a guest. */
-const noPresence = (v: unknown) => (typeof v === 'string' ? !/\b(away|home|vacation|trip)\b/i.test(v) : true);
-const AC: Rule = {
+/**
+ * The thermostat's own setpoints never reach a guest (audit 10b, S-03). Outside a trip a manual Away or Nest's Eco leaves the
+ * thermostat at the away setpoint (or no setpoint at all, in Eco), and the guest body's `state` is the real reading even though its
+ * plan is computed as if the owner were home (access.ts presenceHidden). So a guest's coolF is the as-if-home plan's step for this
+ * hour (currentStep.coolF) while the thermostat is cooling (COOL or Heat · Cool), else null; heatF is always null; the mode, the
+ * indoor reading and whether it is running pass. The away setpoint (settings.awayF) is not in the view at all.
+ */
+const guestAcState = (st: unknown, body: any) => {
+  if (!isObject(st)) return st === undefined ? undefined : null;
+  const g = pick(st, { at: true, name: fixed('Thermostat'), online: true, indoorF: true, humidity: true, mode: true, hvac: true }) as any;
+  const step = Number(body?.currentStep?.coolF), cooling = st.mode === 'COOL' || st.mode === 'HEATCOOL';
+  return { ...g, coolF: cooling && Number.isFinite(step) ? step : null, heatF: null };
+};
+const AC_RULE = {
   id: true, name: true, configured: true, linked: true, error: fixed(UNAVAILABLE),
-  settings: { band: { homeLo: true, homeHi: true, nightLo: true, nightHi: true }, awayF: true, nightFrom: true, nightTo: true, precoolDepth: true,
+  settings: { band: { homeLo: true, homeHi: true, nightLo: true, nightHi: true }, nightFrom: true, nightTo: true, precoolDepth: true,
     coastF: true, maxStepF: true, humidityCap: true, autopilot: true, presence: 'veil', dayF: true, nightF: true, driftF: true },   // mockup ag: the targets
-  state: { at: true, name: fixed('Thermostat'), online: true, indoorF: true, humidity: true, mode: true, hvac: true, coolF: true, heatF: true },
   learned: { coolKw: true, heatKw: true, samples: true, heatSamples: true, acKw: true },
   runtime: { minutes: true, duty: true }, todayKwh: true, shareOfHomePct: true,
-  plan: { date: true, steps: [{ hour: true, coolF: true, why: true }], precool: true, precoolFrom: true, precoolTo: true, coastFrom: true, coastTo: true,
-    high: true, sunKwhM2: true, why: (w: unknown) => (Array.isArray(w) ? w.filter(x => typeof x === 'string' && noPresence(x)) : []),
+  plan: { date: true, steps: [{ hour: true, coolF: true, why: whyText }], precool: true, precoolFrom: true, precoolTo: true, coastFrom: true, coastTo: true,
+    high: true, sunKwhM2: true, why: whyList,
     // learning layer (learn/ac.ts): the two savings figures are kWh, so they pass, with their confidence tiers; whether today is a
     // control day; a learned trim with its reason (indoor temperatures and times, no presence; filtered anyway, like `why`)
     shiftedKwh: true, eveningAvoidedKwh: true, conf: { shiftedKwh: true, eveningAvoidedKwh: true }, control: true,
-    trim: { what: true, amount: true, unit: true, from: true, to: true, warmupFPerH: true, reason: (v: unknown) => (typeof v === 'string' && noPresence(v) ? v : null) } },
-  currentStep: { hour: true, coolF: true, why: true },
+    trim: { what: true, amount: true, unit: true, from: true, to: true, warmupFPerH: true, reason: whyText } },
+  currentStep: { hour: true, coolF: true, why: whyText },
   week: [{ date: true, high: true, sunKwhM2: true, precool: true, depth: true, shiftedKwh: true, eveningAvoidedKwh: true,
     precoolFrom: true, precoolTo: true, coastFrom: true, coastTo: true }],   // window hours: the Next 48 hours road draws them
   applied: { date: true, approved: true, lastStepHour: true },
-  log: (l: unknown) => (Array.isArray(l) ? l.filter(x => noPresence(x?.text)).map(x => pick(x, log)) : []),
+  log: guestLog,
   outdoorF: true, hourlyOutdoor: true,
   equipment: { airHandler: true, heat: true, outdoor: true },
-};
+} as const;
+/** The AC view: the allow-list, then `state` from the thermostat reading with the plan's setpoint in place of the thermostat's. */
+const acView: View = b => { const g = pick(b, AC_RULE) as any; if (isObject(b) && 'state' in b && isObject(g)) g.state = guestAcState(b.state, b); return g; };
 
 /* ---------- per-panel health ---------- */
 const panelPos = { id: true, name: true } as const;
@@ -182,7 +211,7 @@ export const GUEST_GET: ReadonlyMap<string, View> = new Map<string, View>([
   ['/api/now', view({
     reading: { ts: true, solarKw: true, homeKw: true, batteryKw: true, gridKw: true, soc: true, gridStatus: true, islandStatus: true, stormActive: true },
     today: kwh,
-    site: { name: fixed('Home'), installed: true, batteryCount: true, batteries: [{ name: true, kwh: true, kw: true }], capacityKwh: true, measuredKwh: true, modelKwh: true, maxPowerKw: true,
+    site: { name: fixed('Home'), batteryCount: true, batteries: [{ name: true, kwh: true, kw: true }], capacityKwh: true, measuredKwh: true, modelKwh: true, maxPowerKw: true,
       reservePct: true, mode: true, stormWatch: true, solar: SOLAR },
     outage: { active: true, since: true },
     health: { lastLive: true, lastHistory: true, stale: true, liveError: fixed(UNAVAILABLE),
@@ -213,7 +242,7 @@ export const GUEST_GET: ReadonlyMap<string, View> = new Map<string, View>([
   })],
   ['/api/appliances', view([{ id: true, name: true, status: true, watts: true, kwhPerDay: true, savesPerMonth: 'veil', error: fixed(UNAVAILABLE) }])],
   ['/api/appliances/pool', view(POOL)],
-  ['/api/appliances/ac', view(AC)],
+  ['/api/appliances/ac', acView],
   // per-panel health (panels.ts, mockup u-panels): positions only (the route never names a serial), and not the owner's alert state
   ['/api/pvs/panels', view(PANELS_VIEW)],
 ]);
