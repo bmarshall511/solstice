@@ -206,7 +206,7 @@ export function openConditions(S) {
   const health = `<div class="c-lab">Data health <span style="letter-spacing:0;text-transform:none;font-weight:500">· ${issues ? `${issues} issue${issues === 1 ? '' : 's'}` : 'all good'}</span></div>
     <div class="c-well" style="margin-top:0;padding:4px 12px"><div class="c-parts" style="margin:0">${hr.map(x => `<div class="c-part ${x.ok ? 'c-acc-batt' : 'c-acc-warn'}"><i style="border-radius:50%"></i><span>${x.label}</span><b>${x.v}</b></div>`).join('')}</div></div>`;
   const mcap = site.modelKwh || site.capacityKwh || 27, kw = r?.homeKw > .05 ? r.homeKw : null, ready = r && kw ? `${fmtDur(Math.max(0, r.soc) / 100 * mcap * .95 / kw)} at ${kw.toFixed(1)} kW` : 'if the grid went down now';
-  const links = `<div class="c-card flush">${S.guest ? '' : sysRow({ acc: 'c-acc-out', ic: 'shield', title: 'Outage readiness', line: esc(ready), id: 'cdOutage' })}${sysRow({ acc: 'c-acc-home', ic: 'link', title: 'Connections', line: `${hr.length >= 8 ? 7 : hr.length} services`, id: 'cdConn' })}</div>`;
+  const links = `<div class="c-card flush">${S.guest ? '' : sysRow({ acc: 'c-acc-out', ic: 'shield', title: 'Outage readiness', line: esc(ready), id: 'cdOutage' })}${sysRow({ acc: 'c-acc-home', ic: 'link', title: 'Connections', line: 'Tesla · Open-Meteo · ScreenLogic · Nest · PEC bills', id: 'cdConn' })}</div>`;
   sheet(`${sheetHead('Conditions', badge, 'Everything the Status pill adds up, in one place.')}<div class="c-card flush">${rows}</div>${alerts}${health}${links}${sheetFoot('', 'Done')}`);
   $('sheetBody').querySelector('[data-f="pri"]').onclick = closeSheet;
   if ($('cdOutage')) $('cdOutage').onclick = () => { closeSheet(); S.nav?.insights('home', 'outage'); };

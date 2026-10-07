@@ -1763,6 +1763,7 @@ html[data-role=guest] .bandbtn:after,html[data-as=guest] .bandbtn:after{content:
 .sheet.is-c .c-card{background:color-mix(in srgb,var(--text) 4%,transparent)}
 .sheet.is-c .c-sheet-f{margin-bottom:0}
 .c-sheet-f .c-btn{display:block;min-width:0;text-align:center;line-height:44px;overflow:hidden;text-overflow:ellipsis}
+.c-sheet-f .c-btn:not(.pri){flex:0 1 auto;min-width:96px}   /* the secondary keeps its whole label; the primary takes the rest */
 .sheet.is-c .c-ban:first-child{margin-top:4px}
 /* sheet parts */
 .c-date{position:relative;display:block}
