@@ -140,25 +140,34 @@
         </div>
       </section>
 
-      <!-- ================= HISTORY ================= -->
+      <!-- ================= HISTORY (approved mockup al-ia v2, frame 14) ================= -->
       <section class="view" id="v-hist">
         <div class="hello"><div><h3>History</h3><p id="hdate">—</p></div></div>
-        <div class="seg" id="hseg"><button class="on" data-r="day">Day</button><button data-r="week">Week</button><button data-r="month">Month</button><button data-r="year">Year</button></div>
-        <div class="daynav" id="dayNav"><button id="dayPrev" aria-label="Previous day">‹</button><span id="dayLabel">Today</span><button id="dayNext" aria-label="Next day">›</button></div>
+        <div class="c-seg wide" id="hseg" style="--n:4;--i:0" role="group" aria-label="Range"><button class="on" data-r="day" aria-pressed="true">Day</button><button data-r="week" aria-pressed="false">Week</button><button data-r="month" aria-pressed="false">Month</button><button data-r="year" aria-pressed="false">Year</button></div>
+        <div class="c-fpills" id="hjumps" style="margin-top:10px" role="group" aria-label="Jump to"><button class="c-fpill" data-j="energy">Energy</button><button class="c-fpill" data-j="battery">Battery</button><button class="c-fpill" data-j="outages">Outages</button><button class="c-fpill" data-j="bills">Bills</button></div>
+        <div class="daynav" id="dayNav"><button class="c-step" id="dayPrev" aria-label="Previous day">‹</button><b id="dayLabel">Today</b><button class="c-step" id="dayNext" aria-label="Next day">›</button></div>
+        <div id="hjEnergy" class="hj"></div>
         <svg id="hchart" width="330" height="310" viewBox="-165 -165 330 330"></svg>
-        <div class="legend" id="hleg"></div>
-        <div class="stats" id="hstats"></div>
+        <div class="c-dl" id="hleg"></div>
+        <div class="c-tiles" id="hstats" style="margin-top:6px"></div>
 
-        <div class="sect" id="landSect">Production landscape</div>
-        <div class="card">
-          <div class="h"><b>Last 30 days × 24 hours</b><span>drag · tap a bar</span></div>
+        <div class="c-card" id="flowSum" data-owner hidden>
+          <div class="c-head"><h5>Where every kWh went</h5><span class="c-fig" id="flowFig">—</span></div>
+          <div class="c-stack" id="flowStack"></div>
+          <div class="c-dl" id="flowDl"></div>
+          <div class="c-btns"><button class="c-btn line block" id="flow3d" aria-expanded="false">3D flow</button></div>
+          <div id="flowHost" hidden></div>
+        </div>
+
+        <div class="c-card" id="landCard">
+          <div class="c-head"><h5>Last 30 days × 24 hours</h5><span class="c-fig">drag · tap a bar</span></div>
           <div class="land" id="land"></div>
-          <div class="legend" style="justify-content:flex-start;margin-top:6px"><span>kWh/hr<span class="ramp"></span></span><span style="color:var(--warn)">▌ below the weather model</span></div>
+          <div class="c-dl"><span class="c-acc-solar"><i style="width:40px;background:linear-gradient(90deg,var(--c-fill-2),var(--solar))"></i>kWh an hour</span><span class="c-acc-warn"><i></i>below the weather model</span></div>
           <div class="landtip" id="landTip">Each bar is one hour of solar production. Red rows are days that came in more than 10% below what the sunlight should have produced.</div>
         </div>
 
-        <div class="card" id="yrCard" hidden>
-          <div class="h"><b>Your year</b><span>drag · tap a day</span></div>
+        <div class="c-card" id="yrCard" hidden>
+          <div class="c-head"><h5>Your year</h5><span class="c-fig">drag · tap a day</span></div>
           <div class="ring3d yr3d" id="yr">
             <div class="labs" id="yrLabs"></div>
             <div class="hint" id="yrHint">last year shown where data exists</div>
@@ -174,55 +183,57 @@
             <span><i class="hd"></i>Today</span>
           </div>
           <div class="two" id="yrStats"></div>
-          <p class="fine" id="yrNote">Bars share one scale, so solar, home and PEC heights compare directly.</p>
+          <p class="c-fine" id="yrNote">Bars share one scale, so solar, home and PEC heights compare directly.</p>
         </div>
 
-        <div class="sect">Powerwall patterns</div>
-        <div class="card">
-          <div class="h"><b>Charge level · 30 days</b><span>each row is a day</span></div>
-          <svg class="mini" id="socHeat" viewBox="0 0 310 190"></svg>
-          <div class="legend" style="justify-content:flex-start">0%<span class="ramp" style="background:linear-gradient(90deg,#10151f,#1d5c4a,#4ef0a6,#d9fff0)"></span>100% · <span style="color:var(--warn)">▌ at reserve</span></div>
-          <div class="rec2" id="socStats"></div>
+        <div id="hjBattery" class="hj"></div>
+        <div class="c-card" id="socCard">
+          <div class="c-head"><h5>Charge level</h5><span class="c-fig">30 days</span></div>
+          <svg class="mini" id="socHeat" viewBox="0 0 310 190" aria-label="Charge level, one row a day"></svg>
+          <div class="c-dl"><span class="c-acc-batt"><i style="width:40px;background:linear-gradient(90deg,var(--c-fill-2),var(--batt))"></i>0 → 100%</span><span class="c-acc-warn"><i></i>at reserve</span></div>
+          <div class="c-kv" id="socStats"></div>
         </div>
 
-        <div class="card">
-          <div class="h"><b>Records</b><span id="recSince">—</span></div>
-          <div class="rec2" id="records"></div>
+        <div class="c-tiles" id="records"></div>
+        <div class="c-btns" style="margin-top:8px"><button class="c-btn line block" id="recAll">All records</button></div>
+
+        <div id="hjOutages" class="hj"></div>
+        <div class="c-card" id="outCard">
+          <div class="c-head"><h5 id="outTitle">Outages</h5><span id="outBadge" style="margin-left:auto"></span></div>
+          <div class="c-tl" id="outList"></div>
+          <div class="c-btns"><button class="c-btn line block" id="outAll">All</button></div>
         </div>
 
-        <div class="sect">Outages</div>
-        <div class="card">
-          <div class="h"><b id="outTitle">Grid outages</b><span class="badge g" id="outBadge">—</span></div>
-          <p id="outText">—</p>
-          <svg class="mini" id="outStrip" viewBox="0 0 310 64"></svg>
-          <div id="outList" style="margin-top:6px"></div>
-        </div>
-
-        <div class="sect" id="billSect">Electric bills · PEC</div>
-        <div class="card" id="billListCard">
-          <div class="h"><b>Your bills <span id="billCount" style="font-weight:400;font-size:12px;color:var(--mute);margin-left:4px">—</span></b><button class="link" data-addbill="1" style="margin:0;padding:7px 12px">+ Add a PEC bill</button></div>
-          <div id="billList" style="margin-top:6px"></div></div>
+        <div id="hjBills" class="hj"></div>
         <div id="billDue"></div>
-        <div id="billChecks"></div>
-        <div class="card">
-          <div class="h"><b>PEC meter vs Tesla</b><span>kWh bought per bill</span></div>
-          <svg class="mini" id="meterChart" viewBox="0 0 310 150"></svg>
-          <div class="legend" style="justify-content:flex-start"><span><i style="background:rgba(196,162,255,.35)"></i>PEC billed</span><span><i style="background:var(--grid)"></i>Tesla measured</span><span><i style="background:var(--out)"></i>&gt;5% apart</span></div>
+        <div class="c-card" id="billListCard">
+          <div class="c-head"><h5>Your bills</h5><span class="c-fig" id="billCount">—</span></div>
+          <div class="c-parts" id="billList"></div>
+          <div class="c-btns"><button class="c-btn line" id="billAll">All</button><button class="c-btn soft c-acc-grid" data-addbill="1"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add a PEC bill</button></div>
         </div>
-        <div class="card">
-          <div class="h"><b>Where your last bill went</b><span id="wfNote">vs. no solar</span></div>
-          <svg class="mini" id="waterfall" viewBox="0 0 310 190"></svg>
-        </div>
-        <div class="card">
-          <div class="h"><b>This billing cycle</b><span id="cycNote">—</span></div>
-          <div class="cyc"><i id="cycBar" style="width:0"></i></div><div class="cycl"><span id="cycFrom">—</span><span>today</span><span id="cycTo">—</span></div>
-          <div class="kv" id="cycKv"></div>
-        </div>
-        <div class="card">
-          <div class="h"><b>Monthly cost</b><span>Tesla usage × your PEC rates</span></div>
-          <svg class="mini" id="billChart" viewBox="0 0 310 130"></svg>
-          <div class="legend" style="justify-content:flex-start"><span><i style="background:var(--solar)"></i>Paid (est.)</span><span><i style="background:rgba(255,255,255,.2)"></i>Without solar + Powerwall</span></div>
-          <button class="link" data-addbill="1">+ Add a PEC bill</button>
+        <div class="c-card" id="billAnalysis">
+          <div class="c-head"><h5>Bill analysis</h5><span id="billBadge" style="margin-left:auto"></span></div>
+          <div id="billChecks"></div>
+          <div class="c-seg wide sm" id="billSeg" style="--n:4;--i:0" role="group" aria-label="Bill analysis"><button class="on" data-b="meter" aria-pressed="true">Meter</button><button data-b="wf" aria-pressed="false">Waterfall</button><button data-b="cycle" aria-pressed="false">Cycle</button><button data-b="monthly" aria-pressed="false">Monthly</button></div>
+          <div class="card bpane" data-pane="meter">
+            <div class="h"><b>PEC meter vs Tesla</b><span>kWh bought per bill</span></div>
+            <svg class="mini" id="meterChart" viewBox="0 0 310 150"></svg>
+            <div class="c-dl"><span class="c-acc-grid"><i></i>PEC billed</span><span class="c-acc-home"><i></i>Tesla measured</span><span class="c-acc-out"><i></i>&gt;5% apart</span></div>
+          </div>
+          <div class="card bpane" data-pane="wf" hidden>
+            <div class="h"><b>Where your last bill went</b><span id="wfNote">vs. no solar</span></div>
+            <svg class="mini" id="waterfall" viewBox="0 0 310 190"></svg>
+          </div>
+          <div class="card bpane" data-pane="cycle" hidden>
+            <div class="h"><b>This billing cycle</b><span id="cycNote">—</span></div>
+            <div class="cyc"><i id="cycBar" style="width:0"></i></div><div class="cycl"><span id="cycFrom">—</span><span>today</span><span id="cycTo">—</span></div>
+            <div class="c-kv" id="cycKv"></div>
+          </div>
+          <div class="card bpane" data-pane="monthly" hidden>
+            <div class="h"><b>Monthly cost</b><span>Tesla usage × your PEC rates</span></div>
+            <svg class="mini" id="billChart" viewBox="0 0 310 130"></svg>
+            <div class="c-dl"><span class="c-acc-solar"><i></i>paid (est.)</span><span style="--acc:var(--c-fill-2)"><i></i>without solar + Powerwall</span></div>
+          </div>
         </div>
       </section>
 

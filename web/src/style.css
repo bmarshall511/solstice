@@ -1811,5 +1811,24 @@ html[data-calm] .c-seg::before,html[data-calm] .c-sw::after,html[data-calm] .c-c
 #plDay{margin-top:0}
 .pl-nums{margin-top:12px}
 .pl-nums.deltas4{grid-template-columns:repeat(2,minmax(0,1fr))}
+/* History (frame 14) */
+#v-hist .daynav{gap:16px;margin-top:10px}
+#v-hist .daynav b{font-size:14px;color:var(--text);min-width:110px;text-align:center}
+#v-hist .daynav .c-step:disabled{opacity:.35;cursor:default}
+#v-hist #hchart{display:block;margin:10px auto 0;max-width:100%}
+.hj{scroll-margin-top:12px}
+#flowHost .card.flows>.h b{display:none}
+#flowHost .card.flows{background:none;border:0;padding:0;margin-top:12px;backdrop-filter:none;-webkit-backdrop-filter:none}
+.card.bpane{background:none;border:0;padding:0;margin-top:12px;border-radius:var(--c-r-well)}
+.card.bpane .h b{font-size:13px}
+.card.bpane .h{padding-right:2px}
+#records{margin-top:12px}
+#billList .c-part{min-height:44px}
+#billList .c-part .c-badge,#sheetBody .c-part .c-badge{margin-left:2px}
+#v-hist .daynav .c-step{width:44px;height:44px;font-size:20px}
+#landCard{overflow:hidden}
+/* the scenes' expand button: a 44 px target around the same 30 px glass square */
+.xbtn{width:44px;height:44px;top:1px;right:3px;background:none;border:0;backdrop-filter:none;-webkit-backdrop-filter:none}
+.xbtn::before{content:"";position:absolute;inset:7px;border-radius:10px;background:rgba(8,10,16,.55);box-shadow:inset 0 0 0 1px var(--glass-b);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);z-index:-1}
 /* end Batch 4 */
 /* end al-app */

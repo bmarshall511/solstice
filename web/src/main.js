@@ -9,7 +9,7 @@ import { createLandscape } from './scenes/landscape.js';
 import { createHomeView } from './scenes/home.js';
 import { renderLive, renderStatic, renderWeather, freshness, initAhead, initPwDisc } from './views/now.js';
 import { initNowTop, redrawNowTop } from './views/nowhub.js';
-import { keyActivate, wireDisclosures, segSet } from './views/csheet.js';
+import { keyActivate, wireDisclosures, segSet, banner } from './views/csheet.js';
 import { route, fromInsights, fromQuery } from './lib/sysui.js';
 import { openLog } from './views/timeline.js';
 import { showSeg, segKeys, drawSysHeader, drawHomeLive, drawRingLegend, drawSolarLive, drawPwLive } from './views/systems.js';
@@ -348,10 +348,10 @@ function sideSummary() {
 function drawBillDue() {
   const last = S.reconcile?.at(-1); if (!last) return;
   const nextClose = addDays(last.period.to, 31), ready = addDays(nextClose, 2), today = localDate();
-  const card = ready <= today
-    ? `<div class="card due"><div class="h"><b>Your ${niceDate(nextClose, { month: 'long' })} PEC bill should be ready</b><span>${niceDate(last.period.to)} – ${niceDate(nextClose)}</span></div>
-        <p>Download it from SmartHub or myPEC.com and add it. Solstice checks it against Tesla and updates your rates.</p><button class="link" data-addbill="1">+ Add the bill</button></div>` : '';
-  $('billDue').innerHTML = card;
+  // History › Bills (mockup al frame 14): the plain banner, its button opens the bill sheet
+  $('billDue').innerHTML = ready <= today && !S.guest ? banner({ cls: 'plain', ic: 'bill', title: `Your ${niceDate(nextClose, { month: 'long' })} PEC bill should be ready`,
+    line: `${niceDate(last.period.to)} – ${niceDate(nextClose)} · download it from SmartHub or myPEC.com and add it; Solstice checks it against Tesla and updates your rates.`, btns: [['Add the bill', 'bill']] }) : '';
+  $('billDue').querySelector('[data-b]')?.setAttribute('data-addbill', '1');
   // mockup al: on Now it is the banner slot's plain bill banner (owner only; no dollar figure)
   S.billDue = ready <= today && !S.guest ? { month: niceDate(nextClose, { month: 'long' }), period: `${niceDate(last.period.to)} – ${niceDate(nextClose)}` } : null; S.redrawNow();
   $('setBills').textContent = ready <= today ? `${niceDate(nextClose, { month: 'long' })} bill ready to add` : `Last: ${niceDate(last.billDate, { month: 'long' })} · next ~${niceDate(ready)}`;
