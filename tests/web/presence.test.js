@@ -39,4 +39,13 @@ describe('away until', () => {
     expect(awayLines(chicagoEpoch('2026-09-28', 18), now, { ...ac, mode: 'suggest' }, { mode: 'auto' }).ac).toMatch(/^Suggests holding 82°/);
     expect(awayLines(chicagoEpoch('2026-09-28', 18), now, { ...ac, mode: 'off' }, { mode: 'auto' }).ac).toMatch(/no Nest writes/);
   });
+  it('names the evening run time of the day it is about, not of the day the test runs (7:15 PM once CST starts Nov 1)', () => {
+    const ac = { mode: 'auto', awayF: 82, band: { homeLo: 74, homeHi: 78, nightLo: 72, nightHi: 75 }, maxStepF: 2 };
+    const nov = Date.parse('2026-11-09T15:20:00Z');   // Mon 9:20 AM CST
+    expect(awayLines(chicagoEpoch('2026-11-10', 7), nov, ac, { mode: 'suggest' }).pool).toMatch(/still suggested at 7:15 PM as usual/);
+    expect(awayLines(chicagoEpoch('2026-09-29', 7), now, ac, { mode: 'suggest' }).pool).toMatch(/still suggested at 8:15 PM as usual/);
+    // Oct 31 is still CDT: its 01:15 UTC run (Nov 1, UTC) is 8:15 PM; the next evening's is 7:15 PM
+    expect(awayLines(chicagoEpoch('2026-11-01', 7), Date.parse('2026-10-31T15:00:00Z'), ac, { mode: 'auto' }).pool).toMatch(/at 8:15 PM/);
+    expect(awayLines(chicagoEpoch('2026-11-02', 7), Date.parse('2026-11-01T15:00:00Z'), ac, { mode: 'auto' }).pool).toMatch(/at 7:15 PM/);
+  });
 });

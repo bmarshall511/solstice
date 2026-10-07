@@ -2,7 +2,10 @@
 // (server/src/appliances/presence.ts) takes `until` as epoch ms. Pure helpers; views/ac.js draws the sheet.
 const TZ = 'America/Chicago';
 /** The evening pool run in Chicago time: the cron is 01:15 UTC, so 8:15 PM in daylight time and 7:15 PM after the November change. */
-const eveningRun = (now = new Date()) => { const d = new Date(now); d.setUTCHours(1, 15, 0, 0); return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' }); };
+/** The clock time of the pool's evening run on a Chicago day: the cron fires at 01:15 UTC the next UTC day, so it reads
+ *  8:15 PM under CDT and 7:15 PM under CST. It takes the day it is about, never today's date, or the label drifts at DST. */
+const eveningRun = day => new Date(Date.parse(day + 'T12:00:00Z') + 864e5).toISOString().slice(0, 10) + 'T01:15:00Z';
+const eveningRunLabel = day => new Date(eveningRun(day)).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
 const parts = ms => Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(ms)).map(p => [p.type, p.value]));
 /** The Chicago calendar day of an instant. */
 export const dayOf = ms => { const p = parts(ms); return `${p.year}-${p.month}-${p.day}`; };
@@ -69,6 +72,6 @@ export function awayLines(at, now, ac, pool) {
   const plan = pool.mode === 'auto' ? 'written' : 'suggested';
   const poolLine = pool.mode === 'off' || !pool.mode ? 'No change. Pool Autopilot is Off.'
     : d === today ? 'No change. The pump plan doesn’t depend on who is home.'
-    : `No change${d === addDay(today, 1) ? ' tonight' : ''}. The pump plan doesn’t depend on who is home; ${d === addDay(today, 1) ? 'tomorrow’s plan is' : 'each evening’s plan is'} still ${plan} at ${eveningRun()} as usual.`;
+    : `No change${d === addDay(today, 1) ? ' tonight' : ''}. The pump plan doesn’t depend on who is home; ${d === addDay(today, 1) ? 'tomorrow’s plan is' : 'each evening’s plan is'} still ${plan} at ${eveningRunLabel(today)} as usual.`;
   return { ac: acLine, pool: poolLine };
 }
