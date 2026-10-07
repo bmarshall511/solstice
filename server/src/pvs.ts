@@ -4,6 +4,7 @@
 // inverter's lifetime kWh counter. The day roll-up (5-minute series and per-panel kWh) is computed on read. Every route here is owner-only through requireOwner in app.ts.
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { q, one, kv } from './db.js';
+import { SOLAR } from './system.js';
 import { localDay, localMidnight, addDays } from './tesla/client.js';
 import { learnLayout, getLayout, applyMoves, layoutView, LAYOUT_KEY } from './panels.js';
 
@@ -164,7 +165,8 @@ export async function pvsLatest(now = Date.now()) {
   const cols = `DISTINCT ON (sn) sn, (extract(epoch FROM ts) * 1000)::float8 AS ms, kw::float8 AS kw, kw_dc::float8 AS kw_dc, v::float8 AS v,
             temp_c::float8 AS t, kwh_lifetime::float8 AS kwh`;
   let rows = await q<Row>(`SELECT ${cols} FROM pvs_readings WHERE ts >= $1::timestamptz ORDER BY sn, ts DESC`, [new Date(now - PVS_LIMITS.latestRecentMs).toISOString()]);
-  if (!rows.length) rows = await q<Row>(`SELECT ${cols} FROM pvs_readings WHERE ts >= (SELECT max(ts) FROM pvs_readings) - $1::interval ORDER BY sn, ts DESC`,
+  // a panel missing from the day (an inverter silent since yesterday, the relay quiet) is looked up over the week, so the grid keeps all 30
+  if (rows.length < SOLAR.panels) rows = await q<Row>(`SELECT ${cols} FROM pvs_readings WHERE ts >= (SELECT max(ts) FROM pvs_readings) - $1::interval ORDER BY sn, ts DESC`,
     [`${PVS_LIMITS.latestLookbackMs / 1000} seconds`]);
   const age = (ms: number) => Math.max(0, Math.round((now - ms) / 1000));
   const newest = rows.length ? Math.max(...rows.map(r => Number(r.ms))) : null;

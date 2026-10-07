@@ -689,12 +689,16 @@ describe('GET /api/pvs/day and /api/pvs/latest', () => {
     expect(await (await api('/api/pvs/latest')).json()).toEqual({ at: null, ageS: null, count: 0, inverters: [] });
   });
 
-  it('LATEST-2 the last 24 hours first; the week back from the newest reading only when the last day has none (code review C-12)', async () => {
+  it('LATEST-2 the last 24 hours first; the week back from the newest reading whenever a panel is missing from the day (code review C-12)', async () => {
     await db.q('DELETE FROM pvs_readings');
     const t = Date.now(), iso = (ms: number) => new Date(ms).toISOString(), sns = async () => (await (await api('/api/pvs/latest')).json()).inverters.map((i: any) => i.sn);
     await put(iso(t - 2 * 864e5), [R('TEST-L2-OLD', 0.2)]);
     await put(iso(t - 600_000), [R('TEST-L2-NEW', 0.15)]);
-    expect(await sns()).toEqual(['TEST-L2-NEW']);                         // a day's rows: the 2-day-old inverter is not in the window
+    expect(await sns()).toEqual(['TEST-L2-NEW', 'TEST-L2-OLD']);          // fewer than the 30 panels in the day: the 2-day-old inverter is looked up over the week, so the grid keeps it
+    // a full day (30 inverters) answers from the day alone: the 2-day-old one is then genuinely gone from the window
+    await put(iso(t - 300_000), Array.from({ length: 30 }, (_, i) => R(`TEST-L2-P${String(i).padStart(2, '0')}`, 0.1)));
+    expect((await sns()).filter((x: string) => x === 'TEST-L2-OLD')).toEqual([]);
+    await db.q(`DELETE FROM pvs_readings WHERE sn LIKE 'TEST-L2-P%'`);
     await db.q(`DELETE FROM pvs_readings WHERE sn = 'TEST-L2-NEW'`);
     await put(iso(t - 4 * 864e5), [R('TEST-L2-OLDER', 0.1)]);
     expect(await sns()).toEqual(['TEST-L2-OLD', 'TEST-L2-OLDER']);         // the relay quiet for 2 days: as before, the week back from its last poll
