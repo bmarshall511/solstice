@@ -153,6 +153,16 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS trips (id serial PRIMARY KEY, site_id text NOT NULL, leave_at bigint NOT NULL, back_at bigint, state text NOT NULL,
      started_at bigint, ended_at bigint, ended_by text, detected boolean NOT NULL DEFAULT false, data jsonb NOT NULL DEFAULT '{}', created_at timestamptz NOT NULL DEFAULT now())`,
   `DO $$ BEGIN CREATE INDEX IF NOT EXISTS trips_site_state ON trips(site_id, state); EXCEPTION WHEN duplicate_table OR unique_violation THEN NULL; END $$`,
+  // Load signatures (I-22, mockup am; loads.ts): each detected burst above the always-on with the AC and pump taken out. `start` is
+  // epoch ms, `day`/`hour` Chicago, `kw` above the base (an overlap's extra only), `sig` its kW × minutes band, `label_id` the named
+  // centre it matched, `v` the detector version. A day's rows are replaced whole by the nightly step.
+  `CREATE TABLE IF NOT EXISTS load_bursts (site_id text NOT NULL, start bigint NOT NULL, seq smallint NOT NULL DEFAULT 0, day text NOT NULL, hour smallint NOT NULL,
+     minutes smallint NOT NULL, kw real NOT NULL, kwh real NOT NULL, overlap boolean NOT NULL DEFAULT false, sig text, label_id int, v smallint NOT NULL DEFAULT 1,
+     PRIMARY KEY (site_id, start, seq))`,
+  `DO $$ BEGIN CREATE INDEX IF NOT EXISTS load_bursts_site_day ON load_bursts(site_id, day); EXCEPTION WHEN duplicate_table OR unique_violation THEN NULL; END $$`,
+  // The owner's names for load clusters (owner-only): name NULL with dismissed = "Not one appliance"; kw/minutes/daypart the centre at naming.
+  `CREATE TABLE IF NOT EXISTS load_labels (id serial PRIMARY KEY, site_id text NOT NULL, sig text NOT NULL, name text, kw real NOT NULL, minutes smallint NOT NULL,
+     daypart text, dismissed boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE (site_id, sig))`,
 ];
 
 /** Run `fn` once and keep its result; a failure is forgotten, so the next call tries again. */

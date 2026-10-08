@@ -1518,6 +1518,18 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 .c-wf-tot{border-top:1px solid color-mix(in srgb,var(--text) 22%,transparent)}
 .c-wf-tot .c-wf-l,.c-wf-tot b{font-weight:600}
 .c-wf-tot b{color:var(--text)}
+/* I-22 load signatures (approved mockup am frames 4–5): the 24-hour strip (an hour a cell, brighter where more runs start) and a Big loads row */
+.c-day{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;height:14px;margin-top:8px}
+.c-day i{border-radius:3px;background:color-mix(in srgb,var(--acc) calc(var(--v,0)*100%),var(--c-fill))}
+.c-dlab{display:flex;justify-content:space-between;font:500 9.5px var(--c-mono);color:var(--mute);margin-top:4px}
+.c-load{padding:12px 0;border-top:1px solid var(--c-line)}
+.c-load:first-child{border-top:0;padding-top:4px}
+.c-load-h{display:flex;align-items:center;gap:8px}
+.c-load-h b{font-size:14px;font-weight:600;flex:1;min-width:0}
+.c-load-h span.f{font:500 12.5px var(--c-mono);color:var(--dim);white-space:nowrap}
+.c-load p{font-size:12px;color:var(--dim);margin-top:3px;line-height:1.45}
+.c-load p.s{color:var(--text)}
+.c-load .c-btns{margin-top:8px}
 .c-cells{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;margin-top:12px}
 .c-cells i{aspect-ratio:1/1.6;border-radius:4px;background:color-mix(in srgb,var(--solar) var(--p),var(--bg))}
 .c-heat{display:grid;gap:2px;margin-top:12px;border-radius:10px;overflow:hidden}

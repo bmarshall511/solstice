@@ -32,6 +32,7 @@ import { pvsRouter, prunePvs } from './pvs.js';
 import { panelsDay, panelAlerts, panelWatch } from './panels.js';
 import { flowsFor, FlowsInputError } from './flows.js';
 import { overnightSplit, breakdownFor, alwaysOnWatch } from './breakdown.js';
+import { loadsRoutes, loadsNightly } from './loads.js';
 import { outageDetail } from './outage.js';
 
 import { alertRoutes, notify } from './notify.js';
@@ -369,6 +370,8 @@ app.get('/api/breakdown', wrap(async (req, res) => {
   if (!['today', 'week', 'month'].includes(range)) return res.status(400).json({ error: 'range must be today, week or month' });
   res.json(await breakdownFor(site(req), range as 'today' | 'week' | 'month', await settingsFor(req)));
 }));
+/** I-22 load signatures (loads.ts, mockup am frames 4–5): GET /api/loads (the clusters) and POST /api/loads/label. Owner-only (no guest view). */
+loadsRoutes(app, site, wrap);
 /** History "Where every kWh went": seven paths for a day or the 30 days ending on `date`, with pool/AC and "unaccounted" (flows.ts). */
 app.get('/api/flows', wrap(async (req, res) => {
   try { res.json(await flowsFor(site(req), String(req.query.range ?? 'day'), req.query.date == null ? undefined : String(req.query.date), await settingsFor(req))); }
@@ -812,6 +815,7 @@ fiveMinuteSteps.spare = spareWatch;   // mockup ad: the pool speeds up on real s
 nightlySteps.soiling = soilingNightly;
 nightlySteps.poolTest = poolTestReminder;   // poolTests.ts (mockup aj): one "time to test" push per test, 4 days warm / 7 cool   // soiling.ts (mockup ai): the weather for the Cleaning check card, and one push per dusty spell
 nightlySteps.alwaysOn = alwaysOnWatch;   // breakdown.ts: one push when the always-on base stays up three nights
+nightlySteps.loads = loadsNightly;   // loads.ts (I-22): yesterday's bursts and the back-fill, then a recluster; stops 8 s before the deadline
 /* Watchdog: Vercel never retries a cron, so a nightly run that died (timeout, deploy, outage) would be silent. The 5-minute tick
  * pushes one alert a day while the last finished nightly run is more than 26 hours old. */
 const SYNC_DONE_KEY = 'cron:sync:done';

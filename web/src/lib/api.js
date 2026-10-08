@@ -92,6 +92,8 @@ export const api = {
   spare: () => get('spare'),
   capacity: () => get('capacity'),
   breakdown: range => get(`breakdown?range=${encodeURIComponent(range)}`),   // mockup y
+  loads: () => get('loads'),                                                   // I-22 load signatures (owner only)
+  labelLoad: body => send('POST', 'loads/label', body),                        // {sig, name} | {sig, dismissed: true} | {id, name: null}
   acSuggestion: (action, key) => send('POST', 'appliances/ac/suggestion', { action, key }),
   acNudge: (dir, keep) => send('POST', 'appliances/ac/nudge', { dir, keep }),
   models: () => get('models'),

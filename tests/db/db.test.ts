@@ -25,7 +25,7 @@ describe('schema and kv', () => {
   it('31: migrate() creates every table and is safe to call again', async () => {
     await expect(migrate()).resolves.toBeUndefined();
     const tables = (await q<{ t: string }>(`SELECT table_name t FROM information_schema.tables WHERE table_schema = 'public' ORDER BY 1`)).map(r => r.t);
-    expect(tables).toEqual(['access_tokens', 'alerts', 'anomalies', 'backup_events', 'bills', 'daily_metrics', 'digests', 'energy', 'events', 'kv', 'login_attempts', 'model_scores', 'nest_readings', 'owner_sessions',
+    expect(tables).toEqual(['access_tokens', 'alerts', 'anomalies', 'backup_events', 'bills', 'daily_metrics', 'digests', 'energy', 'events', 'kv', 'load_bursts', 'load_labels', 'login_attempts', 'model_scores', 'nest_readings', 'owner_sessions',
       'pool_readings', 'pool_tests', 'powerwall_log', 'predictions', 'push_subscriptions', 'pvs_readings', 'readings', 'sessions', 'sites', 'soe', 'synced_days', 'tesla_accounts', 'trips', 'users']);
     expect(await q(`SELECT indexdef FROM pg_indexes WHERE indexname = 'soe_site_epoch'`)).toEqual([{ indexdef: expect.stringMatching(/ON public\.soe USING btree \(site_id, epoch\)/) }]);
   });

@@ -1,9 +1,10 @@
 // "Where your energy goes" (mockup y): a typical day split into what Solstice can see. AC and pool are the measured figures the History
 // card already uses (acKwhBetween with the learned draw, poolKwhBetween). The rest of the house splits two ways from Tesla's 5-minute
 // home load: an always-on base (the quietest tenth of the 01:00–05:00 buckets while the AC is off, less the pool pump if it ran then) and
-// big loads (runs of 15 min or more at least 3 kW above that base once the AC's own draw is taken out; only the energy above the base
-// counts). What is left is "everything else". Only days with Nest readings are split: without them the AC can't be told apart. Big loads
-// are labelled "looks like" a water heater, dryer or oven: whole-home data can't tell those apart.
+// big loads (I-22, loads.ts: bursts of 10 min or more at least 1.5 kW above that base once the AC's and the pump's draw are taken out;
+// only the energy above the base counts). Named loads (the owner's names for repeating bursts) of 1 kWh a day or more are parts of their
+// own; the other bursts stay "Big loads". What is left is "everything else". Only days with Nest readings are split: without them the
+// AC can't be told apart. burstsOf (3 kW, 15 min) is the older rule, kept for its tests only.
 import { tripDays } from './vacation/trip.js';
 import { q, kv } from './db.js';
 import { localDay, addDays } from './tesla/client.js';
@@ -11,10 +12,13 @@ import { daySpans } from './flows.js';
 import { poolKwhBetween, pumpRunning } from './appliances/pool.js';
 import { acKwhBetween, learnAcKw, acKwFor, acKwConf } from './appliances/ac.js';
 import { notify } from './notify.js';
+import { loadInputs, burstsFrom, labelsOf, loadClusters, matchLabel, PART_KWH, type LoadBurst } from './loads.js';
 
 export const BURST_OVER_KW = 3, BURST_MIN_BUCKETS = 3, BASE_QUANTILE = .1, NEST_COVERAGE = .8;   // 3 kW over the base for 15 min; the quietest tenth
 export type Range = 'today' | 'week' | 'month';
 export type Burst = { start: number; minutes: number; kw: number; kwh: number };
+/** One part of "Where your energy goes": ac, alwaysOn, load:<labelId> (I-22), big, pool, other, each with its own extra fields. */
+export type BreakdownPart = { id: string; kwh: number; share: number; conf: string; [k: string]: any };
 type Bucket = { epoch: number; day: string; hour: number; kw: number };
 
 /**
@@ -113,19 +117,20 @@ export async function alwaysOnKw(siteId: string, days: number, o: { now?: number
 export async function breakdownFor(siteId: string, range: Range, settings: Record<string, any>, now = Date.now()) {
   const today = localDay(new Date(now)), from = range === 'today' ? today : addDays(today, range === 'week' ? -7 : -30), to = range === 'today' ? today : addDays(today, -1);
   const spans = daySpans(from, to, now);
-  const [rows, nest, pumpNight] = await Promise.all([
-    q<{ epoch: string; day: string; hour: number; wh: number }>(`SELECT epoch::text, day, hour::int, home_wh::float8 wh FROM energy WHERE site_id = $1 AND day BETWEEN $2 AND $3 AND home_wh IS NOT NULL ORDER BY epoch`, [siteId, from, to]),
-    q<{ ts: string; day: string; hvac: string }>(`SELECT ts::text, day, hvac FROM nest_readings WHERE site_id = $1 AND day BETWEEN $2 AND $3 ORDER BY ts`, [siteId, addDays(from, -1), to]),
-    q<{ ts: string; day: string; running: boolean; watts: number; rpm: number }>(`SELECT ts::text, day, running, watts::float8 watts, rpm::float8 rpm FROM pool_readings WHERE site_id = $1 AND day BETWEEN $2 AND $3 AND hour BETWEEN 0 AND 4 ORDER BY ts`, [siteId, addDays(from, -1), to]),
-  ]);
+  // I-22: one set of range reads for the split and the load detector; the pump's readings cover the whole day (daytime pump draw comes out too)
+  const inp = await loadInputs(siteId, from, to), nest = inp.nest, pumpNight = inp.pool.filter(p => p.hour <= 4);
   const slope = (await kv.get<{ slope: number }>(`${siteId}:ac:slope`))?.slope ?? 2.5;
-  const [pool, ac, clearUp, learned] = await Promise.all([poolKwhBetween(siteId, spans, settings), acKwhBetween(siteId, spans, slope), clearUpOf(siteId), learnAcKw(siteId)]);
-  const nr = nest.map(r => ({ ts: Number(r.ts), day: r.day, hvac: r.hvac })), acOn = acMask(nr), coolOn = acMask(nr, ['COOLING']), heatOn = acMask(nr, ['HEATING']), covered = nestCoverage(nr), pr = pumpNight.map(p => ({ ts: Number(p.ts), day: p.day, running: pumpRunning(p), kw: (Number(p.watts) || 0) / 1000 })), pumpOn = pumpMask(pr, clearUp);
+  const [pool, ac, clearUp, learned, labels, loads] = await Promise.all([poolKwhBetween(siteId, spans, settings), acKwhBetween(siteId, spans, slope), clearUpOf(siteId), learnAcKw(siteId),
+    labelsOf(siteId), loadClusters(siteId, now).catch(() => null)]);
+  const nr = nest.map(r => ({ ts: r.ts, day: r.day, hvac: r.hvac })), acOn = acMask(nr), covered = nestCoverage(nr), pr = pumpNight.map(p => ({ ts: p.ts, day: p.day, running: pumpRunning(p), kw: p.watts / 1000 })), pumpOn = pumpMask(pr, clearUp);
   const pumpKw = new Map<string, number>(); for (const r of pr) if (r.running) pumpKw.set(r.day, Math.max(pumpKw.get(r.day) ?? 0, r.kw));   // the running draw, for the fallback
-  const byDay = new Map<string, Bucket[]>();
-  for (const r of rows) { const b = { epoch: Number(r.epoch), day: r.day, hour: r.hour, kw: Number(r.wh) * 12 / 1000 }; const a = byDay.get(r.day); if (a) a.push(b); else byDay.set(r.day, [b]); }
+  const byDay = inp.byDay;
   let home = 0, alwaysOn = 0, big = 0, baseSum = 0, baseDays = 0, burstCount = 0, days = 0, acSum = 0, acDays = 0, acH = 0, heatH = 0; const todayBursts: Burst[] = [], allBursts: Burst[] = [];
   const acKwNow = ac.acKw ?? 2.7, heatKw = learned.heatKw ?? null;
+  const det = burstsFrom(inp, from, to, { coolKw: acKwNow, heatKw, clearUp, now }), burstsByDay = new Map<string, LoadBurst[]>();
+  for (const b of det.bursts) { const x = burstsByDay.get(b.day); if (x) x.push(b); else burstsByDay.set(b.day, [b]); }
+  // named loads with a part of their own: 1 kWh a day or more over the last 30 days (the clusters' figure, so a part doesn't come and go by range)
+  const partIds = new Set((loads?.clusters ?? []).filter(c => c.labelId != null && c.kwhPerDay >= PART_KWH).map(c => c.labelId!)), namedKwh = new Map<number, number>();
   const hoursOf = (day: string, state: string) => nr.filter(r => r.day === day).reduce((a, r, i, arr) => a + (r.hvac === state ? Math.min(20, ((arr[i + 1]?.ts ?? r.ts + 300_000) - r.ts) / 60_000) / 60 : 0), 0);
   for (const s of spans) {
     const bs = byDay.get(s.day) ?? []; if (range !== 'today' && bs.length < 0.9 * (s.lengthMs / 300_000)) continue;   // a full day needs ~all its buckets
@@ -138,13 +143,18 @@ export async function breakdownFor(siteId: string, range: Range, settings: Recor
     const base = nightBase(bs, acOn, pumpOn, pumpKw.get(s.day) ?? 0); if (base == null) continue;
     baseSum += base; baseDays++;
     alwaysOn += base * Math.min(s.elapsedMs, bs.length * 300_000) / 3600e3;
-    const bursts = burstsOf(bs, base, coolOn, acKwNow, { on: heatOn, kw: heatKw }); burstCount += bursts.length; allBursts.push(...bursts); big += bursts.reduce((a, b) => a + b.kwh, 0);
-    if (s.day === today) todayBursts.push(...bursts);
+    for (const b of burstsByDay.get(s.day) ?? []) {
+      const id = matchLabel(b, labels), burst = { start: b.start, minutes: b.minutes, kw: Math.round(b.kw * 10) / 10, kwh: Math.round(b.kwh * 10) / 10 };
+      if (id != null && partIds.has(id)) { namedKwh.set(id, (namedKwh.get(id) ?? 0) + b.kwh); continue; }   // its own part
+      burstCount++; allBursts.push(burst); big += b.kwh; if (s.day === today) todayBursts.push(burst);
+    }
   }
   const per = (v: number) => days ? Math.round(v / days * 10) / 10 : 0;
   // AC from the same covered days as everything else (cooling time × the learned cooling draw, heating time × the heating draw); pool as the History card has it
   const acKwh = per(acSum), poolKwh = per(pool.kwh * (days / Math.max(1, spans.length)));
-  const homeKwh = per(home), onKwh = per(alwaysOn), bigKwh = per(big), rest = Math.max(0, Math.round((homeKwh - acKwh - poolKwh - onKwh - bigKwh) * 10) / 10);
+  const named = (loads?.clusters ?? []).filter(c => c.labelId != null && partIds.has(c.labelId)).map(c => ({ c, kwh: per(namedKwh.get(c.labelId!) ?? 0) }));
+  const namedSum = named.reduce((a, n) => a + n.kwh, 0), unnamed = loads ? loads.clusters.filter(c => c.labelId == null).length : null;
+  const homeKwh = per(home), onKwh = per(alwaysOn), bigKwh = per(big), rest = Math.max(0, Math.round((homeKwh - acKwh - poolKwh - onKwh - bigKwh - namedSum) * 10) / 10);
   const share = (v: number) => homeKwh ? Math.round(v / homeKwh * 100) : 0;
   const acHours = acDays ? Math.round(acH / acDays * 10) / 10 : null;
   // heating hours without a learned heating draw: their kWh can't be booked, so the AC part is an estimate (it stays in "everything else")
@@ -154,12 +164,14 @@ export async function breakdownFor(siteId: string, range: Range, settings: Recor
       // B2-7: runtime × one learned step is "measured" only when the step's two checks agree with it within 15% (ac.ts acKwConf)
       { id: 'ac', kwh: acKwh, share: share(acKwh), conf: acConf, hours: acHours, kw: acKwNow, heatHours: acDays ? Math.round(heatH / acDays * 10) / 10 : null, heatKw },
       { id: 'alwaysOn', kwh: onKwh, share: share(onKwh), conf: 'measured', kw: baseDays ? Math.round(baseSum / baseDays * 100) / 100 : null },
-      { id: 'big', kwh: bigKwh, share: share(bigKwh), conf: 'estimated', perDay: days ? Math.round(burstCount / days * 10) / 10 : 0,
+      // I-22: each named load of 1 kWh a day or more ("learned" once steady; never "measured": whole-house inference)
+      ...named.map(({ c, kwh }) => ({ id: `load:${c.labelId}`, name: c.name, kwh, share: share(kwh), conf: c.badge === 'learned' ? 'learned' as const : 'estimated' as const, hue: c.hue, kw: c.kw, minutes: c.minutes })),
+      { id: 'big', kwh: bigKwh, share: share(bigKwh), conf: 'estimated', unnamed, perDay: days ? Math.round(burstCount / days * 10) / 10 : 0,
         minutes: allBursts.length ? [Math.min(...allBursts.map(b => b.minutes)), Math.max(...allBursts.map(b => b.minutes))] : null,
         burstKw: allBursts.length ? Math.round(allBursts.reduce((a, b) => a + b.kw * b.minutes, 0) / allBursts.reduce((a, b) => a + b.minutes, 0) * 10) / 10 : null },
       { id: 'pool', kwh: poolKwh, share: share(poolKwh), conf: pool.source === 'readings' ? 'measured' : 'estimated' },
       { id: 'other', kwh: rest, share: share(rest), conf: 'estimated' },
-    ],
+    ] as BreakdownPart[],
     bursts: range === 'today' ? todayBursts : [],
     trend: await alwaysOnTrend(siteId, now) };
 }
