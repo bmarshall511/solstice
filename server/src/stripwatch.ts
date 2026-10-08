@@ -66,7 +66,12 @@ export function outdoorOf(wx: Pick<Wx, 'hourly'> | null | undefined, winter: Rec
   return (ms: number) => byHour[rfc3339(new Date(ms)).slice(0, 13)] ?? null;
 }
 /** The balance point: the home model's heating change point when its year fit has a heating term, else 40 °F. */
-export const balanceOf = (s: HomeSlopes | null | undefined) => s && s.c > 0 ? s.th : DEFAULT_BALANCE_F;
+/** The strip balance point (°F). The home model's heating change point is fitted against the daily low (55–75°F): it says when the house
+ *  starts heating, not when a heat pump needs its strips (25–45°F for most units), so it is only a hint, held inside that range
+ *  (overnight QA on the demo read "below the ~63° point where the heat pump needs help"). */
+export const BALANCE_RANGE_F = [25, 45] as const;
+export const balanceOf = (s: HomeSlopes | null | undefined) =>
+  Math.min(BALANCE_RANGE_F[1], Math.max(BALANCE_RANGE_F[0], s && s.c > 0 ? s.th : DEFAULT_BALANCE_F));
 
 /* ---------- rows ---------- */
 type Rows = { buckets: Bucket[]; byDay: Map<string, Array<Bucket & { day: string; hour: number }>>; nest: NestRow[]; pool: Array<{ ts: number; kw: number }> };

@@ -137,3 +137,21 @@ describe('I-18: not clean yet', () => {
     expect(morningBanner({ ...day, clean: true }, { hour: 7, today: '2026-10-07' })).not.toBeNull();
   });
 });
+
+// Polish (overnight QA on the demo server): the bought split's labels follow the sign, and the total row has no bar column, so a
+// two-digit change with its unit ("−10.3 kWh") stays inside the card.
+describe('I-18 polish', () => {
+  it('a day that used and bought less reads "Used less" and "covered less", never "more" next to a minus', () => {
+    const less = { ...day, home: { ...day.home, delta: -10.3 }, import: { ...day.import, delta: -5.3, parts: [{ id: 'home', kwh: -10.3, conf: null }, { id: 'solar', kwh: 5, conf: 'measured' }] } };
+    const b = buyCardHtml(less);
+    expect(b).toContain('<span class="c-wf-l">Used less (above)</span>');
+    expect(b).toContain('Solar &amp; Powerwalls covered less');
+    expect(b).not.toMatch(/Used more|covered more/);
+    expect(dayCardHtml(less, { view: 'import' })).toContain('<span class="c-wf-l">Used less</span>');
+  });
+  it('the total row is label + value only (the CSS gives it its own two columns)', () => {
+    const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '../../web/src/style.css'), 'utf8');
+    expect(css).toMatch(/\.c-wf-r\.c-wf-tot\{grid-template-columns:minmax\(0,1fr\) auto\}/);
+    expect(css).toMatch(/\.c-wf-tot \.c-wf-t\{display:none\}/);
+  });
+});

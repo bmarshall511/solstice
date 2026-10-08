@@ -13,7 +13,7 @@ import { RULE, EXPORT, MODE, val, limits, pwResultText } from '../lib/pwrules.js
 
 
 export { RULE, EXPORT, MODE, val, limits };
-const code = v => `<code style="font:11px 'JetBrains Mono'">${esc(v)}</code>`;
+const code = v => `<code style="font:11px 'JetBrains Mono',ui-monospace,monospace">${esc(v)}</code>`;
 const teslaSteps = (id, v) => id === 'export' ? `In the Tesla app: Powerwall › Settings › Energy Exports › ${v === 'pv_only' ? 'Solar' : 'Everything'}.`
   : `In the Tesla app: Powerwall › Settings › Backup Reserve › ${v}%.`;
 const autoWhen = { reserve: 'at the 5 PM check', storm: 'on the next 5-minute check', export: 'with tonight’s sync' };

@@ -49,6 +49,8 @@ export function toast(icon, bg, title, sub) {
 }
 
 /* tiny SVG helpers */
+/** SVG text names a web font by its family; each gets a generic fallback, so a font that fails to load never drops to a serif. */
+const FONT_STACK = { Manrope: 'Manrope,system-ui,sans-serif', 'JetBrains Mono': "'JetBrains Mono',ui-monospace,monospace" };
 export const svgText = (x, y, t, { size = 9.5, fill = 'rgba(242,244,248,.4)', anchor = 'start', font = 'JetBrains Mono', weight = 400 } = {}) =>
-  `<text x="${x}" y="${y}" fill="${fill}" font-size="${size}" font-family="${font}" font-weight="${weight}" text-anchor="${anchor}">${t}</text>`;
+  `<text x="${x}" y="${y}" fill="${fill}" font-size="${size}" font-family="${FONT_STACK[font] ?? font}" font-weight="${weight}" text-anchor="${anchor}">${t}</text>`;
 export const path = pts => pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join('');
