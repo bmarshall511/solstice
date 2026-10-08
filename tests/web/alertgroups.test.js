@@ -1,4 +1,4 @@
-// Settings › Alerts (approved mockup mockups/al-ia.html v2, frame 15; web/src/lib/alertgroups.js): five groups over the sixteen
+// Settings › Alerts (approved mockup mockups/al-ia.html v2, frame 15; web/src/lib/alertgroups.js): five groups over the seventeen
 // switches the server knows, "N of M on", the group switch, and NEW badges that go away 14 days after a feature shipped.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -18,9 +18,9 @@ describe('groups', () => {
   });
   it('"N of M on" counts a switch as on unless it was turned off', () => {
     const g = ALERT_GROUPS.find(x => x.id === 'comfort');
-    expect(groupState(g, {}).line).toBe('3 of 3 on');
-    expect(groupState(g, { anomaly: false }).line).toBe('2 of 3 on');
-    expect(groupState(g, { anomaly: false, approval: false, poolTest: false })).toMatchObject({ on: 0, any: false });
+    expect(groupState(g, {}).line).toBe('4 of 4 on');
+    expect(groupState(g, { anomaly: false }).line).toBe('3 of 4 on');   // mockup am frame 7: "3 of 4 on" with Unusual usage off
+    expect(groupState(g, { anomaly: false, approval: false, poolTest: false, strip: false })).toMatchObject({ on: 0, any: false });
     expect(isOn(undefined, 'outage')).toBe(true);
   });
   it('the group switch turns every alert in the group off when any is on, and all on when none is', () => {
@@ -28,6 +28,16 @@ describe('groups', () => {
     const off = toggleGroup({ solar: true, nws: false }, g);
     expect(off).toEqual({ solar: false, panel: false, stale: false, nws: false });   // other groups untouched
     expect(toggleGroup(off, g)).toMatchObject({ solar: true, panel: true, stale: true });
+  });
+});
+
+describe('the Strip heat switch (mockup am frame 7)', () => {
+  it('is in Comfort & pool and nowhere else, after Unusual usage, with a NEW badge for 14 days', () => {
+    expect(ALERT_GROUPS.filter(g => g.keys.includes('strip')).map(g => g.id)).toEqual(['comfort']);
+    expect(ALERT_GROUPS.find(g => g.id === 'comfort').keys).toEqual(['approval', 'poolTest', 'anomaly', 'strip']);
+    expect(ALERTS.strip).toEqual(['Strip heat']);
+    expect(isNew('strip', NEW_SINCE.strip)).toBe(true);
+    expect(groupState(ALERT_GROUPS.find(g => g.id === 'comfort'), { anomaly: false }).line).toBe('3 of 4 on');
   });
 });
 

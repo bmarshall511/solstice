@@ -76,6 +76,7 @@ export const api = {
   poolApplyTomorrow: () => send('POST', 'appliances/pool/apply-tomorrow'),
   poolAutopilot: mode => send('POST', 'appliances/pool/autopilot', { mode }),
   ac: () => get('appliances/ac'),
+  acStrip: () => get('appliances/ac/strip'),   // mockup am frame 6 (I-15): the Strip heat card, owner only
   applDay: date => get(`appliances/day?date=${date}`),
   pvsPanels: () => get('pvs/panels'),   // mockup u-panels: per-panel health by roof position (guests too)
   acApply: () => send('POST', 'appliances/ac/apply'),

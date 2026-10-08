@@ -3,6 +3,7 @@
 //   ac       measured savings from control vs pre-cool days; this morning's trim from the last three pre-cool days of 21
 //   metrics  each day's measured values, and yesterday's predictions scored against them → daily_metrics (one upsert); I-18 adds
 //            pool.kwh, ac.kwh, ac.heat_min and wx.low_f, the inputs of "What changed" (learn/changed.ts)
+//   strip    the strip-heat mornings of the last 3 days (stripwatch.ts, I-15) → daily_metrics strip.*
 //   scores   rolling 7/30/365-day MAE, MAPE and bias per model → model_scores (one upsert for every model)
 //   pump     the clean-filter baseline per RPM (after the last "I cleaned the filter", else the first 60 days)
 //   rules    the anomaly rules → open, update and resolve rows in `anomalies`
@@ -27,6 +28,7 @@ import { wxGti, gtiByDay, tempsOf, type Wx } from './wx.js';
 import { panelMetrics, LAYOUT_KEY, type Layout } from '../panels.js';
 import { tripDays } from '../vacation/trip.js';
 import { alwaysOnKw } from '../breakdown.js';
+import { stripNightly } from '../stripwatch.js';
 
 /** The metrics an empty house would teach the at-home rules wrong (mockup ak): left out of the rules and the always-on prediction on trip days. */
 export const TRIP_METRICS = ['home.alwaysOn_kw', 'home.overnight_kw', 'home.kwh', 'ac.runtime_min', 'ac.degree_hours', 'ac.cool_f', 'ac.overnight_min'];
@@ -346,6 +348,12 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     const rows = [...metricRows.values()];
     await lq(`INSERT INTO daily_metrics (site_id, day, metric, value) SELECT $1, * FROM unnest($2::text[], $3::text[], $4::float8[])
       ON CONFLICT (site_id, day, metric) DO UPDATE SET value = excluded.value`, [siteId, rows.map(r => r[0]), rows.map(r => r[1]), rows.map(r => r[2])]);
+  }, undefined);
+
+  /* ---------- strip: the strip-heat mornings (I-15, stripwatch.ts) → daily_metrics strip.*, hp.min; one query on a summer night ---------- */
+  await step('strip', async () => {
+    learnStats.queries++;
+    await stripNightly(siteId, { now, nights: new Map(d.alwaysOn.nights.map(n => [n.day, n.kw])), wx: d.wx, slopes });
   }, undefined);
 
   /* ---------- scores: every model × window in one statement ---------- */

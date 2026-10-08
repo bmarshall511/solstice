@@ -10,6 +10,7 @@ import { icon } from '../lib/icons.js';
 import { nowPct, acBlocks, autopilotStage } from '../lib/nowui.js';
 import { sysTop, planStrip, tileHtml, modePill, seg, segSet, sheet, sheetHead, sheetFoot, closeSheet } from './csheet.js';
 import { mountAcPanel, redrawAcPanels } from './nowsheets.js';
+import { stripCardHtml, stripShows } from '../lib/stripui.js';
 
 /*
  * Systems › AC (approved mockup al frames 13, 13b): the live card over the thermal twin with today's scrubber, four tiles, the Thermostat
@@ -39,6 +40,7 @@ export function drawAc(S) {
   drawAcSys(S);
   if (!S.guest && !panel && $('acPanel')) panel = mountAcPanel(S, $('acPanel')); else redrawAcPanels();   // the AC sheet's component, in place
   drawThermostat(S);
+  drawStrip(S);
   if (!d.plan) return;
   if (!twin && $('acTwin').offsetParent) twin = createThermalTwin($('acTwin'));   // only while it can be seen
   const wx = S.wx, today = localDate(), outdoor = Array(24).fill(d.outdoorF ?? 90);
@@ -167,6 +169,12 @@ function drawTrim(S) {
     : P.control ? '<div class="c-modeline c-acc-batt"><p><b>Control day</b> · holding the comfort band today, 1 in 5 hot, sunny days, so Solstice can measure what pre-cooling really saves</p></div>' : '';
   const u = $('acUntrim'); if (u) u.onclick = async () => { u.disabled = true; u.textContent = 'Undoing…'; try { await api.acUntrim(); await loadAc(S); } catch (e) { alert(e.message); u.disabled = false; u.textContent = 'Undo'; } };
 }
+/* ---------- mockup am frame 6 (I-15): the Strip heat card under the Thermostat (owner only; Nov–Mar or after heating; no buttons) ---------- */
+function drawStrip(S) {
+  const card = $('acStrip'); if (!card) return;
+  card.hidden = !!S.guest || !stripShows(S.acStrip, location.search);
+  if (!card.hidden) card.innerHTML = stripCardHtml(S.acStrip);
+}
 /* ---------- the Thermostat card (owner only): the panel is the AC sheet's component; this adds the badge, presence, suggestions ---------- */
 const clk = ms => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 function drawThermostat(S) {
@@ -289,7 +297,7 @@ let timer;
 /** Started by main.js once the role is known (and again when it changes); every 3 minutes while the tab is visible. */
 export function initAc(S) { stop(timer); timer = every(3 * 60_000, () => loadAc(S)); S.reloadAc = () => loadAc(S); }
 // a failed refresh keeps the last good plan and reading, with the failure in the card's note, instead of showing "Not set up"
-export async function loadAc(S) { S.ac = await api.ac().catch(e => S.ac?.plan ? { ...S.ac, error: e.message } : { error: e.message, configured: false, linked: false }); if (S.ac.plan) drawAc(S); else { drawAcSys(S); $('acAuto').hidden = true; $('acLink').hidden = false; $('acLinkTxt').textContent = S.ac.error ?? 'Nest is not configured.'; } S.onAc?.(); }
+export async function loadAc(S) { const strip = S.guest ? null : api.acStrip().catch(() => S.acStrip ?? null); S.ac = await api.ac().catch(e => S.ac?.plan ? { ...S.ac, error: e.message } : { error: e.message, configured: false, linked: false }); S.acStrip = await strip; if (S.ac.plan) drawAc(S); else { drawAcSys(S); $('acAuto').hidden = true; $('acLink').hidden = false; $('acLinkTxt').textContent = S.ac.error ?? 'Nest is not configured.'; } S.onAc?.(); }
 
 /* ---------- presence (t-enhancements frame 4): the line under the Thermostat card's Away row ---------- */
 const NEST_SAYS = pr => `<b>Nest says Away</b>${pr.since ? ` since ${when(pr.since)}` : ''} (Home/Away Assist)`;

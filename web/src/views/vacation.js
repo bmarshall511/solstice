@@ -73,7 +73,7 @@ export function reportHtml(trip, closable) {
     <div class="key"><span><i style="background:rgba(255,255,255,.14)"></i>empty, no Vacation mode</span><span><i style="background:var(--vac)"></i>coloured: used (kWh)</span></div>
     ${r.did?.length ? `<div class="tline" style="margin-top:14px">${r.did.slice(-6).map(l => `<div><i></i><p>${esc(l)}</p></div>`).join('')}</div>` : ''}
     ${r.next?.length ? `<div class="rec vnext"><b>Next time</b><ul>${r.next.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>` : ''}
-    <p class="fine" style="margin-top:10px">Used is measured. The other two are Solstice’s estimates for the same days and weather${r.model?.days ? `, from this house’s own model (${r.model.days} days)` : ''}.${r.alerts ? ` ${r.alerts} alert${r.alerts === 1 ? '' : 's'} while you were away.` : ''}</p>`;
+    <p class="fine" style="margin-top:10px">Used is measured. The other two are Solstice’s estimates for the same days and weather${r.model?.days ? `, from this house’s own model (${r.model.days} days)` : ''}.${r.alerts ? ` ${r.alerts} alert${r.alerts === 1 ? '' : 's'} while you were away.` : ''}${r.stripKwh ? ` Strip heat: ${k0(r.stripKwh)} kWh.` : ''}</p>`;
 }
 
 /* ======================= Systems › Home: Your trips (mockup al frame 9: one row; the trips open in a sheet) ======================= */

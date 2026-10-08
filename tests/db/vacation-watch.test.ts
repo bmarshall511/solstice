@@ -9,6 +9,7 @@
 //   VW-7 guest links answer as turned off during a trip and for 24 h after it, then open again; the owner's list still shows them live
 //   VW-8 the grid-down push says there is nothing to do during a trip
 //   VW-9 which days are trip days for the learning layer (the profile route itself: VAC-6 in vacation.test.ts)
+//   VW-10 I-15: strip heat holding the away setpoint (Nest HEATING) is not power use nobody planned, nor a sign of anyone home
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { q, kv, migrate } from '../../server/src/db.js';
 import { spell, unexplained, activity, vacationWatch, detectAway, heldSummary } from '../../server/src/vacation/watch.js';
@@ -105,6 +106,26 @@ describe('during a trip', () => {
     expect(await vacationWatch(S, NOW)).toMatchObject({ phase: 'late', late: true });
     expect(await vacationWatch(S, NOW + 5 * MIN)).not.toHaveProperty('late');
     expect((await alerts()).map(a => a.title)).toEqual(['Not back yet?']);
+  });
+});
+
+describe('heating while away (I-15)', () => {
+  it('VW-10 strips holding the away setpoint are not "power use nobody planned"; a strip stage switching on is not activity', async () => {
+    const o = { now: NOW, baseKw: .5, acKw: 2.6, cooling: false, poolKw: 0, since: null };
+    const w = (kw: number) => [{ ts: NOW - 10 * MIN, loadKw: kw }, { ts: NOW - 5 * MIN, loadKw: kw }, { ts: NOW, loadKw: kw }];
+    expect(unexplained(w(13.5), o)).toMatchObject({ over: true });                                   // before: compressor + two strip stages fired the alert
+    expect(unexplained(w(13.5), { ...o, heating: true, heatKw: 14 })).toMatchObject({ kw: 0, over: false });
+    expect(unexplained(w(17.5), { ...o, heating: true, heatKw: 14 })).toMatchObject({ kw: 3, over: true });   // more than the heating can draw still counts
+    expect(activity([.6, 4, 8.8, 13.6, .6].map((loadKw, i) => ({ ts: i, loadKw, cooling: false, heating: i >= 1 && i <= 3 })))).toBe(0);
+    // the watch itself: Nest says HEATING at 55°, the strips run 15 minutes during the trip, no alert
+    await trip(); await nest({ mode: 'HEAT', hvac: 'HEATING', heatF: 55, coolF: null, indoorF: 55 });
+    await live(NOW - 24 * H, NOW - H, () => .5); await live(NOW - 20 * MIN, NOW, () => 13.5);
+    const r = await vacationWatch(S, NOW);
+    expect(r).not.toHaveProperty('load');
+    expect((await alerts()).filter(a => a.title === 'Power use nobody planned')).toEqual([]);
+    // with the same load and Nest idle it is still caught
+    await nest({ mode: 'HEAT', hvac: 'OFF', heatF: 55, coolF: null, indoorF: 55 });
+    expect(await vacationWatch(S, NOW + 5 * MIN)).toMatchObject({ load: true });
   });
 });
 
