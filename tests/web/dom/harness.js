@@ -133,21 +133,46 @@ export function cssTarget(el) {
   }
   return { h, w };
 }
+/** A rule matching `el` makes it fill its parent (an invisible input laid over a date card). */
+const fillsParent = el => RULES.some(r => /(?:^|;)\s*(inset:\s*0|height:\s*100%)/.test(r.body) && r.sels.some(s => { try { return !/::|:hover|:active|:focus/.test(s) && el.matches(s); } catch { return false; } }));
+/**
+ * A control's touch height from the stylesheet: its own min-height/height; else that of a child it wraps (the round toggle's 56 px
+ * disc); else, when it is laid over its parent (inset: 0 / height: 100%), the parent's.
+ */
+export function touchHeight(el) {
+  let { h } = cssTarget(el);
+  if (h < 44) for (const c of el.children) h = Math.max(h, cssTarget(c).h);
+  if (h < 44 && el.parentElement && fillsParent(el)) h = Math.max(h, cssTarget(el.parentElement).h);
+  return h;
+}
 /** Every interactive control under `root` (buttons, role=button/switch, inputs) whose stylesheet height is under 44 px. */
 export function smallTargets(root) {
   const out = [];
   for (const el of root.querySelectorAll('button,[role=button],[role=switch],input:not([type=hidden]),select,textarea')) {
     if (el.closest('[hidden]')) continue;
-    const { h } = cssTarget(el);
+    const h = touchHeight(el);
     if (h < 44) out.push(`${el.tagName.toLowerCase()}.${[...el.classList].join('.')}${el.parentElement ? ` in .${[...el.parentElement.classList].join('.')}` : ''} → ${h}px`);
   }
   return out;
 }
 const COLOUR = /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i;
 /** Inline style attributes under `root` that hard-code a colour instead of a token (var(--…)). */
-export function hardColours(root) {
-  return [...root.querySelectorAll('[style]')].map(el => el.getAttribute('style')).filter(s => COLOUR.test(s.replace(/var\([^)]*\)/g, '')));
+export function hardColours(root, { except = [] } = {}) {
+  return [...root.querySelectorAll('[style]')].filter(el => !except.some(sel => el.matches(sel))).map(el => el.getAttribute('style')).filter(s => COLOUR.test(s.replace(/var\([^)]*\)/g, '')));
 }
+/**
+ * Markup that predates the token rule and still hard-codes colours, as approved in its mockup. Listed here so the checks keep
+ * catching anything new; each is reported (not changed: a colour change is a visual change and needs the owner's approval).
+ *  - the Comfort sheet's "hot, sunny day" band (views/ac.js DAYC, mockup ag): four hex colours, no matching tokens in style.css
+ */
+export const KNOWN_COLOURS = ['#cmDay > *'];
+/**
+ * The sheets still on the pre-component shell (.shead / .x / .primary): AC "Too warm/Too cold" (openNudge) and "Your changes",
+ * Pool "Your changes" and Clear-up, Add a PEC bill, the weekly digest, Water · last 30 days, the trip report. Their close button
+ * (.sheet .x) is 32 × 32 px, under the 44 px rule; .ag-opt and .primary get their height from padding (about 46 px) rather than a
+ * min-height. What the check reports for them, so a migration (which needs an approved mockup) shows up as a change here.
+ */
+export const LEGACY_SMALL = { nudge: ['button.x in .shead → 32px', 'button.ag-opt in . → 0px', 'button.ag-opt.pick in . → 0px', 'button.primary in . → 0px'] };
 /** All three form checks on a rendered region. */
 export function expectForm(root, label = '', { colours = true, targets = true } = {}) {
   expectCleanText(root, label);
