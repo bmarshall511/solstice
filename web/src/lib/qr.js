@@ -191,6 +191,7 @@ export function encodeQr(text, { ecl = 'M', mask, minVersion = 1 } = {}) {
 }
 
 /** An SVG of the code: dark modules on white with a 4-module quiet zone, one path, crisp at any size. */
+/** @param {string} text  @param {{ ecl?: 'L'|'M'|'Q'|'H', label?: string }} [o] */
 export function qrSvg(text, { ecl = 'M', label = 'QR code for the share link' } = {}) {
   const { size, modules } = encodeQr(text, { ecl }), q = 4, n = size + q * 2;
   let d = '';

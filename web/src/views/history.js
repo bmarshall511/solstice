@@ -16,9 +16,9 @@ let range = 'day', day = null;
 async function drawDay(S) {
   day ??= localDate();
   const d = await api.day(day), svg = $('hchart'), r0 = 62, rs = 88;
-  svg.setAttribute('viewBox', '-165 -165 330 330'); svg.setAttribute('height', 310);
+  svg.setAttribute('viewBox', '-165 -165 330 330'); svg.setAttribute('height', '310');
   $('dayLabel').textContent = (day === localDate() ? 'Today' : niceDate(day, { weekday: 'short', month: 'short', day: 'numeric' })) + ((S.daily ?? []).find(r => r.date === day)?.trip ? ' \u00b7 trip' : '');   // mockup ak: a trip day
-  $('dayNext').disabled = day >= localDate();
+  /** @type {HTMLButtonElement} */ ($('dayNext')).disabled = day >= localDate();
   const pol = (h, r) => { const a = h / 24 * Math.PI * 2 - Math.PI / 2; return [Math.cos(a) * r, Math.sin(a) * r]; };
   const B = d.buckets, maxKw = Math.max(6, ...B.map(b => Math.max(b.solar, b.home)));
   let o = `<circle r="${r0}" fill="none" stroke="rgba(255,255,255,.08)"/><circle r="${r0 + rs}" fill="none" stroke="rgba(255,255,255,.05)" stroke-dasharray="2 4"/>`;
@@ -50,7 +50,7 @@ const stat = (id, acc, label, v, note, chip, spark) => tileHtml({ id, acc, k: la
 
 /* ---------- Week / Month / Year bars ---------- */
 async function drawBars(S) {
-  const svg = $('hchart'), W = 330, H = 230; svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H);
+  const svg = $('hchart'), W = 330, H = 230; svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', String(H));
   let rows, label;
   if (range === 'year') { rows = (S.monthly ?? await api.monthly(13)).slice(-12); label = r => new Date(r.month + '-15').toLocaleDateString('en-US', { month: 'narrow' }); }
   else { const n = range === 'week' ? 7 : 30; rows = (S.daily ?? []).slice(-n); label = (r, i) => range === 'week' ? niceDate(r.date, { weekday: 'short' }) : i % 5 === 0 ? String(+r.date.slice(8)) : ''; }
@@ -101,7 +101,7 @@ async function drawChanged(S) {
   const draw = () => { card.innerHTML = scope === 'week' ? weekCardHtml(c, { guest: S.guest }) : dayCardHtml(c, { view: chgView, guest: S.guest }); };
   card.className = scope === 'week' ? 'c-card c-acc-house' : 'c-card';
   draw(); card.hidden = false;
-  card.onclick = e => { const b = e.target.closest('[data-c]'); if (!b || b.dataset.c === chgView) return; chgView = b.dataset.c; draw(); };
+  card.onclick = e => { const b = /** @type {Element} */ (e.target).closest('[data-c]'); if (!b || b.dataset.c === chgView) return; chgView = b.dataset.c; draw(); };
   buy.hidden = S.guest || scope !== 'day';
   if (!buy.hidden) buy.innerHTML = buyCardHtml(c);
 }
@@ -149,12 +149,12 @@ async function drawFlows(S) {
 }
 
 export function initHistory(S) {
-  $('hseg').onclick = e => { const b = e.target.closest('[data-r]'); if (!b) return; segSet($('hseg'), b.dataset.r, 'data-r'); range = b.dataset.r; drawHistoryChart(S); };
+  $('hseg').onclick = e => { const b = /** @type {Element} */ (e.target).closest('[data-r]'); if (!b) return; segSet($('hseg'), b.dataset.r, 'data-r'); range = b.dataset.r; drawHistoryChart(S); };
   // mockup al frame 14: the jump chips scroll to their section
-  $('hjumps').onclick = e => { const b = e.target.closest('[data-j]'), el = b && $(jumpTarget(b.dataset.j)); if (!el) return;
+  $('hjumps').onclick = e => { const b = /** @type {Element} */ (e.target).closest('[data-j]'), el = b && $(jumpTarget(b.dataset.j)); if (!el) return;
     const sc = $('screen'); sc.scrollTo({ top: scrollFor(el.getBoundingClientRect().top, sc.getBoundingClientRect().top, sc.scrollTop, 12), behavior: S.calm ? 'auto' : 'smooth' }); };
   $('flow3d').onclick = () => { flowsOpen = !flowsOpen; $('flowHost').hidden = !flowsOpen; $('flow3d').setAttribute('aria-expanded', String(flowsOpen)); $('flow3d').textContent = flowsOpen ? 'Hide the 3D flow' : '3D flow'; drawFlows(S); };
-  $('billSeg').onclick = e => { const b = e.target.closest('[data-b]'); if (!b) return; segSet($('billSeg'), b.dataset.b, 'data-b'); document.querySelectorAll('#billAnalysis [data-pane]').forEach(p => { p.hidden = p.dataset.pane !== b.dataset.b; }); };
+  $('billSeg').onclick = e => { const b = /** @type {Element} */ (e.target).closest('[data-b]'); if (!b) return; segSet($('billSeg'), b.dataset.b, 'data-b'); document.querySelectorAll('#billAnalysis [data-pane]').forEach((/** @type {HTMLElement} */ p) => { p.hidden = p.dataset.pane !== b.dataset.b; }); };
   $('recAll').onclick = () => openRecords(S); $('outAll').onclick = () => openOutages(S); $('billAll').onclick = () => openBills(S);
   $('dayPrev').onclick = () => { day = addDays(day ?? localDate(), -1); drawDay(S); drawFlows(S); drawChanged(S); };
   $('dayNext').onclick = () => { if (day < localDate()) { day = addDays(day, 1); drawDay(S); drawFlows(S); drawChanged(S); } };
@@ -245,7 +245,7 @@ function drawBillList(S) {
   $('billCount').textContent = `${R.length} saved`;
   $('billList').innerHTML = R.length ? billRows(S, R.slice(0, 3)) : '<p class="c-sum">No bills yet.</p>';
   $('billAll').textContent = `All ${R.length}`; $('billAll').hidden = R.length <= 3;
-  $('billList').onclick = e => { const el = e.target.closest('[data-bill]'); if (el) openBillDetail(S, R.find(r => r.billDate === el.dataset.bill)); };
+  $('billList').onclick = e => { const el = /** @type {Element} */ (e.target).closest('[data-bill]'); if (el) openBillDetail(S, R.find(r => r.billDate === el.dataset.bill)); };
 }
 function openBills(S) {
   const R = (S.reconcile ?? []).slice().reverse();
@@ -364,7 +364,7 @@ export function openBillSheet(S, refresh) {
       $('billSave').onclick = async () => { await api.saveBill(bill); $('phone').classList.remove('open'); toast('$', 'rgba(255,193,94,.2)', 'Bill saved', `${niceDate(bill.billDate, { month: 'long' })} · ${money2(bill.total)}. Checking it against Tesla now`); refresh(); };
     } catch (e) { $('billPreview').innerHTML = `<p class="err">${esc(e.message)}</p>`; }
   };
-  $('billFile').onchange = e => e.target.files[0] && handle(e.target.files[0]);
+  $('billFile').onchange = e => { const f = /** @type {HTMLInputElement} */ (e.target).files[0]; return f && handle(f); };
   const drop = $('drop');
   drop.ondragover = e => { e.preventDefault(); drop.classList.add('hot'); };
   drop.ondragleave = () => drop.classList.remove('hot');

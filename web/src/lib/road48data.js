@@ -20,9 +20,13 @@ export function span(m0, m1) {
 }
 
 /**
+ * @param {object} o
  * @param o.fc      forecast48() output: { points[{k, t, s, h, soc, g}], full, low, importKwh }
  * @param o.w       the Open-Meteo forecast (S.wx)
  * @param o.soc0    Powerwall charge (0–1) the forecast started from
+ * @param o.capKwh  usable battery capacity, kWh
+ * @param o.maxKw   the batteries' charge-rate limit, kW
+ * @param o.reservePct the backup reserve, %
  * @param o.when    the sentence's own time formatter, so the flags read exactly as #fcTxt does
  * @param o.pool    S.pool (GET /api/appliances/pool) or undefined
  * @param o.ac      S.ac (GET /api/appliances/ac) or undefined

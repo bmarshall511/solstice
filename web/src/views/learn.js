@@ -16,7 +16,7 @@ const RANK = { dormant: 0, unscored: 1, learning: 2, estimated: 3, learned: 4, m
 const ACC = id => /pool/.test(id) ? 'c-acc-pool' : /^ac|\.ac|ac\./.test(id) ? 'c-acc-ac' : /solar|pv/.test(id) ? 'c-acc-solar' : /soc|batt|pw/.test(id) ? 'c-acc-batt' : 'c-acc-home';
 
 export function initLearn(S) {
-  $('lrRows').onclick = e => { const r = e.target.closest('[data-model]'); if (!r) return; r.dataset.model === '*' ? openReport(S) : openModel(S, r.dataset.model); };
+  $('lrRows').onclick = e => { const r = /** @type {Element} */ (e.target).closest('[data-model]'); if (!r) return; r.dataset.model === '*' ? openReport(S) : openModel(S, r.dataset.model); };
   clearInterval(timer);
   if (S.guest) { $('learnCard').hidden = true; return; }   // owner-only route: a guest (or the owner previewing) never asks
   const load = () => api.models().then(m => { S.models = m; drawLearn(S); S.onModels?.(); }).catch(e => console.warn('models', e.message));

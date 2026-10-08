@@ -8,6 +8,7 @@ import { badge } from '../lib/conf.js';
 import { banner, sheet, sheetHead, sheetFoot, seg, segSet, closeSheet } from './csheet.js';
 
 const W = { data: null, timer: null };
+/** @type {[string, string, string, number, [number, number], boolean?][]} [key, label, unit, step, [lo, hi], required] */
 const FIELDS = [['fc', 'Free chlorine', 'ppm', .5, [0, 20], true], ['ph', 'pH', '', .1, [6.4, 8.6], true], ['cc', 'Combined chlorine', 'ppm · optional', .5, [0, 5]],
   ['ta', 'Alkalinity', 'ppm · optional', 10, [0, 300]], ['cya', 'CYA (stabilizer)', 'ppm · optional', 10, [0, 200]], ['ch', 'Calcium hardness', 'ppm · optional', 25, [0, 1000]]];
 const CLAR = [['clear', 'Clear'], ['hazy', 'Hazy'], ['cloudy', 'Cloudy'], ['green', 'Green']];
@@ -64,16 +65,16 @@ function openLog(S) {
     body.querySelectorAll('#plAdd button').forEach(b => { const on = v.added.includes(b.dataset.a); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
     segSet($('plSrc').firstElementChild, v.source, 'data-s');
   };
-  $('plRows').onclick = e => { const b = e.target.closest('[data-k]'); if (!b) return;
+  $('plRows').onclick = e => { const b = /** @type {Element} */ (e.target).closest('[data-k]'); if (!b) return;
     const [k, , , step, [lo, hi], req] = FIELDS.find(f => f[0] === b.dataset.k), d = +b.dataset.d;
     // an optional value starts at the middle of its usual range the first time it's tapped; − from its lowest goes back to "—"
     const start = { cc: 0, ta: 100, cya: 40, ch: 300 }[k];
     if (v[k] == null) v[k] = start; else if (!req && d < 0 && v[k] <= lo) v[k] = null; else v[k] = Math.round(Math.max(lo, Math.min(hi, v[k] + d * step)) / step) * step;
     if (v[k] != null) v[k] = +v[k].toFixed(1);
     drawS(); };
-  $('plClar').onclick = e => { const b = e.target.closest('[data-c]'); if (b) { v.clarity = b.dataset.c; drawS(); } };
-  $('plAdd').onclick = e => { const b = e.target.closest('[data-a]'); if (!b) return; v.added = v.added.includes(b.dataset.a) ? v.added.filter(a => a !== b.dataset.a) : [...v.added, b.dataset.a]; drawS(); };
-  $('plSrc').onclick = e => { const b = e.target.closest('[data-s]'); if (b) { v.source = b.dataset.s; drawS(); } };
+  $('plClar').onclick = e => { const b = /** @type {Element} */ (e.target).closest('[data-c]'); if (b) { v.clarity = b.dataset.c; drawS(); } };
+  $('plAdd').onclick = e => { const b = /** @type {Element} */ (e.target).closest('[data-a]'); if (!b) return; v.added = v.added.includes(b.dataset.a) ? v.added.filter(a => a !== b.dataset.a) : [...v.added, b.dataset.a]; drawS(); };
+  $('plSrc').onclick = e => { const b = /** @type {Element} */ (e.target).closest('[data-s]'); if (b) { v.source = b.dataset.s; drawS(); } };
   go.onclick = async () => { go.textContent = 'Saving…';
     try { W.data = await api.addPoolTest(v); closeSheet(); draw(S); toast('✓', 'rgba(78,240,166,.2)', 'Test logged', 'Tap the values on the Water card to see the history.'); }
     catch (e) { alert(e.message); go.textContent = 'Save test'; } };
@@ -91,7 +92,7 @@ function openHistory(S) {
     o += `<polyline points="${tests.map(t => `${X(t.at)},${Yc(t.fc)}`).join(' ')}" fill="none" stroke="#4ef0a6" stroke-width="2"/>` + tests.map(t => `<circle cx="${X(t.at)}" cy="${Yc(t.fc)}" r="3" fill="#4ef0a6"><title>${shortDay(t.day)}: FC ${t.fc}</title></circle>`).join('');
     o += `<polyline points="${tests.map(t => `${X(t.at)},${Yp(t.ph)}`).join(' ')}" fill="none" stroke="#c4a2ff" stroke-width="1.5" stroke-dasharray="3 3"/>`;
   }
-  [[0, 'start'], [15, 'middle'], [30, 'end']].forEach(([i, a]) => o += `<text x="${X(t0 + i * 864e5)}" y="140" text-anchor="${a}" fill="rgba(242,244,248,.45)" font-size="9" font-family="JetBrains Mono">${new Date(t0 + i * 864e5).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</text>`);
+  /** @type {[number, string][]} */ ([[0, 'start'], [15, 'middle'], [30, 'end']]).forEach(([i, a]) => o += `<text x="${X(t0 + i * 864e5)}" y="140" text-anchor="${a}" fill="rgba(242,244,248,.45)" font-size="9" font-family="JetBrains Mono">${new Date(t0 + i * 864e5).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</text>`);
   [0, 2, 4, 6].forEach(v => o += `<text x="2" y="${Yc(v) + 3}" fill="rgba(242,244,248,.45)" font-size="9" font-family="JetBrains Mono">${v}</text>`);
   const find = !f ? `Findings appear after ${6} tests over two weeks (${d.tests.length} so far).`
     : [f.use ? `Between tests, chlorine fell about <b style="color:var(--text)">${f.use.ppmPerDay} ppm a day</b>${f.use.waterF ? ` at ${f.use.waterF[0] === f.use.waterF[1] ? f.use.waterF[0] : `${f.use.waterF[0]}–${f.use.waterF[1]}`}°` : ''} (${f.use.n} stretches).` : '',
@@ -103,7 +104,7 @@ function openHistory(S) {
     <p class="sub" style="margin-top:10px">${find}</p>
     <div class="pw-tl">${d.tests.slice(0, 12).map(t => `<div><em>${shortDay(t.day)}</em><span><b>${fmt('fc', t.fc)} · ${fmt('ph', t.ph)}</b>${t.ta != null ? ` · TA ${t.ta}` : ''}${t.cya != null ? ` · CYA ${t.cya}` : ''} · ${t.clarity}${t.added.length ? ` · ${t.added.map(a => ADD.find(x => x[0] === a)[1].toLowerCase()).join(', ')}` : ''}${t.source === 'store' ? ' · pool store' : ''}</span><button class="link" data-del="${t.id}" aria-label="Delete this test">✕</button></div>`).join('') || '<p class="fine">No tests yet.</p>'}</div>`;
   $('phX').onclick = () => $('phone').classList.remove('open');
-  $('sheetBody').querySelector('.pw-tl').onclick = async e => { const b = e.target.closest('[data-del]'); if (!b || !confirm('Delete this test?')) return;
+  $('sheetBody').querySelector('.pw-tl').onclick = async e => { const b = /** @type {Element} */ (e.target).closest('[data-del]'); if (!b || !confirm('Delete this test?')) return;
     W.data = await api.deletePoolTest(+b.dataset.del); draw(S); openHistory(S); };
   $('phone').classList.add('open');
 }

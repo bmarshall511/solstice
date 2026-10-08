@@ -21,7 +21,7 @@ export function openLog(S, { src = null } = {}) {
       <div class="c-tl">${tl || `<p class="c-fine" style="text-align:center;margin:24px 0">${all.length ? 'Nothing of that kind in the log.' : 'Nothing logged yet. Every write, suggestion and change will be listed here.'}</p>`}</div>
       ${sheetFoot(S.guest || !shown.length ? '' : 'Export', 'Done')}`, { keepScroll: true });
     const body = $('sheetBody');
-    body.querySelector('.c-fpills').onclick = e => { const b = e.target.closest('[data-fl]'); if (b) { filter = b.dataset.fl; draw(); } };
+    body.querySelector('.c-fpills').onclick = e => { const b = /** @type {Element} */ (e.target).closest('[data-fl]'); if (b) { filter = b.dataset.fl; draw(); } };
     body.querySelector('[data-wide]')?.addEventListener('click', () => { only = null; draw(); });
     body.querySelector('[data-f="pri"]').onclick = closeSheet;
     body.querySelector('[data-f="sec"]')?.addEventListener('click', () => save(shown));

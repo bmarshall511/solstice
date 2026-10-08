@@ -86,11 +86,11 @@ const savePrefs = () => api.saveSettings({ alerts: prefs }).catch(() => {});
 export function initAlertGroups() {
   const box = $('alertPrefs'); if (!box) return;
   box.onclick = e => {
-    const gs = e.target.closest('[data-gsw]'); if (gs) { e.stopPropagation(); prefs = toggleGroup(prefs, ALERT_GROUPS.find(g => g.id === gs.dataset.gsw)); savePrefs(); return drawAlertGroups(); }
-    const k = e.target.closest('[data-pref]'); if (k) { prefs = { ...prefs, [k.dataset.pref]: !isOn(prefs, k.dataset.pref) }; savePrefs(); return drawAlertGroups(); }
-    const g = e.target.closest('[data-group]'); if (g) { openGroups.has(g.dataset.group) ? openGroups.delete(g.dataset.group) : openGroups.add(g.dataset.group); drawAlertGroups(); }
+    const gs = /** @type {Element} */ (e.target).closest('[data-gsw]'); if (gs) { e.stopPropagation(); prefs = toggleGroup(prefs, ALERT_GROUPS.find(g => g.id === gs.dataset.gsw)); savePrefs(); return drawAlertGroups(); }
+    const k = /** @type {Element} */ (e.target).closest('[data-pref]'); if (k) { prefs = { ...prefs, [k.dataset.pref]: !isOn(prefs, k.dataset.pref) }; savePrefs(); return drawAlertGroups(); }
+    const g = /** @type {Element} */ (e.target).closest('[data-group]'); if (g) { openGroups.has(g.dataset.group) ? openGroups.delete(g.dataset.group) : openGroups.add(g.dataset.group); drawAlertGroups(); }
   };
-  box.onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-pref],[data-group]')) { e.preventDefault(); e.target.click(); } };
+  box.onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && /** @type {Element} */ (e.target).matches('[data-pref],[data-group]')) { e.preventDefault(); /** @type {HTMLElement} */ (e.target).click(); } };
 }
 
 export async function openRawData() {
@@ -107,9 +107,9 @@ export async function openRawData() {
 let pushBusy = false;
 export async function drawPush() {
   const sw = $('pushSw'), st = $('pushSt'); if (!sw || pushBusy) return;
-  const { state, line: [text, cls, on, disabled] } = await detectPush().catch(() => ({ state: 'unsupported', line: ['This browser can’t receive push', 'st-warn', false, true] }));
+  const { state, line: [text, cls, on, disabled] } = /** @type {{ state: string, line: [string, string, boolean, boolean] }} */ (await detectPush().catch(() => ({ state: 'unsupported', line: ['This browser can’t receive push', 'st-warn', false, true] })));
   st.textContent = text; st.className = cls; sw.classList.toggle('on', on); sw.setAttribute('aria-checked', String(on));
-  sw.style.opacity = disabled ? .35 : ''; sw.setAttribute('aria-disabled', String(disabled));
+  sw.style.opacity = disabled ? '0.35' : ''; sw.setAttribute('aria-disabled', String(disabled));
   sw.onclick = async () => {
     if (disabled || pushBusy) return;
     pushBusy = true; st.textContent = on ? 'Turning off…' : 'Asking iOS…';

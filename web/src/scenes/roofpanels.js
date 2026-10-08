@@ -45,7 +45,7 @@ export function createPanelLayer({ H, camera, controls, canvas, host, hud }) {
     selEdge.position.copy(POS[L.sel]); pin.classList.add('on');
   };
   L.setReadout = html => { ro.innerHTML = html; };
-  ro.addEventListener('click', e => { if (e.target.closest('button[data-x]')) L.onPick?.(null); });
+  ro.addEventListener('click', e => { if (/** @type {Element} */ (e.target).closest('button[data-x]')) L.onPick?.(null); });
 
   // tap vs drag: a pointer that moves under 6 px picks the panel under it (or clears on empty sky)
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(); let down = null;
@@ -62,12 +62,12 @@ export function createPanelLayer({ H, camera, controls, canvas, host, hud }) {
   L.frame = () => {
     if (L.sel == null) return;
     v.copy(POS[L.sel]); H.arr.localToWorld(v); v.project(camera);
-    const w = canvas.clientWidth, h = canvas.clientHeight, sx = (v.x + 1) / 2 * w, sy = (1 - v.y) / 2 * h, bh = ro.offsetHeight;
+    const w = canvas.clientWidth, h = canvas.clientHeight, sx = (v.x + 1) / 2 * w, sy = (1 - v.y) / 2 * h, bh = /** @type {HTMLElement} */ (ro).offsetHeight;
     const hb = hud ? hud.offsetTop + hud.offsetHeight + 8 : 8;
     const bx = 8, by = sy < h * .62 ? h - bh - 8 : hb;
     ro.style.width = (w - 16) + 'px'; ro.style.transform = `translate(${bx}px,${by}px)`;
     const ex = Math.max(bx + 16, Math.min(bx + w - 32, sx)), ey = by > sy ? by : by + bh;
-    ld.setAttribute('x1', sx); ld.setAttribute('y1', sy); ld.setAttribute('x2', ex); ld.setAttribute('y2', ey); dt.setAttribute('cx', sx); dt.setAttribute('cy', sy);
+    ld.setAttribute('x1', String(sx)); ld.setAttribute('y1', String(sy)); ld.setAttribute('x2', String(ex)); ld.setAttribute('y2', String(ey)); dt.setAttribute('cx', String(sx)); dt.setAttribute('cy', String(sy));
   };
   L.dispose = () => { canvas.removeEventListener('pointerdown', onDown); canvas.removeEventListener('pointerup', onUp); pin.remove(); };
   return L;

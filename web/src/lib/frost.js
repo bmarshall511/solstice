@@ -22,6 +22,7 @@ const LOCK = '<svg width="12" height="14" viewBox="0 0 12 14" fill="none" stroke
 const saved = new WeakMap();
 /** Lock a card: its title stays, the body becomes a skeleton under frosted glass with "Private to {name}" and one reason.
  *  The owner's markup is kept, so unlockCards() can put it back when the owner leaves the preview. */
+/** @param {Element} card  @param {{ title?: string, sub?: string, body: string, reason: string, name: string }} o */
 export function lockCard(card, { title, sub, body, reason, name }) {
   if (!card) return;
   const h = card.querySelector(':scope > .h');                 // the owner's title (and subtitle) unless told otherwise
@@ -53,7 +54,7 @@ export const skLines = () => `<div class="rec" style="margin-top:10px">${[92, 84
 /** One explanation for every veil and locked card: tap it, get the privacy toast. */
 export function explainOnTap(toast, name) {
   document.addEventListener('click', e => {
-    if (!e.target.closest('.veil, .card.locked')) return;
+    if (!/** @type {Element} */ (e.target).closest('.veil, .card.locked')) return;
     toast('🔒', 'rgba(255,255,255,.14)', `Private to ${nameMidText(name())}`, `Dollar amounts, bills and controls stay with ${nameMidText(name())}.`);   // toast() sets text, not HTML
   });
 }

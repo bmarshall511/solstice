@@ -120,6 +120,7 @@ export function expandButton(host, label, onOpen) {
 
 /**
  * Open a scene full screen.
+ * @param {object} o
  * @param o.title   the card's title        @param o.label  the scene's aria-label     @param o.hint  the one-line hint
  * @param o.legend  the dock's legend HTML  @param o.tip    the dock readout's first HTML
  * @param o.calm    () => Calm mode or reduced motion

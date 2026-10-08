@@ -101,7 +101,7 @@ function drawCleanChart(s) {
 export function initPanels(S, roof) {
   loadCleanings(S).then(() => drawPerformance(S)); loadSoiling(S); initPerPanel(S, roof);
   // mockup al frame 10: Output · Per panel · Hour bars is one sliding segment (it was two chips)
-  $('roofSeg').onclick = e => { const b = e.target.closest('[data-r]'); if (!b || b.getAttribute('aria-disabled') === 'true') return; setRoof(S, roof, b.dataset.r); };
+  $('roofSeg').onclick = e => { const b = /** @type {Element} */ (e.target).closest('[data-r]'); if (!b || b.getAttribute('aria-disabled') === 'true') return; setRoof(S, roof, b.dataset.r); };
   setRoof(S, roof, 'out');
 }
 function setRoof(S, roof, mode) {
@@ -139,7 +139,7 @@ const f = (v, d) => v == null ? '—' : Number(v).toFixed(d);
 function initPerPanel(S, roof) {
   layer = roof?.perPanel ?? null;
   if (layer) layer.onPick = k => select(k == null ? null : pAt(k)?.id ?? null);
-  $('phBody').addEventListener('click', e => { const t = e.target.closest('[data-show]'); if (t) showOnRoof(t.dataset.show); });
+  $('phBody').addEventListener('click', e => { const t = /** @type {Element} */ (e.target).closest('[data-show]'); if (t) showOnRoof(t.dataset.show); });
   const load = () => api.pvsPanels().then(d => { PD = S.pvs = d; applyPanels(); }).catch(e => { console.warn('pvs/panels', e.message); });
   load(); setInterval(load, 5 * 60_000);
 }
@@ -163,7 +163,7 @@ function applyPanels() {
   const has = !!PD?.panels?.length;
   const b = $('roofPP'), off = !has || PD.sunDown; $('panelHealth').hidden = !has;
   // no per-panel data, or the sun down (array median under 20 W): the segment's Per panel greys out and says so
-  b.setAttribute('aria-disabled', String(off)); b.style.opacity = off ? .45 : ''; b.querySelector('span').textContent = has && PD.sunDown ? 'sun down' : 'Per panel';
+  b.setAttribute('aria-disabled', String(off)); b.style.opacity = off ? '0.45' : ''; b.querySelector('span').textContent = has && PD.sunDown ? 'sun down' : 'Per panel';
   if (!has) { setOn(false); return; }
   if (PD.sunDown && ppOn && selId == null) setOn(false);
   const ratios = Array(30).fill(null), flags = Array(30).fill(false);
