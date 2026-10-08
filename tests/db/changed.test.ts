@@ -93,12 +93,13 @@ describe('I-18 on PGlite', () => {
     expect((await get('/api/changed?date=yesterday', owner)).status).toBe(400);
     expect((await (await get('/api/changed?scope=day&date=2026-10-07', owner)).json())).toMatchObject({ home: null, notes: ['incomplete'] });
   });
-  it('CHD-3 a guest read: weather, pool and everything else only, no trip awareness, no notes, and the parts add up', async () => {
+  it('CHD-3 a guest read: the Used split only (weather, pool, everything else), no Bought split, no trip awareness, no notes, and the parts add up', async () => {
     const c = await (await get(`/api/changed?scope=day&date=${YDAY}`, preview)).json();
     expect(c.home.parts.map((p: any) => p.id)).toEqual(['weather', 'pool', 'other']);
     expect(c.baseline).toEqual({ kind: 'weekday', days: 4 });   // the trip Tuesday is just a Tuesday to a guest
     expect(c).not.toHaveProperty('notes');
-    addsUp(c.home); addsUp(c.import);
+    expect(c).not.toHaveProperty('import');   // the owner's answer (2026-10-08): guests get the Used card only, nothing bought
+    addsUp(c.home);
     const w = await (await get('/api/changed?scope=week&date=2026-09-28', preview)).json();
     expect(JSON.stringify(w)).not.toMatch(/trip|alwaysOn|"ac"|unexplained/);
     addsUp(w.home);

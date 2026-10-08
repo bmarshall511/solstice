@@ -160,7 +160,8 @@ describe('I-18: guests', () => {
     expect(JSON.stringify(fromOwner)).not.toMatch(/trip|alwaysOn|"ac"|unexplained|notes/);
     expect(fromOwner.home.parts.map((p: any) => p.id)).toEqual(['weather', 'pool']);
     const g = run(m(), { guest: true }), served = view(JSON.parse(JSON.stringify(g))) as any;
-    expect(served).toEqual(JSON.parse(JSON.stringify({ ...g, notes: undefined })));   // everything else of a guest's answer passes
+    expect(served).toEqual(JSON.parse(JSON.stringify({ ...g, notes: undefined, import: undefined })));   // the rest passes; no Bought split (owner, 2026-10-08)
+    expect(served).not.toHaveProperty('import');
     expect(tenths(served.home.parts.reduce((a: number, p: any) => a + p.kwh, 0))).toBe(tenths(served.home.delta));
   });
 });

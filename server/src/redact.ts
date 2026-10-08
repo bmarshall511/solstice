@@ -207,11 +207,11 @@ const PANELS_VIEW: Rule = {
  *  unexplained into "other"), so no trip, AC or always-on part can ever reach a guest; notes never do. */
 const changedParts = (ids: readonly string[]) => (v: unknown) => (Array.isArray(v) ? v : []).filter((p: any) => isObject(p) && ids.includes(p.id as string))
   .map(p => pick(p, { id: true, kwh: true, conf: true }));
-export const GUEST_CHANGED_IDS = { home: ['weather', 'pool', 'other'], import: ['home', 'solar'] } as const;
+// the owner's answer (2026-10-08): guests get the Used card only, so nothing of what was bought leaves the server
+export const GUEST_CHANGED_IDS = { home: ['weather', 'pool', 'other'] } as const;
 const CHANGED: Rule = {
   scope: true, date: true, to: true, baseline: { kind: true, days: true }, wx: { high: true, baseHigh: true },
   home: { obs: true, base: true, delta: true, parts: changedParts(GUEST_CHANGED_IDS.home) },
-  import: { obs: true, base: true, delta: true, parts: changedParts(GUEST_CHANGED_IDS.import), solar: { obs: true, base: true } },
 };
 
 /* ---------- the routes a guest may read (GET only), each with its view. Paths are lower-case, as access.ts compares them. ---------- */
