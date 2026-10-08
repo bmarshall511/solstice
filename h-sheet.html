@@ -1,4 +1,4 @@
-:root{
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200;300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"><style>:root{
   --bg:#05060a; --text:#f2f4f8; --dim:rgba(242,244,248,.62); --mute:rgba(242,244,248,.6);
   --glass:rgba(255,255,255,.055); --glass-b:rgba(255,255,255,.11);
   --solar:#ffc15e; --batt:#4ef0a6; --home:#6cc4ff; --grid:#c4a2ff; --warn:#ff7a66; --out:#ff5a4e;
@@ -1502,22 +1502,6 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 .c-part>span{display:flex;align-items:center;gap:6px;min-width:0;white-space:nowrap}
 .c-part>b{font:500 12.5px var(--c-mono);white-space:nowrap}
 .c-part>b em{font-style:normal;color:var(--mute);margin-left:6px}
-/* the change waterfall (approved mockup am, I-18 What changed): one row per part, bars right for more and left for less from a
-   centre line, the total row last; the parts add up to the total */
-.c-wf{display:grid;gap:2px;margin-top:12px}
-.c-wf-r{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) 64px;align-items:center;gap:10px;min-height:36px;border-top:1px solid var(--c-line)}
-.c-wf-r:first-child{border-top:0}
-.c-wf-l{font-size:13px;color:var(--text);display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
-.c-wf-l .c-badge{margin:0}
-.c-wf-t{position:relative;height:10px}
-.c-wf-t::before{content:"";position:absolute;left:50%;top:-6px;bottom:-6px;width:1px;background:var(--c-line)}
-.c-wf-t i{position:absolute;top:0;height:10px;border-radius:5px;background:var(--acc);opacity:.85}
-.c-wf-t i.pos{left:50%} .c-wf-t i.neg{right:50%}
-.c-wf-r b{font:500 13px var(--c-mono);text-align:right;white-space:nowrap}
-.c-wf-r b.pos{color:var(--text)} .c-wf-r b.neg{color:var(--batt)}
-.c-wf-tot{border-top:1px solid color-mix(in srgb,var(--text) 22%,transparent)}
-.c-wf-tot .c-wf-l,.c-wf-tot b{font-weight:600}
-.c-wf-tot b{color:var(--text)}
 /* I-22 load signatures (approved mockup am frames 4–5): the 24-hour strip (an hour a cell, brighter where more runs start) and a Big loads row */
 .c-day{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;height:14px;margin-top:8px}
 .c-day i{border-radius:3px;background:color-mix(in srgb,var(--acc) calc(var(--v,0)*100%),var(--c-fill))}
@@ -1530,11 +1514,6 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 .c-load p{font-size:12px;color:var(--dim);margin-top:3px;line-height:1.45}
 .c-load p.s{color:var(--text)}
 .c-load .c-btns{margin-top:8px}
-/* mockup am frame 6 (I-15): the Strip heat card's stage bars (amber strips, blue compressor) and their hour labels */
-.c-stage{display:flex;gap:4px;align-items:flex-end;height:64px;margin-top:12px}
-.c-stage i{flex:1;border-radius:4px 4px 1px 1px;background:var(--c-fill)}
-.c-stage i.hp{background:color-mix(in srgb,var(--home) 75%,transparent)}
-.c-stage i.st{background:color-mix(in srgb,var(--solar) 85%,transparent)}
 .c-cells{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;margin-top:12px}
 .c-cells i{aspect-ratio:1/1.6;border-radius:4px;background:color-mix(in srgb,var(--solar) var(--p),var(--bg))}
 .c-heat{display:grid;gap:2px;margin-top:12px;border-radius:10px;overflow:hidden}
@@ -1739,3 +1718,4 @@ html[data-calm] .c-seg::before,html[data-calm] .c-sw::after,html[data-calm] .c-c
 .c-well .c-btns .c-btn{min-width:0}
 /* end Batch 5 */
 /* end al-app */
+</style><style>html,body{height:auto;overflow:auto}body{padding:16px;max-width:393px;margin:0 auto}.c-card{margin-top:12px}</style></head><body><div class="c-sheet"><div class="c-grab"></div><div class="c-sbody"><div class="c-sheet-h"><h4>Name this load</h4><button class="c-x" data-close aria-label="Close"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div><p class="c-sheet-sub">About 2.6 kW for 50 minutes, 4 times a week, between 4 and 7 PM.</p><div class="c-day c-acc-solar" style="height:20px"><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0.5"></i><i style="--v:1"></i><i style="--v:0.8"></i><i style="--v:0.3"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i></div><div class="c-dlab"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>12a</span></div><div class="c-lab">What is it?</div><div class="c-fpills" role="group" aria-label="What is it?"><button class="c-fpill on" data-pick="Oven" aria-pressed="true">Oven</button><button class="c-fpill" data-pick="Range" aria-pressed="false">Range</button><button class="c-fpill" data-pick="Dishwasher" aria-pressed="false">Dishwasher</button><button class="c-fpill" data-pick="Dryer" aria-pressed="false">Dryer</button><button class="c-fpill" data-pick="Water heater" aria-pressed="false">Water heater</button><button class="c-fpill" data-pick="EV / tool charger" aria-pressed="false">EV / tool charger</button><button class="c-fpill" data-pick="Other…" aria-pressed="false">Other…</button></div><p class="c-fine">Solstice tracks it under this name from now on, and it gets its own part in Where your energy goes. Names stay owner-only.</p><div class="c-sheet-f"><button class="c-btn line" data-f="sec">Not one appliance</button><button class="c-btn pri c-acc-solar" data-f="pri">Save "Oven"</button></div></div></div><div style="height:30px"></div><div class="c-sheet"><div class="c-sbody"><div class="c-sheet-h"><h4>Name this load</h4><button class="c-x" data-close aria-label="Close"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div><p class="c-sheet-sub">About 2.6 kW for 50 minutes, 4 times a week, between 4 and 7 PM.</p><div class="c-day c-acc-solar" style="height:20px"><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0.5"></i><i style="--v:1"></i><i style="--v:0.8"></i><i style="--v:0.3"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i><i style="--v:0"></i></div><div class="c-dlab"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>12a</span></div><div class="c-lab">What is it?</div><div class="c-fpills" role="group" aria-label="What is it?"><button class="c-fpill" data-pick="Oven" aria-pressed="false">Oven</button><button class="c-fpill" data-pick="Range" aria-pressed="false">Range</button><button class="c-fpill" data-pick="Dishwasher" aria-pressed="false">Dishwasher</button><button class="c-fpill" data-pick="Dryer" aria-pressed="false">Dryer</button><button class="c-fpill" data-pick="Water heater" aria-pressed="false">Water heater</button><button class="c-fpill" data-pick="EV / tool charger" aria-pressed="false">EV / tool charger</button><button class="c-fpill on" data-pick="Other…" aria-pressed="true">Other…</button></div><label class="c-field">Name<input class="c-input" id="ldOther" maxlength="24" autocomplete="off" placeholder="e.g. Kiln" value="Kiln"></label><p class="c-fine">Solstice tracks it under this name from now on, and it gets its own part in Where your energy goes. Names stay owner-only.</p><div class="c-sheet-f"><button class="c-btn line" data-f="sec">Not one appliance</button><button class="c-btn pri c-acc-solar" data-f="pri">Save "Kiln"</button></div></div></div></body></html>

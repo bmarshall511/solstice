@@ -8,6 +8,7 @@ import { badge } from '../lib/conf.js';
 import { jumpTarget, scrollFor } from '../lib/sysui.js';
 import { tileDelta, sumUntil } from '../lib/nowui.js';
 import { tileHtml, segSet, sheet, sheetHead, sheetFoot, closeSheet } from './csheet.js';
+import { dayCardHtml, buyCardHtml, weekCardHtml } from '../lib/changed.js';
 
 let range = 'day', day = null;
 
@@ -81,6 +82,28 @@ export async function drawHistoryChart(S) {
   try { range === 'day' ? await drawDay(S) : await drawBars(S); } catch (e) { $('hchart').innerHTML = svgText(0, 0, 'Could not load history', { anchor: 'middle' }); }
   try { drawYearRing(S); } catch (e) { console.error(e); }
   drawFlows(S);
+  drawChanged(S);
+}
+
+/* ---------- I-18 What changed (approved mockup am): Day (frame 1; frame 8 for a guest) and Week (frame 2), between the tiles and
+   "Where every kWh went". A past day against its typical weekday, the last complete week against the one before. ---------- */
+let chgSeq = 0, chgView = 'home';
+async function drawChanged(S) {
+  const card = $('chgCard'), buy = $('chgBuy'), today = localDate(), seq = ++chgSeq;
+  const scope = range === 'day' ? 'day' : range === 'week' ? 'week' : null, date = scope === 'day' ? day ?? today : '';
+  if (!card || !buy) return;
+  if (!scope || (scope === 'day' && date >= today)) { card.hidden = buy.hidden = true; return; }   // today isn't complete yet
+  const key = `${scope}|${date}`, cache = (S.changedCache ??= {});
+  let c = cache[key];
+  if (!c) { try { c = await api.changed(scope, date || undefined); } catch (e) { c = null; } if (c?.home) cache[key] = c; }   // only a complete answer is kept
+  if (seq !== chgSeq) return;
+  if (!c?.home) { card.hidden = buy.hidden = true; return; }
+  const draw = () => { card.innerHTML = scope === 'week' ? weekCardHtml(c, { guest: S.guest }) : dayCardHtml(c, { view: chgView, guest: S.guest }); };
+  card.className = scope === 'week' ? 'c-card c-acc-house' : 'c-card';
+  draw(); card.hidden = false;
+  card.onclick = e => { const b = e.target.closest('[data-c]'); if (!b || b.dataset.c === chgView) return; chgView = b.dataset.c; draw(); };
+  buy.hidden = S.guest || scope !== 'day';
+  if (!buy.hidden) buy.innerHTML = buyCardHtml(c);
 }
 
 /* ---------- Year: the year ring card (mockup o-year-ring), Year range only ---------- */
@@ -133,8 +156,8 @@ export function initHistory(S) {
   $('flow3d').onclick = () => { flowsOpen = !flowsOpen; $('flowHost').hidden = !flowsOpen; $('flow3d').setAttribute('aria-expanded', String(flowsOpen)); $('flow3d').textContent = flowsOpen ? 'Hide the 3D flow' : '3D flow'; drawFlows(S); };
   $('billSeg').onclick = e => { const b = e.target.closest('[data-b]'); if (!b) return; segSet($('billSeg'), b.dataset.b, 'data-b'); document.querySelectorAll('#billAnalysis [data-pane]').forEach(p => { p.hidden = p.dataset.pane !== b.dataset.b; }); };
   $('recAll').onclick = () => openRecords(S); $('outAll').onclick = () => openOutages(S); $('billAll').onclick = () => openBills(S);
-  $('dayPrev').onclick = () => { day = addDays(day ?? localDate(), -1); drawDay(S); drawFlows(S); };
-  $('dayNext').onclick = () => { if (day < localDate()) { day = addDays(day, 1); drawDay(S); drawFlows(S); } };
+  $('dayPrev').onclick = () => { day = addDays(day ?? localDate(), -1); drawDay(S); drawFlows(S); drawChanged(S); };
+  $('dayNext').onclick = () => { if (day < localDate()) { day = addDays(day, 1); drawDay(S); drawFlows(S); drawChanged(S); } };
 }
 
 /* ---------- landscape data: hourly solar + each day's ratio to what its sunlight should give ---------- */

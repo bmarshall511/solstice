@@ -12,6 +12,8 @@ import { localDay, addDays, localMidnight } from './tesla/client.js';
 import { confidenceMap, type Tier } from './learn/confidence.js';
 import { MODEL_IDS, type ModelId } from './learn/models.js';
 import { notify } from './notify.js';
+import { changedFor, type Changed } from './learn/changed.js';
+import { weekSummary, digestLine } from './stripheat.js';
 
 /* ---------- ISO weeks (Monday first; the week belongs to the year of its Thursday) ---------- */
 const dayMs = 864e5;
@@ -50,6 +52,10 @@ export type Digest = {
   confidence: Record<ModelId, Tier>;
   /** Mockup ak: trips that touched the week ("Away Thu–Sun · 71 kWh"); kWh once the trip's report is built. */
   trips?: Array<{ from: number; to: number | null; usedKwh: number | null }>;
+  /** I-18 (mockup am frame 2): the week's use split against the week before; the digest's lead line is built from it. */
+  changed?: Changed | null;
+  /** Mockup am frame 7 (I-15): the week's strip-heat mornings from daily_metrics, when there were any. */
+  strip?: { mornings: number; kwh: number; setbacks: number };
 };
 
 const r1 = (v: number) => Math.round(v * 10) / 10;
@@ -61,7 +67,7 @@ type LogLine = { at: number; day: string; text: string; delta?: string };
 
 export async function buildDigest(siteId: string, monday: string, now = Date.now()): Promise<Digest> {
   const from = monday, to = addDays(monday, 6), prevFrom = addDays(monday, -7);
-  const [energy, best, soe, anomalies, logs, confidence, pw] = await Promise.all([
+  const [energy, best, soe, anomalies, logs, confidence, pw, strip] = await Promise.all([
     q<{ w: string; days: number; solar: number; home: number; imp: number; exp: number }>(`SELECT CASE WHEN day >= $3 THEN 'this' ELSE 'prev' END w, COUNT(DISTINCT day)::int days,
        COALESCE(SUM(solar_wh), 0)::float8 / 1000 solar, COALESCE(SUM(home_wh), 0)::float8 / 1000 home, COALESCE(SUM(import_wh), 0)::float8 / 1000 imp, COALESCE(SUM(export_wh), 0)::float8 / 1000 exp
        FROM energy WHERE site_id = $1 AND day >= $2 AND day <= $4 GROUP BY 1`, [siteId, prevFrom, from, to]),
@@ -74,7 +80,11 @@ export async function buildDigest(siteId: string, monday: string, now = Date.now
     confidenceMap(siteId, MODEL_IDS, { today: addDays(to, 1) }),
     q<{ result: string; n: number }>(`SELECT result, COUNT(*)::int n FROM powerwall_log WHERE site_id = $1 AND at >= $2 AND at < $3 GROUP BY result`,
       [siteId, localMidnight(from).getTime(), localMidnight(addDays(to, 1)).getTime()]),
+    q<{ day: string; metric: string; value: number }>(`SELECT day, metric, value::float8 value FROM daily_metrics WHERE site_id = $1 AND day BETWEEN $2 AND $3 AND metric IN ('strip.kwh', 'strip.cause')`, [siteId, from, to]),
   ]);
+  const stripDays: Record<string, Record<string, number>> = {};
+  for (const r of strip) (stripDays[r.day] ??= {})[r.metric] = Number(r.value);
+  const sw = weekSummary(stripDays);
   const pwN = (r: string) => pw.find(x => x.result === r)?.n ?? 0;
   const totals = (w: string): Totals | null => {
     const r = energy.find(x => x.w === w); if (!r) return null;
@@ -101,6 +111,8 @@ export async function buildDigest(siteId: string, monday: string, now = Date.now
       items: open.slice(0, 8).map(a => ({ kind: a.kind, title: String(a.detail?.title ?? a.kind), severity: a.severity, day: a.day })) },
     confidence,
     trips: (await tripsBetween(siteId, from, to)).map(t => ({ from: t.startedAt!, to: t.endedAt, usedKwh: (t.data.report as { usedKwh?: number } | undefined)?.usedKwh ?? null })),
+    changed: await changedFor(siteId, 'week', from, { now }).catch(e => { console.warn(`[digest] what changed: ${(e as Error).message}`); return null; }),
+    ...(sw.mornings ? { strip: sw } : {}),
   };
 }
 
@@ -109,7 +121,8 @@ export function digestAlert(d: Digest) {
   const t = d.totals, parts = [`${t.solarKwh} kWh of solar`, `${t.homeKwh} kWh used`, `${t.importKwh} kWh bought`, `${t.exportKwh} kWh sent`];
   const todo = [d.anomalies.open ? `${d.anomalies.open} open ${d.anomalies.open === 1 ? 'anomaly' : 'anomalies'}` : null,
     d.autopilot.pool.suggested ? `${d.autopilot.pool.suggested} pool plan${d.autopilot.pool.suggested === 1 ? '' : 's'} suggested` : null].filter(Boolean);
-  return { title: t.sunsharePct != null ? `Your week: ${t.sunsharePct}% from sunshine` : 'Your week in energy', body: `${parts.join(', ')}.${todo.length ? ` ${todo.join(' · ')}.` : ''}` };
+  const strip = digestLine(d.strip);   // mockup am frame 7: "Strip heat: 3 mornings · 31 kWh (2 after setbacks)."
+  return { title: t.sunsharePct != null ? `Your week: ${t.sunsharePct}% from sunshine` : 'Your week in energy', body: `${parts.join(', ')}.${todo.length ? ` ${todo.join(' · ')}.` : ''}${strip ? ` ${strip}` : ''}` };
 }
 
 /** Where a tapped digest push opens: Now, where the "Your week" card lives (approved mockup t-enhancements frame 1). */

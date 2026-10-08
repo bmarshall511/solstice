@@ -72,6 +72,12 @@ export function anomalyHtml(d) {
   return `<b>Worth a look:</b> ${esc(a.title)}${/[.!?]$/.test(a.title) ? '' : '.'}${more > 0 ? ` (+${more} more)` : ''}`;
 }
 
+/** Mockup am frame 7 (I-15): "<b>Strip heat:</b> 3 mornings · 31 kWh (2 after setbacks)." from the digest's `strip`, or null with none. */
+export function stripHtml(d) {
+  const w = d.strip; if (!w?.mornings) return null;
+  return `<b>Strip heat:</b> ${w.mornings} morning${w.mornings === 1 ? '' : 's'} · ${kwh0(w.kwh)} kWh${w.setbacks ? ` (${w.setbacks} after setback${w.setbacks === 1 ? '' : 's'})` : ''}.`;
+}
+
 /** The learning badges: the four figures the week leaned on, each with its tier from the digest and the model report's text. */
 export const DIGEST_MODELS = [['fc48.solar', 'solar model'], ['ac.shifted', 'AC'], ['pool.kwhDay', 'pump curve'], ['fc48.soc', '48 h forecast']];
 export function badgesHtml(d, models) {
@@ -79,4 +85,19 @@ export function badgesHtml(d, models) {
     const tier = d.confidence?.[id], text = confText(tier, modelOf(models, id));
     return text == null ? '' : `<span class="conf" data-t="${TIERS[tier]}">${esc(`${label} ${text}`)}</span>`;
   }).join('');
+}
+
+/**
+ * I-18 (mockup am frame 2): the digest's lead line from the week's split against the week before (Digest.changed), in whole kWh:
+ * "<b>+38 kWh used vs last week:</b> weather +22 <est>, AC +9, pool +4, always-on +2, unexplained +1." The rounding goes into the last
+ * part (unexplained, or "everything else"), so the parts still add up. Parts that round to 0 are left out. Null without a split.
+ */
+const CHANGED_NAME = { weather: 'weather', ac: 'AC', pool: 'pool', alwaysOn: 'always-on', trip: 'trip', unexplained: 'unexplained', other: 'everything else' };
+export function changedLeadHtml(d) {
+  const H = d?.changed?.home; if (H && d.changed.clean === false) return `<b>${delta0(Math.round(H.delta))} kWh used vs last week.</b>`;   // no split until the history is clean
+  if (!H?.parts?.length) return null;
+  const total = Math.round(H.delta), rest = H.parts.at(-1), head = H.parts.slice(0, -1).map(p => ({ ...p, n: Math.round(p.kwh) }));
+  const all = [...head, { ...rest, n: total - head.reduce((a, p) => a + p.n, 0) }].filter(p => p.n !== 0);
+  const tag = p => p.id === 'weather' && p.conf ? ` <span class="c-badge" data-t="e">${p.conf === 'learning' ? 'learning' : 'est'}</span>` : '';
+  return `<b>${delta0(total)} kWh used vs last week${all.length ? ':' : '.'}</b>${all.length ? ` ${all.map(p => `${CHANGED_NAME[p.id] ?? esc(p.id)} ${delta0(p.n)}${tag(p)}`).join(', ')}.` : ''}`;
 }

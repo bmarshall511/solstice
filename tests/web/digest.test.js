@@ -1,6 +1,6 @@
 // The "Your week" card's numbers (web/src/lib/digest.js, approved mockup mockups/t-enhancements.html frame 1).
 import { describe, it, expect } from 'vitest';
-import { kwh0, delta0, weekLabel, prevWeekDate, leadHtml, deltaClass, gridCells, gridHtml, autopilotLines, rulesMode, anomalyHtml, badgesHtml } from '../../web/src/lib/digest.js';
+import { kwh0, delta0, weekLabel, prevWeekDate, leadHtml, deltaClass, gridCells, gridHtml, autopilotLines, rulesMode, anomalyHtml, stripHtml, badgesHtml } from '../../web/src/lib/digest.js';
 
 const d = {
   week: '2026-W39', from: '2026-09-21', to: '2026-09-27',
@@ -64,5 +64,13 @@ describe('digest number formatting', () => {
     expect(html).toContain('<span class="conf" data-t="n">pump curve learning · 18 of 30</span>');
     expect(html).toContain('<span class="conf" data-t="e">48 h forecast estimated</span>');
     expect(badgesHtml({ ...d, confidence: {} })).toBe('');
+  });
+});
+
+describe('the strip heat line (mockup am frame 7)', () => {
+  it('reads "Strip heat: 3 mornings · 31 kWh (2 after setbacks)." and is absent without strip mornings', () => {
+    expect(stripHtml({ ...d, strip: { mornings: 3, kwh: 31, setbacks: 2 } })).toBe('<b>Strip heat:</b> 3 mornings · 31 kWh (2 after setbacks).');
+    expect(stripHtml({ ...d, strip: { mornings: 1, kwh: 6.4, setbacks: 0 } })).toBe('<b>Strip heat:</b> 1 morning · 6 kWh.');
+    expect(stripHtml(d)).toBeNull();
   });
 });

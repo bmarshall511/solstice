@@ -81,7 +81,7 @@ export async function flowsFor(siteId: string, range: string, date: string | und
   const residual = { home: kwh(Number(r.home ?? 0) - homeWh), export: kwh(Number(r.export ?? 0) - wh.solarGrid - wh.battGrid) };
 
   const slope = (await kv.get<{ slope: number }>(`${siteId}:ac:slope`))?.slope ?? 2.5; // the heat model the AC card uses (cached by acSlope)
-  const [pool, ac, tariff] = await Promise.all([poolKwhBetween(siteId, spans, settings), acKwhBetween(siteId, spans, slope), currentTariff(siteId)]);
+  const [{ perDay: _perDay, ...pool }, ac, tariff] = await Promise.all([poolKwhBetween(siteId, spans, settings), acKwhBetween(siteId, spans, slope), currentTariff(siteId)]);   // perDay: the nightly's (I-18), not this card's
   const totals = { solar: kwh(r.solar), home: kwh(r.home), import: kwh(r.import), export: kwh(r.export), charge: kwh(r.charge), discharge: kwh(r.discharge) };
   const rate = tariff ? { importRateAllIn: tariff.importRateAllIn, exportCredit: tariff.exportCredit ?? null } : null; // learned from bills; null = unknown
   return {

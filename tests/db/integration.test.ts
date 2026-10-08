@@ -687,8 +687,8 @@ describe('learning layer: the nightly job on seeded PGlite data', () => {
     expect(await one(`SELECT COUNT(*)::int n FROM model_scores WHERE site_id = $1`, [S])).toEqual({ n: 24 }); // 8 models × 3 windows
     expect(r.tiers).toMatchObject({ 'fc48.solar': 'learning', 'ac.shifted': 'measured', 'ac.eveningAvoided': 'measured' });
     // budget: a fixed number of round trips, no per-model or per-row queries
-    expect(r.queries).toBeLessThanOrEqual(31);
-    expect(queries).toBeLessThanOrEqual(35);   // mockup ah: + the pool days already marked extra; mockup ak: + the trip days; B2-3: + clearing a rescored day's old score rows; B2-5: + the always-on nights (3); B2-8: + wx:hilo and the year's daily totals (2); B2-12: + the battery-% jumps
+    expect(r.queries).toBeLessThanOrEqual(36);   // I-15: + the strip step's heating check (one query outside winter)
+    expect(queries).toBeLessThanOrEqual(40);   // I-15: + the strip step's heating check; I-18: + pool.kwh (poolKwhBetween: the snapshot, the applied plan, the power curve, the readings); mockup ah: + the pool days already marked extra; mockup ak: + the trip days; B2-3: + clearing a rescored day's old score rows; B2-5: + the always-on nights (3); B2-8: + wx:hilo and the year's daily totals (2); B2-12: + the battery-% jumps
     // B2-12: the data-quality metrics. The seeded charge climbs 2 points an hour and falls from 86% to 40% at midnight with no energy
     // through the Powerwalls: one jump on each day that starts after a seeded day
     expect([await metric('2026-09-22', 'soe.jumps'), await metric('2026-09-23', 'soe.jumps'), await metric('2026-09-24', 'soe.jumps')]).toEqual([0, 1, 1]);

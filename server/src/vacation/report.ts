@@ -32,11 +32,15 @@ export type ReportInput = {
   homeBaseKw: number | null; trip: Pick<Trip, 'backAt' | 'data'>; alerts: number;
   /** B2-14: the Nest's Eco cooling setpoint (°F) for the empty-house AC; ECO_COOL_F when unknown. */
   ecoF?: number | null;
+  /** I-15 (mockup am frame 7): the strip heat of the trip's days (daily_metrics strip.kwh), kWh; null when none was measured. */
+  stripKwh?: number | null;
 };
 export type Part = { id: 'ac' | 'pool' | 'alwaysOn' | 'waterHeater' | 'else'; used: number; empty: number };
 export type Report = { v: 1; from: number; to: number; days: number; usedKwh: number; emptyKwh: number; homeKwh: number | null; savedKwh: number; ecoCoolF?: number;
   parts: Part[]; awayBaseKw: number; homeBaseKw: number | null; did: string[]; alerts: number; next: string[];
-  conf: { ac: 'measured' | 'estimated'; empty: 'estimated'; home: 'estimated' | null }; model: { k: number; delta: number; days: number } };
+  conf: { ac: 'measured' | 'estimated'; empty: 'estimated'; home: 'estimated' | null }; model: { k: number; delta: number; days: number };
+  /** I-15: strip heat over the trip's days (kWh), when any ran. */
+  stripKwh?: number };
 
 const hourKey = (ms: number) => rfc3339(new Date(ms)).slice(0, 13);
 /** kWh the AC would use over [from, to) holding `setF`, by the degree-hour model (hours without a temperature add nothing). */
@@ -113,7 +117,8 @@ export function buildReport(o: ReportInput): Report {
   next.push('Log a pool test so the next trip’s pool plan can learn from it');
   return { v: 1, from: o.from, to: o.to, days: r1(days), usedKwh: r1(used), emptyKwh: r1(empty), homeKwh: home, savedKwh: r1(empty - used), ecoCoolF: eco, parts,
     awayBaseKw: Math.round(base * 100) / 100, homeBaseKw: o.homeBaseKw != null ? Math.round(o.homeBaseKw * 100) / 100 : null, did: did.slice(-12), alerts: o.alerts, next,
-    conf: { ac: o.nest.length ? 'measured' : 'estimated', empty: 'estimated', home: o.homeFit ? 'estimated' : null }, model: o.model };
+    conf: { ac: o.nest.length ? 'measured' : 'estimated', empty: 'estimated', home: o.homeFit ? 'estimated' : null }, model: o.model,
+    ...(o.stripKwh != null && o.stripKwh >= .5 ? { stripKwh: r1(o.stripKwh) } : {}) };
 }
 
 /* ---------- the database step ---------- */
@@ -173,18 +178,19 @@ export async function houseModel(siteId: string, at: number, temps: Hourly, acKw
  */
 export async function tripReport(siteId: string, trip: Trip, deps: { acKw: number; poolNormalKwhDay: number | null; uv: boolean; temps?: Hourly }) {
   const from = trip.startedAt ?? trip.leaveAt, to = trip.endedAt ?? Date.now(), fitFrom = from - 30 * 864e5;   // the model fits on the 30 days before
-  const [energy, nest, pool, alerts, rows] = await Promise.all([
+  const [energy, nest, pool, alerts, rows, strip] = await Promise.all([
     q<{ epoch: string; home_wh: number | null }>(`SELECT epoch::text, home_wh FROM energy WHERE site_id = $1 AND epoch >= $2 AND epoch < $3`, [siteId, from, to]),
     q<{ ts: string; hvac: string; cool_f: number | null }>(`SELECT ts::text, hvac, cool_f FROM nest_readings WHERE site_id = $1 AND ts >= $2 AND ts < $3 ORDER BY ts`, [siteId, from, to]),
     q<{ ts: string; running: boolean; watts: number }>(`SELECT ts::text, running, watts FROM pool_readings WHERE site_id = $1 AND ts >= $2 AND ts < $3 ORDER BY ts`, [siteId, from, to]),
     q<{ n: number }>(`SELECT COUNT(*)::int n FROM alerts WHERE site_id = $1 AND kind = 'vacation' AND created_at >= $2 AND created_at < $3`, [siteId, new Date(from).toISOString(), new Date(to).toISOString()]),
     fitRows(siteId, from),
+    q<{ kwh: number | null }>(`SELECT SUM(value)::float8 kwh FROM daily_metrics WHERE site_id = $1 AND metric = 'strip.kwh' AND day BETWEEN $2 AND $3`, [siteId, localDay(new Date(from)), localDay(new Date(to - 1))]),   // I-15
   ]);
   const temps = deps.temps ?? await hourlyTemps(fitFrom, to);
   const { model, homeFit: fit, homeBase, highs } = await houseModel(siteId, from, temps, deps.acKw, rows);
   const report = buildReport({ from, to, energy: energy.map(e => ({ epoch: Number(e.epoch), homeWh: Number(e.home_wh ?? 0) })), nest: nest.map(n => ({ ts: Number(n.ts), hvac: n.hvac, coolF: n.cool_f })),
     pool: pool.map(p => ({ ts: Number(p.ts), running: p.running, watts: Number(p.watts) })), acKw: deps.acKw, uv: deps.uv, temps, model, poolNormalKwhDay: deps.poolNormalKwhDay,
-    homeFit: fit, highs, homeBaseKw: homeBase, trip, alerts: alerts[0]?.n ?? 0, ecoF: await ecoCoolF() });
+    homeFit: fit, highs, homeBaseKw: homeBase, trip, alerts: alerts[0]?.n ?? 0, ecoF: await ecoCoolF(), stripKwh: strip[0]?.kwh ?? null });
   await patchTripData(trip.id, { report });
   return report;
 }

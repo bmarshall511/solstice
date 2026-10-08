@@ -3,6 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { SEG_IDS, JUMPS, VIEWS } from '../../web/src/lib/sysui.js';
+import { stripCardHtml, stripShows, stageBars, dur } from '../../web/src/lib/stripui.js';
 
 const read = p => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8');
 const html = read('web/index.html');
@@ -76,7 +77,7 @@ describe('the pages write only through routes that already existed', () => {
     for (const f of ['systems', 'timeline']) expect(calls(f), f).toEqual([]);
   });
   it('the Pool and AC pages make only the writes they always had', () => {
-    const reads = ['pool', 'ac', 'appliances', 'poolWater', 'events', 'vacation', 'vacationTrips', 'models'];
+    const reads = ['pool', 'ac', 'acStrip', 'appliances', 'poolWater', 'events', 'vacation', 'vacationTrips', 'models'];   // acStrip: mockup am, a read
     expect([...new Set(calls('appliances'))].filter(m => !reads.includes(m)).sort()).toEqual(['addEvent', 'poolApplyTomorrow', 'poolAutopilot', 'poolClearUp', 'poolCommand', 'poolGoal', 'poolSchedule', 'poolSuggestion'].sort());
     expect([...new Set(calls('ac'))].filter(m => !reads.includes(m)).sort()).toEqual(['acApply', 'acNudge', 'acSettings', 'acSuggestion', 'acUntrim'].sort());
   });
@@ -107,5 +108,57 @@ describe('links, badges and the four tabs', () => {
     for (const f of ['systems', 'timeline', 'settings', 'history', 'appliances', 'ac', 'powerwall', 'insights', 'learn', 'panels', 'outage', 'water'])
       expect(read(`web/src/views/${f}.js`), f).not.toMatch(/confChip|class="conf"|class="badge|'badge'|className = 'badge/);
     for (const id of ['v-sys', 'v-hist', 'v-set']) expect(section(id), id).not.toMatch(/class="(badge|conf)[ "]/);
+  });
+});
+
+describe('Systems › AC: the Strip heat card (approved mockup am frame 6, I-15)', () => {
+  const q = (n, cls = '') => ({ at: n, kw: cls === 'st' ? 13 : cls === 'hp' ? 3.4 : .1, cls });
+  const data = { show: true, week: { mornings: 3, kwh: 31, setbacks: 2 },
+    today: { stripKwh: 13.8, stripMin: 95, peakKw: 9.6, hpMin: 130, hpKw: 3.4, conf: 'measured', why: 'Catching up from the 62° night setback (heat to 68° at 6:00 AM).', tip: 'Keep overnight setbacks to 2° or less.',
+      quarters: Array.from({ length: 32 }, (_, i) => q(i, i >= 8 && i < 15 ? 'st' : i >= 4 && i < 20 ? 'hp' : '')) },
+    heating: { kind: 'heat-pump', label: 'heat pump + 2 strip stages', conf: 'learned' } };
+  it('sits under the Thermostat card, before AC Autopilot, owner only, in the solar accent', () => {
+    const ac = page('ac');
+    expect(ac.indexOf('id="acTstat"')).toBeLessThan(ac.indexOf('id="acStrip"'));
+    expect(ac.indexOf('id="acStrip"')).toBeLessThan(ac.indexOf('id="acAuto"'));
+    expect(tag(ac, 'acStrip')).toBe('<div class="c-card c-acc-solar" id="acStrip" data-owner hidden>');
+  });
+  it('the markup of frame 6: header, 16 half-hour stage bars, Strips and Heat pump, Why, Tip, This week and Your heating; no button', () => {
+    const h = stripCardHtml(data);
+    expect(h).toMatch(/^<div class="c-head"><h5>Strip heat<\/h5><span class="c-badge" data-t="m">measured<\/span><span class="c-fig">13.8 kWh this morning<\/span><\/div>/);
+    expect([...h.matchAll(/<i class="(st|hp|)" style="height:\d+%"><\/i>/g)]).toHaveLength(16);   // 32 quarters → 16 half-hour bars (frame 6)
+    expect(h).toContain('<div class="c-dlab"><span>4a</span><span>6a</span><span>8a</span><span>10a</span><span>12p</span></div>');
+    expect(h).toContain('<div class="c-part c-acc-solar"><i></i><span>Strips</span><b>1 h 35 m<em>peak 9.6 kW</em></b></div>');
+    expect(h).toContain('<div class="c-part c-acc-home"><i></i><span>Heat pump</span><b>2 h 10 m<em>3.4 kW</em></b></div>');
+    expect(h).toContain('<div class="c-sum"><b>Why:</b> Catching up from the 62° night setback (heat to 68° at 6:00 AM).</div>');
+    expect(h).toMatch(/<div class="c-well"[^>]*><b style="color:var\(--text\)">Tip:<\/b> Keep overnight setbacks to 2° or less\.<\/div>/);
+    expect(h).toContain('<div class="c-kv" style="margin-top:10px"><span>This week</span><b>3 mornings · 31 kWh</b><span>Your heating</span><b>heat pump + 2 strip stages <span class="c-badge" data-t="l">learned</span></b></div>');
+    expect(h).not.toMatch(/<button|onclick|data-sg|data-ap/);
+    // 16 half-hour bars as frame 6 draws them: each pair of 15-minute quarters is one bar (mean kW; strips win, then the compressor)
+    expect(stageBars([{ kw: 13, cls: 'st' }, { kw: 0, cls: 'x' }, { kw: 3, cls: 'hp' }, { kw: 3, cls: '' }, { kw: 0, cls: '' }, { kw: 0, cls: '' }]))
+      .toBe('<i class="st" style="height:100%"></i><i class="hp" style="height:46%"></i><i class="" style="height:8%"></i>');
+    expect(stageBars(Array.from({ length: 32 }, () => ({ kw: 1, cls: '' }))).match(/<i /g)).toHaveLength(16);
+    expect(dur(95)).toBe('1 h 35 m'); expect(dur(45)).toBe('45 m'); expect(dur(null)).toBe('—');
+    // a straight AC has no compressor row; energy-only minutes read as a dash; no strips yet says so and has no tip
+    expect(stripCardHtml({ ...data, heating: { kind: 'straight', label: 'AC heating on strips', conf: 'learned' } })).not.toContain('Heat pump');
+    expect(stripCardHtml({ ...data, today: { ...data.today, hpMin: null, conf: 'estimated' } })).toContain('<span>Heat pump</span><b>—</b>');
+    const none = stripCardHtml({ ...data, today: { stripKwh: 0, stripMin: 0, peakKw: null, hpMin: 0, conf: 'learning', why: null, tip: null, quarters: [] } });
+    expect(none).toContain('<b>Why:</b> no strip heat so far this morning.'); expect(none).not.toContain('c-well');
+  });
+  it('shows Nov–Mar or after heating (the server says), or with ?strip in the address for a check', () => {
+    expect(stripShows(data)).toBe(true);
+    expect(stripShows({ ...data, show: false })).toBe(false);
+    expect(stripShows({ ...data, show: false }, '?strip')).toBe(true);
+    expect(stripShows(null, '?strip')).toBe(false);
+    const ac = read('web/src/views/ac.js');
+    expect(ac).toMatch(/card\.hidden = !!S\.guest \|\| !stripShows\(S\.acStrip, location\.search\)/);
+    expect(ac).toMatch(/S\.guest \? null : api\.acStrip\(\)/);   // a guest never asks for it
+  });
+  it('the stage bars are a component (c-stage) in the component block; the mockup-only push illustration is not', () => {
+    const css = read('web/src/style.css');
+    expect(css).toContain('.c-stage{display:flex;gap:4px;align-items:flex-end;height:64px;margin-top:12px}');
+    expect(css).toContain('.c-stage i.st{background:color-mix(in srgb,var(--solar) 85%,transparent)}');
+    expect(css).toContain('.c-stage i.hp{background:color-mix(in srgb,var(--home) 75%,transparent)}');
+    expect(css).not.toMatch(/\.(am|c)-push\b/);
   });
 });

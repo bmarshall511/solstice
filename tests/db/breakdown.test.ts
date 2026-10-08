@@ -79,7 +79,7 @@ describe('on PGlite', () => {
     expect(by.alwaysOn.kw).toBeCloseTo(1.1 + 0.6 * 3 / 7, 1);
     expect(by.big.perDay).toBe(1);
     expect(by.big.kwh).toBeCloseTo(3.5, 0);
-    expect([by.big.minutes, by.big.burstKw]).toEqual([[30, 30], 8.4]);   // 7 kW on a 1.1 kW base four days, a 1.7 kW base three
+    expect([by.big.minutes, by.big.burstKw]).toEqual([[30, 30], 7]);     // I-22: the burst's kW above the always-on (it read 8.4, base included, before)
     expect(d.parts.reduce((a, p) => a + p.kwh, 0)).toBeCloseTo(d.homeKwh, 0);
     expect(d.trend.length).toBeGreaterThan(0);
   });

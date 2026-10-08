@@ -15,6 +15,7 @@ import { changed, ours, holdUntil, holdOver, morningAfter, getHold, setHold, las
 import { SPARE_SOC } from '../spare.js';
 import { liveTrip } from '../vacation/trip.js';
 import { tripAcTick, tripAcView } from '../vacation/ac.js';
+import { heatingKind, heatingLabel } from '../stripheat.js';
 
 export type AcSettings = { band: { homeLo: number; homeHi: number; nightLo: number; nightHi: number }; awayF: number; nightFrom: number; nightTo: number; precoolDepth: number; coastF: number; maxStepF: number; humidityCap: number; autopilot: Mode; presence: 'home' | 'away';
   /** mockup ag: the comfort targets (°F); the band is derived from them (withTargets). Missing on settings saved before ag. */
@@ -437,7 +438,8 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
     patterns: changePatterns(holds, settings, today).slice(0, 4).map(p => ({ hour: p.hour, f: p.f, from: p.from, planF: p.planF, dir: p.dir, days: p.days, need: 4, window: p.window, set: p.set })) };
   return { id: 'ac', name: 'AC', configured, linked, error: error ?? (forecastInfo.unavailable ? forecastInfo.note : null), forecast: forecastInfo, settings, state: st, hold, suggestion, changes, vacation, learned: { ...learned, acKw, source: learned.coolKw ? 'measured' : 'estimated' }, runtime: rt, todayKwh, shareOfHomePct: home[0]?.kwh ? Math.round(todayKwh / home[0].kwh * 100) : null,
     plan, currentStep: stepAt(plan, hourNow()), week, presence, applied: applied?.date === today ? applied : null, log, outdoorF: days[ti] ? Math.round(days[ti].high) : null, hourlyOutdoor: null,
-    equipment: { airHandler: 'Trane TEM4A0C42 · 3.5 ton variable-speed (2018)', heat: 'electric strips (staged)',
+    // I-15 (mockup am): the heating as detected from the learned heating step (stripheat.ts heatingKind: under 5 kW a heat pump)
+    equipment: { airHandler: 'Trane TEM4A0C42 · 3.5 ton variable-speed (2018)', heat: heatingKind(learned) === 'learning' ? 'electric strips (staged)' : heatingLabel({ kind: heatingKind(learned), stages: null }),
       outdoor: learned.heatKw != null ? (learned.heatKw < 5 ? `heat pump (measured ${learned.heatKw.toFixed(1)} kW when heating)` : `straight AC, heating on the strips (measured ${learned.heatKw.toFixed(1)} kW)`) : 'outdoor unit type: Solstice will measure it from the first heating steps this winter' } };
 }
 

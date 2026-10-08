@@ -32,6 +32,7 @@ import { pvsRouter, prunePvs } from './pvs.js';
 import { panelsDay, panelAlerts, panelWatch } from './panels.js';
 import { flowsFor, FlowsInputError } from './flows.js';
 import { overnightSplit, breakdownFor, alwaysOnWatch } from './breakdown.js';
+import { loadsRoutes, loadsNightly } from './loads.js';
 import { outageDetail } from './outage.js';
 
 import { alertRoutes, notify } from './notify.js';
@@ -49,6 +50,8 @@ import { digestRoutes, maybeWeeklyDigest } from './digest.js';
 import { presenceRoutes, setPresence } from './appliances/presence.js';
 import { powerwallRoutes, powerwallTick, powerwallNightly } from './powerwall.js';
 import { runLearn } from './learn/nightly.js';
+import { changedFor, ChangedInputError } from './learn/changed.js';
+import { stripCard, stripWatch } from './stripwatch.js';
 import { learnRouter } from './learn/api.js';
 import { vacationRoutes, vacationTick, finishTrip, tripHooks, departure } from './vacation/index.js';
 import { leftOn, cloudyWater } from './vacation/pool.js';
@@ -368,10 +371,19 @@ app.get('/api/breakdown', wrap(async (req, res) => {
   if (!['today', 'week', 'month'].includes(range)) return res.status(400).json({ error: 'range must be today, week or month' });
   res.json(await breakdownFor(site(req), range as 'today' | 'week' | 'month', await settingsFor(req)));
 }));
+/** I-22 load signatures (loads.ts, mockup am frames 4–5): GET /api/loads (the clusters) and POST /api/loads/label. Owner-only (no guest view). */
+loadsRoutes(app, site, wrap);
 /** History "Where every kWh went": seven paths for a day or the 30 days ending on `date`, with pool/AC and "unaccounted" (flows.ts). */
 app.get('/api/flows', wrap(async (req, res) => {
   try { res.json(await flowsFor(site(req), String(req.query.range ?? 'day'), req.query.date == null ? undefined : String(req.query.date), await settingsFor(req))); }
   catch (e) { if (e instanceof FlowsInputError) return res.status(400).json({ error: e.message }); throw e; }
+}));
+
+/** I-18 "What changed" (mockup am frames 1–3, 8; learn/changed.ts): a day or a week split against its baseline. A guest's is computed
+ *  without trip awareness and goes through redact.ts's view. */
+app.get('/api/changed', wrap(async (req, res) => {
+  try { res.json(await changedFor(site(req), String(req.query.scope ?? 'day'), req.query.date == null ? undefined : String(req.query.date), { guest: !!req.guestView })); }
+  catch (e) { if (e instanceof ChangedInputError) return res.status(400).json({ error: e.message }); throw e; }
 }));
 
 /** Mockup ad: days with spare solar and kWh sent to PEC by month, and whether there is spare solar now (owner only). */
@@ -661,6 +673,8 @@ async function acSlope(id: string) {
 }
 // S-07/S-10: a guest's read never reaches Nest and starts, ends or logs no hold; the owner's stale reads share one SDM read per minute (ac.ts)
 app.get('/api/appliances/ac', wrap(async (req, res) => { const id = site(req); res.json(await acDetail(id, presenceHidden(req, await settingsFor(req)), await rateFor(id), await acSlope(id), { fresh: !req.guestView && req.query.fresh === '1', readOnly: !!req.guestView })); }));
+/** Mockup am frame 6 (I-15): the Strip heat card, from the database only (stripwatch.ts). Owner only: no guest view in redact.ts. Writes nothing. */
+app.get('/api/appliances/ac/strip', wrap(async (req, res) => { res.set('Cache-Control', 'no-store'); res.json(await stripCard(site(req))); }));
 /** The Now card's whole-home twin: one Chicago day hour by hour (energy, pool, AC) from the database only; never reads ScreenLogic or Nest. */
 app.get('/api/appliances/day', wrap(async (req, res) => {
   const date = String(req.query.date ?? localDay());
@@ -786,6 +800,7 @@ fiveMinuteSteps.powerwall = powerwallTick; nightlySteps.powerwall = powerwallNig
 fiveMinuteSteps.digest = maybeWeeklyDigest; nightlySteps.digest = maybeWeeklyDigest;
 fiveMinuteSteps.panels = panelWatch;
 fiveMinuteSteps.grid = gridWatch;
+fiveMinuteSteps.strip = stripWatch;   // mockup am frame 7: one strip-heat alert at 10:00 Chicago; every other tick returns before the database
 fiveMinuteSteps.vacation = (id, now) => vacationWatch(id, now, (sid, text) => finishTrip(sid, 'home', Date.now(), text));   // mockup ak: trip alerts, "Looks like you're away"
 tripHooks.end.held = (id, trip, now) => heldSummary(id, trip, now);   // the pushes held during the trip, as one summary
 // the trip report (frame 6): built by the nightly job once the trip has ended (its energy is in), pushed from 7:00 the next morning
@@ -804,6 +819,7 @@ fiveMinuteSteps.spare = spareWatch;   // mockup ad: the pool speeds up on real s
 nightlySteps.soiling = soilingNightly;
 nightlySteps.poolTest = poolTestReminder;   // poolTests.ts (mockup aj): one "time to test" push per test, 4 days warm / 7 cool   // soiling.ts (mockup ai): the weather for the Cleaning check card, and one push per dusty spell
 nightlySteps.alwaysOn = alwaysOnWatch;   // breakdown.ts: one push when the always-on base stays up three nights
+nightlySteps.loads = loadsNightly;   // loads.ts (I-22): yesterday's bursts and the back-fill, then a recluster; stops 8 s before the deadline
 /* Watchdog: Vercel never retries a cron, so a nightly run that died (timeout, deploy, outage) would be silent. The 5-minute tick
  * pushes one alert a day while the last finished nightly run is more than 26 hours old. */
 const SYNC_DONE_KEY = 'cron:sync:done';

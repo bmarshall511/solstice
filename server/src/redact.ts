@@ -202,6 +202,18 @@ const PANELS_VIEW: Rule = {
     diag: { kind: true, lead: true, text: true } }],
 };
 
+/* ---------- I-18 "What changed" (learn/changed.ts, mockup am frame 8) ---------- */
+/** A guest's parts: only the listed ids (the route already computed them without trip awareness and folded AC, always-on and
+ *  unexplained into "other"), so no trip, AC or always-on part can ever reach a guest; notes never do. */
+const changedParts = (ids: readonly string[]) => (v: unknown) => (Array.isArray(v) ? v : []).filter((p: any) => isObject(p) && ids.includes(p.id as string))
+  .map(p => pick(p, { id: true, kwh: true, conf: true }));
+// the owner's answer (2026-10-08): guests get the Used card only, so nothing of what was bought leaves the server
+export const GUEST_CHANGED_IDS = { home: ['weather', 'pool', 'other'] } as const;
+const CHANGED: Rule = {
+  scope: true, date: true, to: true, baseline: { kind: true, days: true }, wx: { high: true, baseHigh: true }, clean: true,
+  home: { obs: true, base: true, delta: true, parts: changedParts(GUEST_CHANGED_IDS.home) },
+};
+
 /* ---------- the routes a guest may read (GET only), each with its view. Paths are lower-case, as access.ts compares them. ---------- */
 const REPLAY = { importKwh: true, exportKwh: true, solarKwh: true, homeKwh: true, selfPowered: true, batteryFullDays: true } as const;
 const view = (rule: Rule): View => b => pick(b, rule);
@@ -245,6 +257,7 @@ export const GUEST_GET: ReadonlyMap<string, View> = new Map<string, View>([
   ['/api/appliances/ac', acView],
   // per-panel health (panels.ts, mockup u-panels): positions only (the route never names a serial), and not the owner's alert state
   ['/api/pvs/panels', view(PANELS_VIEW)],
+  ['/api/changed', view(CHANGED)],
 ]);
 
 /** Serve this response through a guest view: res.json runs the view first. Error responses keep their status but carry a

@@ -13,6 +13,7 @@ import { sheet, sheetHead, sheetFoot, modePill, sysRow, banner, closeSheet } fro
 import { healthRows } from './insights.js';
 import { openVacation, endTrip, answerAsk, reportDue, dismissReport, openReport } from './vacation.js';
 import { digestBanner, openDigest, dismissDigest } from './digest.js';
+import { changedBanner, dismissChanged, whyChanged } from './changed.js';
 import { RULE, EXPORT, waitingSuggestion, applyRule, skip } from './powerwall.js';
 import { clearUpSend, poolSend, boostId } from './appliances.js';
 import { openPoolSheet, openAcSheet, openPwSheet } from './nowsheets.js';
@@ -98,6 +99,9 @@ function candidates(S) {
   // 7 · the weekly digest (plain)
   const dg = digestBanner();
   if (dg) out.push({ kind: 'digest', cls: 'plain', ic: 'chart', title: `Your week · ${esc(dg.week.replace(/^Week \d+ · /, '').replace(/(Mon|Tue|Wed|Thu|Fri|Sat|Sun) /g, ''))}`, line: dg.lead, btns: [['See the week', 'dg-open'], ['Dismiss', 'dg-dismiss']] });
+  // 8 · I-18: yesterday's change, 06:00–11:00 (plain, the lowest; mockup am frame 3)
+  const chg = changedBanner();
+  if (chg) out.push(chg);
   return out;
 }
 let slotKey = '';
@@ -127,6 +131,8 @@ export function drawBanner(S) {
       case 'bill': return;   // main.js's document listener opens the bill sheet ([data-addbill], set below)
       case 'dg-open': return openDigest(S);
       case 'dg-dismiss': return dismissDigest(S);
+      case 'chg-why': return whyChanged(S);
+      case 'chg-dismiss': return dismissChanged(S);
     }
   };
   box.querySelector('[data-b="bill"]')?.setAttribute('data-addbill', '1');   // main.js's document listener opens the bill sheet

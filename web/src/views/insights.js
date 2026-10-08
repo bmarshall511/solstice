@@ -6,6 +6,7 @@ import { api } from '../lib/api.js';
 import { mountOutageCard } from './outage.js';
 import { veil, esc } from '../lib/frost.js';
 import { guestPlan } from './guest.js';
+import { initLoads, loadLoads, accOf } from './loads.js';
 
 /* ---------- Worth knowing (Systems › Home): a vertical, dated list, newest 3 and "All N ›" (October audit B7) ---------- */
 let alertItems = [];
@@ -136,6 +137,8 @@ function heatSentence(f) {
 
 /* ---------- mockup y, restyled by mockup al frame 9: Where your energy goes ---------- */
 const EG = { ac: ['AC', 'c-acc-ac'], alwaysOn: ['Always-on', 'c-acc-grid'], big: ['Big loads', 'c-acc-solar'], pool: ['Pool', 'c-acc-pool'], other: ['Everything else', 'c-acc-mute'] };
+/** A part's label and colour; I-22: a named load (`load:<id>`) wears its own name and colour, Big loads says how many are unnamed. */
+const egOf = p => p.id.startsWith('load:') ? [esc(p.name), accOf(p.hue)] : p.id === 'big' && p.unnamed > 0 ? [`Big loads \u00b7 ${p.unnamed} unnamed`, EG.big[1]] : EG[p.id];
 const eg = { range: 'week', open: new Set(), data: null, timer: null };
 const clk = ms => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 /** Owner only (main.js boot): loads the card now and every 15 minutes while visible; the range switch reloads it. */
@@ -192,10 +195,12 @@ export function initBreakdown(S, every) {
   $('egRange').onclick = e => { const b = e.target.closest('button'); if (!b || b.dataset.r === eg.range) return; eg.range = b.dataset.r; loadBreakdown(); };
   $('egParts').onclick = e => { const p = e.target.closest('.c-part[data-id]'); if (!p) return; eg.open.has(p.dataset.id) ? eg.open.delete(p.dataset.id) : eg.open.add(p.dataset.id); drawBreakdown(); };
   $('egParts').onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('.c-part[data-id]')) { e.preventDefault(); e.target.closest('.c-part').click(); } };
+  initLoads(S, loadBreakdown);   // I-22: the Big loads card under this one; a new name reloads the parts
   eg.timer ??= every(15 * 60_000, loadBreakdown);
 }
 async function loadBreakdown() {
   segSet($('egRange'), eg.range, 'data-r');
+  loadLoads();
   try { eg.data = await api.breakdown(eg.range); } catch (e) { $('egSub').textContent = `Couldn\u2019t load: ${e.message}`; return; }
   drawBreakdown();
 }
@@ -206,15 +211,16 @@ function drawBreakdown() {
   $('egSub').textContent = !d.days ? 'No full day with thermostat readings yet' : d.range === 'today' ? 'kWh so far today'
     : d.days < n ? `kWh a day \u00b7 ${d.days} day${d.days === 1 ? '' : 's'} with Nest data` : `kWh a day \u00b7 last ${n} days`;
   const sum = d.parts.reduce((a, p) => a + p.kwh, 0) || 1;
-  $('egBar').innerHTML = d.parts.map(p => `<i class="${EG[p.id][1]}" style="width:${p.kwh / sum * 100}%"></i>`).join('');
+  $('egBar').innerHTML = d.parts.map(p => `<i class="${egOf(p)[1]}" style="width:${p.kwh / sum * 100}%"></i>`).join('');
   const note = p => p.id === 'ac' ? (p.hours != null ? `Cooling ${p.hours} h${d.range === 'today' ? ' today' : ' a day'} \u00d7 ${p.kw.toFixed(1)} kW` : 'From the heat model')
     : p.id === 'alwaysOn' ? (p.kw != null ? `${p.kw.toFixed(2)} kW every hour, from the quietest stretch of each night` : 'Not enough night data yet')
     : p.id === 'big' ? `${d.range === 'today' ? `${d.bursts.length} bursts today` : `${p.perDay} bursts a day`}${p.minutes ? `, ${p.minutes[0] === p.minutes[1] ? p.minutes[0] : `${p.minutes[0]}\u2013${p.minutes[1]}`} min at about ${p.burstKw} kW` : ''}: looks like the water heater, dryer, oven or range`
+    : p.id.startsWith('load:') ? `About ${p.kw.toFixed(1)} kW for ${p.minutes} min a run, the bursts that match the name you gave it`
     : p.id === 'pool' ? 'Pump, UV and extras' : 'Lights, stovetop, TVs, small appliances';
   // the overnight baseline lives in its own card for a guest; for the owner it opens under Always-on (moved, not redrawn)
   const night = $('nightBox'); if (night && night.parentElement !== $('nightCard')) $('nightCard').appendChild(night);
   $('egParts').innerHTML = d.parts.map(p => { const open = eg.open.has(p.id);
-    return `<div class="c-part ${EG[p.id][1]}${open ? ' open' : ''}" data-id="${p.id}" role="button" tabindex="0" aria-expanded="${open}"><i></i><span>${EG[p.id][0]} ${cBadge(p.conf)}</span><b>${p.kwh.toFixed(1)} kWh<em>${p.share}%</em></b></div>`
+    return `<div class="c-part ${egOf(p)[1]}${open ? ' open' : ''}" data-id="${esc(p.id)}" role="button" tabindex="0" aria-expanded="${open}"><i></i><span>${egOf(p)[0]} ${cBadge(p.conf)}</span><b>${p.kwh.toFixed(1)} kWh<em>${p.share}%</em></b></div>`
       + (open ? `<div class="c-part-d"><p class="c-cap">${esc(note(p))}.</p>${detail(p, d)}</div>` : ''); }).join('');
   const slot = $('egParts').querySelector('[data-night]'); if (slot && night) slot.appendChild(night);
 }
@@ -227,6 +233,7 @@ function detail(p, d) {
       <div class="eg-bursts">${d.bursts.map(b => `<b>${clk(b.start)}</b><span>${b.minutes} min \u00b7 ${b.kw} kW</span><em>${b.kwh} kWh</em>`).join('') || '<span style="grid-column:1/4">None yet today.</span>'}</div></div>`;
   }
   if (p.id === 'alwaysOn') return `<div data-night></div>${trend(d)}`;
+  if (p.id.startsWith('load:')) return '<p class="c-fine">Rename it under Big loads.</p>';
   if (p.id === 'ac' || p.id === 'pool') return `<p class="c-fine">Details on Systems › ${p.id === 'ac' ? 'AC' : 'Pool'}.</p>`;
   return '';
 }

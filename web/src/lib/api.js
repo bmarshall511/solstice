@@ -24,6 +24,7 @@ export const api = {
   now: () => get('now'),
   day: date => get(`day?date=${date}`),
   flows: (range, date) => get(`flows?range=${range}&date=${date}`),
+  changed: (scope, date) => get(`changed?scope=${scope}${date ? `&date=${date}` : ''}`),   // I-18 What changed (mockup am)
   daily: days => get(`daily?days=${days}`),
   monthly: months => get(`monthly?months=${months}`),
   profile: days => get(`profile?days=${days}`),
@@ -75,6 +76,7 @@ export const api = {
   poolApplyTomorrow: () => send('POST', 'appliances/pool/apply-tomorrow'),
   poolAutopilot: mode => send('POST', 'appliances/pool/autopilot', { mode }),
   ac: () => get('appliances/ac'),
+  acStrip: () => get('appliances/ac/strip'),   // mockup am frame 6 (I-15): the Strip heat card, owner only
   applDay: date => get(`appliances/day?date=${date}`),
   pvsPanels: () => get('pvs/panels'),   // mockup u-panels: per-panel health by roof position (guests too)
   acApply: () => send('POST', 'appliances/ac/apply'),
@@ -91,6 +93,8 @@ export const api = {
   spare: () => get('spare'),
   capacity: () => get('capacity'),
   breakdown: range => get(`breakdown?range=${encodeURIComponent(range)}`),   // mockup y
+  loads: () => get('loads'),                                                   // I-22 load signatures (owner only)
+  labelLoad: body => send('POST', 'loads/label', body),                        // {sig, name} | {sig, dismissed: true} | {id, name: null}
   acSuggestion: (action, key) => send('POST', 'appliances/ac/suggestion', { action, key }),
   acNudge: (dir, keep) => send('POST', 'appliances/ac/nudge', { dir, keep }),
   models: () => get('models'),
