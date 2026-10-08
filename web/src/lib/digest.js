@@ -72,6 +72,12 @@ export function anomalyHtml(d) {
   return `<b>Worth a look:</b> ${esc(a.title)}${/[.!?]$/.test(a.title) ? '' : '.'}${more > 0 ? ` (+${more} more)` : ''}`;
 }
 
+/** Mockup am frame 7 (I-15): "<b>Strip heat:</b> 3 mornings · 31 kWh (2 after setbacks)." from the digest's `strip`, or null with none. */
+export function stripHtml(d) {
+  const w = d.strip; if (!w?.mornings) return null;
+  return `<b>Strip heat:</b> ${w.mornings} morning${w.mornings === 1 ? '' : 's'} · ${kwh0(w.kwh)} kWh${w.setbacks ? ` (${w.setbacks} after setback${w.setbacks === 1 ? '' : 's'})` : ''}.`;
+}
+
 /** The learning badges: the four figures the week leaned on, each with its tier from the digest and the model report's text. */
 export const DIGEST_MODELS = [['fc48.solar', 'solar model'], ['ac.shifted', 'AC'], ['pool.kwhDay', 'pump curve'], ['fc48.soc', '48 h forecast']];
 export function badgesHtml(d, models) {
