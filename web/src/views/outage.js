@@ -21,7 +21,8 @@ const RUNGS = { on: ['rgba(242,244,248,.75)', (r) => `${r.kw.toFixed(1)} kW`], p
 
 // Systems › Powerwall (approved mockup al frame 11): a disclosure tagged "simulation". Collapsed: the hours the Powerwalls would last
 // with the sun ahead, at the current draw, and what tomorrow's sun adds; opened: the scene, the scenarios, the ladder and the history.
-const MARKUP = `<div class="c-card c-disc c-acc-out outage" id="sysOutage">
+// Owner only (data-owner): its numbers come from /api/outage, which has no guest view, as the Conditions sheet's Outage readiness row.
+const MARKUP = `<div class="c-card c-disc c-acc-out outage" id="sysOutage" data-owner>
   <div class="c-disc-h" role="button" tabindex="0" aria-expanded="false"><h5>Outage readiness</h5><span class="c-badge" data-t="sim">simulation</span><span class="c-badge" data-t="sim" data-swbadge hidden>Storm Watch</span><span class="c-fig" data-fig>—</span><span class="c-chev">${icon('down')}</span></div>
   <div class="c-sum" data-sum>—</div>
   <div class="c-disc-body" hidden>
@@ -137,7 +138,7 @@ export function mountOutageCard(S, parent) {
 
   /* ---------- data ---------- */
   async function load() {
-    if (loading) return; loading = true;
+    if (loading || S.guest) return; loading = true;   // /api/outage is owner-only (no guest view in redact.ts): a guest would get a 401 a minute
     try { const d = await api.outage(); C.data = d; C.startHour = d.startHour; C.storm = d.storm.active; run(); rows(); outages(); if (!C.anim) tick(performance.now()); }
     catch (e) { console.warn('outage', e.message); }
     finally { loading = false; }
