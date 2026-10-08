@@ -1505,7 +1505,7 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 /* the change waterfall (approved mockup am, I-18 What changed): one row per part, bars right for more and left for less from a
    centre line, the total row last; the parts add up to the total */
 .c-wf{display:grid;gap:2px;margin-top:12px}
-.c-wf-r{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) 52px;align-items:center;gap:10px;min-height:36px;border-top:1px solid var(--c-line)}
+.c-wf-r{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) minmax(52px,max-content);align-items:center;gap:10px;min-height:36px;border-top:1px solid var(--c-line)}
 .c-wf-r:first-child{border-top:0}
 .c-wf-l{font-size:13px;color:var(--text);display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
 .c-wf-l .c-badge{margin:0}
