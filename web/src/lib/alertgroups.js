@@ -1,4 +1,4 @@
-// Settings › Alerts (approved mockup mockups/al-ia.html v2, frame 15): the sixteen alert switches the server knows
+// Settings › Alerts (approved mockup mockups/al-ia.html v2, frame 15): the seventeen alert switches the server knows
 // (server/src/notify.ts TOGGLES) in five groups, each with a group switch and "N of M on", and the NEW badges, which go away
 // 14 days after the feature shipped. Pure helpers: views/settings.js draws the rows.
 
@@ -8,6 +8,7 @@ export const ALERTS = {
   ercot: ['Grid stress (ERCOT)', 'Conservation call or EEA'], nws: ['Severe weather (NWS)'],
   solar: ['Solar underperforming', '≥ 8% below baseline'], panel: ['Panel fault', 'From the PVS relay · a panel well below its neighbours'], stale: ['Tesla stopped reporting', 'After 3 minutes'],
   approval: ['AC and pool approvals', 'Pool plan, AC pre-cool, Powerwall rule'], poolTest: ['Time to test the pool', '4 days in warm water, 7 when cooler'], anomaly: ['Unusual usage', 'A day well above what its weather explains'],
+  strip: ['Strip heat'],   // mockup am frame 7 (I-15): a heavy strip-heat morning, at 10 AM
   vacation: ['Vacation alerts', 'While you’re away: too hot or cold, damp, offline, pump, power use, someone home'],
   digest: ['Weekly digest', 'Monday 7 AM'], bill: ['Bill doesn’t match Tesla', 'Gap over 5%'], billDue: ['PEC bill due', '3 days before'], baseline: ['Overnight usage drift'],
 };
@@ -15,14 +16,14 @@ export const ALERTS = {
 export const ALERT_GROUPS = [
   { id: 'power', title: 'Power & grid', acc: 'c-acc-out', ic: 'bolt', keys: ['outage', 'lowBatt', 'storm', 'ercot', 'nws'] },
   { id: 'solar', title: 'Solar & panels', acc: 'c-acc-solar', ic: 'sun', keys: ['solar', 'panel', 'stale'] },
-  { id: 'comfort', title: 'Comfort & pool', acc: 'c-acc-ac', ic: 'ac', keys: ['approval', 'poolTest', 'anomaly'] },
+  { id: 'comfort', title: 'Comfort & pool', acc: 'c-acc-ac', ic: 'ac', keys: ['approval', 'poolTest', 'anomaly', 'strip'] },
   { id: 'away', title: 'Away', acc: 'c-acc-vac', ic: 'plane', keys: ['vacation'] },
   { id: 'reports', title: 'Reports', acc: 'c-acc-grid', ic: 'bill', keys: ['digest', 'bill', 'billDue', 'baseline'] },
 ];
 /** When each alert (and Push to this device) shipped: its NEW badge shows for 14 days from then. */
 export const NEW_SINCE = {
   push: '2026-09-27', approval: '2026-09-27', billDue: '2026-09-27', anomaly: '2026-09-27', storm: '2026-09-27', ercot: '2026-09-27', panel: '2026-09-27', digest: '2026-09-27',
-  poolTest: '2026-10-05', vacation: '2026-10-06',
+  poolTest: '2026-10-05', vacation: '2026-10-06', strip: '2026-10-07',
 };
 export const NEW_DAYS = 14;
 const addDay = (day, n) => new Date(Date.parse(day + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);

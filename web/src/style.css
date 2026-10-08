@@ -1502,6 +1502,12 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 .c-part>span{display:flex;align-items:center;gap:6px;min-width:0;white-space:nowrap}
 .c-part>b{font:500 12.5px var(--c-mono);white-space:nowrap}
 .c-part>b em{font-style:normal;color:var(--mute);margin-left:6px}
+/* mockup am frame 6 (I-15): the Strip heat card's stage bars (amber strips, blue compressor) and their hour labels */
+.c-stage{display:flex;gap:4px;align-items:flex-end;height:64px;margin-top:12px}
+.c-stage i{flex:1;border-radius:4px 4px 1px 1px;background:var(--c-fill)}
+.c-stage i.hp{background:color-mix(in srgb,var(--home) 75%,transparent)}
+.c-stage i.st{background:color-mix(in srgb,var(--solar) 85%,transparent)}
+.c-dlab{display:flex;justify-content:space-between;font:500 9.5px var(--c-mono);color:var(--mute);margin-top:4px}
 .c-cells{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;margin-top:12px}
 .c-cells i{aspect-ratio:1/1.6;border-radius:4px;background:color-mix(in srgb,var(--solar) var(--p),var(--bg))}
 .c-heat{display:grid;gap:2px;margin-top:12px;border-radius:10px;overflow:hidden}
