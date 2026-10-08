@@ -201,7 +201,7 @@ app.post('/api/auth/logout', wrap(async (req, res) => { await endSession(req, re
 
 /* ======================= Tesla connection ======================= */
 app.get('/auth/login', wrap(async (req, res) => {
-  if (!multiUser()) return res.redirect(authorizeUrl(signOwnerState('tesla', 10 * 60_000))); // owner-only route (requireOwner)
+  if (!multiUser()) return res.redirect(authorizeUrl(signOwnerState('tesla', 10 * 60_000, res))); // owner-only route (requireOwner)
   const user = await currentUser(req);
   if (!user) return res.redirect('/?signin=1');
   res.redirect(authorizeUrl(signState(user.id)));
@@ -214,7 +214,7 @@ app.get('/auth/callback', wrap(async (req, res) => {
   const uid = verifyState(state ?? '');
   let ownerId: number | null = null;
   if (multiUser()) { const user = await currentUser(req); if (!uid || !user || user.id !== uid) return res.redirect('/?tesla_error=expired'); ownerId = user.id; }
-  else if (!(await consumeOwnerState(state ?? '', 'tesla'))) return res.redirect('/?tesla_error=expired');
+  else { const st = await consumeOwnerState(state ?? '', 'tesla', req, res); if (st !== 'ok') return res.redirect(`/?tesla_error=${st}`); }   // 'expired' or 'browser'
   // single owner, one site: a re-link must be the account that has the linked site, or nothing is saved (tesla/auth.ts)
   const linked = multiUser() ? [] : (await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL')).map(s => s.id);
   let accountId: number;
@@ -889,9 +889,9 @@ app.post('/api/nest/events', express.json({ limit: '64kb' }), wrap(async (req, r
 }));
 
 /* ---------- Google (Nest) OAuth ---------- */
-app.get('/auth/google', (req, res) => { if (!nestConfigured()) return res.status(503).send('Nest is not configured'); res.redirect(nestAuthorizeUrl(signOwnerState('nest', 60 * 60_000))); }); // owner-only; Google's permissions page can take a while
+app.get('/auth/google', (req, res) => { if (!nestConfigured()) return res.status(503).send('Nest is not configured'); res.redirect(nestAuthorizeUrl(signOwnerState('nest', 60 * 60_000, res))); }); // owner-only; Google's permissions page can take a while
 app.get('/auth/google/callback', wrap(async (req, res) => {
-  if (!(await consumeOwnerState(String(req.query.state ?? ''), 'nest'))) return res.redirect('/?nest_error=expired');
+  const st = await consumeOwnerState(String(req.query.state ?? ''), 'nest', req, res); if (st !== 'ok') return res.redirect(`/?nest_error=${st}`);   // 'expired' or 'browser'
   try { await nestExchangeCode(String(req.query.code)); await readNest(); res.redirect('/?nest=linked'); } catch (e: any) { console.error('nest link', e); res.redirect('/?nest_error=failed'); }
 }));
 
