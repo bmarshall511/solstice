@@ -115,12 +115,13 @@ export function dayCardHtml(c, { view = 'home', guest = false } = {}) {
 export const buyCardHtml = c => `<div class="c-head"><h5>Bought from PEC</h5><span class="c-fig">${signed1(c.import.delta)} kWh</span></div>`
   + `${wfHtml(c.import.parts, c.import.delta, 'Bought vs typical', { ...LABEL, home: v => `${v < 0 ? "Used less" : "Used more"} (above)` })}<div class="c-sum">${esc(boughtSum(c))}</div>`;
 const arrow = v => { const n = Math.round(v); return n > 0 ? `▲ ${n}` : n < 0 ? `▼ ${Math.abs(n)}` : '='; };
-/** History › Week (frame 2): the week's figures and its waterfall against the week before. */
+/** History › Week (frame 2): the week's figures and its waterfall against the week before. A guest's answer has no `import` (the
+ *  server never sends the Bought split to a guest), so a guest's card has the Used row only: no Bought and no Sunshare. */
 export function weekCardHtml(c, { guest = false } = {}) {
-  const H = c.home, I = c.import, share = H.obs > 0 ? Math.max(0, Math.min(100, Math.round((1 - I.obs / H.obs) * 100))) : null;
+  const H = c.home, I = c.import, share = I && H.obs > 0 ? Math.max(0, Math.min(100, Math.round((1 - I.obs / H.obs) * 100))) : null;
   const mon = new Date(c.date + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
   return `<div class="c-head"><h5>Week of ${esc(mon)}</h5><span class="c-fig">${r0(H.obs)} kWh used</span></div>`
-    + `<div class="c-kv" style="margin-top:10px"><span>Used</span><b>${r0(H.obs)} kWh · ${arrow(H.delta)}</b><span>Bought</span><b>${r0(I.obs)} kWh · ${arrow(I.delta)}</b><span>Sunshare</span><b>${share ?? '—'}%</b></div>`
+    + `<div class="c-kv" style="margin-top:10px"><span>Used</span><b>${r0(H.obs)} kWh · ${arrow(H.delta)}</b>${I ? `<span>Bought</span><b>${r0(I.obs)} kWh · ${arrow(I.delta)}</b><span>Sunshare</span><b>${share ?? '—'}%</b>` : ''}</div>`
     + `${wfHtml(c.clean === false ? [] : H.parts, H.delta, 'Used vs last week')}<div class="c-sum">${c.clean === false ? NOT_CLEAN.week : esc(guest ? guestSum(c) : usedSum(c))}</div>`;
 }
 
