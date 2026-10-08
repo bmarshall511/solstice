@@ -11,6 +11,7 @@ import { createShare, listShares, revokeShare, revokeAllShares, redeemShare, pru
 import { authorizeUrl, exchangeCode, OtherSiteError } from './tesla/auth.js';
 import { teslaFor, localDay, addDays } from './tesla/client.js';
 import { refreshLive, refreshSiteInfo, syncSite } from './sync.js';
+import { deepTick, deepStatus, deepDue, notePass, DEEP_STOP_MS } from './deepBackfill.js';
 import { listBills, parsePecPdf, saveBill, type Bill } from './bills.js';
 import { reconcile } from './reconcile.js';
 import { SOLAR, warrantedDcPct, systemYear, yearsSinceInstall } from './system.js';
@@ -342,7 +343,9 @@ app.post('/api/sync', wrap(async (req, res) => res.json(await syncSite(site(req)
 
 app.get('/api/status', wrap(async (req, res) => {
   const id = site(req), d = await one<{ n: number }>(`SELECT COUNT(DISTINCT day)::int n FROM energy WHERE site_id = $1`, [id]);
-  res.json({ connected: true, siteId: id, lastLive: await kv.get(`${id}:lastLive`) ?? null, lastHistory: await kv.get(`${id}:lastHistory`) ?? null, backfill: { daysDone: d?.n ?? 0 } });
+  // deep: the back-fill to the install date (deepBackfill.ts, I-16); owner only: the guest view's allow-list (redact.ts) leaves it out
+  res.json({ connected: true, siteId: id, lastLive: await kv.get(`${id}:lastLive`) ?? null, lastHistory: await kv.get(`${id}:lastHistory`) ?? null,
+    backfill: { daysDone: d?.n ?? 0, deep: await deepStatus(id) } });
 }));
 
 app.get('/api/day', wrap(async (req, res) => {
@@ -819,6 +822,7 @@ fiveMinuteSteps.watchdog = async (id, now) => {
  */
 app.get('/api/cron/nest', wrap(async (req, res) => {
   if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
+  const t0 = Date.now();
   // vacation/index.ts: a trip whose leave time has come starts before the thermostat sample, so the AC plan goes away in the same tick
   const vacation: Record<string, unknown> = {}, L = ledger('nest');   // B2-11: kv cron:nest:last
   for (const id of await cronSites()) vacation[id] = await L.step('vacation', () => vacationTick(id)).catch(e => ({ error: (e as Error).message }));
@@ -830,8 +834,15 @@ app.get('/api/cron/nest', wrap(async (req, res) => {
   // watch.ts: storm, Storm Watch and ERCOT alerts every tick (read-only), plus what other modules register
   const watch: Record<string, unknown> = {};
   for (const id of await cronSites()) watch[id] = await fiveMinuteWatch(id, Date.now(), (n, ms, r) => L.mark(`watch.${n}`, markOf(r, ms)));
+  // deepBackfill.ts (I-16): history back to the install date, 01:30–06:00 only, ≤ 3 days a tick, nothing new after t0 + 40 s.
+  // Outside the window this adds no query; once done, none either (the done flag is cached per instance, the site list skipped).
+  const deep: Record<string, unknown> = {}, deepRan = deepDue(t0);
+  if (deepRan) {
+    for (const id of await cronSites()) deep[id] = await L.step('deep', () => deepTick(id, Date.now(), { stopAt: t0 + DEEP_STOP_MS })).catch(e => ({ error: (e as Error).message }));
+    notePass(deep);
+  }
   await L.finish();   // after the watch: its cron step read the previous tick's record to see a gap
-  res.json({ ...tick, vacation, watch });
+  res.json({ ...tick, vacation, watch, ...(deepRan ? { deep } : {}) });
 }));
 /* ---------- Nest change events (Google Pub/Sub push; appliances/nestEvents.ts) ----------
  * Open route: Pub/Sub signs each push with the subscription's service account (NEST_EVENTS_SA) for NEST_EVENTS_AUDIENCE, and anything
