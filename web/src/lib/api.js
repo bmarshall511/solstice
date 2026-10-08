@@ -44,7 +44,7 @@ export const api = {
   sync: () => send('POST', 'sync'),
   me: () => get('auth/me'),
   owner: key => unlock('auth/owner', { key }),
-  /** Trade a share-link token for the guest cookie. Rejects with `reason` ('unknown' | 'revoked' | 'expired') on a bad link. */
+  /** Trade a share-link token for the guest cookie. Rejects with `reason` ('unknown' | 'unavailable' | 'expired') on a bad link. */
   guest: token => unlock('auth/guest', { token }),
   /** Forget the share link on this device (clears the guest cookie). */
   leave: () => unlock('auth/leave', {}),

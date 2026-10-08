@@ -7,7 +7,7 @@ import { hashPassword, verifyPassword, startSession, endSession, currentUser, re
   ownerKey, checkOwnerKey, startOwnerSession, endOwnerSession, endOtherOwnerSessions, endOwnerSessionById, listOwnerSessions, ownerAttemptLimited, guestAttempts, clientIp,
   signOwnerState, consumeOwnerState, setCookie, readCookie, safeEqual } from './auth.js';
 import { gate, presenceHidden, setPreview, PREVIEW_COOKIE } from './access.js';
-import { createShare, listShares, revokeShare, revokeAllShares, redeemShare, pruneShares, guestMaxAge, EXPIRY, DEFAULT_EXPIRY, LABEL_MAX, GUEST_COOKIE } from './share.js';
+import { createShare, listShares, revokeShare, revokeAllShares, redeemShare, pruneShares, guestMaxAge, guestReason, EXPIRY, DEFAULT_EXPIRY, LABEL_MAX, GUEST_COOKIE } from './share.js';
 import { authorizeUrl, exchangeCode, OtherSiteError } from './tesla/auth.js';
 import { teslaFor, localDay, addDays } from './tesla/client.js';
 import { refreshLive, refreshSiteInfo, syncSite, storedDays } from './sync.js';
@@ -95,8 +95,9 @@ app.get('/api/auth/me', wrap(async (req, res) => {
     if (req.guestView) return res.json({ mode: 'single', owner: false, guest: true, label: null, ownerName: await inviteName(),
       expiresAt: req.guestShareLookup?.expiresAt ?? null, ...(req.preview ? { preview: true } : {}) });
     if (req.role !== 'owner') {
-      const reason = req.guestShareLookup?.state;   // a guest cookie whose link was revoked or has expired
-      return res.json({ mode: 'single', owner: false, ...(reason === 'revoked' || reason === 'expired' ? { reason } : {}) });
+      // a guest cookie whose link was revoked, is paused for a trip (both 'unavailable', S-11) or has expired
+      const state = req.guestShareLookup?.state;
+      return res.json({ mode: 'single', owner: false, ...(state === 'revoked' || state === 'expired' ? { reason: guestReason(state) } : {}) });
     }
     const s = await one<{ id: string; name: string }>('SELECT id, name FROM sites WHERE tesla_account_id IS NOT NULL ORDER BY created_at LIMIT 1');
     return res.json({ mode: 'single', owner: true, user: null, site: s ?? null });

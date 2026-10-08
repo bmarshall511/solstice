@@ -17,6 +17,9 @@ vi.mock('../../server/src/db.js', async importOriginal => {
 });
 
 const DAY = '2026-09-20';                                    // a past day, so the whole day counts (span 24); CDT = UTC−5
+// the clock (Date only) is held five days after DAY: the pump's median watts reads the last 30 days (as measuredPoints does), so with
+// the real clock the seeded readings would age out of that window and the test would start failing on its own
+const NOW = Date.parse('2026-09-25T17:00:00Z');
 const at = (hh: number, mm = 0, day = DAY) => Date.parse(`${day}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00-05:00`);
 const rfc = (hh: number, mm: number) => `${DAY}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00-05:00`;
 
@@ -25,6 +28,7 @@ let db: typeof import('../../server/src/db.js');
 
 beforeAll(async () => {
   if (!String(process.env.DATABASE_URL).startsWith('pglite:')) throw new Error('these tests only run against PGlite');
+  vi.useFakeTimers({ toFake: ['Date'], now: NOW });
   const { app } = await import('../../server/src/app.js');
   db = await import('../../server/src/db.js');
   await db.migrate();
@@ -67,7 +71,7 @@ beforeAll(async () => {
   expect(unlock.status).toBe(200);
   cookie = (unlock.headers.get('set-cookie') ?? '').split(';')[0];
 }, 60_000); // a PGlite boot plus ~110 seeded rows; the server project's 10 s hook default is tight on a loaded machine
-afterAll(async () => { if (server) { server.close(); await once(server, 'close'); } });
+afterAll(async () => { vi.useRealTimers(); if (server) { server.close(); await once(server, 'close'); } });
 
 const get = (path: string, withCookie = true) => fetch(base + path, { headers: withCookie ? { cookie } : {} });
 
@@ -105,6 +109,18 @@ describe('GET /api/appliances/day', () => {
     expect(d.hours[3].pool).toEqual({ running: false, rpm: 0, watts: 0, meanKw: 0, source: 'schedule' });   // freeze protection is not the pump schedule
     expect(d.hours[20].pool).toEqual({ running: false, rpm: 0, watts: 0, meanKw: 0, source: 'schedule' });
     expect(d.coverage.pool).toBeCloseTo(2 / 24, 3);
+  });
+
+  it('DAY-11 the pump\'s median watts reads only the last 30 days, as measuredPoints does (older readings never move it)', async () => {
+    // five 2,400-rpm readings at 2,000 W, 31 days before today: with every reading counted the 2,400 median would be 2,000 W, not 700
+    const old = '2026-08-25';
+    for (let i = 0; i < 5; i++) await db.q(`INSERT INTO pool_readings (site_id, ts, day, hour, running, watts, rpm, water_temp, air_temp, circuits) VALUES ('s', $1, $2, 14, true, 2000, 2400, 80, 85, '[]')`, [at(14, i * 5, old), old]);
+    try {
+      const d = await (await get(`/api/appliances/day?date=${DAY}`)).json();
+      expect(d.hours[14].pool).toEqual({ running: true, rpm: 2400, watts: 700, meanKw: .7, source: 'schedule' });
+      await db.q(`UPDATE pool_readings SET day = '2026-08-26' WHERE site_id = 's' AND day = $1`, [old]);   // 30 days back: inside, so it counts
+      expect((await (await get(`/api/appliances/day?date=${DAY}`)).json()).hours[14].pool.watts).toBe(2000);
+    } finally { await db.q(`DELETE FROM pool_readings WHERE site_id = 's' AND day IN ($1, '2026-08-26')`, [old]); }
   });
 
   it('DAY-4 AC: on, phase, setpoint and indoor from the Nest readings, kW from the learned step; no eco or humidity served', async () => {

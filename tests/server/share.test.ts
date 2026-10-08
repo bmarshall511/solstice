@@ -15,6 +15,11 @@ vi.mock('../../server/src/sync.js', async orig => ({
   ...(await orig<typeof import('../../server/src/sync.js')>()),
   syncSite: vi.fn(async () => ({ mocked: true })), refreshSiteInfo: vi.fn(async () => {}), refreshLive: vi.fn(async () => {}),
 }));
+// SHARE-19 holds Vacation mode's guest pause on; every other test sees the real (no trip: not paused) answer
+vi.mock('../../server/src/vacation/trip.js', async orig => {
+  const real = await orig<typeof import('../../server/src/vacation/trip.js')>();
+  return { ...real, guestsPaused: vi.fn(real.guestsPaused) };
+});
 
 const KEY = 'test-owner-key-synthetic-share-abcdefghij-klm';   // test-only
 const CRON = 'test-cron-secret-synthetic-share';
@@ -165,15 +170,35 @@ describe('revoking and expiry', () => {
     const next = await call('/api/now', { cookie: guest });
     expect(next.status).toBe(401);
     expect(await next.json()).toEqual({ error: 'owner_required' });
-    expect(await me(guest)).toEqual({ mode: 'single', owner: false, reason: 'revoked' });
+    expect(await me(guest)).toEqual({ mode: 'single', owner: false, reason: 'unavailable' });   // S-11: the same answer as a paused link
     const again = await redeem(s.token);
     expect(again.status).toBe(401);
-    expect(await again.json()).toEqual({ error: 'invalid_share', reason: 'revoked' });
+    expect(await again.json()).toEqual({ error: 'invalid_share', reason: 'unavailable' });
     expect((await call(`/api/share/${s.id}/revoke`, { cookie: owner, method: 'POST' })).status).toBe(404);   // already revoked
     expect((await call('/api/share/nope/revoke', { cookie: owner, method: 'POST' })).status).toBe(404);
     const listed = (await (await call('/api/share', { cookie: owner })).json()).find((x: any) => x.id === s.id);
     expect(listed.state).toBe('revoked');
     expect(listed.revokedAt).not.toBeNull();
+  });
+
+  it('SHARE-19 S-11: a link paused for a trip and a revoked one answer a guest identically (reason, status and body)', async () => {
+    const { guestsPaused } = await import('../../server/src/vacation/trip.js');
+    const off = await createLink({ label: 'Turned off' }), live = await createLink({ label: 'Paused' });
+    const gOff = await guestCookie(off.token), gLive = await guestCookie(live.token);
+    expect((await call(`/api/share/${off.id}/revoke`, { cookie: owner, method: 'POST' })).status).toBe(200);
+    vi.mocked(guestsPaused).mockResolvedValue(true);
+    try {
+      const unavailable = { mode: 'single', owner: false, reason: 'unavailable' };
+      expect([await me(gOff), await me(gLive)]).toEqual([unavailable, unavailable]);
+      const [a, b] = [await redeem(off.token), await redeem(live.token)];
+      expect([a.status, b.status]).toEqual([401, 401]);
+      expect([await a.json(), await b.json()]).toEqual([{ error: 'invalid_share', reason: 'unavailable' }, { error: 'invalid_share', reason: 'unavailable' }]);
+      for (const g of [gOff, gLive]) expect((await call('/api/now', { cookie: g })).status).toBe(401);
+      const listed = await (await call('/api/share', { cookie: owner })).json();       // the owner's list keeps the truth
+      expect([off.id, live.id].map(id => listed.find((x: any) => x.id === id).state)).toEqual(['revoked', 'active']);
+    } finally { vi.mocked(guestsPaused).mockReset(); }   // back to the real query (vitest 3: reset restores the vi.fn implementation)
+    expect((await redeem(live.token)).status).toBe(200);                               // the pause over: the live link opens again
+    expect(await me(gLive)).toMatchObject({ guest: true });
   });
 
   it('SHARE-7 an expired link opens nothing, whatever the browser still holds', async () => {
@@ -306,7 +331,7 @@ describe('the share UI\'s server pieces', () => {
     expect((await me(guest)).ownerName).toBe('x'.repeat(40));
     expect(await me()).toEqual({ mode: 'single', owner: false });                          // anonymous: the mode, nothing else
     await db.q(`UPDATE access_tokens SET revoked_at = now() WHERE id = $1`, [s.id]);
-    expect(await me(guest)).toEqual({ mode: 'single', owner: false, reason: 'revoked' });   // a dead link learns no name either
+    expect(await me(guest)).toEqual({ mode: 'single', owner: false, reason: 'unavailable' });   // a dead link learns no name either
     const never = await createLink({ label: 'Never', expiresIn: 'never' });
     expect((await me(await guestCookie(never.token))).expiresAt).toBeNull();
   });

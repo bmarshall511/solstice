@@ -5,7 +5,7 @@ import { WMO, WICON } from '../lib/weather.js';
 import { veil, esc } from '../lib/frost.js';
 import { badge } from '../lib/conf.js';
 import { segSet } from './csheet.js';
-import { kIndex, posOf, tint, rgba, tileStyle, deficit } from '../lib/panels.js';
+import { kIndex, posOf, tint, rgba, tileStyle, deficit, relaySilent } from '../lib/panels.js';
 
 let cleanings = [];
 async function loadCleanings(S) { cleanings = (await api.events().catch(() => [])).filter(e => e.type === 'cleaned'); drawCleanLog(S); }
@@ -252,8 +252,9 @@ function drawHealth() {
       </div>
       ${a.diag ? `<p class="why"><b>${esc(a.diag.lead)}</b>${esc(a.diag.text)}</p>` : ''}
       <button class="link" style="margin-top:10px" data-show="${esc(a.id)}">Show on the Live roof</button></div>`; };
-  const nrHtml = D.relay.silent
-    ? `<div class="nr"><i></i><div><b>Relay last heard ${clock(Date.parse(D.relay.heardAt ?? D.relay.lastPoll))}</b><small>No per-panel readings for ${D.relay.silentMin ?? Math.round(D.relay.ageS / 60)} min of daylight. ${esc(D.relay.note ?? 'The Mac running the PVS relay may be asleep or off the network')}; no single panel is to blame.</small></div></div>`
+  const rs = D.relay.silent ? relaySilent(D.relay, clock) : null;   // a guest's relay is only { silent } (S-12)
+  const nrHtml = rs
+    ? `<div class="nr"><i></i><div><b>${esc(rs.head)}</b><small>${rs.note ? `No per-panel readings for ${rs.min ?? '—'} min of daylight. ${esc(rs.note)}; no` : 'No per-panel readings right now; no'} single panel is to blame.</small></div></div>`
     : miss.map(m => { const due = m.pushAt && Date.parse(m.pushAt) > Date.parse(D.at);
       return `<div class="nr"><i></i><div><b>${esc(m.name)} · no reading for ${m.silentMin} min</b><small>${m.at ? `Last seen ${clock(Date.parse(m.at))} at ${f(m.lastKw, 2)} kW, with ${f(m.kwh, 2)} kWh so far. ` : 'No reading today. '}Its neighbours are still producing, so this is the panel's microinverter or its link to the PVS, not the relay.${m.pushAt ? (due ? ` If it is still silent at ${clock(Date.parse(m.pushAt))}, a Panel fault push goes out.` : ` A Panel fault push went out at ${clock(Date.parse(m.pushAt))}.`) : ''}</small></div></div>`; }).join('');
   // mockup al frame 10: a disclosure. Header: the flags badge and "reporting / expected"; one line: the spread; opened: the grid, any

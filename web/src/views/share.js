@@ -3,7 +3,7 @@
 //    invites, Owner devices;
 //  - the guest role on the page (html[data-role=guest], or html[data-as=guest] while the owner previews), which hides every
 //    owner-only control through CSS, so the owner's own view comes back untouched when the preview ends;
-//  - the three cards on the .auth overlay when a link is opened: Welcome, Solstice is private, Turned off / expired;
+//  - the three cards on the .auth overlay when a link is opened: Welcome, Solstice is private, Not available (turned off or paused) / expired;
 //  - the Frost wipe that carries the owner into and out of "Preview as a guest".
 import { $, niceDate, localDate, toast } from '../lib/util.js';
 import { api } from '../lib/api.js';
@@ -237,8 +237,15 @@ export async function markWelcome(token) {
 /** The welcome card's key if one was asked for on this load (it is asked once). */
 export function pendingWelcome() { try { const k = sessionStorage.getItem('solstice:welcome'); sessionStorage.removeItem('solstice:welcome'); return k; } catch { return null; } }
 
-/** kind: 'welcome' (the Now view already behind it), 'private' (no link) or 'off' (reason 'revoked' | 'expired'). */
-export function showGate(kind, { reason = 'revoked', error = '', welcomeKey = null } = {}) {
+/** The reasons a link that no longer opens comes back with: 'unavailable' (turned off, or paused while the owner is away: the server
+ *  answers both alike, S-11), 'expired', and 'revoked' from a server before that change. */
+export const DEAD_LINK = new Set(['unavailable', 'revoked', 'expired']);
+/** The 'off' card's copy. One neutral line for a turned-off and a paused link, so the text can't tell them apart either. */
+export const offCopy = (reason, owner) => reason === 'expired'
+  ? { h: 'This link has expired', p: `Ask ${owner} for a new one.` }
+  : { h: 'This link isn’t available right now', p: `Ask ${owner} if you need it.` };
+/** kind: 'welcome' (the Now view already behind it), 'private' (no link) or 'off' (reason 'unavailable' | 'expired'). */
+export function showGate(kind, { reason = 'unavailable', error = '', welcomeKey = null } = {}) {
   const g = $('gate'), c = $('gateCard'), root = document.documentElement;
   root.dataset.gate = kind; g.hidden = false; g.classList.remove('gone');
   if (kind === 'welcome') {
@@ -255,7 +262,8 @@ export function showGate(kind, { reason = 'revoked', error = '', welcomeKey = nu
     return;
   }
   if (kind === 'off') {
-    c.innerHTML = `<div class="authlogo off"></div><h2>${reason === 'expired' ? 'This link has expired' : 'This link was turned off'}</h2><p>Ask ${nameMid(stored('solstice:ownerName'))} for a new one.</p>`;
+    const t = offCopy(reason, nameMid(stored('solstice:ownerName')));
+    c.innerHTML = `<div class="authlogo off"></div><h2>${t.h}</h2><p>${t.p}</p>`;
     api.leave().catch(() => {});   // drop the dead link's cookie, so the next open offers the paste field and "I'm the owner"
     return;
   }
@@ -283,7 +291,7 @@ export function showGate(kind, { reason = 'revoked', error = '', welcomeKey = nu
     try { await api.guest(p.token); await markWelcome(p.token); location.reload(); }
     catch (err) {
       busyBtn(e.target, false);
-      if (err.reason === 'revoked' || err.reason === 'expired') return showGate('off', { reason: err.reason });
+      if (DEAD_LINK.has(err.reason)) return showGate('off', { reason: err.reason });
       say(err.status === 429 ? 'Too many tries. Wait a minute and try again.' : 'That link didn’t work. Check it and try again.');
     }
   };

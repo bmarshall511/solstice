@@ -189,3 +189,16 @@ describe('Sign out this device (S-15)', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 });
+
+/* ---------- S-11: one neutral card for a turned-off and a paused link ---------- */
+describe('the link-off card', () => {
+  it('S-11 a turned-off link (and a paused one: the server answers both "unavailable") reads the same neutral line; expiry keeps its own', () => {
+    const a = share.offCopy('unavailable', 'Sam'), legacy = share.offCopy('revoked', 'Sam');
+    expect(a).toEqual({ h: 'This link isn’t available right now', p: 'Ask Sam if you need it.' });
+    expect(legacy).toEqual(a);
+    expect(JSON.stringify(a)).not.toMatch(/turned off|away|trip|vacation|paused/i);
+    expect(share.offCopy('expired', 'Sam')).toEqual({ h: 'This link has expired', p: 'Ask Sam for a new one.' });
+    for (const r of ['unavailable', 'expired', 'revoked']) expect(share.DEAD_LINK.has(r)).toBe(true);
+    expect(share.DEAD_LINK.has('unknown')).toBe(false);
+  });
+});
