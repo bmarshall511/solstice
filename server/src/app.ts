@@ -48,6 +48,7 @@ import { digestRoutes, maybeWeeklyDigest } from './digest.js';
 import { presenceRoutes, setPresence } from './appliances/presence.js';
 import { powerwallRoutes, powerwallTick, powerwallNightly } from './powerwall.js';
 import { runLearn } from './learn/nightly.js';
+import { changedFor, ChangedInputError } from './learn/changed.js';
 import { learnRouter } from './learn/api.js';
 import { vacationRoutes, vacationTick, finishTrip, tripHooks, departure } from './vacation/index.js';
 import { leftOn, cloudyWater } from './vacation/pool.js';
@@ -369,6 +370,13 @@ app.get('/api/breakdown', wrap(async (req, res) => {
 app.get('/api/flows', wrap(async (req, res) => {
   try { res.json(await flowsFor(site(req), String(req.query.range ?? 'day'), req.query.date == null ? undefined : String(req.query.date), await settingsFor(req))); }
   catch (e) { if (e instanceof FlowsInputError) return res.status(400).json({ error: e.message }); throw e; }
+}));
+
+/** I-18 "What changed" (mockup am frames 1–3, 8; learn/changed.ts): a day or a week split against its baseline. A guest's is computed
+ *  without trip awareness and goes through redact.ts's view. */
+app.get('/api/changed', wrap(async (req, res) => {
+  try { res.json(await changedFor(site(req), String(req.query.scope ?? 'day'), req.query.date == null ? undefined : String(req.query.date), { guest: !!req.guestView })); }
+  catch (e) { if (e instanceof ChangedInputError) return res.status(400).json({ error: e.message }); throw e; }
 }));
 
 /** Mockup ad: days with spare solar and kWh sent to PEC by month, and whether there is spare solar now (owner only). */
