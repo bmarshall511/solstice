@@ -783,7 +783,7 @@ departure.check = async id => {
 departure.estimate = async (id, leaveAt, backAt) => {
   const s = await ownerSettings(), learned = await learnAcKw(id), pool = await poolDetail(id, s, await rateFor(id)).catch(() => null);
   const days = await kv.get<{ days: any[] }>('pool:forecast'), day = days?.days?.find(d => d.date === localDay(new Date(Math.max(leaveAt, Date.now()) + 864e5))) ?? days?.days?.at(-1);
-  const trip = pool && day ? tripPlanDay({ day, heatDays: 0, waterTemp: pool.live?.waterTemp ?? pool.plan.waterTemp, settings: pool.settings, W: powerModel(await measuredPoints(id)), rate: null, names: new Map() }) : null;
+  const trip = pool && day ? tripPlanDay({ day, heatDays: 0, waterTemp: pool.live?.waterTemp ?? pool.plan.waterTemp, settings: pool.settings, W: powerModel(pool.model.measured), rate: null, names: new Map() }) : null;   // the card's own curve points (one query fewer)
   return estimateTrip(id, { leaveAt, backAt, acKw: acKwFor(learned.coolKw, await acSlope(id)), poolNormalKwhDay: pool?.plan?.kwhPerDay ?? null, poolTripKwhDay: trip?.plan.kwhPerDay ?? null });
 };
 // the AC's part: remember the setpoints the trip starts from, then the first trip step at once; at the end, heat put back and the plan resumes
