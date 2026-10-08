@@ -471,7 +471,9 @@ async function boot() {
   every(15 * 60_000, loadWeather);
   every(5 * 60_000, loadExternal);
   every(60_000, () => isOn('v-now') ? loadApplDay() : Promise.resolve());   // the Now twin's day (self-limited to every 5 min)
-  if (!S.guest) { every(5 * 60_000, () => loadDigest(S)); every(5 * 60_000, () => loadPowerwallRules(S)); every(5 * 60_000, () => loadChanged(S)); }   // t-enhancements, I-18 (owner-only routes)
+  // owner-only routes: started for the owner, and skipped while the owner previews as a guest (S.guest turns on mid-session)
+  const ownerOnly = fn => () => S.guest ? Promise.resolve() : fn();
+  if (!S.guest) { every(5 * 60_000, ownerOnly(() => loadDigest(S))); every(5 * 60_000, ownerOnly(() => loadPowerwallRules(S))); every(5 * 60_000, ownerOnly(() => loadChanged(S))); }   // t-enhancements, I-18
   if (!S.guest && !S.asGuest) initVacation(S, every);   // mockup ak: the Vacation chip, banner, sheet and report (owner-only routes)
   if (!S.guest && !S.asGuest) rebindPush();   // S-04: ties this device's push subscription to its owner session
   // a tapped push opens /?go=<view>[&p=<segment>] (web/public/sw.js); the old v-ins / v-roof links land on their Systems segment
@@ -484,7 +486,7 @@ async function boot() {
     const r = await api.sync().catch(() => null); if (r?.filled || r?.done?.includes('lastHistory')) loadHistory().catch(() => {});
     S.syncInfo = r; $('sideDays').textContent = r?.remaining ? `loading… ${r.remaining} days left` : $('sideDays').textContent; refreshStatus();
     if (!(r?.remaining > 0)) return; await new Promise(res => setTimeout(res, 1500)); } };
-  if (!S.guest) every(5 * 60_000, sync); // syncing is a write: the owner's device keeps history current
+  if (!S.guest) every(5 * 60_000, ownerOnly(sync)); // syncing is a write: the owner's device keeps history current (not while previewing as a guest)
   every(60_000, async () => { const s = await api.status().catch(() => null); S.status = s; safe(drawConnections)(S); });
 }
 boot();

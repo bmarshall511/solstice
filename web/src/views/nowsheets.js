@@ -77,7 +77,8 @@ function mountPool(S, { inSheet = false, root = null }) {
     const lim = { min: snap?.pump?.minRpm ?? 450, max: snap?.pump?.maxRpm ?? 3450 }, presets = pumpPresets(d);
     const circ = id => snap?.circuits?.find(c => c.id === id), poolOn = !!circ(pid)?.on, boostOn = !!circ(bid)?.on, cu = d.clearUp;
     const running = !!L?.running, cur = running ? L.rpm : (speeds.get(pid) ?? presets[1].rpm), v = st.rpm ?? cur;
-    const match = presets.find(p => p.rpm === v);
+    // one preset lights up even when two share a speed (Quiet and Filter both 1,500): the controller's own wins, then the first
+    const match = presets.find(p => p.rpm === v && p.src === 'controller') ?? presets.find(p => p.rpm === v);
     const tab = st.tab ?? (cu ? 'clear' : boostOn ? 'boost' : 'plan');
     const temp = snap?.bodies?.[0]?.temp, at = L?.at ?? snap?.at;
     const sub = `Pool ${temp ?? '—'}° · pump ${running ? 'running' : 'off'}${at ? ` · linked ${ageWords(Date.now() - at)}` : ''}`;
@@ -86,7 +87,7 @@ function mountPool(S, { inSheet = false, root = null }) {
     const dial = `<div class="c-dial c-acc-pool" data-pl="dial">${dialSvg({ label: 'Pump speed', min: lim.min, max: lim.max, value: v, ticks: presets.map(p => ({ v: p.rpm, on: p.rpm === v })), aria: `${v.toLocaleString()} rpm` })}
       <div class="c-dial-c"><small>Pump</small><b data-pl="v">${v.toLocaleString()}</b><span>rpm${running ? ` · ${Math.round(L.watts)} W` : ''}</span><em>${esc(em)}</em></div>
       <span class="c-dial-end" style="left:22px">${lim.min.toLocaleString()}</span><span class="c-dial-end" style="right:12px">${lim.max.toLocaleString()}</span></div>
-      <div class="c-presets c-acc-pool" data-pl="pre">${presets.map(p => `<button class="c-preset${p.rpm === v ? ' on' : ''}" data-rpm="${p.rpm}" aria-pressed="${p.rpm === v}"><b>${p.name}</b><span>${p.rpm.toLocaleString()}</span></button>`).join('')}</div>
+      <div class="c-presets c-acc-pool" data-pl="pre">${presets.map(p => `<button class="c-preset${p === match ? ' on' : ''}" data-rpm="${p.rpm}" aria-pressed="${p === match}"><b>${p.name}</b><span>${p.rpm.toLocaleString()}</span></button>`).join('')}</div>
       <p class="c-fine" style="margin-top:8px">Filter and Skim are ${presets[1].src === 'controller' ? 'the controller’s saved Pool and High Speed speeds' : 'Solstice’s defaults until the controller is read'}; Quiet and Max are Solstice’s.</p>`;
     // Plan · Boost · Clear-up, the mode line carrying that mode's actions
     const runs = (d.current?.schedules ?? []).map(x => `${x.circuitId === bid ? 'skim ' : ''}${hm(x.start)}–${hm(x.stop)} at ${x.rpm.toLocaleString()}`).join(' · ');

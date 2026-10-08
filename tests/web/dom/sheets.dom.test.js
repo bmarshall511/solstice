@@ -127,6 +127,23 @@ describe('Pool sheet (frame 5)', () => {
   });
 });
 
+describe('Pool sheet: one preset at a time (overnight polish)', () => {
+  it('when Quiet and Filter share a speed, only the controller\'s Filter lights up', async () => {
+    close();
+    const live = { ...S.pool.live }, pump = S.pool.snapshot?.pump;
+    const presets = (await import('../../../web/src/lib/nowui.js')).pumpPresets(S.pool), quiet = presets[0].rpm;
+    S.pool.live = { ...live, running: true, rpm: quiet };
+    const circ = pump?.circuits?.find(c => c.circuitId === (S.pool.settings?.poolCircuit ?? 6)), was = circ?.speed;
+    if (circ) circ.speed = quiet;
+    try {
+      open('pool');
+      const on = [...sheetEl().querySelectorAll('.c-preset.on b')].map(b => b.textContent);
+      expect(on).toEqual(['Filter']);
+      expect(sheetEl().querySelectorAll('.c-preset[aria-pressed="true"]')).toHaveLength(1);
+    } finally { close(); S.pool.live = live; if (circ) circ.speed = was; }
+  });
+});
+
 describe('AC sheet (frame 6)', () => {
   beforeAll(() => { close(); open('ac'); });
   afterAll(close);
