@@ -84,12 +84,12 @@ describe('the git index holds no private working files or the production host', 
   const files = tracked ?? [];
   const textual = files.filter(f => /\.(ts|js|mjs|cjs|json|md|html|css|yml|yaml|example|txt)$/.test(f) && existsSync(join(ROOT, f)) && f !== SELF);
   it('reads the index', () => { expect(tracked, 'git ls-files failed').not.toBeNull(); expect(files).toContain('CLAUDE.md'); });
-  it('no audit, handoff, .claude/ or "Claude outputs/" file is tracked (only the published September audit)', () => {
-    expect(files.filter(f => /^docs\/(audit-(?!2026-09\.md$)[^/]*\.md|handoff-[^/]*\.md)$/.test(f) || f.startsWith('.claude/') || f.startsWith('Claude outputs/'))).toEqual([]);
+  it('no audit, handoff, overnight, .claude/ or "Claude outputs/" file is tracked (only the published September audit)', () => {
+    expect(files.filter(f => /^docs\/(audit-(?!2026-09\.md$)[^/]*\.md|handoff-[^/]*\.md|overnight-[^/]*\.md)$/.test(f) || f.startsWith('.claude/') || f.startsWith('Claude outputs/'))).toEqual([]);
   });
   it('.gitignore covers them, so a `git add -A` cannot publish them', () => {
     const ignored = (p: string) => { try { execSync(`git check-ignore -q ${JSON.stringify(p)}`, { cwd: ROOT }); return true; } catch { return false; } };
-    for (const p of ['docs/audit-2026-10b.md', 'docs/audit-vacation-2026-10.md', 'docs/handoff-2026-10b.md', '.claude/launch.json', 'Claude outputs/x.md']) expect(ignored(p), p).toBe(true);
+    for (const p of ['docs/audit-2026-10b.md', 'docs/audit-vacation-2026-10.md', 'docs/handoff-2026-10b.md', 'docs/overnight-2026-10-07.md', '.claude/launch.json', 'Claude outputs/x.md']) expect(ignored(p), p).toBe(true);
     expect(ignored('docs/audit-2026-09.md')).toBe(false);
   });
   it('no *.vercel.app host outside the two synthetic share-link examples', () => {
