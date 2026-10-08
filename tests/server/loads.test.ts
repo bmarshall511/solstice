@@ -47,18 +47,22 @@ describe('detection', () => {
     expect(bs.map(b => [b.minutes, b.kw, b.overlap])).toEqual([[45, 5, false], [20, 4.4, true]]);
     expect(bs.reduce((a, b) => a + b.kwh, 0)).toBeCloseTo(5 * .75 + 4.4 / 3, 2);                           // the energy is split, not counted twice
   });
-  it('LD-5 the AC mask\'s edge is not a load: a burst at the AC\'s kW that ends at a Nest switch is dropped', () => {
-    // the AC (3 kW) starts at 14:00 but the Nest reports cooling from 14:15: 15 minutes of 3 kW are left in the residual
+  it('LD-5 (v2) buckets with the AC running are not used: the AC\'s edge leaves no load, a variable-speed plateau leaves none, a load outside AC time counts', () => {
+    // the AC (3 kW) starts at 14:00 but the Nest reports cooling from 14:15: the run breaks at 14:15, so the 15-minute edge pairs with nothing
     const t0 = localMidnight(D).getTime(), nest = [{ ts: t0 + at(13, 45) * 60_000, hvac: 'OFF' }, ...Array.from({ length: 4 }, (_, i) => ({ ts: t0 + (at(14, 15) + 15 * i) * 60_000, hvac: 'COOLING' })), { ts: t0 + at(15, 15) * 60_000, hvac: 'OFF' }];
     const bs = day(D, 1, m => on(m, at(14), 75, 3)), ac = acDraw(nest, 3, null);
-    expect(detectBursts(bs, { ...base1, ac })).toHaveLength(1);                                           // without the rule: a 15-minute "load"
+    expect(detectBursts(bs, { ...base1, ac })).toEqual([]);
     expect(detectBursts(bs, { ...base1, ac, switches: acSwitches(nest, 3, null) })).toEqual([]);
-    // a dryer during the AC still counts (its own kW, far from the AC's)
-    const dryer = day(D, 1, m => on(m, at(14), 75, 3) + on(m, at(14, 30), 30, 5));
-    expect(detectBursts(dryer, { ...base1, ac, switches: acSwitches(nest, 3, null) }).map(b => [b.minutes, b.kw])).toEqual([[30, 5]]);
-    // heating with no heating kW learned: those buckets can't be used, so nothing inside them is a burst
+    // a variable-speed compressor running at 1.7 kW against a learned 3 kW: no "load" from the difference
+    const vs = day(D, 1, m => on(m, at(14, 15), 60, 1.7));
+    expect(detectBursts(vs, { ...base1, ac })).toEqual([]);
+    // a dryer while the AC runs is not counted (the residual there can't be trusted); the same dryer at 17:00 is
+    const during = day(D, 1, m => on(m, at(14), 75, 3) + on(m, at(14, 30), 30, 5)), after = day(D, 1, m => on(m, at(17), 30, 5));
+    expect(detectBursts(during, { ...base1, ac, switches: acSwitches(nest, 3, null) })).toEqual([]);
+    expect(detectBursts(after, { ...base1, ac }).map(b => [b.minutes, b.kw])).toEqual([[30, 5]]);
+    // heating with no heating kW learned: those buckets can't be used either
     const heat = nest.map(r => ({ ...r, hvac: r.hvac === 'COOLING' ? 'HEATING' : r.hvac }));
-    expect(detectBursts(dryer, { ...base1, ac: acDraw(heat, 3, null) }).filter(b => b.hour === 14)).toEqual([]);
+    expect(detectBursts(during, { ...base1, ac: acDraw(heat, 3, null) }).filter(b => b.hour === 14)).toEqual([]);
   });
   it('LD-6 the pump\'s daytime draw comes out (readings carried at most 20 minutes)', () => {
     const t0 = localMidnight(D).getTime(), reads: Array<{ ts: number; running: boolean; watts: number; rpm: number }> = [];
@@ -143,5 +147,17 @@ describe('clusters', () => {
     const at17 = Array(24).fill(0).map((_, h) => h === 17 ? 5 : 0), at19 = at17.map((_, h) => h === 19 ? 5 : 0), spread = Array(24).fill(1);
     expect([suggest(4.4, 22, spread)?.name, suggest(5, 45, at19)?.name, suggest(2.6, 50, at17)?.name, suggest(9, 60, at17)]).toEqual(['Water heater', 'Dryer', 'Oven', null]);
     expect([labelName('  Oven '), labelName('EV / tool charger'), labelName(''), labelName('   '), labelName('x'.repeat(25)), labelName('a\u0007b'), labelName(4)]).toEqual(['Oven', 'EV / tool charger', null, null, null, null, null]);
+  });
+});
+
+// v2 (2026-10-08): production showed AC 15.4 + always-on 20.3 + big 32.8 + pool 4.2 = 72.7 kWh a day against a 57.5 kWh home.
+import { capInferred } from '../../server/src/breakdown.js';
+describe('capInferred', () => {
+  it('takes the excess off big loads first, then off named loads in proportion; measured parts untouched', () => {
+    expect(capInferred({ home: 57.5, fixed: 15.4 + 20.3 + 4.2, big: 32.8, named: [] })).toEqual({ big: 17.6, named: [], over: 15.2 });
+    expect(capInferred({ home: 40, fixed: 30, big: 4, named: [6, 4] })).toEqual({ big: 0, named: [6, 4], over: 4 });   // big absorbs it all
+    expect(capInferred({ home: 36, fixed: 30, big: 4, named: [6, 4] })).toEqual({ big: 0, named: [3.6, 2.4], over: 8 });   // then named, in proportion
+    expect(capInferred({ home: 50, fixed: 30, big: 5, named: [5] })).toEqual({ big: 5, named: [5], over: 0 });
+    expect(capInferred({ home: 20, fixed: 30, big: 5, named: [5] })).toEqual({ big: 0, named: [0], over: 20 });
   });
 });

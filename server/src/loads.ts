@@ -18,7 +18,10 @@ import { acMask, nightBase, nestCoverage, pumpMask, NEST_COVERAGE } from './brea
 import { pumpRunning } from './appliances/pool.js';
 import { learnAcKw, acKwFor } from './appliances/ac.js';
 
-export const LOADS_V = 1;
+/** v2 (2026-10-08): buckets with the AC running are no longer used (a variable-speed compressor isn't one learned kW, so subtracting it
+ *  left 1.5–2 kW plateaus that read as a 200-minute "big load" and pushed the breakdown 15 kWh a day over the home total). Bursts
+ *  stored by v1 are ignored and the nightly re-detects their days. */
+export const LOADS_V = 2;
 const B = 300_000;
 export const MIN_KW = 1.5, MIN_MINUTES = 10, STEP_KW = 1.2, STEP_FRAC = .25, PAIR_TOL = .3, KWH_CAP = 1.5, AC_EDGE_TOL = .2, HOLD_MS = 20 * 60_000;
 export const SUPPORT_N = 8, SUPPORT_DAYS = 4, WINDOW_DAYS = 30, RECLUSTER_DAYS = 60, BACKFILL_DAYS = 30, STOP_BEFORE_MS = 8_000, CHUNK_DAYS = 7;
@@ -82,7 +85,8 @@ export function detectBursts(buckets: LoadBucket[], o: { base: (day: string) => 
   const flush = () => { if (seg.length >= 2) out.push(...segmentBursts(seg, o.switches ?? [])); seg = []; };
   for (const b of [...buckets].sort((x, y) => x.epoch - y.epoch)) {
     const base = o.base(b.day), ac = o.ac ? o.ac(b.epoch) : 0;
-    if (base == null || ac == null) { flush(); continue; }
+    // with the AC running the residual isn't trustworthy (variable-speed compressor), so those buckets break the run like a gap
+    if (base == null || ac == null || ac > 0) { flush(); continue; }
     if (seg.length && b.epoch - seg[seg.length - 1].epoch !== B) flush();
     seg.push({ ...b, r: b.kw - ac - (o.pump?.(b.epoch) ?? 0) - base });
   }
@@ -334,7 +338,7 @@ export async function refreshTotals(siteId: string, days: string[], counted: str
     UNION ALL SELECT $1, day, 'load:' || COALESCE(label_id::text, 'unnamed'), SUM(kwh)::float8 FROM load_bursts WHERE site_id = $1 AND day = ANY($2::text[]) GROUP BY day, label_id`, [siteId, counted]);
 }
 async function storedBursts(siteId: string, from: string): Promise<StoredBurst[]> {
-  return (await q<any>(`SELECT start::text AS start, day, hour::int AS hour, minutes::int AS minutes, kw::float8 AS kw, kwh::float8 AS kwh, overlap, sig, label_id FROM load_bursts WHERE site_id = $1 AND day >= $2 ORDER BY start, seq`, [siteId, from]))
+  return (await q<any>(`SELECT start::text AS start, day, hour::int AS hour, minutes::int AS minutes, kw::float8 AS kw, kwh::float8 AS kwh, overlap, sig, label_id FROM load_bursts WHERE site_id = $1 AND day >= $2 AND v >= $3 ORDER BY start, seq`, [siteId, from, LOADS_V]))
     .map(r => ({ start: Number(r.start), day: r.day, hour: r.hour, minutes: r.minutes, kw: Number(r.kw), kwh: Number(r.kwh), overlap: !!r.overlap, sig: r.sig, labelId: r.label_id ?? null }));
 }
 /** Recluster from 60 days of stored bursts; cached in kv `<site>:loads:clusters`. */
@@ -342,7 +346,7 @@ export async function recluster(siteId: string, now = Date.now(), labels?: Label
   const today = localDay(new Date(now)), ls = labels ?? await labelsOf(siteId);
   const [bursts, [n]] = await Promise.all([storedBursts(siteId, addDays(today, -RECLUSTER_DAYS)),
     q<{ n: number; since: string | null }>(`SELECT COUNT(*) FILTER (WHERE day >= $2)::int n, MIN(day) since FROM daily_metrics WHERE site_id = $1 AND metric = 'load:count'`, [siteId, addDays(today, -WINDOW_DAYS)])]);
-  const out = { at: now, day: today, days: n?.n ?? 0, since: n?.since ?? null, ...clusterLoads(bursts, ls, { today, days30: n?.n ?? 0 }) };
+  const out = { v: LOADS_V, at: now, day: today, days: n?.n ?? 0, since: n?.since ?? null, ...clusterLoads(bursts, ls, { today, days30: n?.n ?? 0 }) };
   await kv.set(clustersKey(siteId), out);
   return out;
 }
@@ -350,7 +354,7 @@ export type LoadsView = Awaited<ReturnType<typeof recluster>>;
 /** The cached clusters (rebuilt when missing or from an older day). */
 export async function loadClusters(siteId: string, now = Date.now()): Promise<LoadsView> {
   const hit = await kv.get<LoadsView>(clustersKey(siteId));
-  return hit && hit.day === localDay(new Date(now)) ? hit : recluster(siteId, now);
+  return hit && hit.day === localDay(new Date(now)) && hit.v === LOADS_V ? hit : recluster(siteId, now);
 }
 
 /**
@@ -359,7 +363,9 @@ export async function loadClusters(siteId: string, now = Date.now()): Promise<Lo
  */
 export async function loadsNightly(siteId: string, now = Date.now(), o: { deadline?: number; clock?: () => number } = {}) {
   const today = localDay(new Date(now)), yesterday = addDays(today, -1), floor = addDays(today, -BACKFILL_DAYS);
-  const cursor = await kv.get<string>(cursorKey(siteId)), first = cursor && cursor >= floor ? addDays(cursor, 1) : floor;
+  // bursts stored by an older detector (LOADS_V): their days are detected again from the floor
+  const stale = (await q(`SELECT 1 FROM load_bursts WHERE site_id = $1 AND day >= $2 AND v < $3 LIMIT 1`, [siteId, floor, LOADS_V])).length > 0;
+  const cursor = stale ? null : await kv.get<string>(cursorKey(siteId)), first = cursor && cursor >= floor ? addDays(cursor, 1) : floor;
   const clock = o.clock ?? Date.now, late = () => o.deadline != null && o.deadline - clock() < STOP_BEFORE_MS;   // `clock`: tests only
   const chunks: Array<[string, string]> = [[yesterday, yesterday]];
   for (let d = first; d < yesterday; d = addDays(d, CHUNK_DAYS)) { const e = addDays(d, CHUNK_DAYS - 1); chunks.push([d, e < yesterday ? e : addDays(yesterday, -1)]); }
