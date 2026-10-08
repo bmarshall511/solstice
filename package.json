@@ -19,6 +19,7 @@
     "web": "vite --config web/vite.config.js",
     "build": "vite build --config web/vite.config.js",
     "start": "npm run build && npm run server",
+    "demo": "node --no-warnings=ExperimentalWarning --import tsx scripts/demo-server.mjs",
     "predeploy:preview": "npm run typecheck && npm test && npm run build",
     "deploy:preview": "npx vercel deploy --yes",
     "predeploy:prod": "npm run typecheck && npm test && npm run build",
