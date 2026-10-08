@@ -159,7 +159,7 @@ describe('Q17 Nest cadence: 5 min 10:00–22:00 in cooling season (May–October
 /* ---------------------------------------------------------------- Q18: pool reads */
 // Reads sit 5 minutes into each quarter-hour (:05, :20, :35, :50), clear of the pump priming when a schedule starts or changes
 // speed on the quarter-hour; they used to land on :00, :15, :30 and :45, with the overnight checks at 02:00 and 05:00.
-describe('Q18 pool reads: every 15 min of scheduled pump hours at :05/:20/:35/:50, plus HH:05 of every other hour', () => {
+describe('Q18 pool reads: every 15 min of scheduled pump hours at :05/:20/:35/:50, plus HH:05 of every hour', () => {
   /** Reads for pump hours [from, to) in minutes: every quarter-hour inside, and HH:05 of each hour outside (runs started elsewhere, the overnight checks). */
   const readsFor = (from: number, to: number) => Array.from({ length: 96 }, (_, i) => i * 15 + 5).filter(m => (m >= from && m < to) || m % 60 === 5).map(hhmm);
   const expected = readsFor(600, 1140);   // Pool 10a–7p (High Speed 2p–3p sits inside): 36 + 15 hourly = 51

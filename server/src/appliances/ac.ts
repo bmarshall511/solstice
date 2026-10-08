@@ -384,14 +384,23 @@ export function fcInfo(fc: { stale: boolean; ageMs: number | null; unavailable?:
     : fc.stale ? `Forecast is ${ageH} h old (Open-Meteo unreachable)` : null;
   return { stale: fc.stale, ageH, unavailable: !!fc.unavailable, note };
 }
-export async function acDetail(siteId: string, settingsAll: Record<string, any>, rate: number | null, slope: number, opts: { fresh?: boolean } = {}) {
+/** How long a stored thermostat reading serves a read before Nest is asked again (one ask per window: S-07's single flight). */
+export const NEST_READ_MS = 60_000;
+/**
+ * The AC card. `fresh` (the crons through acTick, owner commands, ?fresh=1) always reads Nest. Otherwise Nest is read only when the
+ * stored reading is over a minute old AND this caller wins the `nest:readClaim` single flight, so N concurrent stale requests make one
+ * SDM call and the rest serve the stored reading (SDM allows about 5 queries a minute). `readOnly` (a guest, or the owner previewing
+ * as one; S-07/S-10) never contacts Nest and writes no hold, hold history or AC log line: it serves the stored state and hold as they are.
+ */
+export async function acDetail(siteId: string, settingsAll: Record<string, any>, rate: number | null, slope: number, opts: { fresh?: boolean; readOnly?: boolean } = {}) {
   const settings = acSettingsOf(settingsAll);   // mockup ag: with the targets
   const presence = await presenceFor(siteId, settingsAll);   // presence.ts: manual "Away until", then Nest Eco, then home
   settings.presence = presence.state;
   const configured = nestConfigured(), linked = configured && await nestLinked();
   let st = await kv.get<NestState>('nest:last') ?? null, error: string | null = null;
   const prev = st; let fresh = false;
-  if (linked && (opts.fresh || !st || Date.now() - st.at > 60_000)) { try { st = await readNest(); fresh = true; await recordNest(siteId, st); } catch (e: any) { error = e.message; } }
+  const due = !opts.readOnly && linked && (opts.fresh || !st || Date.now() - st.at > NEST_READ_MS);
+  if (due && (opts.fresh || await kv.claim('nest:readClaim', NEST_READ_MS))) { try { st = await readNest(); fresh = true; await recordNest(siteId, st); } catch (e: any) { error = e.message; } }
   const learned = await learnAcKw(siteId), rt = await runtimeToday(siteId);
   // code review C-04: Open-Meteo down → the last forecast up to 12 h old (stale); with none, a neutral day (high 90, sun 5), and
   // acTick sends no plan step, while Nest sampling, holds, Eco and Vacation mode carry on
@@ -412,7 +421,9 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
   if (vacation) plan = { ...plan, steps: [{ hour: 0, coolF: vacation.now.coolF, why: vacation.now.why }], precool: false, shiftedKwh: 0, eveningAvoidedKwh: 0, control: false,
     why: [vacation.now.welcome ? `Welcome home: cooling to ${vacation.arrivalF}°` : `Vacation: holding ${vacation.holdF}°${vacation.humid ? ' to keep the house dry' : ''} while you're away`] };
   if (forecastInfo.note) plan = { ...plan, why: [...plan.why, forecastInfo.note] };
-  const hold = await observeHold(siteId, fresh ? prev : null, st, plan, settings, presence);
+  // S-10: a guest's read only looks at the hold (an expired one shows as none); ending, starting or logging one is the owner's reads' job
+  const hold = opts.readOnly ? await getHold(siteId).then(h => h && !holdOver(h, Date.now(), presence) ? h : null)
+    : await observeHold(siteId, fresh ? prev : null, st, plan, settings, presence);
   const week = days.slice(ti, ti + 7).map(d => { const p = planFor({ date: d.date, high: d.high, sunKwhM2: d.sunKwhM2, hourlySun: d.hourlySun, settings, acKw: learned.coolKw, slope, rate, humidity: null }); return { date: d.date, high: Math.round(d.high), sunKwhM2: Math.round(d.sunKwhM2 * 10) / 10, precool: p.precool, depth: p.precool ? settings.precoolDepth : 0, shiftedKwh: p.shiftedKwh, eveningAvoidedKwh: p.eveningAvoidedKwh, precoolFrom: p.precoolFrom, precoolTo: p.precoolTo, coastFrom: p.coastFrom, coastTo: p.coastTo }; });
   const applied = await kv.get<AcRecord>(`${siteId}:ac:plan`) ?? null;
   const log = await kv.get<Array<{ at: number; day: string; text: string; delta?: string }>>(`${siteId}:ac:log`) ?? [];

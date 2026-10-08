@@ -2,7 +2,8 @@
 //  - Nest: a thermostat sample, with Autopilot's acTick, every 5 minutes from 10:00 to 22:00 Chicago time in cooling season
 //    (May–October by calendar month; the app has no daily-high rule to reuse), every 15 minutes otherwise.
 //  - Pool: a read-only ScreenLogic status read (pump RPM and watts, circuits, temperatures) every 15 minutes while the current pump
-//    schedule has the pump on, plus checks at 02:05 and 05:05. With Pool 10a–7p and High Speed 2p–3p that is 36 + 2 = 38 reads a day.
+//    schedule has the pump on, plus HH:05 of every hour (so a run started outside Solstice is seen within the hour) and the overnight
+//    checks at 02:05 and 05:05.
 //    Reads sit 5 minutes into each quarter-hour (:05, :20, :35, :50): schedules start and change speed on the quarter-hour, and a
 //    read right then can catch the pump priming. Readings go to pool_readings. Only readPool is imported from screenlogic.ts:
 //    nothing here can write to the controller.
@@ -56,7 +57,7 @@ export function nestDue(now: number, lastAt: number | null) {
 }
 /**
  * Whether the quarter-hour holding `minute` gets a pool read: every quarter-hour the pump is scheduled on (`scheduled`: 96 quarter-hours),
- * the first quarter of every other hour (HH:05), so a run started outside Solstice (the Pentair app, the panel) is seen within the hour
+ * the first quarter of every hour (HH:05), so a run started outside Solstice (the Pentair app, the panel) is seen within the hour
  * and counts toward the day's water, and the overnight checks.
  */
 export function poolReadQuarter(minute: number, scheduled: readonly boolean[] | null) {

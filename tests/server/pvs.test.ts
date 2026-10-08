@@ -21,7 +21,7 @@ vi.unmock('../../server/src/db.js');   // these tests need the real database mod
 
 type Reading = { sn: string; kw: number | null; kwDc: number | null; v: number | null; tempC: number | null; kwhLifetime: number | null };
 type Cfg = Record<string, any>;
-type State = { pvsCookie: string | null; pvsLoginAt?: number | null; apiCookie: string | null; fingerprintShown: boolean; log: (m: string) => void };
+type State = { pvsCookie: string | null; pvsLoginAt?: number | null; fingerprintShown: boolean; log: (m: string) => void };
 type Relay = {
   FatalError: new (m: string) => Error; VARS_PATH: string;
   parseEnv(text: string): Record<string, string>; insideRepo(path: string): boolean;
@@ -31,7 +31,6 @@ type Relay = {
   parseInverters(json: unknown): { inverters: Reading[]; skipped: number; ts: string | null };
   readInverters(cfg: Cfg, state: State, o?: { now?: () => number }): Promise<{ ts: string | null; inverters: Reading[] }>;
   SESSION_MAX_MS: number; UPTIME_PATH: string;
-  apiLogin(cfg: Cfg, state: State): Promise<string>;
   postReadings(cfg: Cfg, state: State, payload: unknown): Promise<{ ok: true; inserted: number; duplicates: number }>;
   pollOnce(cfg: Cfg, state: State, o?: { dryRun?: boolean; now?: () => number }): Promise<{ payload: { ts: string; inverters: Reading[] }; posted: any }>;
 };
@@ -39,6 +38,9 @@ type Relay = {
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
 const RELAY_PATH = fileURLToPath(new URL('../../scripts/pvs-relay.mjs', import.meta.url));
 const PW = 'T3ST5';                                    // "last 5 of the PVS serial", synthetic
+// The relay's only Solstice credential (S-08): the ingest token, never the owner key. Test-only value.
+const TOKEN = 'test-ingest-token-synthetic-abcdefghijklmnop';
+process.env.PVS_INGEST_TOKEN = TOKEN;
 const TLS = selfSignedCert('pvs.local');
 
 let relay: Relay, db: typeof import('../../server/src/db.js'), pvsMod: typeof import('../../server/src/pvs.js');
@@ -91,8 +93,8 @@ async function recorder(kind: 'https' | 'http', answer: (res: ServerResponse) =>
 }
 
 const cfgFor = (extra: Record<string, string | undefined> = {}) => relay.loadConfig({
-  PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW, SOLSTICE_URL: base, SOLSTICE_OWNER_KEY: process.env.OWNER_KEY, ...extra });
-const newState = (log: string[] = []): State => ({ pvsCookie: null, apiCookie: null, fingerprintShown: false, log: m => log.push(m) });
+  PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW, SOLSTICE_URL: base, SOLSTICE_INGEST_TOKEN: TOKEN, ...extra });
+const newState = (log: string[] = []): State => ({ pvsCookie: null, fingerprintShown: false, log: m => log.push(m) });
 
 function envFile(name: string, env: Record<string, string>) {
   const p = join(tmp, name);
@@ -144,7 +146,7 @@ describe('relay configuration', () => {
   });
 
   it('RELAY-2 refuses unsafe or incomplete settings with a message that names the problem, never a value', () => {
-    const ok = { PVS_HOST: '10.0.0.9', PVS_PASSWORD: PW, SOLSTICE_URL: 'https://app.invalid', SOLSTICE_OWNER_KEY: 'k'.repeat(40) };
+    const ok = { PVS_HOST: '10.0.0.9', PVS_PASSWORD: PW, SOLSTICE_URL: 'https://app.invalid', SOLSTICE_INGEST_TOKEN: 'k'.repeat(40) };
     const refuse = (env: Record<string, string | undefined>, msg: RegExp, o = {}) => {
       let err: any; try { relay.loadConfig(env, o); } catch (e) { err = e; }
       expect(err, msg.source).toBeInstanceOf(relay.FatalError);
@@ -157,7 +159,11 @@ describe('relay configuration', () => {
     refuse({ ...ok, PVS_HOST: '10.0.0.9/vars' }, /PVS_HOST must be a bare host/);
     refuse({ ...ok, SOLSTICE_URL: 'http://app.invalid' }, /must be https/);
     refuse({ ...ok, SOLSTICE_URL: 'https://app.invalid/api' }, /origin only/);
-    refuse({ ...ok, SOLSTICE_OWNER_KEY: 'short' }, /OWNER_KEY \(32\+ characters\)/);
+    refuse({ ...ok, SOLSTICE_INGEST_TOKEN: 'short' }, /PVS_INGEST_TOKEN \(32\+ characters\)/);
+    // S-08: the relay never holds the owner key, even next to a valid ingest token, and even for a dry run
+    refuse({ ...ok, SOLSTICE_OWNER_KEY: 'o'.repeat(40) }, /SOLSTICE_OWNER_KEY is no longer accepted/);
+    refuse({ PVS_HOST: '10.0.0.9', PVS_PASSWORD: PW, SOLSTICE_OWNER_KEY: 'o'.repeat(40) }, /SOLSTICE_OWNER_KEY is no longer accepted/, { dryRun: true });
+    refuse({ PVS_HOST: '10.0.0.9', PVS_PASSWORD: PW, SOLSTICE_URL: 'https://app.invalid', SOLSTICE_OWNER_KEY: 'o'.repeat(40) }, /no longer accepted/);
     refuse({ ...ok, PVS_CERT_SHA256: 'AB:CD' }, /64 hex digits/);
     // a dry run only needs the PVS settings
     expect(relay.loadConfig({ PVS_HOST: '10.0.0.9', PVS_PASSWORD: PW }, { dryRun: true })).toMatchObject({ pvsHost: '10.0.0.9', pvsPort: 443, apiOrigin: null });
@@ -349,7 +355,7 @@ describe('TLS: the self-signed certificate is trusted only on the relay\'s own c
     const fake = await recorder('https');
     try {
       pvs.log.length = 0;
-      const env = envFile('tls4.env', { PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW, SOLSTICE_URL: fake.origin, SOLSTICE_OWNER_KEY: 'k'.repeat(40) });
+      const env = envFile('tls4.env', { PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW, SOLSTICE_URL: fake.origin, SOLSTICE_INGEST_TOKEN: 'k'.repeat(40) });
       const r = await cli([env, '--once']);
       expect(r.code).toBe(1);
       expect(r.stderr).toMatch(/cannot reach Solstice at https:\/\/127\.0\.0\.1:\d+: .*(SELF_SIGNED|self[- ]signed|certificate)/i);
@@ -361,41 +367,37 @@ describe('TLS: the self-signed certificate is trusted only on the relay\'s own c
 
 /* ======================================================================================================== */
 describe('relay → Solstice (the real app on PGlite)', () => {
-  it('API-1 unlocks once with the owner key, keeps the cookie in memory and posts each poll', async () => {
+  it('API-1 posts each poll with the ingest token as a bearer: no owner unlock, no owner session', async () => {
     await revokeRelaySessions();
-    const cfg = cfgFor(), state = newState();
+    const cfg = cfgFor(), state = newState(), seen: string[] = [], guard = globalThis.fetch;
     const m0 = recentMsmt(20), m1 = recentMsmt(15), t0 = Date.parse(m0);
     pvs.vars = pvsVars(m0);
+    vi.stubGlobal('fetch', (input: any, init?: any) => { seen.push(`${init?.method ?? 'GET'} ${new URL(String(input)).pathname} ${init?.headers?.Authorization === `Bearer ${TOKEN}` ? 'bearer' : 'none'}`); return guard(input, init); });
     try {
       const first = await relay.pollOnce(cfg, state);
       expect(first.posted).toEqual({ ok: true, inserted: 3, duplicates: 0 });
       expect(first.payload.ts).toBe(isoOf(m0));
-      expect(state.apiCookie).toMatch(/^solstice_owner=/);
-      const cookie = state.apiCookie;
       const same = await relay.pollOnce(cfg, state);                        // the PVS has not measured again yet
       expect(same.posted).toEqual({ ok: true, inserted: 0, duplicates: 3 });
       pvs.vars = pvsVars(m1);
       const second = await relay.pollOnce(cfg, state);
       expect(second.posted).toEqual({ ok: true, inserted: 3, duplicates: 0 });
-      expect(state.apiCookie).toBe(cookie);                                 // no second unlock
-    } finally { pvs.vars = pvsVars(MSMT); }
-    expect((await db.q('SELECT id FROM owner_sessions WHERE id <> $1', [routeSession()])).length).toBe(1);   // one device row for the relay
+    } finally { vi.stubGlobal('fetch', guard); pvs.vars = pvsVars(MSMT); }
+    expect(seen.filter(x => x.includes('/api/'))).toEqual(Array(3).fill('POST /api/pvs/readings bearer'));   // never /api/auth/owner
+    expect((await db.q('SELECT id FROM owner_sessions WHERE id <> $1', [routeSession()])).length).toBe(0);
     const stored = await rows('TEST-INV-02');
     expect(stored.map(r => r.ts.getTime())).toEqual([t0, Date.parse(m1)]);
     expect(stored[0]).toMatchObject({ sn: 'TEST-INV-02', kw: 0.192, kw_dc: 0.1987, v: 32.8, t: 43.5, kwh: 2511.204102 });
     expect((await rows('TEST-INV-03'))[0]).toMatchObject({ kw: 0, kw_dc: 0, v: 0, t: null, kwh: 2702 });
   });
 
-  it('API-6 with SOLSTICE_INGEST_TOKEN the relay posts without the owner key, makes no owner session, and the token opens nothing else', async () => {
-    const TOKEN = 'test-ingest-token-synthetic-abcdefghijklmnop';   // test-only
-    process.env.PVS_INGEST_TOKEN = TOKEN;
+  it('API-6 the ingest token makes no owner session and opens nothing but the two relay routes', async () => {
     await revokeRelaySessions();
     const before = (await db.q('SELECT id FROM owner_sessions')).length;
     const cfg = relay.loadConfig({ PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW, SOLSTICE_URL: base, SOLSTICE_INGEST_TOKEN: TOKEN }), state = newState();
     const m0 = recentMsmt(40); pvs.vars = pvsVars(m0);
     try {
       expect((await relay.pollOnce(cfg, state)).posted).toMatchObject({ ok: true, inserted: 3 });
-      expect(state.apiCookie).toBeNull();
       expect((await db.q('SELECT id FROM owner_sessions')).length).toBe(before);              // no owner session for the relay
       const bearer = { authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };
       expect((await fetch(`${base}/api/pvs/heartbeat`, { method: 'POST', headers: bearer, body: JSON.stringify({ pvs: 'ok' }) })).status).toBe(200);
@@ -404,20 +406,24 @@ describe('relay → Solstice (the real app on PGlite)', () => {
       expect((await fetch(`${base}/api/pvs/readings`, { method: 'POST', headers: { ...bearer, authorization: 'Bearer wrong-token-wrong-token-wrong-token-xx' }, body: '{}' })).status).toBe(401);
       process.env.PVS_INGEST_TOKEN = '';                                                       // no token configured: bearer opens nothing
       expect((await fetch(`${base}/api/pvs/heartbeat`, { method: 'POST', headers: bearer, body: JSON.stringify({ pvs: 'ok' }) })).status).toBe(401);
-    } finally { pvs.vars = pvsVars(MSMT); delete process.env.PVS_INGEST_TOKEN; }
+    } finally { pvs.vars = pvsVars(MSMT); process.env.PVS_INGEST_TOKEN = TOKEN; }
   });
 
-  it('API-2 a 401 (cookie revoked) unlocks again once and the poll still lands; a retried poll stores nothing twice', async () => {
+  it('API-2 a rotated token is fatal at once (no retry, no owner unlock) and says what to fix; a retried poll stores nothing twice', async () => {
     const cfg = cfgFor(), state = newState();
     const t = Date.now() - 60_000, payload = { ts: new Date(t).toISOString(), inverters: PVS_EXPECTED };
     await relay.postReadings(cfg, state, payload);
-    await revokeRelaySessions();                                           // e.g. "sign out other devices"
+    expect(await relay.postReadings(cfg, state, payload)).toEqual({ ok: true, inserted: 0, duplicates: 3 });
     const seen: string[] = [], guard = globalThis.fetch;
+    process.env.PVS_INGEST_TOKEN = 'rotated-token-synthetic-0000000000000000';
     vi.stubGlobal('fetch', (input: any, init?: any) => { seen.push(`${init?.method ?? 'GET'} ${new URL(String(input)).pathname}`); return guard(input, init); });
     try {
-      expect(await relay.postReadings(cfg, state, payload)).toEqual({ ok: true, inserted: 0, duplicates: 3 });
-    } finally { vi.stubGlobal('fetch', guard); }
-    expect(seen).toEqual(['POST /api/pvs/readings', 'POST /api/auth/owner', 'POST /api/pvs/readings']);
+      const err = await relay.postReadings(cfg, state, payload).catch(e => e);
+      expect(err).toBeInstanceOf(relay.FatalError);
+      expect(err.message).toMatch(/refused SOLSTICE_INGEST_TOKEN \(401\); copy the current PVS_INGEST_TOKEN/);
+      expect(err.message).not.toContain(TOKEN);
+    } finally { vi.stubGlobal('fetch', guard); process.env.PVS_INGEST_TOKEN = TOKEN; }
+    expect(seen).toEqual(['POST /api/pvs/readings']);
   });
 
   it('API-5 a poll that fails on the PVS side posts a heartbeat; a stored poll marks the PVS ok again', async () => {
@@ -436,7 +442,7 @@ describe('relay → Solstice (the real app on PGlite)', () => {
       expect(v.error).toMatch(/lists no inverters/);
       expect(v.error).not.toContain(PW);
       // unreachable: the heartbeat still says the Mac is up
-      const down = relay.loadConfig({ PVS_HOST: '127.0.0.1:1', PVS_PASSWORD: PW, SOLSTICE_URL: base, SOLSTICE_OWNER_KEY: process.env.OWNER_KEY });
+      const down = relay.loadConfig({ PVS_HOST: '127.0.0.1:1', PVS_PASSWORD: PW, SOLSTICE_URL: base, SOLSTICE_INGEST_TOKEN: TOKEN });
       expect(await relay.pollOnce(down, state).catch(e => e)).toMatchObject({ pvs: 'unreachable' });
       expect(await hb()).toMatchObject({ pvs: 'unreachable', http: null });
       pvs.varsStatus = 200; pvs.vars = pvsVars(recentMsmt(5));
@@ -445,20 +451,13 @@ describe('relay → Solstice (the real app on PGlite)', () => {
     } finally { vi.stubGlobal('fetch', guard); pvs.varsStatus = 200; pvs.vars = pvsVars(MSMT); }
   });
 
-  it('API-3 a wrong owner key is fatal with a message that says what to fix', async () => {
-    const err = await relay.apiLogin(cfgFor({ SOLSTICE_OWNER_KEY: 'wrong-key-synthetic-0000000000000000' }), newState()).catch(e => e);
-    expect(err).toBeInstanceOf(relay.FatalError);
-    expect(err.message).toMatch(/refused SOLSTICE_OWNER_KEY \(invalid_owner_key\)/);
-    expect(err.message).not.toContain('wrong-key');
-  });
-
   it('API-4 a 401 page that is not Solstice\'s JSON (a protected preview URL) is fatal with a hint', async () => {
     const mock = await recorder('http', res => { res.writeHead(401, { 'Content-Type': 'text/html' }); res.end('<html>Authentication Required</html>'); });
     try {
-      const err = await relay.apiLogin(cfgFor({ SOLSTICE_URL: mock.origin }), newState()).catch(e => e);
+      const err = await relay.postReadings(cfgFor({ SOLSTICE_URL: mock.origin }), newState(), { ts: new Date().toISOString(), inverters: PVS_EXPECTED }).catch(e => e);
       expect(err).toBeInstanceOf(relay.FatalError);
-      expect(err.message).toMatch(/HTTP 401 without Solstice's JSON \(is SOLSTICE_URL the production app/);
-      expect(mock.hits).toEqual(['POST /api/auth/owner']);
+      expect(err.message).toMatch(/401 without Solstice's JSON \(is SOLSTICE_URL the production app/);
+      expect(mock.hits).toEqual(['POST /api/pvs/readings']);
     } finally { mock.server.close(); }
   });
 });
@@ -468,7 +467,7 @@ describe('relay CLI', () => {
   it('CLI-1 --dry-run prints the payload and never contacts Solstice', async () => {
     const mock = await recorder('http');
     try {
-      const env = envFile('dry.env', { PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW, SOLSTICE_URL: mock.origin, SOLSTICE_OWNER_KEY: 'k'.repeat(40) });
+      const env = envFile('dry.env', { PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: PW, SOLSTICE_URL: mock.origin, SOLSTICE_INGEST_TOKEN: 'k'.repeat(40) });
       const r = await cli([env, '--dry-run']);
       expect(r.code, r.stderr).toBe(0);
       const out = JSON.parse(r.stdout);
@@ -479,7 +478,7 @@ describe('relay CLI', () => {
   });
 
   it('CLI-2 a wrong PVS password exits 1 with a clear message and does not print the password', async () => {
-    const env = envFile('badpw.env', { PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: 'ZZ9ZZ', SOLSTICE_URL: 'http://127.0.0.1:9', SOLSTICE_OWNER_KEY: 'k'.repeat(40) });
+    const env = envFile('badpw.env', { PVS_HOST: `127.0.0.1:${pvs.port}`, PVS_PASSWORD: 'ZZ9ZZ', SOLSTICE_URL: 'http://127.0.0.1:9', SOLSTICE_INGEST_TOKEN: 'k'.repeat(40) });
     const r = await cli([env, '--once']);
     expect(r.code).toBe(1);
     expect(r.stderr).toMatch(/pvs-relay: PVS login refused \(HTTP 401\)\. Check PVS_PASSWORD/);

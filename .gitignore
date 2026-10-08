@@ -16,3 +16,10 @@ data/
 web/dist/
 .vercel
 !web/public/.well-known/appspecific/com.tesla.3p.public-key.pem
+
+# private working files: audits and handoffs name trip dates and figures; .claude/ holds tooling and repo copies (audit 10b, S-06)
+docs/audit-*.md
+!docs/audit-2026-09.md
+docs/handoff-*.md
+.claude/
+Claude outputs/

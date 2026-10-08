@@ -35,6 +35,15 @@ export const one = async <T extends Row = Row>(text: string, params: unknown[] =
 export const kv = {
   async get<T>(key: string): Promise<T | undefined> { return (await one('SELECT value FROM kv WHERE key = $1', [key]))?.value as T | undefined; },
   async set(key: string, value: unknown) { await q('INSERT INTO kv (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = excluded.value', [key, JSON.stringify(value)]); },
+  /**
+   * Single-flight claim (S-07): true for exactly one caller while `key` holds no claim newer than `minAgeMs`, and that caller's
+   * claim ({at: now}) is stored; false for everyone else, who should serve the stored value instead of calling the device or Tesla.
+   * One upsert, so concurrent callers are serialised by the row lock (Neon and PGlite alike): N stale requests, one upstream call.
+   */
+  async claim(key: string, minAgeMs: number, now = Date.now()): Promise<boolean> {
+    return !!(await one(`INSERT INTO kv (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = excluded.value
+      WHERE COALESCE((kv.value->>'at')::bigint, 0) <= $3 RETURNING key`, [key, JSON.stringify({ at: now }), now - minAgeMs]));
+  },
 };
 
 const SCHEMA = [
@@ -130,6 +139,9 @@ const SCHEMA = [
   // One row per browser that turned notifications on: the push endpoint (a bearer capability) and its encryption keys. DB only.
   `CREATE TABLE IF NOT EXISTS push_subscriptions (endpoint text PRIMARY KEY, site_id text NOT NULL, p256dh text NOT NULL, auth text NOT NULL,
      ua text, created_at timestamptz NOT NULL DEFAULT now(), last_ok timestamptz, fails int NOT NULL DEFAULT 0)`,
+  // S-04: the owner session (owner_sessions.id) that subscribed, so signing that device out also stops its pushes. NULL on rows stored
+  // before this column existed: those keep receiving (they are the owner's phones) until the device subscribes again (notify.ts).
+  `ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS owner_session_id text`,
   // Weekly digests (digest.ts): kWh, counts and confidence tiers only, no rate or dollar figure. One row per ISO week.
   `CREATE TABLE IF NOT EXISTS digests (site_id text NOT NULL, week text NOT NULL, data jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (site_id, week))`,
   // Powerwall commands and rule suggestions (tesla/commands.ts, powerwall.ts): every send, refusal, missing scope and suggestion.

@@ -14,7 +14,7 @@ const JWK = { ...(publicKey.export({ format: 'jwk' }) as any), kid: 'test-kid', 
 const AUD = 'https://app.invalid/api/nest/events', SA = 'nest-push@test-project.iam.gserviceaccount.com', DEV = 'enterprises/test-proj/devices/test-dev';
 const jwt = (claims: Record<string, unknown>, kid = 'test-kid', key = privateKey) => {
   const enc = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
-  const body = `${enc({ alg: 'RS256', kid, typ: 'JWT' })}.${enc({ iss: 'https://accounts.google.com', aud: AUD, email: SA, email_verified: true, exp: Math.floor(Date.now() / 1000) + 3600, ...claims })}`;
+  const body = `${enc({ alg: 'RS256', kid, typ: 'JWT' })}.${enc({ iss: 'https://accounts.google.com', aud: AUD, email: SA, email_verified: true, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600, ...claims })}`;
   return `${body}.${sign('RSA-SHA256', Buffer.from(body), key).toString('base64url')}`;
 };
 const push = (ev: unknown) => ({ message: { data: Buffer.from(JSON.stringify(ev)).toString('base64'), messageId: '1' }, subscription: 'projects/p/subscriptions/s' });
@@ -113,5 +113,18 @@ describe('POST /api/nest/events', () => {
     delete process.env.NEST_EVENTS_SA;
     expect((await post(body)).status).toBe(503);
     process.env.NEST_EVENTS_SA = SA;
+  });
+  it('NE-7 (S-13) a token issued over 10 minutes ago is 401; an event dated in the future is filed at most a minute ahead', async () => {
+    const body = ev({ 'sdm.devices.traits.ThermostatTemperatureSetpoint': { coolCelsius: C(70) } });
+    expect((await post(body, jwt({ iat: Math.floor(Date.now() / 1000) - 11 * 60 }))).status).toBe(401);
+    expect(await db.kv.get('nest:last')).toMatchObject({ coolF: 76 });
+    const t0 = Date.now();
+    expect((await post(ev({ 'sdm.devices.traits.ThermostatHvac': { status: 'COOLING' } }, { timestamp: new Date(t0 + 24 * 3600e3).toISOString() }))).status).toBe(204);
+    const st = await db.kv.get<{ at: number; hvac: string }>('nest:last');
+    expect(st!.hvac).toBe('COOLING');
+    expect(st!.at).toBeLessThanOrEqual(Date.now() + 60_000);
+    // the stored time stays within a minute of now, so events from then on are not taken for older ones
+    expect((await post(ev({ 'sdm.devices.traits.ThermostatHvac': { status: 'OFF' } }, { timestamp: new Date(Date.now() + 61_000).toISOString() }))).status).toBe(204);
+    expect(await db.kv.get('nest:last')).toMatchObject({ hvac: 'OFF' });
   });
 });

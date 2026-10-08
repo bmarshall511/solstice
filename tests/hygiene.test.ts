@@ -3,6 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -75,4 +76,32 @@ it('boot() still calls initLearn(S) as a statement (not inside a comment)', asyn
   const src = await import('node:fs/promises').then(fs => fs.readFile(new URL('../web/src/main.js', import.meta.url), 'utf8'));
   const live = src.split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n');   // strip line comments
   expect(live).toMatch(/^\s*initLearn\(S\);/m);
+});
+
+// Batch 5 (audit 10b, S-05/S-06/S-08): what may never be committed, checked against the git index itself.
+describe('the git index holds no private working files or the production host', () => {
+  const tracked = (() => { try { return execSync('git ls-files -z', { cwd: ROOT, encoding: 'utf8' }).split('\0').filter(Boolean); } catch { return null; } })();
+  const files = tracked ?? [];
+  const textual = files.filter(f => /\.(ts|js|mjs|cjs|json|md|html|css|yml|yaml|example|txt)$/.test(f) && existsSync(join(ROOT, f)) && f !== SELF);
+  it('reads the index', () => { expect(tracked, 'git ls-files failed').not.toBeNull(); expect(files).toContain('CLAUDE.md'); });
+  it('no audit, handoff, .claude/ or "Claude outputs/" file is tracked (only the published September audit)', () => {
+    expect(files.filter(f => /^docs\/(audit-(?!2026-09\.md$)[^/]*\.md|handoff-[^/]*\.md)$/.test(f) || f.startsWith('.claude/') || f.startsWith('Claude outputs/'))).toEqual([]);
+  });
+  it('.gitignore covers them, so a `git add -A` cannot publish them', () => {
+    const ignored = (p: string) => { try { execSync(`git check-ignore -q ${JSON.stringify(p)}`, { cwd: ROOT }); return true; } catch { return false; } };
+    for (const p of ['docs/audit-2026-10b.md', 'docs/audit-vacation-2026-10.md', 'docs/handoff-2026-10b.md', '.claude/launch.json', 'Claude outputs/x.md']) expect(ignored(p), p).toBe(true);
+    expect(ignored('docs/audit-2026-09.md')).toBe(false);
+  });
+  it('no *.vercel.app host outside the two synthetic share-link examples', () => {
+    const allowed = new Set(['mockups/q-share.html', 'tests/web/qr.test.js']);
+    expect(hits(textual.filter(f => !allowed.has(f)), /[\w-]+\.vercel\.app/g)).toEqual([]);
+  });
+  it('no trip table ("Left <weekday> <date> … → back …") in any tracked file', () => {
+    expect(hits(textual, /\bLeft (Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{4}-\d\d-\d\d\b[^\n]{0,40}→ back\b/g)).toEqual([]);
+  });
+  it('the dead cloud-migration script stays deleted, and no script or README hands the relay the owner key', () => {
+    expect(files).not.toContain('scripts/migrate-to-cloud.ts');
+    expect(hits(files.filter(f => f.startsWith('scripts/')), /SOLSTICE_OWNER_KEY\s*=/g)).toEqual([]);
+    expect(hits(['scripts/pvs-relay.mjs'], /\/api\/auth\/owner/g)).toEqual([]);
+  });
 });

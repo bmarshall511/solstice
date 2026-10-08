@@ -11,7 +11,7 @@
 // Self-contained, following docs/audit-designs/tests.md and tests/server/auth.test.ts: the in-process Express app on
 // 127.0.0.1:0 driven with the real fetch, PGlite in memory, no network (Tesla sync and Nest are mocked; ScreenLogic is
 // stubbed by tests/server/pure-mocks.ts). Every value is synthetic, including the "private" ones the seed plants.
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
@@ -79,6 +79,8 @@ beforeAll(async () => {
   expect([owner, guest, preview].every(Boolean)).toBe(true);
 });
 afterAll(async () => { if (server) { server.close(); await once(server, 'close'); } });
+// these suites walk every route as one guest, well past the per-link rate limit (S-07; tested in guest-reads.test.ts)
+beforeEach(async () => (await import('../../server/src/access.js')).resetGuestRateLimits());
 
 /** A leaky site: serials, DINs, firmware, a family name, a parsed bill with its tariff, the owner's system price and loan,
  *  presence away, a Nest device path, notes, a pool controller version, and five-minute history. */
@@ -241,7 +243,7 @@ describe('every guest-readable route', () => {
     expect(now.site.name).toBe('Home');
     expect(now.site).not.toHaveProperty('firmware');
     expect(now.site.batteries).toEqual([{ name: 'Powerwall 2', kwh: 13.5, kw: 5 }, { name: 'Powerwall 2', kwh: 13.5, kw: 5 }]);
-    expect(now.health.liveError).toBe('unavailable');
+    expect(now.health.liveError).toBeNull();                                  // S-07: a guest's read never calls Tesla, so it has no live error
     expect(now.health.errors.siteInfo).toEqual({ at: expect.any(Number), message: 'unavailable' });
     expect(now.reading).toMatchObject({ solarKw: 5, homeKw: 4, soc: 64 });
     expect(await getJson('/api/settings', guest)).toEqual({ location: { lat: 12.3, lon: -56.8, zip: '123xx', precision: 'coarse' } });
@@ -332,7 +334,10 @@ describe('bills and the AC card', () => {
     expect(JSON.stringify(g)).not.toMatch(/marked away|Away:|mark Home/i);
     expect(g.plan.steps.map((s: any) => s.why)).not.toContain('marked away');
     expect(g.log).toEqual([{ at: expect.any(Number), day: today, text: 'Set 76° (morning, comfort band)' }]);
-    expect(g.state).toEqual({ at: expect.any(Number), name: 'Thermostat', online: true, indoorF: 76, humidity: 45, mode: 'COOL', hvac: 'OFF', coolF: 80, heatF: null });
+    // S-03: the thermostat's own setpoint (80° here, in Eco) never reaches a guest; the as-if-home plan's step for this hour stands in
+    expect(o.state.coolF).toBe(80);
+    expect(g.settings).not.toHaveProperty('awayF');
+    expect(g.state).toEqual({ at: expect.any(Number), name: 'Thermostat', online: true, indoorF: 76, humidity: 45, mode: 'COOL', hvac: 'OFF', coolF: g.currentStep.coolF, heatF: null });
     expect(g.learned).not.toHaveProperty('source');
     // the learning layer replaced the dollar savings (costSavedMonth, gone at the source) with two kWh figures and their
     // confidence tiers: kWh and tiers reach the guest; no money-named key is on the plan at all

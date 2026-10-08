@@ -5,14 +5,14 @@
 Tesla only sees the whole array. The SunPower PVS6 sees each of the 30 panels through its microinverter, but it is only reachable on the home LAN. `pvs-relay.mjs` runs on the Mac, reads the PVS every 5 minutes and pushes the readings to Solstice:
 
 ```
-PVS6 (LAN, self-signed TLS) --GET--> scripts/pvs-relay.mjs (Mac, launchd) --POST + owner cookie--> Solstice /api/pvs/readings
+PVS6 (LAN, self-signed TLS) --GET--> scripts/pvs-relay.mjs (Mac, launchd) --POST + ingest token--> Solstice /api/pvs/readings
 ```
 
 - **PVS side, read-only.** The relay logs in with `GET /auth?login` (HTTP Basic `ssm_owner` : last 5 characters of the PVS serial). The PVS6 answers `200 {"session": "<64 characters>"}` in the body (on firmware 2025.10.20.61846 it also sends the same value as a `Set-Cookie`), and the relay sends `Cookie: session=<value>` itself on the next request. It then reads `GET /vars?match=inverter&fmt=obj&cache=1`; `cache=1` is required, and the older `match=inverter/data` query answers `400 {"description": "Bad request", "errorcode": "0x0040"}`. It never calls `vars?set=` or anything else that writes. This is SunStrong's LocalAPI, which needs PVS6 firmware build 61840 or later.
 - **Sessions.** The login answer carries no expiry (the body holds only `session`; the cookie has no `Max-Age`), so the relay logs in again once its session is an hour old. Without a valid session the PVS answers the inverter query with `400 {"errorcode": "0x0040"}`, not 401, so on **any** non-200 the relay logs in once more and retries; if that fails too it logs the error and tries again at the next 5-minute bucket. After a failed retry it reads `GET /vars?match=/sys/info/uptime&fmt=obj`: when the PVS answers, it is up but lists no inverters. That happened on 2026-09-28: the PVS restarted at 02:40 CDT and four hours later still listed only its 2 meters.
 - **The PVS answer.** One flat JSON object keyed by path, every value a string: `/sys/devices/inverter/<n>/<field>` for n = 0–29, with the fields `freqHz`, `i3phsumA`, `iMppt1A`, `ltea3phsumKwh` (lifetime kWh), `msmtEps` (measurement time, ISO UTC), `p3phsumKw` (AC kW), `pMppt1Kw` (DC kW), `prodMdlNm`, `sn`, `tHtsnkDegc`, `vMppt1V` and `vln3phavgV`. The relay parses the numbers, reads a tiny negative power as 0, skips a record with no serial or no power or energy value, and uses the newest `msmtEps` as the reading time (the current time if there is none, or if it is more than 5 minutes ahead of the Mac's clock). When the PVS has not measured again since the last poll, the repeated `msmtEps` is stored once. (`match=livedata&fmt=obj&cache=1` also works and returns the site totals under `/sys/livedata/`; the relay does not read it.)
 - **TLS.** The PVS's self-signed certificate is accepted only on the relay's own connection to `PVS_HOST`. Nothing changes the global TLS settings, so the call to Solstice keeps full certificate checks. The relay refuses to start if `NODE_TLS_REJECT_UNAUTHORIZED=0` is set. Set `PVS_CERT_SHA256` to pin the PVS certificate, so a different certificate at that address is refused before the password is sent.
-- **Solstice side.** The relay posts the owner key to `POST /api/auth/owner` once, keeps the `solstice_owner` cookie in memory, and sends each poll to `POST /api/pvs/readings` with that cookie. On a 401 it unlocks once more and retries. A poll that fails on the PVS side posts `POST /api/pvs/heartbeat` instead, so the Panel health card can say "the relay is running, but the PVS …" rather than blaming the Mac. The relay shows up as one "Device" row in the owner devices list. Rotating `OWNER_KEY` stops the relay until the env file is updated.
+- **Solstice side.** The relay sends each poll to `POST /api/pvs/readings` with `Authorization: Bearer <SOLSTICE_INGEST_TOKEN>`. The token is the app's `PVS_INGEST_TOKEN` (Vercel env) and opens only the two relay routes, `/api/pvs/readings` and `/api/pvs/heartbeat`; it cannot read anything or reach a device. A 401 is fatal (a wrong or rotated token). A poll that fails on the PVS side posts `POST /api/pvs/heartbeat` instead, so the Panel health card can say "the relay is running, but the PVS …" rather than blaming the Mac. The relay makes no owner session, so it never appears in the owner devices list. **The relay never uses the owner key:** an env file that still has `SOLSTICE_OWNER_KEY` is refused at start (exit 2), so the Mac running it holds no full-control credential. Rotating `PVS_INGEST_TOKEN` stops the relay until the env file is updated.
 - **What is stored.** For each inverter at each reading: time (`msmtEps`), serial, AC kW (`p3phsumKw`), DC kW (`pMppt1Kw`), volts (`vMppt1V`), heat-sink °C (`tHtsnkDegc`) and lifetime kWh (`ltea3phsumKwh`). Nothing else. Serials live only in the database.
 - **Dependencies.** Node 22 built-ins only.
 
@@ -29,7 +29,7 @@ cat > ~/.solstice/pvs.env <<'EOF'
 PVS_HOST=<PVS LAN IP, for example 192.168.1.x>
 PVS_PASSWORD=<last 5 characters of the serial number on the PVS6 label>
 SOLSTICE_URL=https://<your-app>
-SOLSTICE_OWNER_KEY=<the app's OWNER_KEY>
+SOLSTICE_INGEST_TOKEN=<the app's PVS_INGEST_TOKEN, never the OWNER_KEY>
 # Optional: pin the PVS certificate. The first run prints its fingerprint.
 # PVS_CERT_SHA256=<AB:CD:...:EF>
 EOF
@@ -55,8 +55,8 @@ node scripts/pvs-relay.mjs ~/.solstice/pvs.env --once      # reads the PVS, post
 | Code | Meaning |
 |---|---|
 | 0 | OK |
-| 1 | The poll failed. The message names the cause: PVS login refused (wrong `PVS_PASSWORD`), owner key refused, certificate mismatch, PVS or Solstice unreachable. |
-| 2 | Bad command line or env file. |
+| 1 | The poll failed. The message names the cause: PVS login refused (wrong `PVS_PASSWORD`), ingest token refused, certificate mismatch, PVS or Solstice unreachable. |
+| 2 | Bad command line or env file (including a leftover `SOLSTICE_OWNER_KEY` line). |
 
 ### 4. Run it every 5 minutes with launchd
 
@@ -81,7 +81,7 @@ Restart after editing the env file with `launchctl kickstart -k gui/$UID/com.sol
 
 ### API
 
-All four routes are owner-only, like every `/api` route (the `solstice_owner` cookie). They do not need a connected Tesla site.
+`/api/pvs/readings` and `/api/pvs/heartbeat` take the relay's ingest token (or the owner cookie); `/day` and `/latest` are owner-only, like every other `/api` route (the `solstice_owner` cookie). They do not need a connected Tesla site.
 
 | Method and path | Request | Answer |
 |---|---|---|

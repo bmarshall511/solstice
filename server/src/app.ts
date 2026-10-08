@@ -1,5 +1,6 @@
 // The Solstice HTTP API. Runs as a single Vercel function in production (api/index.ts) and via server/src/index.ts locally.
 import express, { type Request, type Response, type NextFunction } from 'express';
+import { createHash } from 'node:crypto';
 import { q, one, kv, migrate, hourWh } from './db.js';
 import { config } from './config.js';
 import { hashPassword, verifyPassword, startSession, endSession, currentUser, requireUser, requireSite, tooManyAttempts, recordAttempt, signState, verifyState, multiUser,
@@ -12,7 +13,7 @@ import { teslaFor, localDay, addDays } from './tesla/client.js';
 import { refreshLive, refreshSiteInfo, syncSite } from './sync.js';
 import { listBills, parsePecPdf, saveBill, type Bill } from './bills.js';
 import { reconcile } from './reconcile.js';
-import { SOLAR, warrantedDcPct, systemYear } from './system.js';
+import { SOLAR, warrantedDcPct, systemYear, yearsSinceInstall } from './system.js';
 import { siteLocation, exactLocation } from './site.js';
 import { currentTariff, netEnergyCost, NO_TARIFF } from './tariff.js';
 import { appliances, comingSoon } from './appliances/index.js';
@@ -21,7 +22,7 @@ import { poolDetail, applyPlan, restorePrevious, poolCommand, PoolUnavailable, g
 import { readPool, configured as poolConfigured } from './appliances/screenlogic.js';
 import { learnAcKw, acKwFor } from './appliances/ac.js';
 import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, patchedAc, suggestionPatch, dismissSuggestion, recordNest, observeHold } from './appliances/ac.js';
-import { oidcError, eventOf, seenEvent, applyTraits, isSettingEvent } from './appliances/nestEvents.js';
+import { oidcError, eventOf, seenEvent, applyTraits, isSettingEvent, eventTime } from './appliances/nestEvents.js';
 import { applianceDay } from './appliances/day.js';
 import { cronTick } from './appliances/sampling.js';
 import { nestAuthorizeUrl, nestExchangeCode, nestConfigured, readNest, ownerCommand, type NestState } from './appliances/nest.js';
@@ -315,7 +316,8 @@ const siteInfo = async (id: string) => (await one<{ info: any }>('SELECT info FR
 app.get('/api/now', wrap(async (req, res) => {
   const id = site(req);
   let liveError: string | null = null;
-  await refreshLive(id).catch(e => { liveError = e.message; });
+  // S-07: a guest's read (or the owner previewing as one) never calls Tesla; the owner's stale reads share one call (sync.ts `single`)
+  if (!req.guestView) await refreshLive(id, undefined, { single: true }).catch(e => { liveError = e.message; });
   const r = await one('SELECT * FROM readings WHERE site_id = $1 ORDER BY ts DESC LIMIT 1', [id]);
   const down = (x: any) => !!x && isDown(x);   // a missing or empty grid status is unknown, not an outage
   let outage: { active: boolean; since?: number } = { active: false };
@@ -386,8 +388,11 @@ app.get('/api/monthly', wrap(async (req, res) => {
   res.json((await q(`SELECT substr(day, 1, 7) AS month, COUNT(DISTINCT day)::int days, ${kwhCols} FROM energy WHERE site_id = $1 GROUP BY month ORDER BY month DESC LIMIT $2`, [site(req), months])).reverse());
 }));
 
+/** `days` as a whole number from 1 to `max`; anything unusable is `dflt` (S-07: a guest's ?days=100000 can't make a 270-year scan). */
+const daysParam = (v: unknown, dflt: number, max: number) => { const n = Math.floor(Number(v ?? dflt)); return Number.isFinite(n) && n >= 1 ? Math.min(max, n) : dflt; };
+export const PROFILE_DAYS_MAX = 60, OVERNIGHT_DAYS_MAX = 120;
 app.get('/api/profile', wrap(async (req, res) => {
-  const days = Number(req.query.days ?? 14), to = localDay(), from = addDays(to, -days);
+  const days = daysParam(req.query.days, 14, PROFILE_DAYS_MAX), to = localDay(), from = addDays(to, -days);
   const trips = [...await tripDays(site(req), from, to)].filter(d => d < to);   // mockup ak: home use is an at-home day's; solar keeps every day
   res.json({ days, hours: await q(`SELECT hour::int, (SUM(h) FILTER (WHERE NOT (day = ANY($5::text[]))) / 1000.0 / GREATEST(1, $4 - cardinality($5::text[])))::float8 home, (SUM(s) / 1000.0 / $4)::float8 solar
     FROM (SELECT day, hour, ${hourWh('home_wh')} h, ${hourWh('solar_wh')} s FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day, hour) x GROUP BY hour ORDER BY hour`, [site(req), from, to, days, trips]),
@@ -406,7 +411,7 @@ app.get('/api/grid-days', wrap(async (req, res) => {
 }));
 
 app.get('/api/overnight', wrap(async (req, res) => {
-  const from = addDays(localDay(), -Number(req.query.days ?? 60));
+  const from = addDays(localDay(), -daysParam(req.query.days, 60, OVERNIGHT_DAYS_MAX));
   res.json(await overnightSplit(site(req), from));   // breakdown.ts (mockup z): the 1–5 AM average with always-on, AC and pump
 }));
 
@@ -468,42 +473,54 @@ app.delete('/api/pool/tests/:id', wrap(async (req, res) => { await deleteTest(si
 app.get('/api/ercot', wrap(async (_req, res) => res.json(await ercotNow())));   // watch.ts: the same 5-minute kv cache the alert watch reads
 
 /* ---------- what-if: replay the last 12 months (hourly) with a different system ---------- */
+/** S-07: what-if replays kept per Chicago day (the year it replays ends yesterday, so a day's answer can't change), at most this many queries. */
+export const WHATIF_CACHE_MAX = 24;
+type WhatifCache = { day: string; entries: Array<{ k: string; v: any }> };   // a list, oldest first (jsonb doesn't keep an object's key order)
+const finiteOr = (v: unknown, d: number) => { const n = Number(v ?? d); return Number.isFinite(n) ? n : d; };
 app.get('/api/whatif', wrap(async (req, res) => {
-  const id = site(req), addPanels = Number(req.query.panels ?? 0), addPw = Number(req.query.powerwalls ?? 0), extra = Number(req.query.extra ?? 0), panelW = Number(req.query.panelW ?? 400);
+  const id = site(req), addPanels = finiteOr(req.query.panels, 0), addPw = finiteOr(req.query.powerwalls, 0), extra = finiteOr(req.query.extra, 0), panelW = finiteOr(req.query.panelW, 400);
   const to = localDay(), from = addDays(to, -365);
-  const rows = await q<{ day: string; hour: number; s: number; h: number }>(`SELECT day, hour::int, (SUM(solar_wh) / 1000.0)::float8 s, (SUM(home_wh) / 1000.0)::float8 h
-    FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day, hour ORDER BY day, hour`, [id, from, to]);
   const tariff = await currentTariff(id); // null until a bill is parsed: kWh still replay, every cost is null
   const info = summary(await siteInfo(id)), cap0 = info.capacityKwh || 27, pw0 = info.batteryCount || 2, reserve = (info.reservePct ?? 20) / 100;
   // the as-built array is 30 × 320 W DC (9.6 kW); added panels scale real production by their share of that nameplate
   const kwpNow = SOLAR.dcKw, scale = 1 + addPanels * panelW / 1000 / kwpNow;
-  function replay(solarScale: number, cap: number, maxKw: number) {
-    let soc = .5, imp = 0, exp = 0, solar = 0, home = 0; const full = new Set<string>();
-    for (const r of rows) {
-      const s = r.s * solarScale, h = r.h + (r.hour >= 17 && r.hour < 23 ? extra / 6 : 0);
-      let net = s - h;
-      if (net > 0) { const c = cap ? Math.min(net, maxKw, (1 - soc) * cap / .95) : 0; if (cap) soc += c * .95 / cap; net -= c; if (soc > .995) full.add(r.day); exp += net; }
-      else { const d = cap ? Math.min(-net, maxKw, Math.max(0, soc - reserve) * cap * .95) : 0; if (cap) soc -= d / .95 / cap; imp += -net - d; }
-      solar += s; home += h;
+  // the cache key: the normalized query plus everything else the replay reads (the tariff, the battery), so a new bill re-replays
+  const ck = `${addPanels}|${addPw}|${extra}|${panelW}|${cap0}|${pw0}|${reserve}|${createHash('sha256').update(JSON.stringify(tariff)).digest('base64url').slice(0, 12)}`;
+  const cacheKey = `${id}:whatif:cache`, cache = await kv.get<WhatifCache>(cacheKey), hit = cache?.day === to ? cache.entries.find(e => e.k === ck)?.v : undefined;
+  const { days, actual, baseline, upgraded, noSystem } = hit ?? await (async () => {   // a miss: replay the year and keep the answer
+    const rows = await q<{ day: string; hour: number; s: number; h: number }>(`SELECT day, hour::int, (SUM(solar_wh) / 1000.0)::float8 s, (SUM(home_wh) / 1000.0)::float8 h
+      FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 GROUP BY day, hour ORDER BY day, hour`, [id, from, to]);
+    function replay(solarScale: number, cap: number, maxKw: number) {
+      let soc = .5, imp = 0, exp = 0, solar = 0, home = 0; const full = new Set<string>();
+      for (const r of rows) {
+        const s = r.s * solarScale, h = r.h + (r.hour >= 17 && r.hour < 23 ? extra / 6 : 0);
+        let net = s - h;
+        if (net > 0) { const c = cap ? Math.min(net, maxKw, (1 - soc) * cap / .95) : 0; if (cap) soc += c * .95 / cap; net -= c; if (soc > .995) full.add(r.day); exp += net; }
+        else { const d = cap ? Math.min(-net, maxKw, Math.max(0, soc - reserve) * cap * .95) : 0; if (cap) soc -= d / .95 / cap; imp += -net - d; }
+        solar += s; home += h;
+      }
+      return { importKwh: Math.round(imp), exportKwh: Math.round(exp), solarKwh: Math.round(solar), homeKwh: Math.round(home), selfPowered: home ? Math.round((1 - imp / home) * 100) : 0,
+        batteryFullDays: full.size, netCost: netEnergyCost(tariff, imp, exp) };
     }
-    return { importKwh: Math.round(imp), exportKwh: Math.round(exp), solarKwh: Math.round(solar), homeKwh: Math.round(home), selfPowered: home ? Math.round((1 - imp / home) * 100) : 0,
-      batteryFullDays: full.size, netCost: netEnergyCost(tariff, imp, exp) };
-  }
-  const baseline = replay(1, cap0, pw0 * 5), upgraded = replay(scale, cap0 + addPw * 13.5, pw0 * 5 + addPw * 11.5), noSystem = replay(0, 0, 0);
-  const actual = await one(`SELECT ROUND((SUM(import_wh) / 1000.0)::numeric)::float8 "importKwh", ROUND((SUM(export_wh) / 1000.0)::numeric)::float8 "exportKwh" FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3`, [id, from, to]);
+    const out = { days: new Set(rows.map(r => r.day)).size, baseline: replay(1, cap0, pw0 * 5), upgraded: replay(scale, cap0 + addPw * 13.5, pw0 * 5 + addPw * 11.5), noSystem: replay(0, 0, 0),
+      actual: await one(`SELECT ROUND((SUM(import_wh) / 1000.0)::numeric)::float8 "importKwh", ROUND((SUM(export_wh) / 1000.0)::numeric)::float8 "exportKwh" FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3`, [id, from, to]) };
+    const kept = (cache?.day === to ? cache.entries : []).filter(e => e.k !== ck).slice(-(WHATIF_CACHE_MAX - 1));   // oldest out first
+    await kv.set(cacheKey, { day: to, entries: [...kept, { k: ck, v: out }] } satisfies WhatifCache);
+    return out;
+  })();
   const cost = addPanels * panelW * 2.75 + addPw * 11500, saves = tariff ? baseline.netCost! - upgraded.netCost! : null;
   // what the existing system saves per year vs. having no solar and no batteries, and what it cost (owner settings, never in git)
   const sys = (await settingsFor(req)).system as { priceUsd?: number; taxCreditPct?: number; loanYears?: number; loanRatePct?: number } | undefined;
   const savesNow = tariff ? noSystem.netCost! - baseline.netCost! : null;
   let system = null;
   if (sys?.priceUsd) {
-    const net = Math.round(sys.priceUsd * (1 - (sys.taxCreditPct ?? 0) / 100)), years = (Date.now() - Date.parse(SOLAR.installedOn)) / (365.25 * 864e5);
+    const net = Math.round(sys.priceUsd * (1 - (sys.taxCreditPct ?? 0) / 100)), years = yearsSinceInstall();
     const r = (sys.loanRatePct ?? 0) / 100 / 12, n = (sys.loanYears ?? 0) * 12;
     const payment = n && r ? Math.round(sys.priceUsd * r / (1 - (1 + r) ** -n)) : n ? Math.round(sys.priceUsd / n) : null;
     system = { priceUsd: sys.priceUsd, taxCreditPct: sys.taxCreditPct ?? 0, netUsd: net, loanYears: sys.loanYears ?? null, loanRatePct: sys.loanRatePct ?? null, monthlyPayment: payment,
-      savesPerYear: savesNow, yearsSinceInstall: Math.round(years * 10) / 10, paybackYears: savesNow != null && savesNow > 0 ? Math.round(net / savesNow * 10) / 10 : null, installedOn: SOLAR.installedOn };
+      savesPerYear: savesNow, yearsSinceInstall: years, paybackYears: savesNow != null && savesNow > 0 ? Math.round(net / savesNow * 10) / 10 : null, installedOn: SOLAR.installedOn };
   }
-  res.json({ days: new Set(rows.map(r => r.day)).size, kwpNow, acKw: SOLAR.acKw, panels: SOLAR.panels, panelWdc: SOLAR.panelWdc, assumptions: { panelW, dollarsPerW: 2.75, powerwallCost: 11500, tariff },
+  res.json({ days, kwpNow, acKw: SOLAR.acKw, panels: SOLAR.panels, panelWdc: SOLAR.panelWdc, assumptions: { panelW, dollarsPerW: 2.75, powerwallCost: 11500, tariff },
     actual, baseline, upgraded, noSystem, cost, savesPerYear: saves, paybackYears: saves != null && saves > 0 && cost ? Math.round(cost / saves * 10) / 10 : null, system, ...(tariff ? {} : { reason: NO_TARIFF }),
     backupHoursEvening: { now: Math.round(cap0 * .8 / 4.5), upgraded: Math.round((cap0 + addPw * 13.5) * .8 / 4.5) } });
 }));
@@ -513,21 +530,32 @@ const rateFor = async (id: string) => (await currentTariff(id))?.importRateAllIn
 app.get('/api/appliances', wrap(async (req, res) => {
   const id = site(req), settings = presenceHidden(req, await settingsFor(req)), rate = await rateFor(id);
   const list = await Promise.all(appliances.filter(a => a.available()).map(a => a.summary(id, settings, rate).catch(e => ({ id: a.id, name: a.name, status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message }))));
-  if (nestConfigured()) list.push(await acDetail(id, settings, rate, await acSlope(id)).then(d => ({ id: 'ac', name: 'AC', status: d.linked ? 'linked' as const : 'estimated' as const, watts: d.state?.hvac === 'COOLING' ? Math.round(d.learned.acKw * 1000) : 0, kwhPerDay: d.todayKwh, savesPerMonth: null })).catch(e => ({ id: 'ac', name: 'AC', status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message })));
+  if (nestConfigured()) list.push(await acDetail(id, settings, rate, await acSlope(id), { readOnly: !!req.guestView }).then(d => ({ id: 'ac', name: 'AC', status: d.linked ? 'linked' as const : 'estimated' as const, watts: d.state?.hvac === 'COOLING' ? Math.round(d.learned.acKw * 1000) : 0, kwhPerDay: d.todayKwh, savesPerMonth: null })).catch(e => ({ id: 'ac', name: 'AC', status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message })));
   res.json([...list, ...comingSoon()]);
 }));
-// ?fresh=1 forces a device read: the owner's only (a guest's reads come from the 60 s cache, whatever it asks)
-app.get('/api/appliances/pool', wrap(async (req, res) => res.json(await poolDetail(site(req), await settingsFor(req), await rateFor(site(req)), { fresh: !req.guestView && req.query.fresh === '1' }))));
+// ?fresh=1 forces a device read: the owner's only. S-07: a guest's read never reaches the controller (the stored snapshot, however
+// old); the owner's stale reads share one read per minute (pool.ts single flight)
+app.get('/api/appliances/pool', wrap(async (req, res) => res.json(await poolDetail(site(req), await settingsFor(req), await rateFor(site(req)), { fresh: !req.guestView && req.query.fresh === '1', readOnly: !!req.guestView }))));
 /** Writes the smarter schedule to ScreenLogic: replaces the pump programs' schedules and speeds, keeps everything else (lights, spa, freeze protection). */
+// S-14: like /schedule, neither apply route writes during a Clear-up (it owns the pump until it ends), checked before the controller is read
+const CLEARUP_BUSY = 'A Clear-up is running; end it first';
 app.post('/api/appliances/pool/apply', wrap(async (req, res) => {
-  const id = site(req), d = await poolDetail(id, await settingsFor(req), await rateFor(id), { fresh: true });
+  const id = site(req);
+  if (await activeClearUp(id)) return res.status(409).json({ error: CLEARUP_BUSY });
+  const d = await poolDetail(id, await settingsFor(req), await rateFor(id), { fresh: true });
   if (!d.snapshot) return res.status(409).json({ error: d.error ?? 'ScreenLogic is not linked' });
   res.json(await applyPlan(id, d.plan, d.snapshot, d.settings));
 }));
 app.post('/api/appliances/pool/apply-tomorrow', wrap(async (req, res) => {
-  const id = site(req), d = await poolDetail(id, await settingsFor(req), await rateFor(id), { fresh: true });
+  const id = site(req);
+  if (await activeClearUp(id)) return res.status(409).json({ error: CLEARUP_BUSY });
+  // S-14: only the plan made for tomorrow (Chicago) may be applied; one left from an earlier evening is stale (its weather, its water)
+  const waiting = await kv.get<{ date?: string } | null>(`${id}:pool:pending`);
+  if (!waiting) return res.status(409).json({ error: 'Nothing is waiting to be applied' });
+  if (waiting.date !== addDays(localDay(), 1)) return res.status(409).json({ error: 'That suggestion was for another day; tonight\u2019s plan replaces it' });
+  const d = await poolDetail(id, await settingsFor(req), await rateFor(id), { fresh: true });
   if (!d.snapshot) return res.status(409).json({ error: d.error ?? 'ScreenLogic is not linked' });
-  if (!d.pending) return res.status(409).json({ error: 'Nothing is waiting to be applied' });
+  if (!d.pending || d.pending.date !== waiting.date) return res.status(409).json({ error: 'Nothing is waiting to be applied' });
   const r = await applyPlan(id, d.pending.plan, d.snapshot, d.settings);
   await kv.set(`${id}:pool:pending`, null as any);
   res.json(r);
@@ -626,7 +654,8 @@ async function acSlope(id: string) {
   await kv.set(`${id}:ac:slope`, { at: Date.now(), slope: Math.max(.5, Math.min(6, slope || 2.5)) });
   return Math.max(.5, Math.min(6, slope || 2.5));
 }
-app.get('/api/appliances/ac', wrap(async (req, res) => { const id = site(req); res.json(await acDetail(id, presenceHidden(req, await settingsFor(req)), await rateFor(id), await acSlope(id), { fresh: !req.guestView && req.query.fresh === '1' })); }));
+// S-07/S-10: a guest's read never reaches Nest and starts, ends or logs no hold; the owner's stale reads share one SDM read per minute (ac.ts)
+app.get('/api/appliances/ac', wrap(async (req, res) => { const id = site(req); res.json(await acDetail(id, presenceHidden(req, await settingsFor(req)), await rateFor(id), await acSlope(id), { fresh: !req.guestView && req.query.fresh === '1', readOnly: !!req.guestView })); }));
 /** The Now card's whole-home twin: one Chicago day hour by hour (energy, pool, AC) from the database only; never reads ScreenLogic or Nest. */
 app.get('/api/appliances/day', wrap(async (req, res) => {
   const date = String(req.query.date ?? localDay());
@@ -815,7 +844,7 @@ app.post('/api/nest/events', express.json({ limit: '64kb' }), wrap(async (req, r
   if (bad) { console.warn(`[solstice] nest event refused: ${bad}`); return res.status(401).json({ error: 'unauthorized' }); }
   const ev = eventOf(req.body);
   if (!ev?.resourceUpdate || await seenEvent(ev.eventId)) return res.status(204).end();   // relation events and redeliveries: nothing to do
-  const prev = await kv.get<NestState>('nest:last'), at = Date.parse(ev.timestamp ?? '') || Date.now();
+  const prev = await kv.get<NestState>('nest:last'), at = eventTime(ev.timestamp);   // S-13: at most a minute ahead of now
   if (!prev || ev.resourceUpdate.name !== prev.deviceId || at < prev.at) return res.status(204).end();   // another device, or older than what we have
   const next = applyTraits(prev, ev.resourceUpdate.traits ?? {}, at);
   await kv.set('nest:last', next); await kv.set('nest:eventAt', Date.now());

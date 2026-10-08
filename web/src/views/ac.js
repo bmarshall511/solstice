@@ -8,7 +8,7 @@ import { when } from '../lib/presence.js';
 import { gauge } from '../lib/sysui.js';
 import { icon } from '../lib/icons.js';
 import { nowPct, acBlocks, autopilotStage } from '../lib/nowui.js';
-import { sysTop, planStrip, tileHtml, modePill, seg } from './csheet.js';
+import { sysTop, planStrip, tileHtml, modePill, seg, segSet, sheet, sheetHead, sheetFoot, closeSheet } from './csheet.js';
 import { mountAcPanel, redrawAcPanels } from './nowsheets.js';
 
 /*
@@ -68,7 +68,9 @@ export function drawAc(S) {
 function drawAcSys(S) {
   const d = S.ac, st = d.state, s = d.settings ?? {};
   if (!d.linked || !st) { $('acSys').innerHTML = sysTop({ ic: 'ac', title: 'AC', value: '—', line: d.configured === false ? 'Nest not set up' : 'Nest not linked', plan: planStrip(nowPct(localHour()), [], [], true) }); return; }
-  const mode = st.eco ? 'ECO' : st.mode, verb = { COOL: `Cool to ${Math.round(st.coolF)}°`, HEAT: `Heat to ${Math.round(st.heatF)}°`, HEATCOOL: `${Math.round(st.heatF)}–${Math.round(st.coolF)}°`, OFF: 'Thermostat off', ECO: 'Eco · Away' }[mode] ?? mode;
+  const mode = st.eco ? 'ECO' : st.mode, deg = v => (v == null ? null : Math.round(v)), cf = deg(st.coolF), hf = deg(st.heatF);
+  // a guest gets no thermostat setpoint (only the plan's step, S-03), so a missing one reads as the mode alone, never "0°"
+  const verb = { COOL: cf != null ? `Cool to ${cf}°` : 'Cooling', HEAT: hf != null ? `Heat to ${hf}°` : 'Heating', HEATCOOL: hf != null && cf != null ? `${hf}–${cf}°` : cf != null ? `Cool to ${cf}°` : 'Heat · Cool', OFF: 'Thermostat off', ECO: 'Eco · Away' }[mode] ?? mode;
   const hv = String(st.hvac ?? 'off').toLowerCase(), ab = s.autopilot === 'off' ? { blocks: [], ticks: [] } : acBlocks(d.plan?.steps, s.nightFrom, s.nightTo);
   $('acSys').innerHTML = sysTop({ ic: 'ac', title: 'AC', mode: modePill(MODE_CLS[s.autopilot]), value: st.indoorF != null ? `${st.indoorF}°` : '—',
     line: `${verb} · ${hv === 'off' ? 'idle' : hv}${st.humidity != null ? ` · ${st.humidity}% humidity` : ''}`, plan: planStrip(nowPct(localHour()), ab.blocks, ab.ticks, true) });
@@ -222,42 +224,46 @@ function hotDay(v, P) {
 }
 const DAYC = { n: '#b8a6ff', d: '#ffd27a', p: '#7cc4ff', c: '#ffb08a' };
 /* the Comfort sheet. Saving writes only Solstice's settings; the plan uses them from its next step. */
+/** The Comfort sheet in the component system (mockup al, component 11): stepper rows in a card, the night hours as two buttons,
+ *  pre-cool and drift as small sliding segments, Save in the pinned footer. `v` is the staged settings. */
+export function comfortHtml(v) {
+  const row = (label, sub, ctl) => `<div class="c-stepper"><div>${label}<small>${sub}</small></div>${ctl}</div>`;
+  const stepr = k => `<button class="c-step" data-k="${k}" data-d="-1" aria-label="Lower">−</button><b id="cv_${k}"></b><button class="c-step" data-k="${k}" data-d="1" aria-label="Higher">+</button>`;
+  const chips = (k, opts, label) => `<span data-c="${k}">${seg(opts.map(o => [o, o ? `${o}°` : 'Off']), v[k], { cls: 'sm', acc: 'c-acc-ac', label })}</span>`;
+  return `${sheetHead('Comfort', '', 'What Autopilot aims for. Your changes at the thermostat or in the app still go anywhere from 65° to 85°.')}
+    <div class="c-card" id="cmRows" style="padding:4px 16px">${row('Day', '<span id="cs_day"></span>', stepr('dayF'))}${row('Night', '<span id="cs_night"></span>', stepr('nightF'))}
+      ${row('Night hours', 'when night starts and ends', '<button class="c-btn sm line c-num" data-h="nightFrom" id="cv_nightFrom" aria-label="Night starts"></button><span class="c-cap">–</span><button class="c-btn sm line c-num" data-h="nightTo" id="cv_nightTo" aria-label="Night ends"></button>')}
+      ${row('Pre-cool', 'on hot, sunny days, while solar covers it', chips('precoolDepth', [0, 1, 2, 3], 'Pre-cool'))}${row('Evening drift', 'after pre-cooling, on the Powerwalls', chips('driftF', [0, 1, 2], 'Evening drift'))}
+      ${row('Away', 'while marked away', stepr('awayF'))}</div>
+    <p class="c-sheet-sub" style="margin-top:14px">A hot, sunny day with these settings:</p>
+    <div class="ag-day" id="cmDay"></div><div class="ag-dlab"><span style="left:0">12a</span><span style="left:25%">6a</span><span style="left:50%">12p</span><span style="left:75%">6p</span><span style="left:100%">12a</span></div>
+    <p class="c-fine" style="text-align:center">Takes effect at the next plan step. A hold in force is left alone.</p>
+    ${sheetFoot('', 'Save', 'c-acc-ac')}`;
+}
 export function openComfort(S) {
   const s = S.ac.settings, v = { dayF: s.dayF, nightF: s.nightF, precoolDepth: s.precoolDepth, driftF: s.driftF, awayF: s.awayF, nightFrom: s.nightFrom, nightTo: s.nightTo };
   const HOURS = { nightFrom: [18, 23], nightTo: [4, 11] };
-  const row = (label, sub, ctl) => `<div class="ag-row"><span class="tl">${label}<small>${sub}</small></span>${ctl}</div>`;
-  const stepr = k => `<span class="ag-step"><button data-k="${k}" data-d="-1" aria-label="Lower">−</button><b id="cv_${k}"></b><button data-k="${k}" data-d="1" aria-label="Higher">+</button></span>`;
-  const chips = (k, opts) => `<span class="ag-chips" data-c="${k}">${opts.map(o => `<button data-v="${o}">${o ? `${o}°` : 'Off'}</button>`).join('')}</span>`;
-  $('sheetBody').innerHTML = `<div class="shead"><h4>Comfort</h4><button class="x" id="cmX" aria-label="Close">✕</button></div>
-    <p class="sub">What Autopilot aims for. Your changes at the thermostat or in the app still go anywhere from 65° to 85°.</p>
-    <div id="cmRows" style="margin-top:6px">${row('Day', '<span id="cs_day"></span>', stepr('dayF'))}${row('Night', '<span id="cs_night"></span>', stepr('nightF'))}
-      ${row('Night hours', 'when night starts and ends', '<span class="ag-hours"><button data-h="nightFrom" id="cv_nightFrom" aria-label="Night starts"></button> – <button data-h="nightTo" id="cv_nightTo" aria-label="Night ends"></button></span>')}
-      ${row('Pre-cool', 'on hot, sunny days, while solar covers it', chips('precoolDepth', [0, 1, 2, 3]))}${row('Evening drift', 'after pre-cooling, on the Powerwalls', chips('driftF', [0, 1, 2]))}
-      ${row('Away', 'while marked away', stepr('awayF'))}</div>
-    <p class="sub" style="margin-top:8px">A hot, sunny day with these settings:</p>
-    <div class="ag-day" id="cmDay"></div><div class="ag-dlab"><span style="left:0">12a</span><span style="left:25%">6a</span><span style="left:50%">12p</span><span style="left:75%">6p</span><span style="left:100%">12a</span></div>
-    <button class="primary" id="cmGo">Save</button>
-    <p class="fine" style="text-align:center;margin-top:10px">Takes effect at the next plan step. A hold in force is left alone.</p>`;
+  sheet(comfortHtml(v));
+  const body = $('sheetBody'), go = body.querySelector('[data-f="pri"]');
   const draw = () => {
     ['dayF', 'nightF', 'awayF'].forEach(k => $(`cv_${k}`).textContent = `${v[k]}°`);
     $('cv_nightFrom').textContent = hr12(v.nightFrom); $('cv_nightTo').textContent = hr12(v.nightTo);
     $('cs_day').textContent = `${hr12(v.nightTo)} – ${hr12(v.nightFrom)}`; $('cs_night').textContent = `${hr12(v.nightFrom)} – ${hr12(v.nightTo)}`;
-    document.querySelectorAll('#cmRows [data-c] button').forEach(b => b.classList.toggle('on', v[b.parentElement.dataset.c] === +b.dataset.v));
+    body.querySelectorAll('#cmRows [data-c]').forEach(w => segSet(w.firstElementChild, String(v[w.dataset.c])));
     $('cmDay').innerHTML = hotDay(v, S.ac.plan).map(([a, b, f, k]) => `<i style="flex:${b - a};background:${DAYC[k]}">${b - a >= 2 ? f : ''}</i>`).join('');
   };
   $('cmRows').onclick = e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.k) { const k = b.dataset.k; v[k] = Math.max(65, Math.min(85, v[k] + +b.dataset.d)); }
     else if (b.dataset.h) { const k = b.dataset.h, [lo, hi] = HOURS[k]; v[k] = v[k] >= hi ? lo : v[k] + 1; }   // each tap moves an hour later, wrapping
-    else if (b.dataset.v != null) v[b.parentElement.dataset.c] = +b.dataset.v;
+    else if (b.dataset.v != null) v[b.closest('[data-c]').dataset.c] = +b.dataset.v;
     // pre-cool and drift may not leave 65–85° (the server checks the same)
     v.precoolDepth = Math.min(v.precoolDepth, v.dayF - 65); v.driftF = Math.min(v.driftF, 85 - v.dayF);
     draw(); };
-  $('cmX').onclick = () => $('phone').classList.remove('open');
-  $('cmGo').onclick = async () => { const go = $('cmGo'); go.textContent = 'Saving…';
-    try { await api.acSettings(v); $('phone').classList.remove('open'); await loadAc(S); }
+  go.onclick = async () => { go.textContent = 'Saving…';
+    try { await api.acSettings(v); closeSheet(); await loadAc(S); }
     catch (e) { alert(e.message); go.textContent = 'Save'; } };
-  draw(); $('phone').classList.add('open');
+  draw();
 }
 /* "Too cold" (dir +1) / "Too warm" (dir −1): the target for this part of the day, or just for now */
 export function openNudge(S, dir) {

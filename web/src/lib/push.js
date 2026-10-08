@@ -85,3 +85,16 @@ export async function unsubscribePush() {
   await api.pushUnsubscribe(sub.endpoint).catch(() => {});
   await sub.unsubscribe().catch(() => {});
 }
+
+/**
+ * On an owner device that already has push on, post its existing subscription again (no prompt, no new subscription), so the server
+ * ties it to this device's owner session and signing the device out stops its pushes (audit 10b, S-04). Subscriptions stored before
+ * that link existed have none until this runs. Quiet: any failure is ignored. Returns whether it posted.
+ */
+export async function rebindPush() {
+  try {
+    if (!supported() || Notification.permission !== 'granted') return false;
+    const sub = await currentSub(); if (!sub) return false;
+    await api.pushSubscribe(sub.toJSON()); return true;
+  } catch { return false; }
+}
