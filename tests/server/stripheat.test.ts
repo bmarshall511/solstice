@@ -215,3 +215,17 @@ describe('guests', () => {
     expect(GUEST_GET.has('/api/appliances/ac/strip')).toBe(false);
   });
 });
+
+// Polish (overnight QA): the home model's heating change point (fitted against the daily low, often 55–75°F) is only a hint for the
+// strip balance point, held inside 25–45°F, so the card never says a heat pump "needs help" below 63°F.
+import { balanceOf, BALANCE_RANGE_F } from '../../server/src/stripwatch.js';
+describe('strip balance point', () => {
+  it('is the home model\'s change point held inside 25–45°F, or 40°F without a heating fit', () => {
+    expect(BALANCE_RANGE_F).toEqual([25, 45]);
+    expect(balanceOf({ a: 20, b: 1.5, c: 1.2, tc: 72, th: 63 } as any)).toBe(45);
+    expect(balanceOf({ a: 20, b: 1.5, c: 1.2, tc: 72, th: 38 } as any)).toBe(38);
+    expect(balanceOf({ a: 20, b: 1.5, c: 1.2, tc: 72, th: 18 } as any)).toBe(25);
+    expect(balanceOf({ a: 20, b: 1.5, c: 0, tc: 72, th: 60 } as any)).toBe(40);
+    expect(balanceOf(null)).toBe(40);
+  });
+});

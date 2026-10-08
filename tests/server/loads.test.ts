@@ -115,6 +115,13 @@ describe('clusters', () => {
     expect(both[0].hist[7]).toBeGreaterThan(0); expect(both[0].hist[22]).toBeGreaterThan(0);   // when it runs is the strip
     expect(clusterLoads(late, [], { today: TODAY, days30: 30 }).clusters[0].suggestion).toEqual({ name: 'Dishwasher', text: 'Could be the dishwasher.' });
   });
+  it('LD-10b one appliance straddling a band edge (4.4 and 4.7 kW, 25 min) is one cluster; a clearly different load stays apart', () => {
+    const a = many(6, 2, () => 9, 4.4, 25), b = many(6, 1, () => 13, 4.7, 25), oven = many(6, 1, () => 17, 2.6, 50);
+    const c = clusterLoads([...a, ...b, ...oven], [], { today: TODAY, days30: 30 }).clusters;
+    expect(c).toHaveLength(2);
+    expect(c.map(x => x.count).sort((p, q) => q - p)).toEqual([18, 6]);
+    const wh = c.find(x => x.count === 18)!; expect(wh.kw).toBeGreaterThanOrEqual(4.3); expect(wh.kw).toBeLessThanOrEqual(4.8); expect(wh.minutes).toBe(25);
+  });
   it('LD-11 a name catches bursts within ±20% kW and 1.5× the minutes; the nearest centre wins', () => {
     const L = (id: number, kw: number, minutes: number, extra: Partial<Label> = {}): Label => ({ id, sig: `s${id}`, name: `n${id}`, kw, minutes, daypart: null, dismissed: false, ...extra });
     const wh = L(1, 4.4, 22);

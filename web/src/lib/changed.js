@@ -5,8 +5,9 @@ import { esc, badge } from './conf.js';
 
 const MINUS = '−';
 /** Row labels, by part id. `home` and `solar` are the bought waterfall's two rows. */
+/** @type {Record<string, string | ((kwh: number) => string)>} */
 export const LABEL = { weather: 'Weather', ac: 'AC beyond the weather', pool: 'Pool', alwaysOn: 'Always-on', trip: 'Trip', unexplained: 'Unexplained',
-  other: 'Everything else', home: 'Used more', solar: 'Solar & Powerwalls covered more' };
+  other: 'Everything else', home: v => v < 0 ? 'Used less' : 'Used more', solar: v => v > 0 ? 'Solar & Powerwalls covered less' : 'Solar & Powerwalls covered more' };   // the bought split's labels follow the sign
 /** Each part's accent (the c-acc-* the mockup gives its row). */
 export const ACC = { weather: 'c-acc-out', ac: 'c-acc-ac', pool: 'c-acc-pool', alwaysOn: 'c-acc-grid', trip: 'c-acc-vac', unexplained: 'c-acc-mute',
   other: 'c-acc-mute', home: 'c-acc-home', solar: 'c-acc-solar' };
@@ -23,11 +24,13 @@ const weekdayOf = date => new Date(date + 'T12:00:00Z').toLocaleDateString('en-U
  * The change waterfall (component c-wf): one row per part, its bar from the centre line (right for more, left for less; the largest
  * part reaches 46% of the track), its badge, and the total row. The parts are the server's, which add up to `total`.
  */
+/** A part's label: a fixed string, or a function of its signed kWh (the bought split says "less" or "more" by the sign). */
+const labelOf = (labels, p) => { const l = labels[p.id] ?? p.id; return typeof l === 'function' ? l(p.kwh) : l; };
 export function wfHtml(parts, total, totalLabel, labels = LABEL) {
   const max = Math.max(0.1, ...parts.map(p => Math.abs(p.kwh)));
   const rows = parts.map(p => {
     const cls = p.kwh < 0 ? 'neg' : 'pos', w = Math.round(Math.abs(p.kwh) / max * 46);
-    return `<div class="c-wf-r ${ACC[p.id] ?? 'c-acc-mute'}"><span class="c-wf-l">${esc(labels[p.id] ?? p.id)}${p.conf ? badge(p.conf) : ''}</span>`
+    return `<div class="c-wf-r ${ACC[p.id] ?? 'c-acc-mute'}"><span class="c-wf-l">${esc(labelOf(labels, p))}${p.conf ? badge(p.conf) : ''}</span>`
       + `<span class="c-wf-t">${Math.round(p.kwh * 10) ? `<i class="${cls}" style="width:${w}%"></i>` : ''}</span><b class="${cls}">${signed1(p.kwh)}</b></div>`;
   }).join('');
   return `<div class="c-wf">${rows}<div class="c-wf-r c-wf-tot"><span class="c-wf-l">${esc(totalLabel)}</span><span class="c-wf-t"></span><b>${signed1(total)} kWh</b></div></div>`;
@@ -110,7 +113,7 @@ export function dayCardHtml(c, { view = 'home', guest = false } = {}) {
 }
 /** History › Day: Bought from PEC (frame 1's second card, owner only). */
 export const buyCardHtml = c => `<div class="c-head"><h5>Bought from PEC</h5><span class="c-fig">${signed1(c.import.delta)} kWh</span></div>`
-  + `${wfHtml(c.import.parts, c.import.delta, 'Bought vs typical', { ...LABEL, home: 'Used more (above)' })}<div class="c-sum">${esc(boughtSum(c))}</div>`;
+  + `${wfHtml(c.import.parts, c.import.delta, 'Bought vs typical', { ...LABEL, home: v => `${v < 0 ? "Used less" : "Used more"} (above)` })}<div class="c-sum">${esc(boughtSum(c))}</div>`;
 const arrow = v => { const n = Math.round(v); return n > 0 ? `▲ ${n}` : n < 0 ? `▼ ${Math.abs(n)}` : '='; };
 /** History › Week (frame 2): the week's figures and its waterfall against the week before. */
 export function weekCardHtml(c, { guest = false } = {}) {

@@ -214,6 +214,20 @@ export function clusterLoads(bursts: StoredBurst[], labels: Label[], o: { today:
   const unsorted: StoredBurst[] = [];
   // a band's bursts outside a named centre's tolerance never join that name's cluster: they stay unsorted
   const addLoose = (k: string, b: StoredBurst) => { const l = bySig.get(k); if (l?.name && !l.dismissed) unsorted.push(b); else add(k, b); };
+  // one appliance can straddle a band edge (a 4.4 and a 4.7 kW water heater fall in two kW bands): join unnamed bands whose centres
+  // are within 15% kW and 1.5× the minutes, into the band with more runs, so the list shows it once
+  const centre = (bs: StoredBurst[]) => ({ kw: med(bs.map(b => b.kw)), minutes: med(bs.map(b => b.minutes)) });
+  for (let joined = true; joined;) {
+    joined = false;
+    const keys = [...loose.keys()].sort();
+    for (let i = 0; i < keys.length && !joined; i++) for (let j = i + 1; j < keys.length && !joined; j++) {
+      const a = loose.get(keys[i])!, b = loose.get(keys[j])!, ca = centre(a), cb = centre(b);
+      if (Math.abs(ca.kw - cb.kw) <= .15 * Math.min(ca.kw, cb.kw) && Math.max(ca.minutes, cb.minutes) <= 1.5 * Math.min(ca.minutes, cb.minutes)) {
+        const [keep, drop] = a.length >= b.length ? [keys[i], keys[j]] : [keys[j], keys[i]];
+        loose.set(keep, [...loose.get(keep)!, ...loose.get(drop)!].sort((x, y) => x.start - y.start)); loose.delete(drop); joined = true;
+      }
+    }
+  }
   for (const [sig, bs] of [...loose].sort(([a], [b]) => a.localeCompare(b))) {
     // one cluster per band, whatever the time of day (mockup am frame 4: a water heater is one row, "5–7× a day, day and night");
     // when it runs is the row's 24-hour strip, not a reason to split it
