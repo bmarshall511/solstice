@@ -18,7 +18,7 @@ beforeAll(async () => {
   click(document.querySelector('.c-tab[data-v="v-set"]')); await flush();
   await until(() => S.status, 10_000, '/api/status');
 });
-afterAll(() => vi.useRealTimers());
+afterAll(async () => { await new Promise(r => setTimeout(r, 150)); vi.useRealTimers(); });   // let main.js's 50 ms sheet-focus timer fire before teardown
 const writes = n => f.writes(n).filter(c => c.path !== 'sync');
 const rowTitled = (root, t) => [...root.querySelectorAll('.c-sys')].find(r => r.querySelector('.c-sys-top b')?.textContent === t);
 

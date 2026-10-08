@@ -13,7 +13,7 @@ vi.mock('../../../web/src/views/nowhub.js', async importOriginal => { const m = 
 let S, f;
 const created = { id: 'n1', label: 'Sam', url: 'https://example.test/#s=abcdefghijklmnopqrstu', expiresAt: null };
 beforeAll(async () => { ({ S, f } = await bootApp(ownerRoutes({ 'POST share': created, 'POST auth/preview': { ok: true, preview: true } }), external())); });
-afterAll(() => vi.useRealTimers());
+afterAll(async () => { await new Promise(r => setTimeout(r, 150)); vi.useRealTimers(); });   // let main.js's 50 ms sheet-focus timer fire before teardown
 beforeEach(() => { confirm.mockClear(); confirm.mockImplementation(() => true); });
 const close = () => $('phone').classList.remove('open');
 const noWrites = n => expect(sheetWrites(f, n), 'a write before the primary').toEqual([]);

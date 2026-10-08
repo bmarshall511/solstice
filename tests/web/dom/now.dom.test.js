@@ -15,7 +15,7 @@ vi.mock('../../../web/src/views/nowhub.js', async importOriginal => { const m = 
 
 let S, f, changedNow = null;   // what /api/changed answers (null: the clean fixture for the asked date)
 beforeAll(async () => { ({ S, f } = await bootApp(ownerRoutes({ changed: req => changedNow ?? { ...changedClean(NOW), date: req.query.date, to: req.query.date } }), external())); });
-afterAll(() => vi.useRealTimers());
+afterAll(async () => { await new Promise(r => setTimeout(r, 150)); vi.useRealTimers(); });   // let main.js's 50 ms sheet-focus timer fire before teardown
 const slot = () => $('banSlot').querySelector('.c-ban');
 
 describe('Now after boot (owner)', () => {

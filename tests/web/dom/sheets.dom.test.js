@@ -14,7 +14,8 @@ vi.mock('../../../web/src/views/nowhub.js', async importOriginal => { const m = 
 
 let S, f, check = null;
 beforeAll(async () => { ({ S, f } = await bootApp(ownerRoutes({ 'vacation/check': () => check ?? ownerRoutes()['vacation/check'] }), external())); });
-afterAll(() => vi.useRealTimers());
+// let the sheet-open focus timer (main.js, 50 ms) fire before happy-dom is torn down, or it throws "document is not defined" after the run
+afterAll(async () => { await new Promise(r => setTimeout(r, 150)); vi.useRealTimers(); });
 beforeEach(() => { confirm.mockClear(); confirm.mockImplementation(() => true); alert.mockClear(); });
 
 const open = id => { click($('hubRows').querySelector(`[data-sheet="${id}"]`)); expect(sheetOpen()).toBe(true); };
