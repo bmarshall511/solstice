@@ -196,36 +196,47 @@ describe('crons keep their bearer check and need no cookie', () => {
 describe('OAuth links: minted only by the owner, callbacks verify a signed single-use state', () => {
   const stateOf = (r: Response) => new URL(r.headers.get('location')!).searchParams.get('state')!;
 
-  it('AUTH-10 Tesla: owner starts, the callback works without a cookie once, and refuses replays and forgeries', async () => {
+  const flowCookie = (r: Response, flow: 'tesla' | 'nest') => r.headers.getSetCookie().map(c => c.split(';')[0]).find(c => c.startsWith(`solstice_oauth_${flow}=`))!;
+
+  it('AUTH-10 Tesla: owner starts (the flow is bound to this browser by a cookie), the callback works once from that browser, and refuses replays, forgeries and other browsers', async () => {
     const cookie = await ownerCookie();
     const start = await call('/auth/login', { cookie });
     expect(start.status).toBe(302);
-    const state = stateOf(start);
-    const cb = await call(`/auth/callback?code=test-code&state=${encodeURIComponent(state)}`);
+    const state = stateOf(start), bound = flowCookie(start, 'tesla');
+    expect(bound).toMatch(/^solstice_oauth_tesla=[0-9a-f]{32}$/);
+    expect(start.headers.getSetCookie().find(c => c.startsWith('solstice_oauth_tesla='))).toMatch(/; Path=\/; HttpOnly; SameSite=Lax; Max-Age=600$/);
+    // another browser (no cookie, or another flow's nonce): refused as 'browser', and the state is not used up
+    expect((await call(`/auth/callback?code=test-code&state=${encodeURIComponent(state)}`)).headers.get('location')).toBe('/?tesla_error=browser');
+    expect((await call(`/auth/callback?code=test-code&state=${encodeURIComponent(state)}`, { cookie: 'solstice_oauth_tesla=' + '0'.repeat(32) })).headers.get('location')).toBe('/?tesla_error=browser');
+    expect(teslaAuth.exchangeCode).not.toHaveBeenCalled();
+    const cb = await call(`/auth/callback?code=test-code&state=${encodeURIComponent(state)}`, { cookie: bound });
     expect(cb.status).toBe(302);
     expect(cb.headers.get('location')).toBe('/');
+    expect(cb.headers.getSetCookie().some(c => /^solstice_oauth_tesla=; .*Max-Age=0/.test(c))).toBe(true);   // the binding cookie is cleared
     expect(teslaAuth.exchangeCode).toHaveBeenCalledWith('test-code', null, { expectSites: expect.any(Array) });   // the linked sites a re-link must include
-    const replay = await call(`/auth/callback?code=test-code&state=${encodeURIComponent(state)}`);
+    const replay = await call(`/auth/callback?code=test-code&state=${encodeURIComponent(state)}`, { cookie: bound });
     expect(replay.headers.get('location')).toBe('/?tesla_error=expired');
     const body = state.slice(0, state.lastIndexOf('.'));
     for (const forged of [`${body}.AAAA`, `owner.tesla.${Date.now() + 60_000}.00.x`, auth.signState(0), auth.signOwnerState('tesla', -1000), auth.signOwnerState('nest', 60_000), '']) {
-      const r = await call(`/auth/callback?code=test-code&state=${encodeURIComponent(forged)}`);
+      const r = await call(`/auth/callback?code=test-code&state=${encodeURIComponent(forged)}`, { cookie: bound });
       expect(r.headers.get('location'), forged).toBe('/?tesla_error=expired');
     }
     expect(teslaAuth.exchangeCode).toHaveBeenCalledTimes(1);
   });
 
-  it('AUTH-11 Nest: the same rules on /auth/google', async () => {
+  it('AUTH-11 Nest: the same rules on /auth/google (an hour for Google\'s slow consent page)', async () => {
     const cookie = await ownerCookie();
     const start = await call('/auth/google', { cookie });
     expect(start.status).toBe(302);
-    const state = stateOf(start);
-    const cb = await call(`/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`);
+    const state = stateOf(start), bound = flowCookie(start, 'nest');
+    expect(start.headers.getSetCookie().find(c => c.startsWith('solstice_oauth_nest='))).toMatch(/Max-Age=3600$/);
+    expect((await call(`/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`)).headers.get('location')).toBe('/?nest_error=browser');
+    const cb = await call(`/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`, { cookie: bound });
     expect(cb.headers.get('location')).toBe('/?nest=linked');
-    expect((await call(`/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`)).headers.get('location')).toBe('/?nest_error=expired');
-    const tesla = stateOf(await call('/auth/login', { cookie }));   // a Tesla state is not a Nest state
+    expect((await call(`/auth/google/callback?code=test-code&state=${encodeURIComponent(state)}`, { cookie: bound })).headers.get('location')).toBe('/?nest_error=expired');
+    const t = await call('/auth/login', { cookie }), tesla = stateOf(t);   // a Tesla state is not a Nest state, even with its own cookie
     for (const forged of [tesla, `owner.nest.${Date.now() + 60_000}.00.x`, auth.signState(0, 60_000), auth.signOwnerState('nest', -1000)]) {
-      expect((await call(`/auth/google/callback?code=test-code&state=${encodeURIComponent(forged)}`)).headers.get('location'), forged).toBe('/?nest_error=expired');
+      expect((await call(`/auth/google/callback?code=test-code&state=${encodeURIComponent(forged)}`, { cookie: `${bound}; ${flowCookie(t, 'tesla')}` })).headers.get('location'), forged).toBe('/?nest_error=expired');
     }
   });
 });

@@ -219,17 +219,32 @@ export const clientIp = (req: Request) => String(req.headers['x-real-ip'] ?? req
 
 /** OAuth `state` for the single-owner Tesla and Nest links: minted only by owner-only routes (/auth/login, /auth/google),
  *  bound to its flow, short-lived, HMAC'd with SESSION_SECRET, and single-use (the callback claims the nonce in kv). */
-export function signOwnerState(flow: 'tesla' | 'nest', ttlMs: number) {
-  const body = `owner.${flow}.${Date.now() + ttlMs}.${randomBytes(16).toString('hex')}`;
+/** The cookie that ties an owner OAuth flow to the browser that started it (2026-10-08): it holds the state's nonce. */
+const oauthCookie = (flow: 'tesla' | 'nest') => `solstice_oauth_${flow}`;
+/**
+ * A signed, single-use owner OAuth `state`. With `res`, the flow is also bound to this browser: the state's nonce goes into a
+ * short-lived cookie (`__Host-` in production, SameSite=Lax so it rides the provider's top-level redirect back), and the callback
+ * must present it. A state started in one browser can't be finished in another (a planted or leaked link does nothing).
+ */
+export function signOwnerState(flow: 'tesla' | 'nest', ttlMs: number, res?: Response) {
+  const nonce = randomBytes(16).toString('hex'), body = `owner.${flow}.${Date.now() + ttlMs}.${nonce}`;
+  if (res) setCookie(res, oauthCookie(flow), nonce, Math.ceil(ttlMs / 1000));
   return `${body}.${createHmac('sha256', secret()).update(body).digest('base64url')}`;
 }
-export async function consumeOwnerState(state: string, flow: 'tesla' | 'nest'): Promise<boolean> {
-  const i = state.lastIndexOf('.'); if (i < 1) return false;
+/**
+ * Check and use up an owner OAuth state: 'ok'; 'expired' (forged, expired, another flow's, already used); 'browser' (good state, but
+ * not this browser's: its cookie is missing or holds another nonce; the nonce isn't used up, so the right browser can still finish).
+ * With `req` the browser binding is enforced; `res` clears the cookie once used.
+ */
+export async function consumeOwnerState(state: string, flow: 'tesla' | 'nest', req?: Request, res?: Response): Promise<'ok' | 'expired' | 'browser'> {
+  const i = state.lastIndexOf('.'); if (i < 1) return 'expired';
   const body = state.slice(0, i), sig = state.slice(i + 1);
-  if (!safeEqual(sig, createHmac('sha256', secret()).update(body).digest('base64url'))) return false;
+  if (!safeEqual(sig, createHmac('sha256', secret()).update(body).digest('base64url'))) return 'expired';
   const [tag, f, exp, nonce] = body.split('.');
-  if (tag !== 'owner' || f !== flow || !(Number(exp) > Date.now()) || !nonce) return false;
+  if (tag !== 'owner' || f !== flow || !(Number(exp) > Date.now()) || !nonce) return 'expired';
+  if (req) { const held = readCookie(req, oauthCookie(flow)); if (!held || !safeEqual(held, nonce)) return 'browser'; }
   const claimed = await one('INSERT INTO kv (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING RETURNING key', [`oauth:used:${nonce}`, JSON.stringify({ exp: Number(exp) })]);
   await q(`DELETE FROM kv WHERE key LIKE 'oauth:used:%' AND (value->>'exp')::bigint < $1`, [Date.now()]);
-  return !!claimed;
+  if (claimed && res) setCookie(res, oauthCookie(flow), '', 0);
+  return claimed ? 'ok' : 'expired';
 }

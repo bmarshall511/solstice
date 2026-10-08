@@ -126,4 +126,10 @@ describe('cookie hardening', () => {
     expect(setCookies(pv).some(c => /^__Host-solstice_preview=1; /.test(c))).toBe(true);
     await call(`/api/share/${share.id}/revoke`, { method: 'POST', cookie: owner, headers: { Origin: base } });
   });
+  it('CK-6 production: the OAuth browser-binding cookie is __Host- too', async () => {
+    const owner = await ownerCookie();
+    const r = await prod(() => call('/auth/google', { cookie: owner }));
+    expect(r.status).toBe(302);
+    expect(setCookies(r).some(c => /^__Host-solstice_oauth_nest=[0-9a-f]{32}; Path=\/; HttpOnly; SameSite=Lax; Max-Age=3600; Secure$/.test(c))).toBe(true);
+  });
 });
