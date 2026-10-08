@@ -215,27 +215,30 @@ export async function clearUpSend(S, body) {
   try { S.pool = await api.poolClearUp(body); } catch (e) { pc.err = `Clear-up: ${e.message}`; }
   pc.clearBusy = false; drawPool(S); S.onPool?.();
 }
+/** The Clear-up sheet in the component system (mockup al, component 11), like the circuit sheet: For as a segment, the speed
+ *  stepper, the day's figures as a key/value card, Start Clear-up in the pinned footer (the sheet's only write). */
+export function clearUpHtml({ days, rpm }) {
+  return `${sheetHead('Clear-up', '', 'Pool runs around the clock to clear cloudy water, then goes back to the planner by itself')}
+    <div class="c-lab">For</div><div id="pcDays">${seg([1, 2, 3].map(n => [String(n), `${n} day${n > 1 ? 's' : ''}`]), String(days), { acc: 'c-acc-pool', attr: 'data-n', label: 'For' })}</div>
+    <div class="c-card" style="padding:4px 16px"><div class="c-stepper"><div>Speed<small id="pcTurn"></small></div><button class="c-step" id="pcDn" aria-label="Slower">\u2212</button><b id="pcRpm" class="c-num">${rpm.toLocaleString()}</b><button class="c-step" id="pcUp" aria-label="Faster">+</button></div></div>
+    <div class="c-kv" id="pcNums" style="margin-top:12px"></div>
+    ${sheetFoot('', 'Start Clear-up', 'c-acc-pool')}`;
+}
 export function openClearUp(S) {   // also offered after a hazy test (water.js, mockup aj)
   const d = S.pool, rates = d.clearUpRates ?? []; if (!rates.length) return;
   let days = 2, rpm = 2000;
-  $('sheetBody').innerHTML = `<div class="shead"><h4>Clear-up</h4><button class="x" id="pcX" aria-label="Close">\u2715</button></div>
-    <p class="sub">Pool runs around the clock to clear cloudy water, then goes back to the planner by itself</p>
-    <div class="pc-lbl">For</div><div class="pc-runs" id="pcDays" style="grid-template-columns:repeat(3,1fr)">${[1, 2, 3].map(n => `<button data-n="${n}">${n} day${n > 1 ? 's' : ''}</button>`).join('')}</div>
-    <div class="pc-rpm"><div class="bt">Speed<small id="pcTurn"></small></div><div class="stp"><button id="pcDn" aria-label="Slower">\u2212</button><b id="pcRpm"></b><button id="pcUp" aria-label="Faster">+</button></div></div>
-    <div class="pc-nums" id="pcNums"></div>
-    <button class="primary" id="pcGo">Start Clear-up</button>`;
+  sheet(clearUpHtml({ days, rpm }));
   const draw = () => {
     const r = rates.find(x => x.rpm === rpm) ?? rates[0], end = poolRunAfter(Date.now() + days * 864e5);
-    document.querySelectorAll('#pcDays button').forEach(b => b.classList.toggle('on', +b.dataset.n === days));
+    segSet($('pcDays').firstElementChild, String(days), 'data-n');
     $('pcRpm').textContent = rpm.toLocaleString(); $('pcTurn').textContent = `about ${r.turnovers} turnovers a day`;
-    $('pcNums').innerHTML = `<div><b>24 h</b><span>pump a day</span></div><div><b>${r.kwhPerDay}</b><span>kWh a day</span></div><div><b>${new Date(end).toLocaleDateString('en-US', { weekday: 'short' })}</b><span>ends ${clockAt(end)}</span></div>`;
+    $('pcNums').innerHTML = `<span>Pump a day</span><b>24 h</b><span>kWh a day</span><b>${r.kwhPerDay}</b><span>Ends</span><b>${new Date(end).toLocaleDateString('en-US', { weekday: 'short' })} ${clockAt(end)}</b>`;
   };
-  $('pcDays').onclick = e => { const b = /** @type {Element} */ (e.target).closest('button'); if (!b) return; days = +b.dataset.n; draw(); };
+  $('pcDays').onclick = e => { const b = /** @type {HTMLElement | null} */ (/** @type {Element} */ (e.target).closest('[data-n]')); if (!b) return; days = +b.dataset.n; draw(); };
   const lo = rates[0].rpm, hi = rates.at(-1).rpm;
   $('pcDn').onclick = () => { rpm = Math.max(lo, rpm - 50); draw(); }; $('pcUp').onclick = () => { rpm = Math.min(hi, rpm + 50); draw(); };
-  $('pcX').onclick = () => $('phone').classList.remove('open');
-  $('pcGo').onclick = () => { $('phone').classList.remove('open'); clearUpSend(S, { action: 'start', days, rpm }); };
-  draw(); $('phone').classList.add('open');
+  /** @type {HTMLElement} */ ($('sheetBody').querySelector('[data-f="pri"]')).onclick = () => { closeSheet(); clearUpSend(S, { action: 'start', days, rpm }); };
+  draw();
 }
 /** Mockup ak frame 7: the banner on the planner while a trip's pool plan is on (Pool Autopilot plans trip days at the trip goal). */
 function tripBanner(S) {
