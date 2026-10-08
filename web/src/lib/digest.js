@@ -94,7 +94,8 @@ export function badgesHtml(d, models) {
  */
 const CHANGED_NAME = { weather: 'weather', ac: 'AC', pool: 'pool', alwaysOn: 'always-on', trip: 'trip', unexplained: 'unexplained', other: 'everything else' };
 export function changedLeadHtml(d) {
-  const H = d?.changed?.home; if (!H?.parts?.length) return null;
+  const H = d?.changed?.home; if (H && d.changed.clean === false) return `<b>${delta0(Math.round(H.delta))} kWh used vs last week.</b>`;   // no split until the history is clean
+  if (!H?.parts?.length) return null;
   const total = Math.round(H.delta), rest = H.parts.at(-1), head = H.parts.slice(0, -1).map(p => ({ ...p, n: Math.round(p.kwh) }));
   const all = [...head, { ...rest, n: total - head.reduce((a, p) => a + p.n, 0) }].filter(p => p.n !== 0);
   const tag = p => p.id === 'weather' && p.conf ? ` <span class="c-badge" data-t="e">${p.conf === 'learning' ? 'learning' : 'est'}</span>` : '';

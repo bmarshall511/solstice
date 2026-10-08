@@ -38,6 +38,8 @@ export type Changed = {
   baseline: { kind: 'weekday' | 'prev7' | 'week'; days: number } | null;
   wx: { high: number; baseHigh: number } | null;
   home: Section | null; import: (Section & { solar: { obs: number; base: number } }) | null;
+  /** false: the history isn't clean enough to split the change yet, so home.parts is empty (the totals still show). */
+  clean: boolean;
   notes: string[];
 };
 export type Inputs = { scope: 'day' | 'week'; date: string; days: ReadonlyMap<string, Day>; weather: Weather; heatKw: number | null; acConf: 'measured' | 'estimated'; guest?: boolean };
@@ -77,7 +79,7 @@ export function weatherModel(slopes: Pick<HomeSlopes, 'b' | 'c' | 'tc' | 'th'> |
 export function attribute(inp: Inputs): Changed {
   const { scope, days, weather: w, heatKw, guest = false } = inp, notes = new Set<string>();
   const date = scope === 'week' ? mondayOf(inp.date) : inp.date, to = scope === 'week' ? addDays(date, 6) : date;
-  const empty = (note: string, baseline: Changed['baseline'] = null): Changed => ({ scope, date, to, baseline, wx: null, home: null, import: null, notes: [note] });
+  const empty = (note: string, baseline: Changed['baseline'] = null): Changed => ({ scope, date, to, baseline, wx: null, home: null, import: null, clean: false, notes: [note] });
   let O: Day[], B: Day[], kind: 'weekday' | 'prev7' | 'week';
   if (scope === 'day') {
     const o = days.get(date); if (!o || !o.complete) return empty('incomplete');
@@ -135,6 +137,11 @@ export function attribute(inp: Inputs): Changed {
   const dT = tenths(dHome), shown = raw.filter(p => p.v != null).map(p => ({ id: p.id, t: tenths(p.v!), conf: p.conf }));
   const uT = dT - shown.reduce((a, p) => a + p.t, 0);
   let parts: Part[] = [...shown.map(p => ({ id: p.id, kwh: p.t / 10, conf: p.conf })), { id: 'unexplained', kwh: uT / 10, conf: null }];
+  // The owner's rule (2026-10-08): hide the split until the history is clean. Clean = every day used (observed and baseline) has its
+  // pool kWh, and "unexplained" is at most half the change or 3 kWh. Until then the card shows the totals and one line, no parts
+  // (a September baseline still carries the old overnight pump program as "always-on", which would read as a −50 kWh always-on part).
+  const clean = covered(x => x.pool) && !(Math.abs(uT) > 30 && Math.abs(uT) * 2 > Math.abs(dT));
+  if (!clean) notes.add('not-clean');   // changedFor empties the parts before they leave the server
   if (guest) {   // weather, pool and "everything else": AC, always-on and what the models can't place, folded together
     const keep = parts.filter(p => p.id === 'weather' || p.id === 'pool');
     parts = [...keep, { id: 'other', kwh: (dT - keep.reduce((a, p) => a + tenths(p.kwh), 0)) / 10, conf: null }];
@@ -150,6 +157,7 @@ export function attribute(inp: Inputs): Changed {
     import: { obs: r1(sumO(x => x.imp)!), base: r1(baseB(x => x.imp)!), delta: iT / 10,
       parts: [{ id: 'home', kwh: dT / 10, conf: null }, { id: 'solar', kwh: (iT - dT) / 10, conf: 'measured' }],
       solar: { obs: r1(sumO(x => x.solar)!), base: r1(baseB(x => x.solar)!) } },
+    clean,
     notes: guest ? [] : [...notes],
   };
 }
@@ -167,7 +175,7 @@ export async function changedFor(siteId: string, scope: string, date: string | u
   const now = o.now ?? Date.now(), today = localDay(new Date(now)), guest = !!o.guest;
   const d0 = scope === 'day' ? date ?? addDays(today, -1) : mondayOf(date ?? addDays(today, -7));
   const end = scope === 'day' ? d0 : addDays(d0, 6), from = addDays(scope === 'day' ? d0 : addDays(d0, -7), -(PREV_SEARCH + 7));
-  if (end >= today) return { scope, date: d0, to: end, baseline: null, wx: null, home: null, import: null, notes: ['incomplete'] };
+  if (end >= today) return { scope, date: d0, to: end, baseline: null, wx: null, home: null, import: null, clean: false, notes: ['incomplete'] };
   const [energy, metrics, state] = await Promise.all([
     q<{ day: string; home: number; imp: number; solar: number; buckets: number }>(`SELECT day, (COALESCE(SUM(home_wh), 0) / 1000.0)::float8 home, (COALESCE(SUM(import_wh), 0) / 1000.0)::float8 imp,
        (COALESCE(SUM(solar_wh), 0) / 1000.0)::float8 solar, COUNT(*)::int buckets FROM energy WHERE site_id = $1 AND day BETWEEN $2 AND $3 GROUP BY day`, [siteId, from, end]),
@@ -187,5 +195,8 @@ export async function changedFor(siteId: string, scope: string, date: string | u
       trip: trips.has(e.day), clearUp: clearUp.has(e.day) });
   }
   const slopes = kvs[homeSlopesKey(siteId)] as HomeSlopes | undefined;
-  return attribute({ scope, date: d0, days, weather: weatherModel(slopes, days, d0, guest), heatKw: learned.heatKw ?? null, acConf: acKwConf(learned), guest });
+  const res = attribute({ scope, date: d0, days, weather: weatherModel(slopes, days, d0, guest), heatKw: learned.heatKw ?? null, acConf: acKwConf(learned), guest });
+  // the owner's rule (2026-10-08): the Used split never leaves the server until the history is clean; the totals still do
+  if (!res.clean && res.home) res.home = { ...res.home, parts: [] };
+  return res;
 }

@@ -165,3 +165,21 @@ describe('I-18: guests', () => {
     expect(tenths(served.home.parts.reduce((a: number, p: any) => a + p.kwh, 0))).toBe(tenths(served.home.delta));
   });
 });
+
+// The owner's rule (2026-10-08): hide the split until the history is clean. attribute() still computes the parts (pinned above);
+// `clean` says whether they may be shown, and the route (changedFor) empties them when not.
+describe('I-18: clean history', () => {
+  it('CHG-14 clean needs pool kWh on every day used and "unexplained" at most half the change or 3 kWh', () => {
+    expect(run(days(D)).clean).toBe(true);
+    const noPool = run(days(D, { [addDays(D, -14)]: { pool: null } }));
+    expect(noPool.clean).toBe(false); expect(noPool.notes).toContain('not-clean');
+    // +10 kWh nobody can place on a day that changed by +10: unexplained is all of it → not clean
+    expect(run(days(D, { [D]: { home: 50 } })).clean).toBe(false);
+    // +2 kWh unexplained (under 3 kWh) is fine whatever its share
+    expect(run(days(D, { [D]: { home: 42 } })).clean).toBe(true);
+    // a big change mostly explained (weather +15) with 3.5 unexplained (under half) is clean
+    const hot = run(days(D, { [D]: { high: 99, ac: 12 + 15, home: 40 + 15 + 3.5 } }));   // the AC ran 15 kWh more, all of it the weather's
+    expect(hot.clean).toBe(true);
+    expect(part(hot, 'unexplained')!.kwh).toBeCloseTo(3.5, 1);
+  });
+});

@@ -114,4 +114,14 @@ describe('I-18 on PGlite', () => {
     const d = await buildDigest(S, '2026-09-28', NOW);
     expect(d.changed).toMatchObject({ scope: 'week', date: '2026-09-28', home: { delta: c.home.delta } });
   });
+  it('CHD-5 the owner\'s rule: a day whose baseline predates the pool readings is not clean, so no parts leave the server (owner or guest), the totals do', async () => {
+    for (const cookie of [owner, preview]) {
+      const c = await (await get('/api/changed?scope=day&date=2026-09-01', cookie)).json();   // a Tuesday; the days before have no pool kWh
+      expect(c.clean).toBe(false);
+      expect(c.home.parts).toEqual([]);
+      expect(typeof c.home.delta).toBe('number');
+    }
+    const ok = await (await get(`/api/changed?scope=day&date=${YDAY}`, owner)).json();
+    expect(ok.clean).toBe(true); expect(ok.home.parts.length).toBeGreaterThan(0);
+  });
 });

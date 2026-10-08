@@ -210,7 +210,7 @@ const changedParts = (ids: readonly string[]) => (v: unknown) => (Array.isArray(
 // the owner's answer (2026-10-08): guests get the Used card only, so nothing of what was bought leaves the server
 export const GUEST_CHANGED_IDS = { home: ['weather', 'pool', 'other'] } as const;
 const CHANGED: Rule = {
-  scope: true, date: true, to: true, baseline: { kind: true, days: true }, wx: { high: true, baseHigh: true },
+  scope: true, date: true, to: true, baseline: { kind: true, days: true }, wx: { high: true, baseHigh: true }, clean: true,
   home: { obs: true, base: true, delta: true, parts: changedParts(GUEST_CHANGED_IDS.home) },
 };
 

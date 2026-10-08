@@ -93,15 +93,20 @@ export function fineText(c) {
 }
 
 /* ---------- the cards ---------- */
+/** The line in place of the parts while the history isn't clean yet (the server's `clean: false`). */
+export const NOT_CLEAN = { day: 'Not enough clean history to split this day yet.', week: 'Not enough clean history to split this week yet.' };
 /** History › Day: What changed (frame 1; frame 8 for a guest: no segment, no fine print). `view`: 'home' (Used) or 'import' (Bought). */
 export function dayCardHtml(c, { view = 'home', guest = false } = {}) {
   const head = `<div class="c-head"><h5>What changed</h5><span class="c-fig">${esc(vsText(c))}</span></div>`;
-  if (guest) return `${head}${wfHtml(c.home.parts, c.home.delta, 'Used vs typical')}<div class="c-sum">${esc(guestSum(c))}</div>`;
+  const hide = c.clean === false;   // the owner's rule: until the history is clean, the Used split stays hidden (total and one line)
+  if (guest) return hide ? `${head}${wfHtml([], c.home.delta, 'Used vs typical')}<div class="c-sum">${NOT_CLEAN.day}</div>`
+    : `${head}${wfHtml(c.home.parts, c.home.delta, 'Used vs typical')}<div class="c-sum">${esc(guestSum(c))}</div>`;
   const imp = view === 'import';
   const seg = `<div class="c-seg sm" style="--n:2;--i:${imp ? 1 : 0};margin-top:10px" role="group" aria-label="Used or bought">`
     + `<button class="${imp ? '' : 'on'}" data-c="home" aria-pressed="${!imp}">Used</button><button class="${imp ? 'on' : ''}" data-c="import" aria-pressed="${imp}">Bought</button></div>`;
-  const wf = imp ? wfHtml(c.import.parts, c.import.delta, 'Bought vs typical') : wfHtml(c.home.parts, c.home.delta, 'Used vs typical');
-  return `${head}${seg}${wf}<div class="c-sum">${esc(imp ? boughtSum(c) : usedSum(c))}</div><p class="c-fine">${esc(fineText(c))}</p>`;
+  const wf = imp ? wfHtml(c.import.parts, c.import.delta, 'Bought vs typical') : wfHtml(hide ? [] : c.home.parts, c.home.delta, 'Used vs typical');
+  const sum = imp ? esc(boughtSum(c)) : hide ? NOT_CLEAN.day : esc(usedSum(c));
+  return `${head}${seg}${wf}<div class="c-sum">${sum}</div><p class="c-fine">${esc(fineText(c))}</p>`;
 }
 /** History › Day: Bought from PEC (frame 1's second card, owner only). */
 export const buyCardHtml = c => `<div class="c-head"><h5>Bought from PEC</h5><span class="c-fig">${signed1(c.import.delta)} kWh</span></div>`
@@ -113,7 +118,7 @@ export function weekCardHtml(c, { guest = false } = {}) {
   const mon = new Date(c.date + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
   return `<div class="c-head"><h5>Week of ${esc(mon)}</h5><span class="c-fig">${r0(H.obs)} kWh used</span></div>`
     + `<div class="c-kv" style="margin-top:10px"><span>Used</span><b>${r0(H.obs)} kWh · ${arrow(H.delta)}</b><span>Bought</span><b>${r0(I.obs)} kWh · ${arrow(I.delta)}</b><span>Sunshare</span><b>${share ?? '—'}%</b></div>`
-    + `${wfHtml(H.parts, H.delta, 'Used vs last week')}<div class="c-sum">${esc(guest ? guestSum(c) : usedSum(c))}</div>`;
+    + `${wfHtml(c.clean === false ? [] : H.parts, H.delta, 'Used vs last week')}<div class="c-sum">${c.clean === false ? NOT_CLEAN.week : esc(guest ? guestSum(c) : usedSum(c))}</div>`;
 }
 
 /* ---------- Now: the morning line (frame 3) ---------- */
@@ -125,10 +130,10 @@ const PHRASE = {
 };
 /**
  * The banner from yesterday's answer, or null: only 06:00–11:00 (Chicago, `hour`), only for yesterday, not after Dismiss today, and
- * not when the kWh bought moved by under 2 kWh either way. "Why" opens History › Day for yesterday.
+ * not when the kWh bought moved by under 2 kWh either way, nor while the history isn't clean enough to say why. "Why" opens History › Day for yesterday.
  */
 export function morningBanner(c, { hour, today, dismissed = null }) {
-  if (!c?.home || !c.import || hour < MORNING_FROM || hour >= MORNING_TO || dismissed === today) return null;
+  if (!c?.home || !c.import || c.clean === false || hour < MORNING_FROM || hour >= MORNING_TO || dismissed === today) return null;
   const y = new Date(Date.parse(today + 'T12:00:00Z') - 864e5).toISOString().slice(0, 10);
   if (c.date !== y || c.scope !== 'day') return null;
   const d = c.import.delta; if (Math.abs(d) < MORNING_MIN_KWH) return null;

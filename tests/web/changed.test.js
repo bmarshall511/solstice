@@ -117,3 +117,23 @@ describe('I-18: the morning line (frame 3)', () => {
     expect(pickBanner([chg])).toBe(chg);
   });
 });
+
+// The owner's rule (2026-10-08): until the history is clean the Used split stays hidden; the total and one line show instead.
+describe('I-18: not clean yet', () => {
+  const dirty = { ...day, clean: false, home: { ...day.home, parts: [] } };
+  it('the Day card shows the total and one line, no parts; the owner can still switch to the (exact) Bought split', () => {
+    const h = dayCardHtml(dirty);
+    expect(h).toContain('Not enough clean history to split this day yet.');
+    expect(h.match(/class="c-wf-r (?!c-wf-tot)/g) ?? []).toHaveLength(0);   // only the total row
+    expect(h).toContain('Used vs typical</span><span class="c-wf-t"></span><b>+6.1 kWh</b>');
+    expect(h).toContain('data-c="import"');
+    expect(dayCardHtml(dirty, { view: 'import' })).toContain('Bought vs typical');
+    expect(dayCardHtml({ ...dirty }, { guest: true })).toContain('Not enough clean history to split this day yet.');
+  });
+  it('the Week card, the digest line and the morning line follow it', () => {
+    expect(weekCardHtml({ ...week, clean: false, home: { ...week.home, parts: [] } })).toContain('Not enough clean history to split this week yet.');
+    expect(changedLeadHtml({ changed: { ...week, clean: false, home: { ...week.home, parts: [] } } })).toBe('<b>+38 kWh used vs last week.</b>');
+    expect(morningBanner({ ...dirty }, { hour: 7, today: '2026-10-07' })).toBeNull();
+    expect(morningBanner({ ...day, clean: true }, { hour: 7, today: '2026-10-07' })).not.toBeNull();
+  });
+});
