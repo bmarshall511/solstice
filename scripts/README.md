@@ -91,3 +91,27 @@ Restart after editing the env file with `launchctl kickstart -k gui/$UID/com.sol
 | `GET /api/pvs/latest` | – | `{ at, ageS, count, inverters: [{ sn, ts, ageS, kw, kwDc, v, tempC, kwhLifetime }] }`: each inverter's newest reading within 7 days of the newest reading overall. |
 
 Storage: one row per inverter per PVS measurement, at most about 8,600 rows a day for 30 inverters (about 4,300 in practice, since the PVS measures only while the panels produce). The nightly sync cron deletes readings older than 90 days (`PVS_KEEP_DAYS` in `server/src/pvs.ts`) after the learning layer has written each day's per-panel figures to `daily_metrics`, which are kept for good. kv `pvs:since` keeps the relay's first reading, so the Panel health card's "since" line survives the prune.
+
+## Offline demo server: every screen with synthetic data
+
+`demo-server.mjs` runs the real app (`server/src/app.ts`) on a throwaway PGlite database filled with a made-up house. You can check the UI in a browser at phone width, as the owner and as a guest, with no Tesla, Nest, ScreenLogic, Neon or other network.
+
+```sh
+nvm use 22
+npm run demo                  # builds web/dist first if it is missing; --build rebuilds it
+PORT=8791 npm run demo        # if 8790 is taken
+```
+
+It prints two links: the owner unlock (`http://localhost:8790/#owner=<synthetic key>`) and a guest link it makes through `POST /api/share`. Ctrl-C stops it and deletes the database.
+
+- **Nothing leaves the machine.** Before the app loads, `fetch` is replaced (`scripts/demo/guard.ts`). Localhost passes. Open-Meteo, NWS and ERCOT answer from synthetic fixtures (`scripts/demo/fixtures.ts`). Anything else (Tesla, Google, Neon) gets a 503 and a `[demo-guard] blocked <host>` line on stderr. Sockets to any non-loopback host are refused, and `node-screenlogic` and the Neon driver are swapped for stubs that throw. The served `index.html` gets a small script that sends the browser's own Open-Meteo and NWS calls to `/__demo/fixture` and refuses other cross-origin fetches. The Google Fonts links are removed, so system fonts stand in for Manrope and JetBrains Mono.
+- **Synthetic, test-only values.** The environment is cleared of every credential. The owner key, session secret and cron secret are constants that open only this local server. The site sits at Austin city hall (30.2672, -97.7431, ZIP 78701), never the owner's location. The Nest and ScreenLogic variables are dummies so the Pool and AC screens show. Every device read is answered from the stored `pool:last` / `nest:last` snapshots, which are refreshed every 15 s.
+- **What is seeded** (`scripts/demo/seed.ts`, from the model in `scripts/demo/model.ts`):
+  - 400 days of 5-minute energy and battery % (the whole sync window, so the app never asks Tesla for a missing day), plus 90 of 300 deep back-fill days. The Settings progress row shows about a third done.
+  - The house: a solar bell from a sun-position model, an evening Powerwall discharge, the AC in the afternoon heat, a 4.4 kW water heater three or four times a day and a 2.6 kW oven most evenings.
+  - 60 days of Nest and pool readings, five days of per-panel readings, three outages, three bills at published PEC-style rates, panel cleaning and filter events, and three pool water tests.
+  - A cold snap in the last week: 36–40 °F mornings when the heat pump runs and the 9 kW strips come on. Three of those mornings are 64→68 °F setback recoveries, so the Strip heat card shows.
+  - The nightly steps, run directly: capacity, the learning layer replayed over past mornings (so models have scores and "What changed" has clean days), records, loads, soiling and the nightly watch.
+- **While it runs**, a 15-second ticker stores each finished 5-minute bucket, a live reading, and Nest, pool and per-panel samples, so Now keeps moving.
+- **Not seeded:** Vacation trips (the trip history is empty), Web Push subscriptions and the payback figures (no system price is stored). The 5-minute and pool crons never run; their ledger entries are synthetic. Both Autopilots show **Suggest**, the app's default.
+- `tests/server/demo-guard.test.ts` checks the guard and the seed's row counts on in-memory PGlite.
