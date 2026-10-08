@@ -193,7 +193,7 @@ describe('AC sheet (frame 6)', () => {
     noWrites(n);
     expect(badText(sheetEl())).toEqual([]);
     expect(hardColours(sheetEl())).toEqual([]);
-    expect(smallTargets(sheetEl())).toEqual(LEGACY_SMALL.nudge);   // still the old shell: a 32 px close (reported)
+    expect(smallTargets(sheetEl())).toEqual(LEGACY_SMALL.nudge);   // the old shell, now with 44 px targets (Batch 8e)
     click($('ngGo')); await flush();
     expect(sheetWrites(f, n)).toEqual([expect.objectContaining({ path: 'appliances/ac/nudge', body: { dir: -1, keep: false } })]);
   });

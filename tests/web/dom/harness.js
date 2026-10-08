@@ -194,7 +194,8 @@ export const KNOWN_COLOURS = ['#cmDay > *'];
  * (.sheet .x) is 32 × 32 px, under the 44 px rule; .ag-opt and .primary get their height from padding (about 46 px) rather than a
  * min-height. What the check reports for them, so a migration (which needs an approved mockup) shows up as a change here.
  */
-export const LEGACY_SMALL = { nudge: ['button.x in .shead → 32px', 'button.ag-opt in . → 0px', 'button.ag-opt.pick in . → 0px', 'button.primary in . → 0px'] };
+// Batch 8e (overnight): the old shell's close is 44 × 44 and .primary / .ag-opt carry min-height 44px, so nothing is reported any more
+export const LEGACY_SMALL = { nudge: [] };
 /** All three form checks on a rendered region. */
 export function expectForm(root, label = '', { colours = true, targets = true } = {}) {
   expectCleanText(root, label);

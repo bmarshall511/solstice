@@ -99,7 +99,7 @@ describe('Pool page sheets', () => {
     click(sheetEl().querySelector('#pcDays [data-n="3"]'));
     noWrites(n);
     expect(badText(sheetEl())).toEqual([]);
-    click($('pcGo')); await flush();
+    click(sheetEl().querySelector('[data-f="pri"]')); await flush();   // Batch 8d: Start Clear-up is the pinned footer's primary
     expect(sheetWrites(f, n)).toEqual([expect.objectContaining({ path: 'appliances/pool/clearup', body: { action: 'start', days: 3, rpm: 2000 } })]);
   });
 });

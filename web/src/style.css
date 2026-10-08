@@ -241,7 +241,7 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .fields{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
 .fields label{font-size:11px;color:var(--dim);display:flex;flex-direction:column;gap:5px}
 .fields input{all:unset;font:14px "JetBrains Mono",ui-monospace,monospace;color:var(--text);padding:10px 12px;border-radius:12px;background:rgba(0,0,0,.35);border:1px solid var(--glass-b)}
-.primary{all:unset;cursor:pointer;display:block;text-align:center;margin-top:16px;padding:14px;border-radius:16px;background:var(--solar);color:#1a1204;font-weight:700;font-size:15px}
+.primary{all:unset;box-sizing:border-box;min-height:44px;cursor:pointer;display:block;text-align:center;margin-top:16px;padding:14px;border-radius:16px;background:var(--solar);color:#1a1204;font-weight:700;font-size:15px}
 
 /* toast */
 .toast{position:absolute;left:12px;right:12px;top:54px;z-index:25;padding:12px 14px;border-radius:20px;background:rgba(24,26,34,.95);border:1px solid var(--glass-b);
@@ -283,7 +283,7 @@ button:focus-visible,.row.tap:focus-visible{outline:2px solid var(--solar);outli
 .side p b{color:var(--text)}
 
 .sheet .shead{display:flex;justify-content:space-between;align-items:center;gap:12px}
-.sheet .x{all:unset;cursor:pointer;flex:none;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.1);font-size:17px}
+.sheet .x{all:unset;cursor:pointer;flex:none;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.1);font-size:17px}
 
 /* Energy flow card: Tesla-style house */
 .house{position:relative;height:370px;margin:12px -16px -16px;border-radius:0 0 26px 26px;overflow:hidden;touch-action:pan-y}
@@ -991,7 +991,7 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 .ag-dlab{position:relative;height:14px;font:500 9.5px "JetBrains Mono",ui-monospace,monospace;color:var(--mute);margin-top:4px}
 .ag-dlab span{position:absolute;transform:translateX(-50%)}.ag-dlab span:first-child{transform:none}.ag-dlab span:last-child{transform:translateX(-100%)}
 #cmGo,#ngGo{display:block;width:100%;box-sizing:border-box;text-align:center;margin-top:14px}
-.ag-opt{all:unset;box-sizing:border-box;cursor:pointer;display:block;width:100%;padding:12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b);margin-top:10px}
+.ag-opt{all:unset;box-sizing:border-box;min-height:44px;cursor:pointer;display:block;width:100%;padding:12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b);margin-top:10px}
 .ag-opt.pick{border-color:rgba(255,255,255,.4);background:rgba(255,255,255,.08)}
 .ag-opt b{font-size:13.5px}
 .ag-opt p{font-size:12px;color:var(--dim);margin-top:3px;line-height:1.45}
