@@ -21,9 +21,24 @@ export async function verifyPassword(pw: string, stored: string) {
 export type User = { id: number; email: string; name: string | null; role: string; settings: Record<string, unknown> };
 declare global { namespace Express { interface Request { user?: User; siteId?: string } } }
 
+const cookieJar = (req: Request) => (req.headers.cookie ?? '').split(';').map(c => c.trim().split('='));
+/** Production (and any Vercel deploy) is HTTPS: cookies there are Secure and carry the `__Host-` prefix. Local development over plain
+ *  http keeps the bare names (a `__Host-` cookie needs Secure, which a browser drops over http). */
+const secureContext = () => process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+/** The name a cookie is written under: `__Host-<name>` in production (the browser then refuses it unless it is Secure, Path=/ and has
+ *  no Domain, so a sibling host or a plain-http response can't plant or overwrite it), the bare name in local development. */
+export const cookieName = (name: string) => secureContext() ? `__Host-${name}` : name;
+/** A cookie's value. In production the `__Host-` cookie wins; a device that still holds the bare one from before the prefix
+ *  (2026-10-08) is read too, so nobody is signed out, and `legacyCookie` tells the caller to re-issue it under the new name. */
 export function readCookie(req: Request, name: string) {
-  return (req.headers.cookie ?? '').split(';').map(c => c.trim().split('=')).find(([k]) => k === name)?.[1];
+  const jar = cookieJar(req), get = (n: string) => jar.find(([k]) => k === n)?.[1];
+  return (secureContext() ? get(`__Host-${name}`) : undefined) ?? get(name);
 }
+/** Whether this request proves `name` only through the bare, pre-prefix cookie (production only). */
+export const legacyCookie = (req: Request, name: string) => {
+  if (!secureContext()) return false;
+  const jar = cookieJar(req); return !jar.some(([k]) => k === `__Host-${name}`) && jar.some(([k]) => k === name);
+};
 const secure = (req: Request) => req.headers['x-forwarded-proto'] === 'https' || req.secure;
 
 export async function startSession(req: Request, res: Response, userId: number) {
@@ -86,7 +101,10 @@ export function verifyState(state: string): number | null {
  * No account, no password, no user table. The cookie is `<session id>.<HMAC-SHA256(OWNER_KEY, id)>`: deleting a row signs
  * one device out, rotating OWNER_KEY signs every device out. Without a usable OWNER_KEY nobody is the owner (fail closed). */
 export const OWNER_COOKIE = 'solstice_owner';
-const OWNER_MAX_AGE_S = 400 * 86400;   // Chrome's cap on cookie lifetime; slides forward with last_seen
+const OWNER_MAX_AGE_S = 400 * 86400;   // Chrome's cap on cookie lifetime
+/** Absolute expiry: an owner session lives at most 400 days from when the device was unlocked, however often it is used (it used to
+ *  slide forward with last_seen for ever). The cookie's Max-Age counts down to that moment. */
+const OWNER_LIFETIME = "interval '400 days'";
 
 /** OWNER_KEY, or null when it is unset or shorter than 32 characters (then every owner check fails). */
 export function ownerKey(): string | null {
@@ -102,8 +120,10 @@ const sessionMac = (id: string, key: string) => createHmac('sha256', key).update
 /** Set (or, with maxAge 0, clear) one of Solstice's cookies: HttpOnly, SameSite=Lax, whole site. Secure everywhere except local
  *  development over plain http (NODE_ENV not production and not on Vercel). */
 export function setCookie(res: Response, name: string, value: string, maxAge: number) {
-  const sec = process.env.NODE_ENV === 'production' || process.env.VERCEL ? '; Secure' : '';
-  res.append('Set-Cookie', `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.max(0, Math.floor(maxAge))}${sec}`);
+  const sec = secureContext() ? '; Secure' : '';
+  res.append('Set-Cookie', `${cookieName(name)}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.max(0, Math.floor(maxAge))}${sec}`);
+  // in production every write also clears the bare, pre-prefix cookie, so a device ends up holding only the __Host- one
+  if (secureContext()) res.append('Set-Cookie', `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${sec}`);
 }
 const setOwnerCookie = (res: Response, value: string, maxAge: number) => setCookie(res, OWNER_COOKIE, value, maxAge);
 
@@ -115,7 +135,7 @@ export function deviceLabel(ua = '') {
   return br ? `${os} · ${br}` : os;
 }
 
-declare global { namespace Express { interface Request { ownerSessionId?: string | null } } }
+declare global { namespace Express { interface Request { ownerSessionId?: string | null; ownerSessionLeftS?: number } } }
 
 /** The owner session this request's cookie proves, or null. Cached on the request. Touches last_seen (and slides the
  *  cookie) at most once an hour, so a normal request costs one indexed SELECT and no write. */
@@ -126,9 +146,14 @@ export async function ownerSession(req: Request, res?: Response): Promise<string
   if (!key || !raw) return null;
   const i = raw.lastIndexOf('.'), id = raw.slice(0, i), mac = raw.slice(i + 1);
   if (i < 1 || !safeEqual(mac, sessionMac(id, key))) return null;
-  const row = await one<{ stale: boolean }>(`SELECT last_seen < now() - interval '1 hour' AS stale FROM owner_sessions WHERE id = $1 AND last_seen > now() - interval '400 days'`, [id]);
+  const row = await one<{ stale: boolean; left: number }>(`SELECT last_seen < now() - interval '1 hour' AS stale,
+      EXTRACT(EPOCH FROM (created_at + ${OWNER_LIFETIME} - now()))::int AS left
+    FROM owner_sessions WHERE id = $1 AND last_seen > now() - ${OWNER_LIFETIME} AND created_at > now() - ${OWNER_LIFETIME}`, [id]);
   if (!row) return null;
-  if (row.stale) { await q('UPDATE owner_sessions SET last_seen = now() WHERE id = $1', [id]); if (res) setOwnerCookie(res, raw, OWNER_MAX_AGE_S); }
+  req.ownerSessionLeftS = Math.min(OWNER_MAX_AGE_S, Math.max(0, Number(row.left)));
+  if (row.stale) await q('UPDATE owner_sessions SET last_seen = now() WHERE id = $1', [id]);
+  // re-issue the cookie when its hour is up (the countdown to the absolute expiry) or when it came under the bare, pre-prefix name
+  if (res && (row.stale || legacyCookie(req, OWNER_COOKIE))) setOwnerCookie(res, raw, req.ownerSessionLeftS);
   return (req.ownerSessionId = id);
 }
 
@@ -140,7 +165,7 @@ export async function startOwnerSession(req: Request, res: Response) {
     id = randomBytes(24).toString('base64url');
     await q('INSERT INTO owner_sessions (id, label) VALUES ($1, $2)', [id, deviceLabel(String(req.headers['user-agent'] ?? ''))]);
   }
-  setOwnerCookie(res, `${id}.${sessionMac(id, key)}`, OWNER_MAX_AGE_S);
+  setOwnerCookie(res, `${id}.${sessionMac(id, key)}`, req.ownerSessionLeftS ?? OWNER_MAX_AGE_S);
 }
 /** S-04: a signed-out device stops getting pushes. Its Web Push subscriptions (push_subscriptions.owner_session_id) go with its
  *  session. Rows with no session id (subscribed before the column existed) are never matched here; notify.ts keeps sending to them. */
