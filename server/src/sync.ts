@@ -95,7 +95,8 @@ async function pullDay(siteId: string, accountId: number, day: string) {
   return { energy: e.time_series ?? [], soe: s.time_series ?? [] };
 }
 
-async function fetchDay(siteId: string, accountId: number, day: string) {
+/** Fetch and store one local day (energy + battery %). Also the deep back-fill's (deepBackfill.ts), so its rows match exactly. */
+export async function fetchDay(siteId: string, accountId: number, day: string) {
   const { energy, soe } = await pullDay(siteId, accountId, day);
   await saveEnergy(siteId, energy);
   await saveSoe(siteId, soe);

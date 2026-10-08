@@ -34,8 +34,13 @@ export function drawConnections(S) {
   const nestLine = !a ? 'thermostat' : a.error ? 'read failed' : a.linked ? `${esc(/thermostat/i.test(name) ? name : `${name} thermostat`)}${a.state ? ` · ${ageShort(a.state.at)} ago` : ''}` : a.configured ? 'not linked' : 'not set up';
   const silent = pv?.relay?.silent, heard = pv?.relay?.heardAt ?? pv?.relay?.lastPoll;
   const jobsBad = crons.filter(c => !c.ok).length;
+  const dp = st?.backfill?.deep;   // I-16: the back-fill to the install date (owner only; a guest's /api/status has no deep)
   const html = [
     row({ acc: 'c-acc-out', ic: 'tesla', title: 'Tesla Fleet API', line: tesla, end: h.stale ? badge('estimated', 'No data') : badge('live', 'Live') }),
+    // mockup am frame 9: "History back to Dec 2020 · 612 of 1,668 days", with a progress bar until it is complete
+    dp?.daysTotal ? row({ acc: 'c-acc-out', ic: 'data', title: `History back to ${niceDate(dp.from, { month: 'short', year: 'numeric' })}`,
+      line: dp.done ? 'complete' : `${dp.daysDone.toLocaleString('en-US')} of ${dp.daysTotal.toLocaleString('en-US')} days<div class="c-bar" style="margin-top:6px"><i style="width:${Math.min(100, Math.round(dp.daysDone / dp.daysTotal * 100))}%"></i></div>`,
+      end: dp.done ? badge('learned', 'Complete') : badge('', 'Filling') }) : '',
     row({ acc: 'c-acc-home', ic: 'cloud', title: 'Open-Meteo', line: `${S.location?.zip ? `${esc(S.location.zip)} · ` : ''}tilt 27° · facing 244°`, end: S.wx ? badge('live', 'Live') : badge('', '—') }),
     row({ acc: 'c-acc-pool', ic: 'pool', title: 'Pentair ScreenLogic', line: `pool & spa${p?.snapshot?.at ? ` · ${ageShort(p.snapshot.at)} ago` : ''}`, end: !p ? badge('', '—') : p.error ? badge('estimated', 'Read failed') : p.linked ? badge('learned', 'Linked') : badge('', 'Not linked') }),
     row({ acc: 'c-acc-ac', ic: 'ac', title: 'Google Nest', line: nestLine, end: relink || (!a ? badge('', '—') : a.error ? badge('estimated', 'Read failed') : a.linked ? badge('learned', 'Linked') : badge('', a.configured ? 'Not linked' : 'Not set up')) }),
