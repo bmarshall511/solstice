@@ -17,6 +17,7 @@ export function ownerRoutes(over = {}) {
     'POST sync': C.sync,
     // the writes that answer with the fresh payload (server: the pool and AC command routes return poolDetail / acDetail; loads/label the list)
     'POST appliances/pool/command': A['appliances/pool'], 'POST appliances/pool/clearup': A['appliances/pool'],
+    'POST appliances/pool/schedule': A['appliances/pool'], 'POST appliances/pool/goal': A['appliances/pool'], 'POST pool/tests': A['pool/water'],
     'POST appliances/ac/command': A['appliances/ac'], 'POST appliances/ac/hold': A['appliances/ac'], 'POST appliances/ac/suggestion': A['appliances/ac'], 'POST appliances/ac/nudge': A['appliances/ac'],
     'POST loads/label': C.loads,
     site: { raw: { site_name: 'Home', components: { battery: true, solar: true } } },
