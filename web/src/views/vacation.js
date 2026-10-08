@@ -178,22 +178,22 @@ export async function openVacation(S, opts = {}) {
   const sumHtml = () => { const p = est?.perDay; return p ? `<div class="c-kv" style="margin-top:0"><span>A day at home</span><b>${k0(p.home)} kWh</b><span>Empty, no Vacation mode</span><b>${k0(p.empty)} kWh</b><span>With Vacation mode</span><b>${k0(p.vacation)} kWh</b></div>` : ''; };
   const totHtml = () => est ? `${est.open ? 'For a week away: about' : 'About'} ${k0(est.total.vacation)} kWh${est.open ? '' : ' for the trip'}${est.total.home != null ? ` instead of about ${k0(est.total.home)} at home` : ''}. Solstice’s own share is about ${k0(est.saving.totalKwh)} kWh (the AC and pool lines).${est.total.home != null ? ' The rest happens because nobody’s home.' : ''} Estimates.` : 'Working out the estimate…';
   const wire = () => {
-    $('vaPres').onclick = e => { const b = e.target.closest('[data-pres]'); if (!b || b.disabled) return;
+    $('vaPres').onclick = e => { const b = /** @type {HTMLButtonElement} */ (/** @type {Element} */ (e.target).closest('[data-pres]')); if (!b || b.disabled) return;
       const want = b.dataset.pres; pres = want === presNow ? null : want === 'home' ? { state: 'home' } : { state: 'away', at: null, id: 'open' }; draw(); };
-    if ($('vaDur')) $('vaDur').onclick = e => { const b = e.target.closest('[data-dur]'); if (!b) return; const x = durs.find(y => y.id === b.dataset.dur); pres = pres?.id === x.id ? null : { state: 'away', at: x.at, id: x.id }; draw(); };
-    if ($('vaLeave')) $('vaLeave').onchange = e => { const v = pickedEpoch(e.target.value); if (v) { leaveAt = Math.max(v, Date.now()); if (backAt && backAt < leaveAt + 3600_000) backAt = leaveAt + 3 * D; draw(); estimate(); } };
-    $('vaBack').onchange = e => { const v = pickedEpoch(e.target.value); backAt = v && v > leaveAt + 3600_000 ? v : backAt; draw(); estimate(); };
+    if ($('vaDur')) $('vaDur').onclick = e => { const b = /** @type {Element} */ (e.target).closest('[data-dur]'); if (!b) return; const x = durs.find(y => y.id === b.dataset.dur); pres = pres?.id === x.id ? null : { state: 'away', at: x.at, id: x.id }; draw(); };
+    if ($('vaLeave')) $('vaLeave').onchange = e => { const v = pickedEpoch(/** @type {HTMLInputElement} */ (e.target).value); if (v) { leaveAt = Math.max(v, Date.now()); if (backAt && backAt < leaveAt + 3600_000) backAt = leaveAt + 3 * D; draw(); estimate(); } };
+    $('vaBack').onchange = e => { const v = pickedEpoch(/** @type {HTMLInputElement} */ (e.target).value); backAt = v && v > leaveAt + 3600_000 ? v : backAt; draw(); estimate(); };
     const ck = $('vaCheck');
     if (ck) ck.onclick = async e => {
-      const m = e.target.closest('[data-mac]'); if (m) { macHome = m.dataset.mac === '1'; tick.mac = true; return draw(); }
-      const t = e.target.closest('[data-tick]'); if (t) { tick[t.dataset.tick] = !tick[t.dataset.tick]; return draw(); }
-      const b = e.target.closest('[data-off]'); if (!b || busy) return; busy = true; b.textContent = 'Turning off…';
+      const m = /** @type {Element} */ (e.target).closest('[data-mac]'); if (m) { macHome = m.dataset.mac === '1'; tick.mac = true; return draw(); }
+      const t = /** @type {Element} */ (e.target).closest('[data-tick]'); if (t) { tick[t.dataset.tick] = !tick[t.dataset.tick]; return draw(); }
+      const b = /** @type {Element} */ (e.target).closest('[data-off]'); if (!b || busy) return; busy = true; b.textContent = 'Turning off…';
       const id = +b.dataset.off;   // the owner's own "Turn off": the pool command the Pool card already sends
       try { S.pool = await api.poolCommand(id === -1 ? { kind: 'spaHeat', on: false } : { kind: 'circuit', id, on: false }); check = await api.vacationCheck(); }
       catch (err) { toast('!', 'rgba(255,90,78,.25)', 'Not turned off', err.message); }
       busy = false; draw();
     };
-    $('vaPlan').onclick = e => { const r = e.target.closest('[data-row]'); if (!r) return; const i = +r.dataset.row; open.has(i) ? open.delete(i) : open.add(i); draw(); };
+    $('vaPlan').onclick = e => { const r = /** @type {Element} */ (e.target).closest('[data-row]'); if (!r) return; const i = +r.dataset.row; open.has(i) ? open.delete(i) : open.add(i); draw(); };
     const foot = document.querySelector('#sheetBody .c-sheet-f');
     foot.querySelector('[data-f="pri"]').onclick = async () => {
       if (busy) return; const go = foot.querySelector('[data-f="pri"]');

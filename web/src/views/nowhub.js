@@ -110,7 +110,7 @@ export function drawBanner(S) {
   const b = pickBanner(candidates(S)), html = b ? banner(b) : '';
   if (html === slotKey) return; slotKey = html; box.innerHTML = html;
   box.onclick = async e => {
-    const btn = e.target.closest('[data-b]'); if (!btn) return;
+    const btn = /** @type {HTMLButtonElement} */ (/** @type {Element} */ (e.target).closest('[data-b]')); if (!btn) return;
     const [k, a1, a2] = btn.dataset.b.split(':');
     switch (k) {
       case 'outage': return S.nav?.sys('powerwall', 'sysOutage');
@@ -226,6 +226,6 @@ export { redraw as redrawNowTop };
 export function initNowTop(S) {
   $('statusPill').onclick = () => openConditions(S);
   $('vacPill').onclick = () => openVacation(S);
-  $('hubRows').onclick = e => { const r = e.target.closest('[data-sheet]'); if (!r) return;
+  $('hubRows').onclick = e => { const r = /** @type {Element} */ (e.target).closest('[data-sheet]'); if (!r) return;
     ({ pool: openPoolSheet, ac: openAcSheet, pw: openPwSheet, away: s => openVacation(s) })[r.dataset.sheet]?.(S); };
 }

@@ -398,7 +398,7 @@ export function createHomeView(host, mode = 'flow', opts = {}) {
     return { el: sp.el, az: sp.az, inc: Math.acos(Math.max(-1, Math.min(1, H.panelNormal.dot(sd)))) / RAD };
   }
 
-  const view = { render: twin ? null : renderSun, dispose, ...(twin ? {} : { setBars, setHours, setDust, perPanel: pp }) };
+  const view = { render: /** @type {(c: any) => any} */ (twin ? null : renderSun), dispose, ...(twin ? {} : { setBars, setHours, setDust, perPanel: pp }) };
   const cleanup = [];
   if (!twin) cleanup.push(() => hrLbls.forEach(l => l.d.remove()), () => pp.dispose());
   function dispose() {

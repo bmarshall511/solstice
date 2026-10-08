@@ -20,6 +20,7 @@ export function chicagoEpoch(day, h, m = 0) {
 /** "6:00 PM" */
 export const clock = ms => new Date(ms).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
 /** "Tue", "Tuesday" */
+/** @param {number} ms  @param {'long'|'short'|'narrow'} [style] */
 export const weekday = (ms, style = 'short') => new Date(ms).toLocaleDateString('en-US', { timeZone: TZ, weekday: style });
 /** "9:12 AM" today, else "Sat 9:12 AM". */
 export const when = (ms, now = Date.now()) => dayOf(ms) === dayOf(now) ? clock(ms) : `${weekday(ms)} ${clock(ms)}`;

@@ -189,7 +189,7 @@ function go(v, anchor, p) {
   if (r.view === 'v-sys') setSeg(r.seg, false);
   setTimeout(syncTwins);   // next tick: the view is shown
   const sc = $('screen'), el = r.anchor && $(r.anchor);
-  if (el?.classList.contains('c-disc') && !el.classList.contains('expanded')) el.querySelector('.c-disc-h')?.click();   // a link to a disclosure opens it
+  if (el?.classList.contains('c-disc') && !el.classList.contains('expanded')) /** @type {HTMLElement} */ (el.querySelector('.c-disc-h'))?.click();   // a link to a disclosure opens it
   if (el) setTimeout(() => sc.scrollTo({ top: el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 50, behavior: 'smooth' }), 60); else sc.scrollTo({ top: 0 });
   if (r.planner) setTimeout(() => openPlanner(S), 120);
 }
@@ -201,13 +201,13 @@ function setSeg(seg, top = true) {
   if (top) $('screen').scrollTo({ top: 0 });
 }
 document.querySelectorAll('.c-tab[data-v]').forEach(t => t.onclick = () => go(t.dataset.v));
-$('sysSeg').onclick = e => { const b = e.target.closest('[data-seg]'); if (b) setSeg(b.dataset.seg); };
+$('sysSeg').onclick = e => { const b = /** @type {Element} */ (e.target).closest('[data-seg]'); if (b) setSeg(b.dataset.seg); };
 segKeys($('sysSeg'), setSeg);
 /** Links out of Now's sheets: a Systems segment, scrolled to a card. The old Insights form (panel, anchor, appliance) still works. */
 S.openLog = opts => openLog(S, opts);   // mockup al frame 18: every Autopilot's Log row
 S.nav = { go, sys: (seg, anchor) => go('v-sys', anchor, seg), insights: (panel, anchor, appl) => { const r = fromInsights(panel, anchor, appl); go('v-sys', r.anchor, r.seg); } };
 S.redrawNow = () => safe(redrawNowTop)(S);
-document.addEventListener('click', e => { const el = e.target.closest('[data-go]'); if (el) go(el.dataset.go, el.dataset.land ? 'landSect' : el.dataset.bills ? 'billSect' : null, el.dataset.p); });
+document.addEventListener('click', e => { const el = /** @type {Element} */ (e.target).closest('[data-go]'); if (el) go(el.dataset.go, el.dataset.land ? 'landSect' : el.dataset.bills ? 'billSect' : null, el.dataset.p); });
 const closeSheet = () => $('phone').classList.remove('open');
 /* accessibility (October audit): every .sw toggle is a keyboard-reachable switch with its state announced, and the bottom sheet is a
    labelled dialog that takes focus when it opens. One observer keeps both right as views redraw. */
@@ -221,15 +221,15 @@ function a11y() {
   $('sheet').classList.toggle('is-c', !!$('sheetBody').firstElementChild?.classList.contains('c-sbody'));   // mockup al: the component sheet's look and pinned footer
 }
 new MutationObserver(a11y).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
-document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('.sw[role=switch],.sw-row[role=switch]')) { e.preventDefault(); e.target.click(); } });
+document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && /** @type {HTMLElement} */ (e.target).matches?.('.sw[role=switch],.sw-row[role=switch]')) { e.preventDefault(); /** @type {HTMLElement} */ (e.target).click(); } });
 new MutationObserver(() => { if ($('phone').classList.contains('open')) setTimeout(() => $('sheetBody').querySelector('button,input,[tabindex]')?.focus({ preventScroll: true }), 50); })
   .observe($('phone'), { attributes: true, attributeFilter: ['class'] });
 a11y();
 ['v-now', 'v-sys', 'v-hist', 'v-set', 'sheet'].forEach(id => keyActivate($(id)));
 ['v-sys', 'v-hist', 'v-set'].forEach(id => wireDisclosures($(id)));   // disclosure cards and their rows open in place   // role=button rows, disclosure headers and date cards answer Enter and Space
 $('scrim').onclick = closeSheet;
-document.addEventListener('click', e => { if (e.target.closest('[data-addbill]')) openBillSheet(S, () => loadHistory()); });
-$('connCard').addEventListener('click', e => { if (e.target.closest('#openData')) openRawData(); });   // Settings › Connections › All data
+document.addEventListener('click', e => { if (/** @type {Element} */ (e.target).closest('[data-addbill]')) openBillSheet(S, () => loadHistory()); });
+$('connCard').addEventListener('click', e => { if (/** @type {Element} */ (e.target).closest('#openData')) openRawData(); });   // Settings › Connections › All data
 initAlertGroups();
 addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); if (e.key === 'd' && !S.guest && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) openRawData(); });
 /* Calm mode: the owner's is a setting; a guest's lives on the device (it cannot write settings). html[data-calm] stills the veils. */
@@ -272,7 +272,7 @@ const dayRing = createDayRing($('dayRing'), (h, d) => {
 const refreshStatus = () => safe(drawConnections)(S);
 S.ringMode = 'now'; S.onPool = () => { safe(drawDayRing)(); refreshStatus(); S.redrawNow(); }; S.onAc = () => { safe(drawDayRing)(); refreshStatus(); S.redrawNow(); };
 initNowTop(S); initAhead(S); initPwDisc();   // mockup al: the pills, banner slot, Autopilot hub, Ahead's 12 h | 48 h and the Powerwall disclosure
-$('drModes').onclick = e => { const b = e.target.closest('[data-m]'); if (!b) return; S.ringMode = b.dataset.m; segSet($('drModes'), b.dataset.m, 'data-m'); drawDayRing(); };
+$('drModes').onclick = e => { const b = /** @type {Element} */ (e.target).closest('[data-m]'); if (!b) return; S.ringMode = b.dataset.m; segSet($('drModes'), b.dataset.m, 'data-m'); drawDayRing(); };
 /**
  * Today's hourly loads (B2-7, audit L-13/L-14, O-11): the AC from Nest's cooling minutes × the learned kW (/api/appliances/day), the pool
  * from the schedule model for the hours so far only, the rest from Tesla's home load; in "now" mode the parts add up to Tesla's total.
@@ -372,14 +372,14 @@ function showAuth(mode, opts = {}) {
     : mode === 'connect' ? "Sign in with Tesla to give Solstice read-only access to your Powerwall and solar data. You'll approve it on Tesla's own page."
     : 'Your home’s energy, live.';
   $('authBtn').textContent = mode === 'setup' ? 'Create account' : 'Sign in';
-  $('authPass').autocomplete = mode === 'setup' ? 'new-password' : 'current-password';
+  /** @type {HTMLInputElement} */ ($('authPass')).autocomplete = mode === 'setup' ? 'new-password' : 'current-password';
   form.onsubmit = async e => {
-    e.preventDefault(); $('authErr').textContent = ''; $('authBtn').disabled = true;
+    e.preventDefault(); $('authErr').textContent = ''; /** @type {HTMLButtonElement} */ ($('authBtn')).disabled = true;
     try {
-      if (mode === 'setup') await api.setup(opts.token, $('authEmail').value, $('authPass').value, $('authName').value);
-      else await api.login($('authEmail').value, $('authPass').value);
+      if (mode === 'setup') await api.setup(opts.token, /** @type {HTMLInputElement} */ ($('authEmail')).value, /** @type {HTMLInputElement} */ ($('authPass')).value, /** @type {HTMLInputElement} */ ($('authName')).value);
+      else await api.login(/** @type {HTMLInputElement} */ ($('authEmail')).value, /** @type {HTMLInputElement} */ ($('authPass')).value);
       history.replaceState(null, '', '/'); location.reload();
-    } catch (err) { $('authErr').textContent = err.message; $('authBtn').disabled = false; }
+    } catch (err) { $('authErr').textContent = err.message; /** @type {HTMLButtonElement} */ ($('authBtn')).disabled = false; }
   };
 }
 /* Single-owner mode without the owner cookie: every API call answers 401 and the app stays locked behind the "Solstice is
@@ -440,7 +440,7 @@ async function boot() {
   try { me = await api.me(); } catch { $('authErr').textContent = 'Can’t reach the Solstice server.'; return showAuth('login'); }
   multi = me.mode !== 'single';
   if (me.mode === 'single') {           // no accounts: the owner cookie opens straight to the connected site
-    document.querySelectorAll('.acct').forEach(el => el.hidden = true);
+    document.querySelectorAll('.acct').forEach((/** @type {HTMLElement} */ el) => el.hidden = true);
     if (me.guest) applyRole({ guest: true, preview: !!me.preview, ownerName: me.ownerName, expiresAt: me.expiresAt ?? null });   // read-only, no controls
     else {
       if (!me.owner) return guestLinkError ? lockOut(guestLinkError.reason, 'That link didn’t work on this device.')

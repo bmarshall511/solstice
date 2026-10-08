@@ -86,7 +86,7 @@ export function initLoads(S, onChange) {
   const card = $('ldCard'); if (!card) return; card.hidden = !!S.guest; if (S.guest) return;
   ld.onChange = onChange;
   $('ldBody').onclick = e => {
-    const b = e.target.closest('button[data-ld]'); if (!b) return;
+    const b = /** @type {Element} */ (e.target).closest('button[data-ld]'); if (!b) return;
     const c = ld.data?.clusters?.find(x => x.sig === b.dataset.sig); if (!c) return;
     if (b.dataset.ld === 'name') openNameSheet(c);
     else write(b, { sig: c.sig, dismissed: true });
@@ -107,7 +107,7 @@ function openNameSheet(c) {
   const st = sheetState(c);
   const draw = (keep = false) => {
     sheet(nameSheetHtml(c, st), { keepScroll: keep });
-    const box = $('sheetBody'), pri = box.querySelector('[data-f="pri"]'), sec = box.querySelector('[data-f="sec"]'), other = box.querySelector('#ldOther');
+    const box = $('sheetBody'), pri = /** @type {HTMLButtonElement} */ (box.querySelector('[data-f="pri"]')), sec = box.querySelector('[data-f="sec"]'), other = /** @type {HTMLInputElement} */ (box.querySelector('#ldOther'));
     box.querySelectorAll('[data-pick]').forEach(p => p.onclick = () => { st.choice = p.dataset.pick; st.err = null; draw(true); if (st.choice === OTHER) box.querySelector('#ldOther')?.focus(); });
     if (other) other.oninput = () => { st.other = other.value; const n = stagedName(st); pri.disabled = !n; pri.textContent = n ? `Save "${n}"` : 'Save'; };
     pri.onclick = async () => { const n = stagedName(st); if (!n) return; const err = await write(pri, { sig: c.sig, name: n }); if (err) { st.err = err; draw(true); } else closeSheet(); };

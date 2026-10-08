@@ -75,7 +75,7 @@ export function renderLive(S) {
   set('pwTT', 'textContent', r.batteryKw < -.05 ? fmtDur(toFull) : r.batteryKw > .05 ? fmtDur(toEmpty) : r.soc > 99 ? 'Full' : 'Standing by');
   set('pwBackup', 'textContent', net <= .05 ? 'Solar covering it' : fmtDur(Math.max(0, r.soc) / 100 * mcap * .95 / net));
   set('pwMode', 'textContent', out ? 'Backup (islanded)' : ({ autonomous: 'Time-Based Control', self_consumption: 'Self-Powered', backup: 'Backup-only' }[site.mode] ?? site.mode ?? '—'));
-  document.querySelectorAll('.pwu').forEach(el => { el.style.setProperty('--v', r.soc / 100); el.classList.toggle('chg', r.batteryKw < -.05); el.classList.toggle('dis', r.batteryKw > .05); });
+  document.querySelectorAll('.pwu').forEach(el => { el.style.setProperty('--v', String(r.soc / 100)); el.classList.toggle('chg', r.batteryKw < -.05); el.classList.toggle('dis', r.batteryKw > .05); });
 
   // outage: the island and the body class (the banner itself is in the banner slot)
   document.body.classList.toggle('out', out);
@@ -199,9 +199,9 @@ function drawFallback(S, fc) {
 export function initAhead(S) {
   const segEl = $('aheadSeg');
   segEl.onclick = e => {
-    const b = e.target.closest('[data-a]'); if (!b) return;
+    const b = /** @type {Element} */ (e.target).closest('[data-a]'); if (!b) return;
     const k48 = b.dataset.a === '48';
-    segEl.style.setProperty('--i', k48 ? 1 : 0);
+    segEl.style.setProperty('--i', k48 ? '1' : '0');
     segEl.querySelectorAll('button').forEach(x => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-pressed', String(on)); });
     $('ah12').hidden = k48; $('ah48').hidden = !k48; S.ahead48 = k48;
     if (!k48) return;

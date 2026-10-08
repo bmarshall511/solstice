@@ -163,7 +163,7 @@ export const nowPct = hour => pct(hour / 24 * 100);
 /** Pump schedules (minutes of the day; a stop before the start wraps midnight) → blocks: the boost circuit `alt`, the rest `lo`. */
 export function scheduleBlocks(schedules, boostId = 8) {
   const out = [], put = (a, b, cls) => { if (b > a) out.push({ left: pct(a / 14.4), width: pct((b - a) / 14.4), cls }); };
-  for (const s of [...(schedules ?? [])].sort((a, b) => (a.circuitId === boostId) - (b.circuitId === boostId))) {
+  for (const s of [...(schedules ?? [])].sort((a, b) => +(a.circuitId === boostId) - +(b.circuitId === boostId))) {
     const cls = s.circuitId === boostId ? 'alt' : 'lo';
     if (s.stop > s.start) put(s.start, s.stop, cls); else { put(s.start, 1440, cls); put(0, s.stop || 1440, cls); }
   }

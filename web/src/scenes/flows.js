@@ -158,7 +158,7 @@ export function mountFlows(card, f, opts) {
 
   // ---------- DOM labels (projected by hand so they can be clamped inside the canvas) ----------
   const labels = [];
-  const mk = (cls, html, p, ax, ay, extra = {}) => { const d = document.createElement('div'); d.className = cls; d.innerHTML = html; d.style.transform = 'none'; labs.appendChild(d); const L = { el: d, p, ax, ay, oy: 0, show: true, ...extra }; labels.push(L); return L; };
+  const mk = (cls, html, p, ax, ay, extra = {}) => { const d = document.createElement('div'); d.className = cls; d.innerHTML = html; d.style.transform = 'none'; labs.appendChild(d); const L = /** @type {any} */ ({ el: d, p, ax, ay, oy: 0, show: true, ...extra }); labels.push(L); return L; };
   SC.forEach((n, i) => mk('lax', `${SRC[i].name} · ${f1(srcTot[i])}`, new THREE.Vector3(XS, n.top + .05, DEP / 2), .5, 1, { fixed: true }));
   DC.forEach((n, i) => mk('lax', `${SNK[i].name} · ${f1(snkTot[i])}`, new THREE.Vector3(XD, n.top + .05, DEP / 2), .5, 1, { fixed: true }));
   const lAc = mk('lbl3d', `AC <span class="n">${f1(ac)} kWh</span> · ${prov.ac.src}`, new THREE.Vector3(XD - HW - .1, sliceY.ac, DEP / 2), 1, .5, { fixed: true });
@@ -176,7 +176,7 @@ export function mountFlows(card, f, opts) {
     const ra = lAc.r, rp = lPool.r; if (hits(ra, rp, 2)) { lAc.oy = rp.t - 3 - ra.b; lAc.r = rectOf(lAc); placed[placed.indexOf(ra)] = lAc.r; }   // pool sits on its slice; AC moves up to clear it
     let shown = 0;
     const selId = sel?.type === 'edge' ? sel.k : null;
-    [...edgeL].sort((a, b) => (b.edge.id === selId) - (a.edge.id === selId)).forEach(L => { L.show = false; if (shown >= 3) return;
+    [...edgeL].sort((a, b) => +(b.edge.id === selId) - +(a.edge.id === selId)).forEach(L => { L.show = false; if (shown >= 3) return;
       const dys = L.edge.w > .5 ? [0, .3, -.3] : [0];   // a thick ribbon can carry its label off-centre, still on the ribbon
       search: for (const dy of dys) for (const t of TRY) { L.p = bez(L.edge, t); L.p.y += dy * L.edge.w; const r = rectOf(L); if (!placed.some(q => hits(q, r))) { L.show = true; placed.push(r); shown++; break search; } } });
     cam.position.copy(saved); cam.lookAt(0, 0, 0); cam.updateMatrixWorld(); place();

@@ -39,7 +39,7 @@ export function drawAlerts(S) {
   $('alertsCard').hidden = !items.length;
   $('alertsFig').textContent = items.length ? `${items.length}` : '';
   $('alerts').innerHTML = items.slice(0, 3).map(row).join('') + (items.length > 3 ? `<div class="c-sys compact c-acc-mute" role="button" tabindex="0" data-alert="all"><span class="c-ic">${icon('bell')}</span><div style="min-width:0"><div class="c-sys-top"><b>All ${items.length}</b></div></div><span class="c-chev">${icon('chev')}</span></div>` : '');
-  $('alerts').onclick = e => { const r = e.target.closest('[data-alert]'); if (r) openAlerts(S); };
+  $('alerts').onclick = e => { const r = /** @type {Element} */ (e.target).closest('[data-alert]'); if (r) openAlerts(S); };
   $('sysDot').hidden = !items.some(x => /out|warn|grid/.test(x.acc));
 }
 /** Every Worth knowing item in full, as a sheet; a link row goes where the old card's link went. */
@@ -73,7 +73,7 @@ export function openPlanner(S) {
   run();
   async function run() {
     if (!$('rPv')) return;   // the sheet was closed or replaced
-    const q = { panels: +$('rPv').value, powerwalls: +$('rPw').value, extra: +$('rUse').value }; plan = q;
+    const q = { panels: +/** @type {HTMLInputElement} */ ($('rPv')).value, powerwalls: +/** @type {HTMLInputElement} */ ($('rPw')).value, extra: +/** @type {HTMLInputElement} */ ($('rUse')).value }; plan = q;
     $('aPv').textContent = '+' + q.panels; $('aPw').textContent = '+' + q.powerwalls; $('aUse').textContent = `+${q.extra} kWh`;
     const r = await api.whatif(q).catch(() => null); if (!r || !$('rPv')) return;
     if (S.guest) return guestPlan(S, r, q);   // no dollars for guests: the kWh-only planner (views/guest.js)
@@ -192,9 +192,9 @@ function drawCapacity(S, c) {
 }
 export function initBreakdown(S, every) {
   $('egCard').hidden = !!S.guest; if (S.guest) return;
-  $('egRange').onclick = e => { const b = e.target.closest('button'); if (!b || b.dataset.r === eg.range) return; eg.range = b.dataset.r; loadBreakdown(); };
-  $('egParts').onclick = e => { const p = e.target.closest('.c-part[data-id]'); if (!p) return; eg.open.has(p.dataset.id) ? eg.open.delete(p.dataset.id) : eg.open.add(p.dataset.id); drawBreakdown(); };
-  $('egParts').onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('.c-part[data-id]')) { e.preventDefault(); e.target.closest('.c-part').click(); } };
+  $('egRange').onclick = e => { const b = /** @type {Element} */ (e.target).closest('button'); if (!b || b.dataset.r === eg.range) return; eg.range = b.dataset.r; loadBreakdown(); };
+  $('egParts').onclick = e => { const p = /** @type {Element} */ (e.target).closest('.c-part[data-id]'); if (!p) return; eg.open.has(p.dataset.id) ? eg.open.delete(p.dataset.id) : eg.open.add(p.dataset.id); drawBreakdown(); };
+  $('egParts').onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && /** @type {Element} */ (e.target).closest('.c-part[data-id]')) { e.preventDefault(); /** @type {HTMLElement} */ (/** @type {Element} */ (e.target).closest('.c-part')).click(); } };
   initLoads(S, loadBreakdown);   // I-22: the Big loads card under this one; a new name reloads the parts
   eg.timer ??= every(15 * 60_000, loadBreakdown);
 }
@@ -206,7 +206,7 @@ async function loadBreakdown() {
 }
 function drawBreakdown() {
   const d = eg.data; if (!d) return;
-  $('egTotal').textContent = Math.round(d.homeKwh);
+  $('egTotal').textContent = String(Math.round(d.homeKwh));
   const n = d.range === 'week' ? 7 : 30;
   $('egSub').textContent = !d.days ? 'No full day with thermostat readings yet' : d.range === 'today' ? 'kWh so far today'
     : d.days < n ? `kWh a day \u00b7 ${d.days} day${d.days === 1 ? '' : 's'} with Nest data` : `kWh a day \u00b7 last ${n} days`;

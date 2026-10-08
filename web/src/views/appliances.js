@@ -136,8 +136,8 @@ function drawPoolLearning(S) {
        <div class="row2"><button class="y" data-ps="accept" data-k="${g.key}">Raise to ${g.to}</button><button class="n" data-ps="dismiss" data-k="${g.key}">Not now</button></div></div>`).join('')
     + (c.recent.length ? `<button class="ae-line" id="plLearnBtn"><i></i><span><b>Learning from ${c.recent.length} change${c.recent.length === 1 ? '' : 's'}</b> this week</span><em>›</em></button>` : '');
   box.onclick = async e => {
-    if (e.target.closest('#plLearnBtn')) return openPoolChanges(S);
-    const b = e.target.closest('[data-ps]'); if (!b) return; b.disabled = true; b.textContent = '…';
+    if (/** @type {Element} */ (e.target).closest('#plLearnBtn')) return openPoolChanges(S);
+    const b = /** @type {HTMLButtonElement} */ (/** @type {Element} */ (e.target).closest('[data-ps]')); if (!b) return; b.disabled = true; b.textContent = '…';
     try { S.pool = await api.poolSuggestion(b.dataset.ps, b.dataset.k); } catch (err) { alert(err.message); } drawPool(S);
   };
 }
@@ -187,10 +187,10 @@ function openEditor(S) {
     $('sheetBody').querySelectorAll('[data-i]').forEach(b => b.onclick = () => { sel = +b.dataset.i; draw(); });
     if ($('seAdd')) $('seAdd').onclick = () => { runs.push({ circuitId: P, start: 600, stop: 900 }); sel = runs.length - 1; draw(); };
     if (r) {
-      $('seCirc').onclick = e => { const b = e.target.closest('button'); if (!b) return; r.circuitId = +b.dataset.c; draw(); };
+      $('seCirc').onclick = e => { const b = /** @type {Element} */ (e.target).closest('button'); if (!b) return; r.circuitId = +b.dataset.c; draw(); };
       const q15 = v => Math.round(v / 15) * 15;
-      $('seStart').onchange = e => { r.start = q15(fromTime(e.target.value)) % 1440; draw(); };
-      $('seStop').onchange = e => { const m = q15(fromTime(e.target.value)); r.stop = m === 0 || m >= 1440 ? 1439 : m; draw(); };
+      $('seStart').onchange = e => { r.start = q15(fromTime(/** @type {HTMLInputElement} */ (e.target).value)) % 1440; draw(); };
+      $('seStop').onchange = e => { const m = q15(fromTime(/** @type {HTMLInputElement} */ (e.target).value)); r.stop = m === 0 || m >= 1440 ? 1439 : m; draw(); };
       const step = dv => { speeds[r.circuitId] = Math.max(lim.min, Math.min(lim.max, Math.round((speeds[r.circuitId] + dv) / 50) * 50)); draw(); };
       $('seDn').onclick = () => step(-50); $('seUp').onclick = () => step(50);
       $('sheetBody').querySelector('[data-f="sec"]').onclick = () => { runs.splice(sel, 1); sel = Math.min(sel, runs.length - 1); save(); };   // Delete this run
@@ -230,7 +230,7 @@ export function openClearUp(S) {   // also offered after a hazy test (water.js, 
     $('pcRpm').textContent = rpm.toLocaleString(); $('pcTurn').textContent = `about ${r.turnovers} turnovers a day`;
     $('pcNums').innerHTML = `<div><b>24 h</b><span>pump a day</span></div><div><b>${r.kwhPerDay}</b><span>kWh a day</span></div><div><b>${new Date(end).toLocaleDateString('en-US', { weekday: 'short' })}</b><span>ends ${clockAt(end)}</span></div>`;
   };
-  $('pcDays').onclick = e => { const b = e.target.closest('button'); if (!b) return; days = +b.dataset.n; draw(); };
+  $('pcDays').onclick = e => { const b = /** @type {Element} */ (e.target).closest('button'); if (!b) return; days = +b.dataset.n; draw(); };
   const lo = rates[0].rpm, hi = rates.at(-1).rpm;
   $('pcDn').onclick = () => { rpm = Math.max(lo, rpm - 50); draw(); }; $('pcUp').onclick = () => { rpm = Math.min(hi, rpm + 50); draw(); };
   $('pcX').onclick = () => $('phone').classList.remove('open');
@@ -252,7 +252,7 @@ function drawClearBanner(S) {
   const f = Math.min(1, Math.max(0, (Date.now() - cu.startedAt) / (cu.until - cu.startedAt)));
   box.innerHTML = banner({ cls: 'blue', ic: 'pool', title: `Clear-up · day ${cu.day} of ${cu.days}`, line: `Ends ${endsLabel(cu.until)}. Pool on all day at ${cu.rpm.toLocaleString()} rpm; the planner and Autopilot leave the schedule alone until then. Brush the walls and backwash the DE filter when the pressure climbs.`,
     bar: f * 100, btns: S.guest ? [] : [['Add a day', 'cu:extend', false], ['End now', 'cu:end', false]] });
-  box.querySelectorAll('[data-b]').forEach(b => b.onclick = () => { const a = b.dataset.b.split(':')[1];
+  box.querySelectorAll('[data-b]').forEach((/** @type {HTMLButtonElement} */ b) => b.onclick = () => { const a = b.dataset.b.split(':')[1];
     if (a === 'end' && !confirm('End the Clear-up now? The planner’s schedule goes back on the controller.')) return;
     b.disabled = true; b.textContent = 'Sending…'; clearUpSend(S, { action: a }); });
 }
@@ -293,21 +293,21 @@ export function openCircuit(S, id) {
     if (body) { segSet($('pcHeat').firstElementChild, heat ? '1' : '0', 'data-h'); $('pcDial').hidden = !heat; $('pcSet').textContent = `${setF}°`; }
     go.textContent = c.on ? (heated ? (heat ? `Save heat · ${setF}°` : 'Turn spa heat off') : sped ? `Save ${rpm.toLocaleString()} RPM` : 'Turn off')
       : body ? `Spa on${heat ? ` · heat to ${setF}°` : ''} for ${runLabel(pick)}` : `Turn on for ${runLabel(pick)}`;
-    if (off) off.hidden = !(sped || heated);
+    if (off) /** @type {HTMLElement} */ (off).hidden = !(sped || heated);
     $('pcNote').textContent = body ? `The heater only runs while the Spa circuit is on. Setpoint 80–104°. Autopilot never touches the spa, its heat, the lights or the heater; only you do.`
       : c.on ? (sped ? `The new speed applies now and whenever ${c.name} runs, schedules included.` : '')
       : `Turns itself off at ${clockAt(Date.now() + pick * 60_000)} (the controller's own timer, so it stops even if Solstice is offline).`;
   };
   const step = dv => { rpm = Math.max(lim.min, Math.min(lim.max, Math.round((rpm + dv) / 50) * 50)); draw(); };
-  if ($('pcRuns')) $('pcRuns').onclick = e => { const b = e.target.closest('button'); if (!b) return; pick = +b.dataset.m; draw(); };
+  if ($('pcRuns')) $('pcRuns').onclick = e => { const b = /** @type {Element} */ (e.target).closest('button'); if (!b) return; pick = +b.dataset.m; draw(); };
   if ($('pcDn')) { $('pcDn').onclick = () => step(-50); $('pcUp').onclick = () => step(50); }
   if (body) {
-    $('pcHeat').onclick = e => { const b = e.target.closest('button'); if (!b) return; heat = b.dataset.h === '1'; draw(); };
+    $('pcHeat').onclick = e => { const b = /** @type {Element} */ (e.target).closest('button'); if (!b) return; heat = b.dataset.h === '1'; draw(); };
     $('pcHdn').onclick = () => { setF = Math.max(80, setF - 1); draw(); }; $('pcHup').onclick = () => { setF = Math.min(104, setF + 1); draw(); };
   }
   go.onclick = () => {
     const sped = rpm0 != null && rpm !== rpm0, heated = !!body && (heat !== heat0 || (heat && setF !== set0));
-    const cmds = [...(heated ? [heat ? { kind: 'spaHeat', on: true, setF } : { kind: 'spaHeat', on: false }] : []), ...(sped ? [{ kind: 'speed', id, rpm }] : [])];
+    const cmds = /** @type {any[]} */ ([...(heated ? [heat ? { kind: 'spaHeat', on: true, setF } : { kind: 'spaHeat', on: false }] : []), ...(sped ? [{ kind: 'speed', id, rpm }] : [])]);
     if (!c.on) cmds.push({ kind: 'circuit', id, on: true, minutes: pick }); else if (!sped && !heated) cmds.push({ kind: 'circuit', id, on: false });
     closeSheet(); poolSend(S, ...cmds);
   };
@@ -346,7 +346,7 @@ function drawPlanner(S) {
   $('plGoalStage').innerHTML = staged ? `<div class="c-btns c-stagerow"><button class="c-btn line" data-g="cancel">Cancel</button><button class="c-btn pri c-acc-pool" data-g="save">${goal.saving ? 'Saving…' : `Save goal ${g.toFixed(1)} · skim ${sk} h`}</button></div>` : '';
   const step = (k, dv) => { goal.v ??= w.goal; goal.skim ??= w.skimHours; if (k === 'g') goal.v = Math.max(1, Math.min(4, goal.v + dv)); else goal.skim = Math.max(0, Math.min(3, goal.skim + dv)); drawPlanner(S); };
   $('plGdn').onclick = () => step('g', -.5); $('plGup').onclick = () => step('g', .5); $('plSdn').onclick = () => step('s', -1); $('plSup').onclick = () => step('s', 1);
-  $('plGoalStage').onclick = async e => { const b = e.target.closest('[data-g]'); if (!b || goal.saving) return;
+  $('plGoalStage').onclick = async e => { const b = /** @type {Element} */ (e.target).closest('[data-g]'); if (!b || goal.saving) return;
     if (b.dataset.g === 'cancel') { goal.v = goal.skim = null; return drawPlanner(S); }
     goal.saving = true; drawPlanner(S);
     try { S.pool = await api.poolGoal({ turnoverGoal: goal.v, skimHours: goal.skim }); goal.v = goal.skim = null; }
@@ -377,8 +377,8 @@ function drawAutopilot(S) {
   $('autoMode').innerHTML = seg([['off', 'Off'], ['suggest', 'Suggest'], ['auto', 'Auto']], m, { acc: 'c-acc-batt', attr: 'data-ap', label: 'Pool Autopilot' })
     + (apStage.m && apStage.m !== a.mode ? `<div class="c-btns c-stagerow"><button class="c-btn line" data-aps="cancel">Cancel</button><button class="c-btn pri c-acc-batt" data-aps="send">${apStage.sending ? 'Saving…' : autopilotStage('Pool', apStage.m)}</button></div>` : '');
   $('autoMode').onclick = async e => {
-    const b = e.target.closest('[data-ap]'); if (b) { apStage.m = b.dataset.ap === a.mode ? null : b.dataset.ap; return drawAutopilot(S); }
-    const s = e.target.closest('[data-aps]'); if (!s || apStage.sending) return;
+    const b = /** @type {Element} */ (e.target).closest('[data-ap]'); if (b) { apStage.m = b.dataset.ap === a.mode ? null : b.dataset.ap; return drawAutopilot(S); }
+    const s = /** @type {Element} */ (e.target).closest('[data-aps]'); if (!s || apStage.sending) return;
     if (s.dataset.aps === 'cancel') { apStage.m = null; return drawAutopilot(S); }
     if (apStage.m === 'auto' && !confirm('Auto mode writes tomorrow’s schedule to ScreenLogic every evening without asking. Spa, heater, lights and freeze protection are never touched. Turn it on?')) return;
     if (apStage.m === 'off' && !confirm('Turn Pool Autopilot off?\n\nSolstice stops planning and writing the pump schedule. The controller keeps running what it has now.')) return;   // mockup ac
