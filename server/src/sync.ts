@@ -114,6 +114,22 @@ export async function markSynced(siteId: string, day: string) {
 }
 
 /**
+ * Days of history stored (GET /api/status's `daysDone`): the number of distinct `energy` days, without reading every energy row
+ * (Batch 7: with history back to the install date that COUNT(DISTINCT day) read ~650k rows every 60 s while the app was open).
+ * Every past day that stores a bucket is marked in synced_days by markSynced (syncSite's window, the deep back-fill, the coverage
+ * refetch, which removes and re-marks a day in one go), so the count is the marked days plus the days that hold energy rows but
+ * no mark yet: today (fetched every few minutes, never marked) and any day since the newest mark that a sync hasn't reached.
+ * Those are looked for from the earlier of two days ago and the newest marked day, through the (site_id, day) index.
+ */
+export async function storedDays(siteId: string, today = localDay()) {
+  const r = await one<{ n: number }>(`SELECT ((SELECT COUNT(*) FROM synced_days WHERE site_id = $1 AND kind = 'day')
+    + (SELECT COUNT(DISTINCT e.day) FROM energy e WHERE e.site_id = $1
+         AND e.day >= LEAST($2::text, COALESCE((SELECT MAX(day) FROM synced_days WHERE site_id = $1 AND kind = 'day'), $2::text))
+         AND NOT EXISTS (SELECT 1 FROM synced_days s WHERE s.site_id = $1 AND s.kind = 'day' AND s.day = e.day)))::int n`, [siteId, addDays(today, -2)]);
+  return r?.n ?? 0;
+}
+
+/**
  * Coverage check: days marked synced that hold fewer 5-minute buckets than the local day has (276 on the DST-start day, 300 on
  * the fall-back day, 288 otherwise), oldest first. Anything under 276 is short on every day.
  * $1 site, $2 time zone, $3 first day not looked at (yesterday, so today and yesterday are skipped), $4 days to leave alone, $5 limit.

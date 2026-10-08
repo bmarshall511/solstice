@@ -10,7 +10,7 @@ import { gate, presenceHidden, setPreview, PREVIEW_COOKIE } from './access.js';
 import { createShare, listShares, revokeShare, revokeAllShares, redeemShare, pruneShares, guestMaxAge, EXPIRY, DEFAULT_EXPIRY, LABEL_MAX, GUEST_COOKIE } from './share.js';
 import { authorizeUrl, exchangeCode, OtherSiteError } from './tesla/auth.js';
 import { teslaFor, localDay, addDays } from './tesla/client.js';
-import { refreshLive, refreshSiteInfo, syncSite } from './sync.js';
+import { refreshLive, refreshSiteInfo, syncSite, storedDays } from './sync.js';
 import { deepTick, deepStatus, deepDue, notePass, DEEP_STOP_MS } from './deepBackfill.js';
 import { listBills, parsePecPdf, saveBill, type Bill } from './bills.js';
 import { reconcile } from './reconcile.js';
@@ -345,10 +345,11 @@ app.get('/api/now', wrap(async (req, res) => {
 app.post('/api/sync', wrap(async (req, res) => res.json(await syncSite(site(req), 8_000))));
 
 app.get('/api/status', wrap(async (req, res) => {
-  const id = site(req), d = await one<{ n: number }>(`SELECT COUNT(DISTINCT day)::int n FROM energy WHERE site_id = $1`, [id]);
+  // daysDone: the distinct days of energy history, from the synced-day marks (sync.ts storedDays; Batch 7: no full energy scan)
+  const id = site(req), daysDone = await storedDays(id);
   // deep: the back-fill to the install date (deepBackfill.ts, I-16); owner only: the guest view's allow-list (redact.ts) leaves it out
   res.json({ connected: true, siteId: id, lastLive: await kv.get(`${id}:lastLive`) ?? null, lastHistory: await kv.get(`${id}:lastHistory`) ?? null,
-    backfill: { daysDone: d?.n ?? 0, deep: await deepStatus(id) } });
+    backfill: { daysDone, deep: await deepStatus(id) } });
 }));
 
 app.get('/api/day', wrap(async (req, res) => {
