@@ -151,3 +151,27 @@ describe('routes and the breakdown', () => {
     expect((await q(`SELECT COUNT(*)::int n FROM load_labels WHERE site_id = $1 AND name = 'Oven'`, [SITE]))[0].n).toBe(0);
   });
 });
+describe('v2 (2026-10-08): variable-speed AC and stored v1 bursts', () => {
+  it('LDB-6 bursts stored by the v1 detector are ignored by the clusters and the nightly detects their days again', async () => {
+    const d = DAYS[DAYS.length - 3];
+    await q(`INSERT INTO load_bursts (site_id, start, seq, day, hour, minutes, kw, kwh, overlap, sig, label_id, v) VALUES ($1, $2, 99, $3, 3, 200, 1.68, 40, true, 'k0m3', NULL, 1)`,
+      [SITE, localMidnight(d).getTime() + 3 * 3600e3 + 60_000, d]);
+    const { loadClusters, LOADS_V } = await import('../../server/src/loads.js');
+    expect(LOADS_V).toBe(2);
+    await kv.set(`${SITE}:loads:clusters`, null);
+    const c = await loadClusters(SITE, NOW);
+    expect(c.v).toBe(2);
+    expect(c.clusters.some(x => x.kw === 1.68 && x.minutes === 200)).toBe(false);
+    await loadsNightly(SITE, NOW);
+    expect((await q(`SELECT COUNT(*)::int n FROM load_bursts WHERE site_id = $1 AND v < 2`, [SITE]))[0].n).toBe(0);
+    expect((await q(`SELECT COUNT(*)::int n FROM load_bursts WHERE site_id = $1 AND kw = 1.68 AND minutes = 200`, [SITE]))[0].n).toBe(0);
+  });
+  it('LDB-7 the breakdown\'s parts never add up to more than the home used, on every range', async () => {
+    for (const range of ['today', 'week', 'month'] as const) {
+      const b = await breakdownFor(SITE, range, {});
+      expect(b.parts.reduce((a, p) => a + p.kwh, 0), range).toBeLessThanOrEqual(b.homeKwh + 0.3);
+      expect(b.parts.every(p => p.kwh >= 0), range).toBe(true);
+    }
+  });
+});
+

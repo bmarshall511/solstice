@@ -122,6 +122,17 @@ export async function alwaysOnKw(siteId: string, days: number, o: { now?: number
 }
 
 /** GET /api/breakdown?range=today|week|month: kWh a day by part (today: so far), today's bursts, the always-on trend. */
+/**
+ * The parts never add up to more than the home used (BD-5). What the inferred loads claim beyond it comes off "big loads" first, then
+ * off the named loads in proportion; AC, always-on and the pool (`fixed`, measured or modelled) are left alone. Values in kWh a day.
+ */
+export function capInferred(o: { home: number; fixed: number; big: number; named: number[] }) {
+  const r1 = (v: number) => Math.round(v * 10) / 10, namedSum = o.named.reduce((a, v) => a + v, 0);
+  const over = r1(o.fixed + o.big + namedSum - o.home);
+  if (over <= 0) return { big: o.big, named: o.named, over: 0 };
+  const fromBig = Math.min(o.big, over), left = over - fromBig, scale = namedSum > 0 && left > 0 ? Math.max(0, (namedSum - left) / namedSum) : 1;
+  return { big: r1(o.big - fromBig), named: o.named.map(v => r1(v * scale)), over };
+}
 export async function breakdownFor(siteId: string, range: Range, settings: Record<string, any>, now = Date.now()) {
   const today = localDay(new Date(now)), from = range === 'today' ? today : addDays(today, range === 'week' ? -7 : -30), to = range === 'today' ? today : addDays(today, -1);
   const spans = daySpans(from, to, now);
@@ -160,9 +171,14 @@ export async function breakdownFor(siteId: string, range: Range, settings: Recor
   const per = (v: number) => days ? Math.round(v / days * 10) / 10 : 0;
   // AC from the same covered days as everything else (cooling time × the learned cooling draw, heating time × the heating draw); pool as the History card has it
   const acKwh = per(acSum), poolKwh = per(pool.kwh * (days / Math.max(1, spans.length)));
-  const named = (loads?.clusters ?? []).filter(c => c.labelId != null && partIds.has(c.labelId)).map(c => ({ c, kwh: per(namedKwh.get(c.labelId!) ?? 0) }));
+  const named = (loads?.clusters ?? []).filter(c => c.labelId != null && partIds.has(c.labelId)).map(c => ({ c, kwh: per(namedKwh.get(c.labelId!) ?? 0) }));   // kwh may be scaled down below
   const namedSum = named.reduce((a, n) => a + n.kwh, 0), unnamed = loads ? loads.clusters.filter(c => c.labelId == null).length : null;
-  const homeKwh = per(home), onKwh = per(alwaysOn), bigKwh = per(big), rest = Math.max(0, Math.round((homeKwh - acKwh - poolKwh - onKwh - bigKwh - namedSum) * 10) / 10);
+  const homeKwh = per(home), onKwh = per(alwaysOn);
+  // the parts never add up to more than the home used (BD-5): what the inferred loads claim beyond it comes off "big loads" first,
+  // then off the named loads in proportion (both are whole-house inference; AC, always-on and pool are measured or modelled)
+  const capped = capInferred({ home: homeKwh, fixed: acKwh + poolKwh + onKwh, big: per(big), named: named.map(n => n.kwh) });
+  const bigKwh = capped.big; named.forEach((n, i) => { n.kwh = capped.named[i]; });
+  const rest = Math.max(0, Math.round((homeKwh - acKwh - poolKwh - onKwh - bigKwh - named.reduce((a, n) => a + n.kwh, 0)) * 10) / 10);
   const share = (v: number) => homeKwh ? Math.round(v / homeKwh * 100) : 0;
   const acHours = acDays ? Math.round(acH / acDays * 10) / 10 : null;
   // heating hours without a learned heating draw: their kWh can't be booked, so the AC part is an estimate (it stays in "everything else")

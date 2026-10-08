@@ -19,7 +19,7 @@ const changedFor = q => {
 };
 let S, f;
 beforeAll(async () => { ({ S, f } = await bootApp(ownerRoutes({ changed: req => changedFor(req.query) }), external())); click(document.querySelector('.c-tab[data-v="v-hist"]')); await flush(10); });
-afterAll(() => vi.useRealTimers());
+afterAll(async () => { await new Promise(r => setTimeout(r, 150)); vi.useRealTimers(); });   // let main.js's 50 ms sheet-focus timer fire before teardown
 const range = async r => { click($('hseg').querySelector(`[data-r="${r}"]`)); await flush(10); };
 const card = () => $('chgCard'), buy = () => $('chgBuy');
 const wfParts = el => [...el.querySelectorAll('.c-wf-r:not(.c-wf-tot) .c-wf-l')].map(x => x.firstChild.textContent);

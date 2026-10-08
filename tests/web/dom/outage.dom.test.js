@@ -18,7 +18,7 @@ beforeAll(async () => {
   vi.stubGlobal('fetch', f);
   ({ mountOutageCard } = await import('../../../web/src/views/outage.js'));
 });
-afterAll(() => vi.useRealTimers());
+afterAll(async () => { await new Promise(r => setTimeout(r, 150)); vi.useRealTimers(); });   // let main.js's 50 ms sheet-focus timer fire before teardown
 const slot = () => { const s = document.createElement('div'); document.getElementById('screen').appendChild(s); return s; };
 
 describe('Outage readiness card', () => {

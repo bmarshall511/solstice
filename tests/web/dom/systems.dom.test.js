@@ -14,7 +14,7 @@ vi.mock('../../../web/src/views/nowhub.js', async importOriginal => { const m = 
 
 let S, f, strip = null;
 beforeAll(async () => { ({ S, f } = await bootApp(ownerRoutes({ 'appliances/ac/strip': () => strip ?? acStrip(NOW) }), external())); click(document.querySelector('.c-tab[data-v="v-sys"]')); await flush(); });
-afterAll(() => vi.useRealTimers());
+afterAll(async () => { await new Promise(r => setTimeout(r, 150)); vi.useRealTimers(); });   // let main.js's 50 ms sheet-focus timer fire before teardown
 const seg = async s => { click($('sysSeg').querySelector(`[data-seg="${s}"]`)); await flush(4); };
 const page = s => $(`sp-${s}`);
 const noWrites = n => expect(sheetWrites(f, n), 'a write before the primary').toEqual([]);

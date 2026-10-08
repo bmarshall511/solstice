@@ -24,7 +24,7 @@ beforeAll(() => {
   stubBrowser();
   C = coreFixtures(NOW); A = applFixtures(NOW);
 });
-afterAll(() => vi.useRealTimers());
+afterAll(async () => { await new Promise(r => setTimeout(r, 150)); vi.useRealTimers(); });   // let main.js's 50 ms sheet-focus timer fire before teardown
 
 describe('scenes build, update and dispose with a stubbed renderer', () => {
   it('aurora: set() a reading, render() in and out of an outage', async () => {

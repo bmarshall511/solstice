@@ -34,7 +34,7 @@ beforeAll(async () => {
     if (v === 'v-hist') { click($('dayPrev')); await flush(10); for (const r of ['week', 'month', 'year', 'day']) { click($('hseg').querySelector(`[data-r="${r}"]`)); await flush(10); } }
   }
 });
-afterAll(() => vi.useRealTimers());
+afterAll(async () => { await new Promise(r => setTimeout(r, 150)); vi.useRealTimers(); });   // let main.js's 50 ms sheet-focus timer fire before teardown
 
 describe('guest mode', () => {
   it('the page is in the guest role, with the guest pill and the owner’s name', () => {
