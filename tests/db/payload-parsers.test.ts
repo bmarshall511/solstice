@@ -2,7 +2,8 @@
 // audit 10b, test batch 7 item 5). Until now every test replaced these functions above the parsing layer. Here fetch itself is faked per
 // test, so the real code builds the request, reads the body and handles missing fields and error bodies:
 //   PP-N*  Google SDM device list → readNest (Celsius to °F, traits that may be absent, Eco, Fan, errors, the Google token refresh)
-//   PP-T*  the Fleet API HTTP layer, teslaFor().get (401 refresh once, 429 back-off, error and non-JSON bodies, the timeout signal)
+//   PP-T*  the Fleet API HTTP layer, teslaFor().get (401 refresh once, 429 back-off, error and non-JSON bodies, a 2xx without a body,
+//          the timeout signal) and the sync recording a body-less 2xx in Data health
 //   PP-O*  Open-Meteo: the pool forecast (autopilot.ts), tilted irradiance (learn/wx.ts), the archive highs and lows (learn/homeModel.ts),
 //          the soiling weather with its archive rain (soiling.ts)
 //   PP-W*  NWS alerts GeoJSON (outage.ts nwsAlerts)
@@ -13,6 +14,7 @@ import { q, kv, migrate } from '../../server/src/db.js';
 import { readNest, cToF } from '../../server/src/appliances/nest.js';
 import { teslaFor, localDay, addDays, FLEET_TIMEOUT_MS } from '../../server/src/tesla/client.js';
 import { accessToken } from '../../server/src/tesla/auth.js';
+import { syncSite } from '../../server/src/sync.js';
 import { forecastAged } from '../../server/src/appliances/autopilot.js';
 import { wxGti, WX_KEY } from '../../server/src/learn/wx.js';
 import { wxHiLo, HILO_KEY } from '../../server/src/learn/homeModel.js';
@@ -159,10 +161,26 @@ describe('Fleet API: teslaFor().get', () => {
     await expect(teslaFor(1).backups('test-site', 'a', 'b')).rejects.toThrow(/^Tesla \/api\/1\/energy_sites\/test-site\/calendar_history → HTTP 504:$/);
   });
 
-  it('PP-T5 a 200 without the response envelope comes back undefined (pinned: the callers then fail on it, nothing is stored)', async () => {
-    fake({ [FLEET]: (_u, _i, n) => n === 0 ? json({ unexpected: true }) : new Response('not json', { status: 200 }) });
-    expect(await teslaFor(1).products()).toBeUndefined();
-    expect(await teslaFor(1).products()).toBeUndefined();
+  it('PP-T5 a 200 without the response envelope (or with a non-JSON body) is a clear error, not undefined; an explicit null passes', async () => {
+    fake({ [FLEET]: (_u, _i, n) => n === 0 ? json({ unexpected: true }) : n === 1 ? new Response('not json', { status: 200 }) : json({ response: null }) });
+    await expect(teslaFor(1).products()).rejects.toThrow('Tesla /api/1/products → HTTP 200 without a response body');
+    await expect(teslaFor(1).products()).rejects.toThrow('Tesla /api/1/products → HTTP 200 without a response body');
+    expect(await teslaFor(1).products()).toBeNull();
+  });
+
+  it('PP-T7 every sync step records a body-less 200 in Data health (kv error:<step>) and the sync returns, nothing stored', async () => {
+    const [a] = await q<{ id: number }>(`INSERT INTO tesla_accounts (user_id, access_token, refresh_token, expires_at) VALUES (NULL, 'test-access', 'test-refresh', 0) RETURNING id`);
+    await q(`INSERT INTO sites (id, user_id, tesla_account_id, name) VALUES ('pp-t7', NULL, $1, 'Test Site') ON CONFLICT (id) DO NOTHING`, [a.id]);
+    fake({ [FLEET]: () => json({}) });
+    const r = await syncSite('pp-t7', 8_000, { nightly: true });
+    const msg = (p: string) => `Tesla /api/1/energy_sites/pp-t7/${p} → HTTP 200 without a response body`;
+    expect(r.done).toEqual([]);
+    expect(r.errors).toEqual(expect.arrayContaining([`live: ${msg('live_status')}`, `siteInfo: ${msg('site_info')}`,
+      `lastHistory: ${msg('calendar_history')}`, `lastBackups: ${msg('calendar_history')}`]));
+    for (const [k, p] of [['live', 'live_status'], ['siteInfo', 'site_info'], ['lastHistory', 'calendar_history'], ['lastBackups', 'calendar_history']])
+      expect(await kv.get(`pp-t7:error:${k}`)).toMatchObject({ message: msg(p) });
+    expect(r.errors.every(e => !/TypeError|Cannot read|undefined/.test(e))).toBe(true);
+    for (const t of ['readings', 'energy', 'soe', 'backup_events']) expect(await q(`SELECT 1 FROM ${t} WHERE site_id = 'pp-t7'`)).toEqual([]);
   });
 
   it('PP-T6 every call carries a deadline signal; a timeout rejects the call (no retry)', async () => {

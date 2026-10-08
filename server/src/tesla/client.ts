@@ -22,6 +22,9 @@ export function teslaFor(accountId: number) {
     if (res.status === 429 && attempt < 3) { await sleep(1500 * 2 ** attempt); return get(path, params, attempt + 2); }
     const j = (await res.json().catch(() => ({}))) as { response?: T; error?: string; error_description?: string };
     if (!res.ok) throw new Error(`Tesla ${path} → HTTP ${res.status}: ${j.error ?? ''} ${j.error_description ?? ''}`.trim());
+    // a 2xx without the envelope (or a non-JSON body) used to come back undefined and fail later as a TypeError in the caller;
+    // now it is a clear error the callers record like any other Fleet failure (an explicit `response: null` still passes through)
+    if (j.response === undefined) throw new Error(`Tesla ${path} → HTTP ${res.status} without a response body`);
     return j.response as T;
   }
   const cal = <T>(site: string, params: Record<string, string>) => get<T>(`/api/1/energy_sites/${site}/calendar_history`, { time_zone: config.timeZone, ...params });
