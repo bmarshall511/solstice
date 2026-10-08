@@ -17,15 +17,17 @@ Solstice is the owner's personal Tesla Powerwall + solar + pool + AC monitor. On
 - Node 22 (`nvm use 22`; `.nvmrc`). No native npm deps (the Xcode licence is not accepted on this Mac). Vercel's project setting says Node 24.x; the app is written for 22.
 - Server: TypeScript, Express 5, `server/src/`. In production the whole API is **one Vercel function**, `api/index.ts`, with `vercel.json` rewrites for `/api/*` and `/auth/*`. Locally `npm run dev` serves it on http://localhost:8787.
 - Database: Neon Postgres ("solstice-db", iad1) through `@neondatabase/serverless`; PGlite for tests/local (`DATABASE_URL=pglite:<dir>`). Access is through `q`/`one`/`kv` in `server/src/db.ts`; the schema is created with `CREATE TABLE IF NOT EXISTS` on first request.
-- Web: vanilla JS + three.js + Vite in `web/`. `web/src/main.js` owns all state (`S`), the render loop and navigation; views in `web/src/views/`, three.js scenes in `web/src/scenes/`. Design language: Aurora (glass cards on an aurora sky, Manrope + JetBrains Mono, tokens at the top of `web/src/style.css`).
+- Web: vanilla JS + three.js + Vite in `web/`. `web/src/main.js` owns all state (`S`), the render loop and navigation; views in `web/src/views/`, three.js scenes in `web/src/scenes/`. Design language: Aurora (glass cards on an aurora sky, Manrope + JetBrains Mono, tokens at the top of `web/src/style.css`) on the `c-` component system from `mockups/al-ia.html` (every font names a generic fallback; every control is a 44 px target; writes are staged behind a sheet's footer primary).
 - Data sources: Tesla Fleet API (energy scope only), Open-Meteo, PEC bill PDFs, Pentair ScreenLogic (pool, `node-screenlogic`), Google Nest SDM (AC), ERCOT dashboards, NWS alerts.
-- Docs: `docs/roadmap.md`, `docs/system-specs.md` (as-built solar specs), `docs/fleet-api-energy-research.md` (every Fleet API field). Approved designs: `mockups/g-insights.html`, `mockups/h-pool-twin.html`, `mockups/i-ac.html`.
+- Docs: `docs/roadmap.md`, `docs/system-specs.md` (as-built solar specs), `docs/fleet-api-energy-research.md` (every Fleet API field). Approved designs: `mockups/g-insights.html`, `mockups/h-pool-twin.html`, `mockups/i-ac.html`, `mockups/al-ia.html` (the whole app), `mockups/am-ideas.html` (What changed, load signatures, strip heat).
+- Checks: `npm run typecheck` checks the server and `web/src` (`tsconfig.web.json`); `npm run test:coverage` writes `coverage/` (git-ignored); DOM tests for the web live in `tests/web/dom/` (happy-dom, synthetic fixtures). `npm run demo` starts the real app offline on a throwaway PGlite database with synthetic data and a test-only owner key (`scripts/demo-server.mjs`; nothing leaves the machine): use it to check screens at 393 px as owner and guest.
 
 ## Deploying
 
 - Vercel's git integration **is** auto-deploying (seen 2026-10-05): every PR branch gets a preview (the "Vercel" check on the PR) and every merge to `main` deploys production on its own (the deployment with the `git-main` alias). Those git builds don't run the test gate; CI's `check (22)`/`check (24)` on the PR do. `npm run deploy:preview` / `npm run deploy:prod` (project `solstice-energy`, team `highfivery-llc`) still work for a gated deploy: each runs typecheck, the test suite and the web build first and stops on the first failure before calling `vercel deploy` (`--yes` / `--prod --yes`). Running `deploy:prod` after a merge makes a second production deployment of the same commit, which is harmless.
 - `.vercelignore` at the repo root is an **allow-list** (`/*` then `!/api`, `!/server`, `!/web`, etc.), not a denylist — it's what actually controls what `vercel deploy` uploads, in place of `.gitignore`. When a new top-level directory becomes part of the build (installCommand, buildCommand, or something `api/index.ts` imports), add a `!/<dir>` line for it there or it silently stops being deployed.
 - Integration env vars on Vercel are "sensitive": `vercel env pull` returns placeholders.
+- The deep history backfill (`server/src/deepBackfill.ts`, I-16) rides `/api/cron/nest` from 01:30 to 06:00 Chicago, ≤ 3 days a tick, until history reaches the install date; `syncSite` keeps its 400-day window. Records (`server/src/records.ts`) are cached nightly in kv.
 - Crons in `vercel.json`: `/api/cron/sync` nightly, `/api/cron/pool` 01:15 UTC (8:15 PM Central), `/api/cron/nest` every 5 minutes. They require `Authorization: Bearer $CRON_SECRET`.
 
 ## Gotchas (learned the hard way)
@@ -59,7 +61,8 @@ Solstice is the owner's personal Tesla Powerwall + solar + pool + AC monitor. On
 ## Rendering mockups
 
 - Open mockups through the built-in browser's static server, not `file://` (relative stylesheet links break): `.claude/launch.json` defines `mockups` (python http.server on :8765) → `http://localhost:8765/mockups/<file>.html`, emulate 375–393 px, screenshot every frame, then reset the viewport.
-- Mockup names so far: a–i (earlier designs; g, h, i approved), j-ui-fixes, k–p visualizations, q-share, r-learning, s-expand (all j–s approved and built). Continue from t.
+- Mockup names so far: a–i (earlier designs; g, h, i approved), j-ui-fixes, k–p visualizations, q-share, r-learning, s-expand (all j–s approved and built), t–ak (enhancements through Vacation mode, built), al (whole-app IA and components, approved and built), am (Batch 6 ideas, approved and built). Continue from an.
+- `docs/audit-*.md` (except the published September audit), `docs/handoff-*.md` and `docs/overnight-*.md` are git-ignored on purpose: they name trip dates and figures.
 
 ## Working style the owner expects
 
