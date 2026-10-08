@@ -126,7 +126,7 @@ describe('Systems › AC: the Strip heat card (approved mockup am frame 6, I-15)
   it('the markup of frame 6: header, 16 half-hour stage bars, Strips and Heat pump, Why, Tip, This week and Your heating; no button', () => {
     const h = stripCardHtml(data);
     expect(h).toMatch(/^<div class="c-head"><h5>Strip heat<\/h5><span class="c-badge" data-t="m">measured<\/span><span class="c-fig">13.8 kWh this morning<\/span><\/div>/);
-    expect([...h.matchAll(/<i class="(st|hp|)" style="height:\d+%"><\/i>/g)]).toHaveLength(32);
+    expect([...h.matchAll(/<i class="(st|hp|)" style="height:\d+%"><\/i>/g)]).toHaveLength(16);   // 32 quarters → 16 half-hour bars (frame 6)
     expect(h).toContain('<div class="c-dlab"><span>4a</span><span>6a</span><span>8a</span><span>10a</span><span>12p</span></div>');
     expect(h).toContain('<div class="c-part c-acc-solar"><i></i><span>Strips</span><b>1 h 35 m<em>peak 9.6 kW</em></b></div>');
     expect(h).toContain('<div class="c-part c-acc-home"><i></i><span>Heat pump</span><b>2 h 10 m<em>3.4 kW</em></b></div>');
