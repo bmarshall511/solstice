@@ -81,6 +81,13 @@ describe('I-18: the words', () => {
     expect(w).toContain('Used vs last week</span><span class="c-wf-t"></span><b>+38.0 kWh</b>');
     expect(w).toContain('<div class="c-sum">A hotter week (avg high 94° vs 88°) explains most of it.</div>');
   });
+  it('CW-5b a guest’s week (no import from the server: guests never get the Bought split) draws the Used row only, without throwing', () => {
+    const { import: _bought, ...g } = week;
+    const w = weekCardHtml({ ...g, home: { ...week.home, parts: [{ id: 'weather', kwh: 22, conf: 'estimated' }, { id: 'pool', kwh: 4, conf: 'measured' }, { id: 'other', kwh: 12, conf: null }] } }, { guest: true });
+    expect(w).toContain('<span>Used</span><b>212 kWh · ▲ 38</b></div>');
+    expect(w).not.toContain('Bought'); expect(w).not.toContain('Sunshare');
+    expect(w).toContain('Used vs last week');
+  });
   it('CW-6 the digest line (frame 2): whole kWh that still add up, weather badged', () => {
     expect(changedLeadHtml({ changed: week })).toBe('<b>+38 kWh used vs last week:</b> weather +22 <span class="c-badge" data-t="e">est</span>, AC +9, pool +4, always-on +2, unexplained +1.');
     // 3.4 + 3.4 + 3.4 = 10.2 → 3 + 3 + 3, and the rounding goes into the last part
