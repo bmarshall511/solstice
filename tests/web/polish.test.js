@@ -39,3 +39,13 @@ describe('the private card', () => {
     expect(rule).toMatch(/min-height:44px/); expect(rule).toMatch(/min-width:44px/);
   });
 });
+
+// Overnight: "Preview as a guest" turns S.guest on mid-session; the owner's background polls must skip their owner-only routes then.
+describe('Preview as a guest sends no owner-only background requests', () => {
+  const main = readFileSync(new URL('../../web/src/main.js', import.meta.url), 'utf8'), ins = readFileSync(new URL('../../web/src/views/insights.js', import.meta.url), 'utf8');
+  it('digest, Powerwall rules, What changed and the sync are wrapped in ownerOnly; capacity checks S.guest per load', () => {
+    expect(main).toMatch(/const ownerOnly = fn => \(\) => S\.guest \? Promise\.resolve\(\) : fn\(\);/);
+    for (const call of ['ownerOnly(() => loadDigest(S))', 'ownerOnly(() => loadPowerwallRules(S))', 'ownerOnly(() => loadChanged(S))', 'every(5 * 60_000, ownerOnly(sync))']) expect(main).toContain(call);
+    expect(ins).toMatch(/const load = async \(\) => \{ if \(S\.guest\) return;/);
+  });
+});
