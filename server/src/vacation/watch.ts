@@ -15,6 +15,9 @@ import type { NestState } from '../appliances/nest.js';
 import type { PoolSnapshot } from '../appliances/screenlogic.js';
 import { pumpSchedules, scheduledQuarters, quarterOf } from '../appliances/pool.js';
 import { liveTrip, tripPhase, patchTripData, logTrip, type Trip } from './trip.js';
+import { heatingCeilingKw, type Levels } from '../stripheat.js';
+
+const levelsKey = (siteId: string) => `${siteId}:strip:levels`;   // stripwatch.ts levelsKey (not imported: it pulls in the AC module)
 
 export const HOT_F = 88, COLD_F = 50, DAMP_RH = 65, DAMP_MS = 6 * 3600_000, OFFLINE_MS = 3600_000, LOAD_KW = 2, LOAD_MS = 15 * 60_000;
 export const WH_MIN_KW = 3.5, WH_MAX_KW = 5.5, WH_MAX_MS = 45 * 60_000, DETECT_MS = 12 * 3600_000, ACTIVITY_STEP_KW = 1.2, ACTIVITY_MAX = 2, SNOOZE_MS = 864e5;
@@ -32,17 +35,21 @@ export function spell<T extends { ts: number }>(rows: T[], now: number, ms: numb
  * The load nobody planned over the last 15 minutes (kW): each live reading's home load less the always-on base, the AC while Nest
  * says it is cooling and the pump's last watts. Null when there are fewer than two readings. `wh`: whether it looks like the water
  * heater (3.5–5.5 kW) and has run less than 45 minutes so far, which is expected.
+ * I-15: while Nest says it is heating, the heating's own draw comes out too, compressor and strips, up to `heatKw` (the most the
+ * heating can draw, stripheat.ts heatingCeilingKw): strips holding the away setpoint on a cold night are not somebody at home.
  */
-export function unexplained(rows: Array<{ ts: number; loadKw: number }>, o: { now: number; baseKw: number; acKw: number; cooling: boolean; poolKw: number; since: number | null }) {
+export function unexplained(rows: Array<{ ts: number; loadKw: number }>, o: { now: number; baseKw: number; acKw: number; cooling: boolean; poolKw: number; since: number | null; heating?: boolean; heatKw?: number }) {
   const w = rows.filter(r => r.ts > o.now - LOAD_MS); if (w.length < 2) return null;
-  const extra = w.map(r => r.loadKw - o.baseKw - (o.cooling ? o.acKw : 0) - o.poolKw), low = Math.min(...extra);
+  const extra = w.map(r => { const x = r.loadKw - o.baseKw - (o.cooling ? o.acKw : 0) - o.poolKw; return o.heating ? x - Math.min(Math.max(0, x), o.heatKw ?? 0) : x; }), low = Math.min(...extra);
   const wh = low >= WH_MIN_KW && Math.max(...extra) <= WH_MAX_KW && (o.since == null || o.now - o.since < WH_MAX_MS);
   return { kw: Math.round(low * 10) / 10, over: low >= LOAD_KW, wh };
 }
-/** Signs of someone home in a stretch of live readings: steps up of 1.2 kW or more while the AC wasn't cooling. */
-export function activity(rows: Array<{ ts: number; loadKw: number; cooling: boolean }>) {
+/** Signs of someone home in a stretch of live readings: steps up of 1.2 kW or more while the AC wasn't cooling (I-15: or heating: a strip
+ *  stage switching on is a step too). */
+export function activity(rows: Array<{ ts: number; loadKw: number; cooling: boolean; heating?: boolean }>) {
   let n = 0;
-  for (let i = 1; i < rows.length; i++) if (rows[i].loadKw - rows[i - 1].loadKw >= ACTIVITY_STEP_KW && !rows[i].cooling && !rows[i - 1].cooling) n++;
+  const busy = (r: { cooling: boolean; heating?: boolean }) => r.cooling || !!r.heating;
+  for (let i = 1; i < rows.length; i++) if (rows[i].loadKw - rows[i - 1].loadKw >= ACTIVITY_STEP_KW && !busy(rows[i]) && !busy(rows[i - 1])) n++;
   return n;
 }
 
@@ -56,7 +63,7 @@ async function baseKw(siteId: string, now: number) {
   const r = await one<{ kw: number | null }>(`SELECT (PERCENTILE_CONT(.05) WITHIN GROUP (ORDER BY load_w) / 1000.0)::float8 kw FROM readings WHERE site_id = $1 AND ts > $2 AND load_w IS NOT NULL`, [siteId, now - 864e5]);
   return r?.kw ?? BASE_KW_FALLBACK;
 }
-const coolingAt = (rows: Array<{ ts: number; hvac: string }>) => (t: number) => { let h = 'OFF'; for (const r of rows) { if (r.ts > t) break; h = r.hvac; } return h === 'COOLING'; };
+const hvacAt = (rows: Array<{ ts: number; hvac: string }>) => (t: number) => { let h = 'OFF'; for (const r of rows) { if (r.ts > t) break; h = r.hvac; } return h; };
 
 /* ---------- the step ---------- */
 /**
@@ -107,8 +114,9 @@ export async function vacationWatch(siteId: string, now = Date.now(), end: (site
     }
   }
   // power use nobody planned: 2 kW or more for 15 minutes that isn't the AC, the pool or a water-heater burst
-  const rows = await liveRows(siteId, now - LOAD_MS), learned = await kv.get<{ learned?: { coolKw?: number | null } }>(`${siteId}:ac:learned:v2`);
-  const u = unexplained(rows, { now, baseKw: await baseKw(siteId, now), acKw: learned?.learned?.coolKw ?? 2.6, cooling: st?.hvac === 'COOLING', poolKw: snap?.pump?.running ? (snap.pump.watts ?? 0) / 1000 : 0, since: w.loadSince ?? null });
+  const rows = await liveRows(siteId, now - LOAD_MS), learned = await kv.get<{ learned?: { coolKw?: number | null; heatKw?: number | null } }>(`${siteId}:ac:learned:v2`);
+  const heating = st?.hvac === 'HEATING', heatKw = heating ? heatingCeilingKw(await kv.get<Levels>(levelsKey(siteId)), learned?.learned?.heatKw ?? null) : 0;   // I-15
+  const u = unexplained(rows, { now, baseKw: await baseKw(siteId, now), acKw: learned?.learned?.coolKw ?? 2.6, cooling: st?.hvac === 'COOLING', poolKw: snap?.pump?.running ? (snap.pump.watts ?? 0) / 1000 : 0, since: w.loadSince ?? null, heating, heatKw });
   if (u?.over) {
     if (w.loadSince == null) { w.loadSince = now - LOAD_MS; await save(); }
     if (!u.wh && (w.loadAt == null || now - w.loadAt > 6 * 3600_000)) {
@@ -134,7 +142,7 @@ export async function detectAway(siteId: string, now = Date.now()) {
   const since = r?.since != null ? Number(r.since) : null;
   if (since == null || now - since < DETECT_MS) return { away: true, since };
   const nest = (await q<{ ts: string; hvac: string }>(`SELECT ts::text, hvac FROM nest_readings WHERE site_id = $1 AND ts > $2 ORDER BY ts`, [siteId, now - DETECT_MS - 3600_000])).map(x => ({ ts: Number(x.ts), hvac: x.hvac }));
-  const cool = coolingAt(nest), rows = (await liveRows(siteId, now - DETECT_MS)).map(x => ({ ...x, cooling: cool(x.ts) }));
+  const hvac = hvacAt(nest), rows = (await liveRows(siteId, now - DETECT_MS)).map(x => ({ ...x, cooling: hvac(x.ts) === 'COOLING', heating: hvac(x.ts) === 'HEATING' }));
   if (rows.length < 24) return { away: true, since, readings: rows.length };   // too little live data to say
   const n = activity(rows); if (n > ACTIVITY_MAX) return { away: true, since, activity: n };
   const res = await notify(siteId, 'vacation', 'Looks like you’re away', `Nest has said Away since ${clock(since)} and nothing at home has been used since. Start Vacation mode?`,
