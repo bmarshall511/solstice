@@ -48,6 +48,7 @@ import { digestRoutes, maybeWeeklyDigest } from './digest.js';
 import { presenceRoutes, setPresence } from './appliances/presence.js';
 import { powerwallRoutes, powerwallTick, powerwallNightly } from './powerwall.js';
 import { runLearn } from './learn/nightly.js';
+import { stripCard, stripWatch } from './stripwatch.js';
 import { learnRouter } from './learn/api.js';
 import { vacationRoutes, vacationTick, finishTrip, tripHooks, departure } from './vacation/index.js';
 import { leftOn, cloudyWater } from './vacation/pool.js';
@@ -656,6 +657,8 @@ async function acSlope(id: string) {
 }
 // S-07/S-10: a guest's read never reaches Nest and starts, ends or logs no hold; the owner's stale reads share one SDM read per minute (ac.ts)
 app.get('/api/appliances/ac', wrap(async (req, res) => { const id = site(req); res.json(await acDetail(id, presenceHidden(req, await settingsFor(req)), await rateFor(id), await acSlope(id), { fresh: !req.guestView && req.query.fresh === '1', readOnly: !!req.guestView })); }));
+/** Mockup am frame 6 (I-15): the Strip heat card, from the database only (stripwatch.ts). Owner only: no guest view in redact.ts. Writes nothing. */
+app.get('/api/appliances/ac/strip', wrap(async (req, res) => { res.set('Cache-Control', 'no-store'); res.json(await stripCard(site(req))); }));
 /** The Now card's whole-home twin: one Chicago day hour by hour (energy, pool, AC) from the database only; never reads ScreenLogic or Nest. */
 app.get('/api/appliances/day', wrap(async (req, res) => {
   const date = String(req.query.date ?? localDay());
@@ -781,6 +784,7 @@ fiveMinuteSteps.powerwall = powerwallTick; nightlySteps.powerwall = powerwallNig
 fiveMinuteSteps.digest = maybeWeeklyDigest; nightlySteps.digest = maybeWeeklyDigest;
 fiveMinuteSteps.panels = panelWatch;
 fiveMinuteSteps.grid = gridWatch;
+fiveMinuteSteps.strip = stripWatch;   // mockup am frame 7: one strip-heat alert at 10:00 Chicago; every other tick returns before the database
 fiveMinuteSteps.vacation = (id, now) => vacationWatch(id, now, (sid, text) => finishTrip(sid, 'home', Date.now(), text));   // mockup ak: trip alerts, "Looks like you're away"
 tripHooks.end.held = (id, trip, now) => heldSummary(id, trip, now);   // the pushes held during the trip, as one summary
 // the trip report (frame 6): built by the nightly job once the trip has ended (its energy is in), pushed from 7:00 the next morning
