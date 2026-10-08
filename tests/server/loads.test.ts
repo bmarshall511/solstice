@@ -108,10 +108,11 @@ describe('clusters', () => {
     const b = clusterLoads([...stray, ...dryer, ...oven].reverse(), [], { today: TODAY, days30: 20 });
     expect(b).toEqual(a);
   });
-  it('LD-10 a band splits by part of day only when two parts each have support', () => {
+  it('LD-10 a band is one cluster at any time of day (mockup am frame 4: the water heater is one row, "day and night")', () => {
     const morning = many(5, 2, () => 7, 2.2, 60), late = many(5, 2, () => 22, 2.2, 60);
-    expect(clusterLoads([...morning, ...late], [], { today: TODAY, days30: 30 }).clusters.map(c => c.sig).sort()).toEqual(['k0m2-late', 'k0m2-morning']);
-    expect(clusterLoads([...morning, ...late.slice(0, 6)], [], { today: TODAY, days30: 30 }).clusters.map(c => c.sig)).toEqual(['k0m2']);
+    const both = clusterLoads([...morning, ...late], [], { today: TODAY, days30: 30 }).clusters;
+    expect(both.map(c => c.sig)).toEqual(['k0m2']);
+    expect(both[0].hist[7]).toBeGreaterThan(0); expect(both[0].hist[22]).toBeGreaterThan(0);   // when it runs is the strip
     expect(clusterLoads(late, [], { today: TODAY, days30: 30 }).clusters[0].suggestion).toEqual({ name: 'Dishwasher', text: 'Could be the dishwasher.' });
   });
   it('LD-11 a name catches bursts within ±20% kW and 1.5× the minutes; the nearest centre wins', () => {

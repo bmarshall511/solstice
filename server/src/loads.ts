@@ -8,7 +8,7 @@
 //   runs is an overlap and gets only the extra kW; kW = median of its own filtered buckets above the level it started from; kWh from the
 //   raw residual, each bucket capped at 1.5 × that kW; at least 1.5 kW and 10 minutes; a burst that starts or ends within one bucket
 //   of a Nest on/off switch with a kW within 20% of the AC's is the AC's mask edge, not a load
-// Bursts are stored per day (load_bursts), clustered by kW × minutes bands (split by part of day when two parts each have support)
+// Bursts are stored per day (load_bursts), clustered by kW × minutes bands (one cluster per band, at any time of day)
 // and named by the owner (load_labels). This is whole-house inference: never "measured".
 import express, { type Express, type Request } from 'express';
 import { q, kv } from './db.js';
@@ -194,8 +194,8 @@ export function suggest(kw: number, minutes: number, counts: number[]): Suggesti
   return null;
 }
 /**
- * Clusters from up to 60 days of bursts. Bursts that match a named centre form that name's cluster; the rest group by band, split by
- * part of day only when two parts each have support (8 bursts on 4 days in the last 30). `days30`: days detected in the last 30.
+ * Clusters from up to 60 days of bursts. Bursts that match a named centre form that name's cluster; the rest group by band (one cluster per band at any
+ * time of day; support is 8 bursts on 4 days in the last 30). `days30`: days detected in the last 30.
  * Returned: every named cluster, every cluster with support, and smaller ones (3+ bursts) as "learning"; the remainder is `unsorted`.
  */
 export function clusterLoads(bursts: StoredBurst[], labels: Label[], o: { today: string; days30: number }) {
@@ -215,9 +215,9 @@ export function clusterLoads(bursts: StoredBurst[], labels: Label[], o: { today:
   // a band's bursts outside a named centre's tolerance never join that name's cluster: they stay unsorted
   const addLoose = (k: string, b: StoredBurst) => { const l = bySig.get(k); if (l?.name && !l.dismissed) unsorted.push(b); else add(k, b); };
   for (const [sig, bs] of [...loose].sort(([a], [b]) => a.localeCompare(b))) {
-    const parts = DAYPARTS.map(([p]) => [p, bs.filter(b => partOf(b.hour) === p)] as const).filter(([, x]) => supported(x));
-    if (parts.length >= 2) for (const [p, x] of parts) for (const b of x) addLoose(`${sig}-${p}`, b);
-    for (const b of parts.length >= 2 ? bs.filter(b => !parts.some(([p]) => partOf(b.hour) === p)) : bs) addLoose(sig, b);
+    // one cluster per band, whatever the time of day (mockup am frame 4: a water heater is one row, "5–7× a day, day and night");
+    // when it runs is the row's 24-hour strip, not a reason to split it
+    for (const b of bs) addLoose(sig, b);
   }
   const clusters: Cluster[] = [];
   for (const l of named(labels)) if (!groups.has(l.sig)) groups.set(l.sig, []);

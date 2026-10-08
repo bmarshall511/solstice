@@ -99,8 +99,9 @@ describe('nightly', () => {
 describe('routes and the breakdown', () => {
   it('LDB-3 GET /api/loads: the clusters, their suggestion and 24-hour strip; naming one gives it a part, and the parts still add up', async () => {
     const v = await (await call('/api/loads', { cookie: owner })).json();
-    // the water heater runs in three parts of the day, each with support, so its band splits; the oven is one cluster
-    expect(v.clusters.map((c: any) => c.sig).sort()).toEqual(['k1m2', 'k2m1-afternoon', 'k2m1-late', 'k2m1-morning']);
+    // the water heater runs morning, afternoon and late, and is still one cluster (one row: mockup am frame 4); the oven is another
+    expect(v.clusters.map((c: any) => c.sig).sort()).toEqual(['k1m2', 'k2m1']);
+    expect(v.clusters.find((c: any) => c.sig === 'k2m1').count).toBe(42);
     const oven = v.clusters.find((c: any) => c.sig === 'k1m2');
     expect(oven).toMatchObject({ kw: 2.6, minutes: 50, count: 14, days: 14, perDay: 1, window: { from: 17, to: 18 }, badge: 'estimated', suggestion: { name: 'Oven' }, name: null });
     expect(oven.hist[17]).toBe(1);
@@ -109,10 +110,10 @@ describe('routes and the breakdown', () => {
     expect(before.parts.map(p => p.id)).toEqual(['ac', 'alwaysOn', 'big', 'pool', 'other']);
     expect(before.parts.find(p => p.id === 'big')!.kwh).toBeCloseTo(4.4 + 2.2, 0);
 
-    const named = await (await call('/api/loads/label', { cookie: owner, json: { sig: 'k2m1-morning', name: '  Water heater ' } })).json();
+    const named = await (await call('/api/loads/label', { cookie: owner, json: { sig: 'k2m1', name: '  Water heater ' } })).json();
     const wh = named.clusters.find((c: any) => c.name === 'Water heater');
-    expect(wh).toMatchObject({ sig: 'k2m1-morning', count: 42, hue: 0, suggestion: null });           // every run within ±20% kW and 1.5× the minutes
-    expect(named.clusters.map((c: any) => c.sig)).toEqual(['k2m1-morning', 'k1m2']);
+    expect(wh).toMatchObject({ sig: 'k2m1', count: 42, hue: 0, suggestion: null });           // every run within ±20% kW and 1.5× the minutes
+    expect(named.clusters.map((c: any) => c.sig)).toEqual(['k2m1', 'k1m2']);
     expect((await q(`SELECT COUNT(*)::int n FROM load_bursts WHERE site_id = $1 AND label_id = $2`, [SITE, wh.labelId]))[0].n).toBe(42);
     expect((await q(`SELECT value FROM daily_metrics WHERE site_id = $1 AND day = $2 AND metric = $3`, [SITE, YESTERDAY, `load:${wh.labelId}`]))[0].value).toBeCloseTo(4.4, 1);
 
