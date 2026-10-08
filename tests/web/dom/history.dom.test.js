@@ -35,7 +35,7 @@ describe('Day', () => {
     expect(card().hidden).toBe(true); expect(buy().hidden).toBe(true);
   });
   it('yesterday: What changed vs a typical Tuesday (clean: the parts), Used · Bought, and Bought from PEC', async () => {
-    click($('dayPrev')); await until(() => !card().hidden, 2000, 'What changed');
+    click($('dayPrev')); await until(() => !card().hidden, 10_000, 'What changed');
     expect($('dayLabel').textContent).toMatch(/^Tue, Oct 6/);
     expect(f.calls.some(c => c.path === 'changed' && c.query.scope === 'day' && c.query.date === '2026-10-06')).toBe(true);
     expect(card().querySelector('h5').textContent).toBe('What changed');
@@ -57,7 +57,7 @@ describe('Day', () => {
   });
   it('a day whose history isn’t clean: the total and one line, no split; Bought still splits', async () => {
     notClean.add('2026-10-05');
-    click($('dayPrev')); await until(() => $('dayLabel').textContent.startsWith('Mon, Oct 5') && !card().hidden, 2000, 'the not-clean day');
+    click($('dayPrev')); await until(() => $('dayLabel').textContent.startsWith('Mon, Oct 5') && !card().hidden, 10_000, 'the not-clean day');
     expect(wfParts(card())).toEqual([]);
     expect(card().querySelector('.c-wf-tot b').textContent).toBe('+6.1 kWh');
     expect(card().querySelector('.c-sum').textContent).toBe('Not enough clean history to split this day yet.');
@@ -72,7 +72,7 @@ describe('Day', () => {
     expect($('dayNext').disabled).toBe(true);
   });
   it('Where every kWh went: the stacked bar and its three parts; 3D flow builds the scene on demand', async () => {
-    await until(() => $('flowStack').children.length, 2000, 'the flows');
+    await until(() => $('flowStack').children.length, 10_000, 'the flows');
     expect($('flowSum').hidden).toBe(false);
     expect($('flowDl').textContent).toMatch(/Pool [\d.]+AC [\d.]+Everything else [\d.]+/);
     click($('flow3d')); await flush(10);
@@ -89,7 +89,7 @@ describe('Week, Month, Year', () => {
     await range('week');
     expect($('dayNav').hidden).toBe(true);
     expect($('hchart').querySelectorAll('rect').length).toBe(14);   // 7 days × solar and home
-    await until(() => !card().hidden && card().querySelector('h5')?.textContent.startsWith('Week of'), 2000, 'the week card');
+    await until(() => !card().hidden && card().querySelector('h5')?.textContent.startsWith('Week of'), 10_000, 'the week card');
     expect(card().querySelector('h5').textContent).toBe('Week of Sep 28');
     expect(card().querySelector('.c-kv').textContent).toMatch(/Used41 kWh · ▲ 6Bought9 kWh · ▲ 4Sunshare\d+%/);
     expect(wfParts(card()).length).toBe(5);
@@ -97,7 +97,7 @@ describe('Week, Month, Year', () => {
     expect(badText($('v-hist'))).toEqual([]);
     notClean.add('week'); S.changedCache = {};
     await range('day'); await range('week');
-    await until(() => card().querySelector('.c-sum')?.textContent === 'Not enough clean history to split this week yet.', 2000, 'the not-clean week');
+    await until(() => card().querySelector('.c-sum')?.textContent === 'Not enough clean history to split this week yet.', 10_000, 'the not-clean week');
     expect(wfParts(card())).toEqual([]);
   });
   it('Month: 30 days of bars, the flows card; no What changed', async () => {
@@ -112,7 +112,7 @@ describe('Week, Month, Year', () => {
     expect($('hchart').querySelectorAll('rect').length).toBe(24);
     expect($('yrCard').hidden).toBe(false);
     expect($('flowSum').hidden).toBe(true);
-    await until(() => $('yrRead').textContent.length > 0, 2000, 'the year ring read-out');
+    await until(() => $('yrRead').textContent.length > 0, 10_000, 'the year ring read-out');
     expect(badText($('yrCard'))).toEqual([]);
     await range('day');
     expect($('yrCard').hidden).toBe(true);

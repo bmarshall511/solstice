@@ -61,7 +61,7 @@ describe('Home', () => {
     click($('drModes').querySelector('[data-m="now"]'));
   });
   it('Where your energy goes: the week’s parts with a named load as its own part; a part opens its detail in place', async () => {
-    await until(() => $('egParts').children.length > 0, 2000, 'the breakdown');
+    await until(() => $('egParts').children.length > 0, 10_000, 'the breakdown');
     const parts = [...$('egParts').querySelectorAll('.c-part[data-id]')];
     expect(parts.map(p => p.dataset.id)).toEqual(['ac', 'alwaysOn', 'load:1', 'big', 'pool', 'other']);
     expect(parts[2].textContent).toContain('Water heater');
@@ -75,7 +75,7 @@ describe('Home', () => {
     expect(smallTargets($('egParts'))).toEqual([]);
   });
   it('Big loads: one row per cluster, a named one with Rename, unnamed ones with Name it / Not one appliance', async () => {
-    await until(() => $('ldBody').querySelector('.c-load'), 2000, 'the loads');
+    await until(() => $('ldBody').querySelector('.c-load'), 10_000, 'the loads');
     expect($('ldFig').textContent).toBe('3 found');
     const rows = [...$('ldBody').querySelectorAll('.c-load')];
     expect(rows[0].querySelector('b').textContent).toBe('Water heater');
@@ -150,7 +150,7 @@ describe('Pool and AC in place', () => {
   it('Pool: the Live card, then the equipment panel in place; a preset gets its own Cancel / write row', async () => {
     await seg('pool');
     const ctl = $('poolEquip');
-    await until(() => ctl.querySelector('.c-preset'), 2000, 'the pool panel');
+    await until(() => ctl.querySelector('.c-preset'), 10_000, 'the pool panel');
     expect(ctl.querySelector('.c-stagerow')).toBeNull();
     const n = f.calls.length;
     click(ctl.querySelector('.c-preset[data-rpm="3000"]'));
@@ -169,7 +169,7 @@ describe('Pool and AC in place', () => {
   it('AC: the thermostat panel in place stages a setpoint on its own row; the Strip heat card is hidden in October', async () => {
     await seg('ac');
     const p = $('acPanel');
-    await until(() => p.querySelector('[data-step]'), 2000, 'the AC panel');
+    await until(() => p.querySelector('[data-step]'), 10_000, 'the AC panel');
     const n = f.calls.length, set = Math.round(S.ac.state.coolF);
     click(p.querySelector('[data-step="-1"]'));
     expect(p.querySelector('.c-stagerow [data-f="pri"]').textContent).toBe(`Set ${set - 1}°`);

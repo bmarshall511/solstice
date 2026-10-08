@@ -9,6 +9,9 @@ import { join, dirname } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');   // not new URL(): happy-dom replaces URL
 const read = p => readFileSync(join(ROOT, p), 'utf8');
+// booting the whole app takes a second or two, more when the full suite runs files in parallel
+vi.setConfig({ hookTimeout: 60_000, testTimeout: 30_000 });
+
 /** 2:30 PM Chicago on a Wednesday in October (CDT, UTC−5). */
 export const NOW = Date.parse('2026-10-07T14:30:00-05:00');
 export const TODAY = '2026-10-07';
@@ -44,12 +47,31 @@ export function stubBrowser() {
   vi.stubGlobal('alert', vi.fn());
   class Obs { constructor(cb) { this.cb = cb; } observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } }
   vi.stubGlobal('ResizeObserver', Obs);
-  // every observed element is on screen at once, so cards that build their scene when scrolled near (year ring, outage) build
-  class IO extends Obs { observe(el) { queueMicrotask(() => this.cb([{ isIntersecting: true, intersectionRatio: 1, target: el }], this)); } }
+  // an observed element intersects once it is displayed (see `displayed`), so cards that build their scene when scrolled near (year
+  // ring, outage) build; intersectVisible() re-checks after a tab or segment change, as scrolling a page into view would
+  class IO extends Obs { constructor(cb) { super(cb); this.seen = new Set(); ios.add(this); } observe(el) { this.el = [...(this.el ?? []), el]; queueMicrotask(() => this.check()); }
+    check() { for (const el of this.el ?? []) if (!this.seen.has(el) && displayed(el)) { this.seen.add(el); this.cb([{ isIntersecting: true, intersectionRatio: 1, target: el }], this); } }
+    disconnect() { this.el = []; } }
   vi.stubGlobal('IntersectionObserver', IO);
+  // no layout in happy-dom: offsetParent (the app's "is it on screen" test) follows the same display rules
+  Object.defineProperty(globalThis.HTMLElement.prototype, 'offsetParent', { configurable: true, get() { return displayed(this) ? this.parentElement : null; } });
   if (!globalThis.matchMedia) vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));
   try { localStorage.clear(); } catch { /* none */ }
 }
+const ios = new Set();
+/**
+ * Whether the stylesheet would display `el`: no [hidden] ancestor, every .view and .sys-page around it the open one, and no
+ * [data-owner] around it while the page is a guest's (html[data-role=guest] / [data-as=guest], style.css's guest rule).
+ */
+export function displayed(el) {
+  const guest = !!document.documentElement.dataset.role || document.documentElement.dataset.as === 'guest';
+  for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
+    if (e.hidden || (e.classList.contains('view') && !e.classList.contains('on')) || (guest && e.hasAttribute('data-owner'))) return false;
+  }
+  return el.isConnected;
+}
+/** Fire the IntersectionObservers for elements that are now displayed. */
+export const intersectVisible = () => ios.forEach(o => o.check());
 /** Run the queued animation frames once (each re-queues itself). */
 export function runFrames(n = 1, t = 16) { for (let i = 0; i < n; i++) { const q = frames.splice(0); for (const f of q) f(performance.now() + t * (i + 1)); } }
 
@@ -90,13 +112,13 @@ export function router(routes, external = {}) {
 /** Let pending promises and zero-delay timers run. */
 export async function flush(n = 6) { for (let i = 0; i < n; i++) await new Promise(r => setTimeout(r, 0)); }
 /** Wait (real time) until `pred()` holds, or fail. */
-export async function until(pred, ms = 3000, what = 'condition') {
+export async function until(pred, ms = 10_000, what = 'condition') {
   const t0 = Date.now(); for (;;) { if (pred()) return; if (Date.now() - t0 > ms) throw new Error(`timed out waiting for ${what}`); await new Promise(r => setTimeout(r, 10)); }
 }
 
 /* ---------------- interaction ---------------- */
 export const $ = id => document.getElementById(id);
-export const click = el => { if (!el) throw new Error('click: no element'); el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); };
+export const click = el => { if (!el) throw new Error('click: no element'); el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); intersectVisible(); };
 export const sheetEl = () => $('sheetBody');
 export const sheetOpen = () => $('phone').classList.contains('open');
 export const footBtn = which => sheetEl().querySelector(`.c-sheet-f [data-f="${which}"]`);
@@ -195,8 +217,8 @@ export async function bootApp(routes, external = {}, { wait = true } = {}) {
   await import('../../../web/src/main.js');
   const S = globalThis.__S;
   if (!S) throw new Error('bootApp: the test file must mock views/nowhub.js initNowTop to capture S');
-  if (wait) await until(() => S.now && S.live && S.daily && S.wx && S.pool && S.ac, 4000, 'the first loads');
-  if (wait) await until(() => document.getElementById('greet').textContent !== 'Hello', 2500, 'the first per-second render');   // main.js's 1 s loop
+  if (wait) await until(() => S.now && S.live && S.daily && S.wx && S.pool && S.ac, 20_000, 'the first loads');
+  if (wait) await until(() => document.getElementById('greet').textContent !== 'Hello', 10_000, 'the first per-second render');   // main.js's 1 s loop
   await flush(10);
   return { S, f };
 }

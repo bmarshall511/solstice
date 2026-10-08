@@ -255,7 +255,12 @@ describe('Powerwalls sheet (frame 7)', () => {
 });
 
 describe('Away & Vacation sheet (frame 8)', () => {
-  beforeAll(async () => { close(); open('away'); await until(() => sheetEl().querySelector('#vaCheck')?.textContent.includes('Thermostat linked'), 2000, 'the departure check'); });
+  // each opening waits for its departure check and its estimate: an earlier sheet's 250 ms estimate timer redraws whatever Away sheet is
+  // open with its own state (views/vacation.js showing()), so a reopen inside that window would be driven by the old one
+  const openAway = async (ready = () => sheetEl().querySelector('#vaCheck')?.textContent.includes('Thermostat linked')) => {
+    close(); await new Promise(r => setTimeout(r, 300)); open('away');
+    await until(() => ready() && !sheetEl().querySelector('#vaSum')?.hidden, 10_000, 'the departure check and the estimate'); };
+  beforeAll(() => openAway());
   afterAll(close);
   it('opens with Home / Away until…, the dates, Before you go, While you’re away; footer Start Vacation mode', () => {
     const b = sheetEl();
@@ -288,7 +293,7 @@ describe('Away & Vacation sheet (frame 8)', () => {
     expect(sheetWrites(f, n)).toEqual([expect.objectContaining({ method: 'POST', path: 'presence', body: { state: 'away' } })]);
   });
   it('Start Vacation mode posts the trip with the checklist and whether the Mac stays home', async () => {
-    close(); open('away'); await until(() => sheetEl().querySelector('#vaCheck')?.textContent.includes('Thermostat linked'), 2000, 'the departure check');
+    await openAway();
     const n = f.calls.length;
     click(sheetEl().querySelector('[data-tick="unplug"]'));
     noWrites(n);
@@ -300,7 +305,7 @@ describe('Away & Vacation sheet (frame 8)', () => {
   });
   it('a light left on gets a Turn off that acts on tap (a named action, the Pool card’s own command)', async () => {
     check = vacationCheckLeftOn(NOW);
-    close(); open('away'); await until(() => sheetEl().querySelector('[data-off="3"]'), 2000, 'the left-on row');
+    await openAway(() => sheetEl().querySelector('[data-off="3"]'));
     const n = f.calls.length;
     click(sheetEl().querySelector('[data-off="3"]')); await flush();
     expect(sheetWrites(f, n)).toEqual([expect.objectContaining({ path: 'appliances/pool/command', body: { kind: 'circuit', id: 3, on: false } })]);

@@ -16,7 +16,7 @@ beforeAll(async () => {
   ({ S, f } = await bootApp(ownerRoutes(), external()));
   settings = await import('../../../web/src/views/settings.js');
   click(document.querySelector('.c-tab[data-v="v-set"]')); await flush();
-  await until(() => S.status, 3000, '/api/status');
+  await until(() => S.status, 10_000, '/api/status');
 });
 afterAll(() => vi.useRealTimers());
 const writes = n => f.writes(n).filter(c => c.path !== 'sync');
@@ -51,7 +51,7 @@ describe('Connections', () => {
     S.status = keep; settings.drawConnections(S);
   });
   it('All data opens the raw reading and site_info', async () => {
-    click($('openData')); await until(() => sheetEl().querySelectorAll('.raw').length === 2, 2000, 'All data');
+    click($('openData')); await until(() => sheetEl().querySelectorAll('.raw').length === 2, 10_000, 'All data');
     expect(sheetEl().querySelector('.raw').textContent).toContain('"soc"');
     expect(badText(sheetEl())).toEqual([]);
     click(footBtn('pri')); expect(sheetOpen()).toBe(false);
@@ -116,12 +116,12 @@ describe('Alerts', () => {
 describe('Sharing: owner devices and Sign out this device', () => {
   const close = () => $('phone').classList.remove('open');
   it('the Sharing rows carry the counts', async () => {
-    await until(() => /device/.test($('devN').textContent), 2000, 'the device count');
+    await until(() => /device/.test($('devN').textContent), 10_000, 'the device count');
     expect($('devN').textContent).toBe('Owner on 2 devices');
     expect($('nameVal').textContent).toBe('Test Owner');
   });
   it('Owner devices: this device first, the other with its own Sign out (one POST for that device)', async () => {
-    click($('devRow')); await until(() => sheetEl().querySelector('#devSelf'), 2000, 'the devices sheet');
+    click($('devRow')); await until(() => sheetEl().querySelector('#devSelf'), 10_000, 'the devices sheet');
     expect(sheetEl().querySelector('h4').textContent).toBe('Owner devices');
     expect(sheetEl().textContent).toContain('This iPhone');
     expect(footBtn('sec').textContent).toBe('Sign out other devices');

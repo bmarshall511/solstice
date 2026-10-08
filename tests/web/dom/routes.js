@@ -24,10 +24,24 @@ export function ownerRoutes(over = {}) {
     ...over,
   };
 }
-/** What a share-link guest can read; every other GET answers 401 as the server's guest gate does. */
-export function guestRoutes(over = {}) {
+/**
+ * What a share-link guest can read, made by passing each owner payload through the server's own guest views (server/src/redact.ts
+ * GUEST_GET, the allow-lists access.ts serves guests through); every other route answers 401, as the guest gate does. The coarse
+ * location is the server's coarseLocation() of the fixtures' fake site.
+ */
+export async function guestRoutes(over = {}) {
+  const { GUEST_GET } = await import('../../../server/src/redact.ts'), { coarseLocation } = await import('../../../server/src/site.ts');
+  const O = ownerRoutes(), out = { __fallback: 401 };
+  for (const [path, view] of GUEST_GET) {
+    const key = path.slice(5), src = O[key];
+    out[key] = typeof src === 'function' ? req => view(src(req)) : view(src);
+  }
+  out.settings = { location: coarseLocation({ lat: 30, lon: -97, zip: '00000' }) };
   const G = guestFixtures(NOW);
-  return { ...G, day: req => dayFor(G.day, req.query.date), ...over };
+  out['auth/me'] = G['auth/me'];
+  // the route folds AC, always-on and unexplained into "other" for a guest before the view picks the parts (changedFor guest)
+  out.changed = req => ({ ...G.changed, scope: req.query.scope, date: req.query.date ?? '2026-09-28', to: req.query.date ?? '2026-10-04' });
+  return { ...out, ...over };
 }
 export const external = () => weatherFixtures(NOW);
 export { NOW, TODAY };
