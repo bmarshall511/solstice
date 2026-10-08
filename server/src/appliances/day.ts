@@ -3,8 +3,8 @@
 // One query per table (energy, soe, pool_readings, nest_readings, kv), run together; nothing is queried per hour.
 // Privacy: the endpoint is owner-only like every /api route, and it still leaves out Nest `eco` and humidity (eco reveals Away).
 import { q } from '../db.js';
-import { localDay } from '../tesla/client.js';
-import { hourlyRpm, powerModel, pumpSchedules, meanByQuarter, quarterWh, type QuarterWatts } from './pool.js';
+import { localDay, addDays } from '../tesla/client.js';
+import { hourlyRpm, powerModel, pumpSchedules, meanByQuarter, quarterWh, MEASURED_POINTS_DAYS, type QuarterWatts } from './pool.js';
 import type { PoolSnapshot } from './screenlogic.js';
 import { acSettingsOf, acKwConf, type AcSettings } from './ac.js';
 
@@ -114,11 +114,13 @@ export async function applianceDay(siteId: string, date: string, settingsAll?: R
         (AVG(COALESCE(charge_wh, 0)) * 12 / 1000)::float8 AS chg, (AVG(COALESCE(discharge_wh, 0)) * 12 / 1000)::float8 AS dis
       FROM energy WHERE site_id = $1 AND day = $2 GROUP BY hour ORDER BY hour`, [siteId, date]),
     q<SocRow>(`SELECT hour::int AS hour, AVG(soe)::float8 AS soc FROM soe WHERE site_id = $1 AND day = $2 GROUP BY hour`, [siteId, date]),
-    // the day's readings, then the pump's median watts per RPM over all readings (ts NULL), as measuredPoints() computes them
+    // the day's readings, then the pump's median watts per RPM (ts NULL) over the same last 30 days measuredPoints() reads (it read
+    // every reading ever before)
     q<PoolRow>(`SELECT ts::text AS ts, running, watts::float8 AS watts, rpm::float8 AS rpm, NULL::int AS n FROM pool_readings WHERE site_id = $1 AND day = $2
       UNION ALL
       SELECT NULL, NULL, PERCENTILE_CONT(.5) WITHIN GROUP (ORDER BY watts)::float8, rpm::int::float8, COUNT(*)::int
-      FROM pool_readings WHERE site_id = $1 AND running AND rpm > 0 AND watts > 0 GROUP BY rpm HAVING COUNT(*) >= 3`, [siteId, date]),
+      FROM pool_readings WHERE site_id = $1 AND day >= $3 AND running AND rpm > 0 AND watts > 0 GROUP BY rpm HAVING COUNT(*) >= 3`,
+      [siteId, date, addDays(localDay(), -MEASURED_POINTS_DAYS)]),
     // cool_min (B2-7): cooling minutes per hour, each reading holding until the next for at most 20 minutes (runtimeToday's rule),
     // booked to the reading's hour and at most 60 a hour (a hold that runs past the hour, before a gap, can't make an hour longer)
     q<NestRow>(`SELECT hour::int AS hour, COUNT(*)::int AS n, (COUNT(*) FILTER (WHERE hvac = 'COOLING'))::int AS cooling,
