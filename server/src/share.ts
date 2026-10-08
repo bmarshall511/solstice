@@ -64,6 +64,11 @@ export async function revokeAllShares() {
 }
 
 export type ShareLookup = { id: string; state: ShareState; expiresAt: string | null };
+/** What a guest is told about a link that doesn't open (S-11): a revoked link and a paused one (Vacation mode answers a live link as
+ *  revoked, below) are both 'unavailable', so neither the reason nor the copy tells a turn-off from a trip. Expiry is the link's own
+ *  date, which the guest already saw on the welcome card, so it keeps its own answer. The owner's list keeps the true state. */
+export type GuestReason = 'unknown' | 'unavailable' | 'expired';
+export const guestReason = (state: Exclude<ShareState, 'active'>): Exclude<GuestReason, 'unknown'> => state === 'expired' ? 'expired' : 'unavailable';
 /** The link a token belongs to, with its state, or null for a token that matches nothing (a hash lookup, so a guess learns nothing). */
 export async function findShare(token: string): Promise<ShareLookup | null> {
   if (!token || token.length > 200) return null;
@@ -77,10 +82,10 @@ export async function findShare(token: string): Promise<ShareLookup | null> {
 
 /** Open a link. A live one bumps opened_count, last_opened_at and last_ua (the device family only). */
 export async function redeemShare(token: string, userAgent = ''):
-  Promise<{ ok: true; id: string; expiresAt: string | null } | { ok: false; reason: 'unknown' | 'revoked' | 'expired' }> {
+  Promise<{ ok: true; id: string; expiresAt: string | null } | { ok: false; reason: GuestReason }> {
   const s = await findShare(token);
   if (!s) return { ok: false, reason: 'unknown' };
-  if (s.state !== 'active') return { ok: false, reason: s.state };
+  if (s.state !== 'active') return { ok: false, reason: guestReason(s.state) };
   await q(`UPDATE access_tokens SET opened_count = opened_count + 1, last_opened_at = now(), last_ua = $2 WHERE id = $1`, [s.id, uaFamily(userAgent)]);
   return { ok: true, id: s.id, expiresAt: s.expiresAt };
 }
