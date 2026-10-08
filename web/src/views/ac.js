@@ -54,16 +54,16 @@ export function drawAc(S) {
     $('acHud').textContent = `${cooling ? `Cooling · ${d.learned.acKw.toFixed(1)} kW` : heating ? 'Heating' : 'Idle'} · set ${live && st?.coolF != null ? st.coolF : p.set}°${phase}`;
     $('acLab').innerHTML = `indoor ${(live && st?.indoorF != null ? st.indoorF : p.T).toFixed(1)}°<br>outdoor ${Math.round(p.o)}°<br>sun ${Math.round(sunH[Math.min(23, Math.floor(hh))] * 100)}%`;
     $('acScrubT').textContent = live ? new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : hm12(Math.round(hh * 4) / 4); };
-  const sc = $('acScrub'); if (scrubT == null) sc.value = now;
+  const sc = /** @type {HTMLInputElement} */ ($('acScrub')); if (scrubT == null) sc.value = String(now);
   sc.oninput = () => { stopPlay(); scrubT = +sc.value; show(Math.abs(scrubT - now) < .2 ? null : scrubT); }; show(scrubT == null || Math.abs(scrubT - now) < .2 ? null : scrubT);
   // ▶ plays today's plan from midnight to midnight in about eight seconds (calm: steps through it), then returns to now
-  $('acPlay').onclick = () => { if (play) { stopPlay(); scrubT = null; sc.value = now; return show(null); }
+  $('acPlay').onclick = () => { if (play) { stopPlay(); scrubT = null; sc.value = String(now); return show(null); }
     $('acPlay').classList.add('playing'); let h = 0;
-    play = setInterval(() => { h += S.calm ? 1 : .25; if (h > 24) { stopPlay(); scrubT = null; sc.value = now; return show(null); } scrubT = h; sc.value = h; show(h); }, S.calm ? 330 : 80); };
+    play = setInterval(() => { h += S.calm ? 1 : .25; if (h > 24) { stopPlay(); scrubT = null; sc.value = String(now); return show(null); } scrubT = h; sc.value = String(h); show(h); }, S.calm ? 330 : 80); };
   drawAcTiles(S);
   const source = d.learned.source ?? (d.learned.coolKw != null ? 'measured' : 'estimated');   // a guest's copy leaves out `source`; the server's own rule
   $('acNote').innerHTML = `${esc(d.equipment.airHandler)} · ${esc(d.equipment.heat)} · ${esc(d.equipment.outdoor)}. AC power is ${source === 'measured' ? 'measured from the step in Tesla’s home load when Nest starts and stops cooling' : 'estimated from your heat model until Nest has been sampled for a few days'}.${d.error ? ` <span style="color:var(--warn)">Last read failed: ${esc(d.error)}</span>` : ''}`;
-  if (!linked) { $('acLinkBtn').href = '/auth/google'; $('acLinkTxt').textContent = d.configured ? 'Sign in with Google and share the thermostat with Solstice.' : 'Google Device Access is not configured yet (NEST_PROJECT_ID, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET).'; return; }
+  if (!linked) { /** @type {HTMLAnchorElement} */ ($('acLinkBtn')).href = '/auth/google'; $('acLinkTxt').textContent = d.configured ? 'Sign in with Google and share the thermostat with Solstice.' : 'Google Device Access is not configured yet (NEST_PROJECT_ID, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET).'; return; }
   drawPlan(S, sim, outdoor, sunH); drawAuto(S);
 }
 /** The AC system card: Autopilot's mode, inside now, the setpoint and humidity, the comfort band and Solstice's writes on the strip. */
@@ -132,8 +132,8 @@ function drawAuto(S) {
   $('acMode').innerHTML = seg([['off', 'Off'], ['suggest', 'Suggest'], ['auto', 'Auto']], m, { acc: 'c-acc-batt', attr: 'data-ap', label: 'AC Autopilot' })
     + (apStage.m && apStage.m !== s.autopilot ? `<div class="c-btns c-stagerow"><button class="c-btn line" data-aps="cancel">Cancel</button><button class="c-btn pri c-acc-batt" data-aps="send">${apStage.sending ? 'Saving…' : autopilotStage('AC', apStage.m)}</button></div>` : '');
   $('acMode').onclick = async e => {
-    const b = e.target.closest('[data-ap]'); if (b) { apStage.m = b.dataset.ap === s.autopilot ? null : b.dataset.ap; return drawAuto(S); }
-    const x = e.target.closest('[data-aps]'); if (!x || apStage.sending) return;
+    const b = /** @type {Element} */ (e.target).closest('[data-ap]'); if (b) { apStage.m = b.dataset.ap === s.autopilot ? null : b.dataset.ap; return drawAuto(S); }
+    const x = /** @type {Element} */ (e.target).closest('[data-aps]'); if (!x || apStage.sending) return;
     if (x.dataset.aps === 'cancel') { apStage.m = null; return drawAuto(S); }
     if (apStage.m === 'auto' && !confirm('Auto mode sets the cooling setpoint through each day without asking, always inside your comfort band. Turn it on?')) return;
     if (apStage.m === 'off' && !confirm('Turn AC Autopilot off?\n\nSolstice stops changing the thermostat. Nest keeps the setpoint it has now.')) return;
@@ -167,7 +167,7 @@ function drawTrim(S) {
   const what = !t ? '' : t.what === 'coast' ? `coast ${t.to < t.from ? 'ends earlier' : 'runs longer'}, to ${hm12(t.to)}` : `pre-cool to ${t.to}° instead of ${t.from}°`;
   box.innerHTML = t ? `<div class="c-modeline c-acc-batt"><p><b>Trim today</b> · ${what} · ${esc(t.reason)}</p>${S.guest ? '' : '<button class="c-btn sm line" id="acUntrim">Undo</button>'}</div>`
     : P.control ? '<div class="c-modeline c-acc-batt"><p><b>Control day</b> · holding the comfort band today, 1 in 5 hot, sunny days, so Solstice can measure what pre-cooling really saves</p></div>' : '';
-  const u = $('acUntrim'); if (u) u.onclick = async () => { u.disabled = true; u.textContent = 'Undoing…'; try { await api.acUntrim(); await loadAc(S); } catch (e) { alert(e.message); u.disabled = false; u.textContent = 'Undo'; } };
+  const u = /** @type {HTMLButtonElement} */ ($('acUntrim')); if (u) u.onclick = async () => { u.disabled = true; u.textContent = 'Undoing…'; try { await api.acUntrim(); await loadAc(S); } catch (e) { alert(e.message); u.disabled = false; u.textContent = 'Undo'; } };
 }
 /* ---------- mockup am frame 6 (I-15): the Strip heat card under the Thermostat (owner only; Nov–Mar or after heating; no buttons) ---------- */
 function drawStrip(S) {
@@ -188,7 +188,7 @@ function drawThermostat(S) {
   const sg = d.suggestion, nightSg = sg?.window === 'night';
   $('tsSuggest').innerHTML = sg ? `<div class="c-ban amber"><span class="c-ic">${icon('sliders')}</span><b>You keep setting it ${sg.f > sg.from ? 'warmer' : 'cooler'} ${nightSg ? 'at night' : 'during the day'}</b><p>${sg.days} of the last ${sg.of} ${nightSg ? 'nights' : 'days'}. Make ${sg.f}° the ${nightSg ? 'night' : 'day'} target? Autopilot would aim for ${sg.f}° instead of ${sg.from}°.</p>
     <div class="c-btns"><button class="c-btn pri" data-sg="accept">Make it ${sg.f}°</button><button class="c-btn line" data-sg="dismiss">Not now</button></div></div>` : '';
-  $('tsSuggest').onclick = async e => { const b = e.target.closest('[data-sg]'); if (!b) return; b.disabled = true; b.textContent = '…';
+  $('tsSuggest').onclick = async e => { const b = /** @type {HTMLButtonElement} */ (/** @type {Element} */ (e.target).closest('[data-sg]')); if (!b) return; b.disabled = true; b.textContent = '…';
     try { S.ac = await api.acSuggestion(b.dataset.sg, sg.key); } catch (err) { alert(err.message); } drawAc(S); };
   // mockup ae: what Solstice is learning from your changes (owner only)
   const ch = d.changes;
@@ -261,7 +261,7 @@ export function openComfort(S) {
     $('cmDay').innerHTML = hotDay(v, S.ac.plan).map(([a, b, f, k]) => `<i style="flex:${b - a};background:${DAYC[k]}">${b - a >= 2 ? f : ''}</i>`).join('');
   };
   $('cmRows').onclick = e => {
-    const b = e.target.closest('button'); if (!b) return;
+    const b = /** @type {Element} */ (e.target).closest('button'); if (!b) return;
     if (b.dataset.k) { const k = b.dataset.k; v[k] = Math.max(65, Math.min(85, v[k] + +b.dataset.d)); }
     else if (b.dataset.h) { const k = b.dataset.h, [lo, hi] = HOURS[k]; v[k] = v[k] >= hi ? lo : v[k] + 1; }   // each tap moves an hour later, wrapping
     else if (b.dataset.v != null) v[b.closest('[data-c]').dataset.c] = +b.dataset.v;

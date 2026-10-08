@@ -65,7 +65,7 @@ export function drawPowerwallRules(S) {
   $('pwrFig').textContent = /in Auto/.test(word) ? word : `${P.rules.filter(r => RULE[r.id]).length} · ${word}`;
   $('pwrRows').innerHTML = P.rules.filter(r => RULE[r.id]).map(r => ruleRow(r, P, site)).join('');
   $('pwrScope').innerHTML = cmds ? '' : `<p class="c-fine" style="padding:0 16px 14px;margin-top:4px">Solstice can read these settings but can't change them yet: it needs Tesla's energy commands permission (<code style="font:10.5px var(--c-mono)">energy_cmds</code>). Reconnect once in your own browser and approve it; until then each rule shows its steps in the Tesla app. <a class="c-btn sm line" href="/auth/login" style="margin-top:8px">Re-connect Tesla</a></p>`;
-  $('pwrRows').onclick = e => { const row = e.target.closest('[data-rule]'); if (row) openRuleSheet(S, row.dataset.rule); };
+  $('pwrRows').onclick = e => { const row = /** @type {Element} */ (e.target).closest('[data-rule]'); if (row) openRuleSheet(S, row.dataset.rule); };
 }
 
 /** One rule's well as a sheet: its mode (staged until the footer sends it), the suggestion with Apply / Skip, the last change, the limits. */
@@ -83,7 +83,7 @@ export function openRuleSheet(S, id) {
       ${scope}
       ${staged ? sheetFoot('Cancel', `Set ${RULE[id].title.toLowerCase()} to ${{ off: 'Off', suggest: 'Suggest', auto: 'Auto' }[staged]}`, 'c-acc-batt') : sheetFoot('Log', 'Done', 'c-acc-batt')}`, { keepScroll: true });
     const body = $('sheetBody'), pri = body.querySelector('[data-f="pri"]'), sec = body.querySelector('[data-f="sec"]');
-    body.querySelector('[data-m]')?.parentElement.addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (!b) return;
+    body.querySelector('[data-m]')?.parentElement.addEventListener('click', e => { const b = /** @type {Element} */ (e.target).closest('[data-m]'); if (!b) return;
       if (b.getAttribute('aria-disabled') === 'true') return alert('Auto needs Tesla’s energy commands permission (energy_cmds). Re-connect Tesla first.');
       staged = b.dataset.m === r.mode ? null : b.dataset.m; draw(); });
     body.querySelector('[data-apply]')?.addEventListener('click', async e => { await applyRule(S, id, e.currentTarget); S.redrawNow?.(); draw(); });

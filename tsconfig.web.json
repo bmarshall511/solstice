@@ -1,0 +1,17 @@
+{
+  // Type-checks the browser app (vanilla JS in web/src) through JSDoc: `npm run typecheck:web`.
+  // strict is off to start (Batch 7); tighten it later. Dev-only: .vercelignore keeps it off every deploy.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "allowJs": true,
+    "checkJs": true,
+    "strict": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["vite/client"]
+  },
+  "include": ["web/src"]
+}

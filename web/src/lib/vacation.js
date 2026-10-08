@@ -36,6 +36,7 @@ export function poolBackLabel(backAt) {
 /**
  * The welcome's setpoint steps from `fromF` to `target`: 2° every 30 minutes from `startAt` (the safety guard's pace), then the arrival.
  * [{at, label}], at most 5, for the banner's row of times.
+ * @returns {{ at: number, label: string, sub: string, done?: boolean, you?: boolean }[]}
  */
 export function welcomeSteps(startAt, fromF, target, backAt) {
   const out = []; let f = Math.round(fromF ?? target), t = startAt;

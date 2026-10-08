@@ -52,6 +52,7 @@ function wireDial(el, { min, max, snap, step, onMove, onSet }) {
 }
 
 /* ======================= Pool (frame 5; in place on Systems › Pool, frame 12) ======================= */
+/** @type {[string, string, [string, string][]][]} */
 const TGL = [['Features', 'tap · hold for time', [['Waterfall', 'waterfall'], ['Jets', 'jets'], ['Air Blower', 'blower']]], ['Spa & lights', 'hold Spa for heat', [['Spa', 'spa'], ['Pool Light', 'light'], ['Spa Light', 'spalight']]]];
 const RUNS = [30, 60, 120, 240, 720];
 const isSpa = c => c.function === 1 || /^spa$/i.test(c.name);
@@ -147,10 +148,10 @@ function mountPool(S, { inSheet = false, root = null }) {
         svg.querySelector('.c-arc-val').setAttribute('d', arcPath(0, f)); svg.querySelectorAll('.c-arc-halo,.c-arc-knob').forEach(c => { c.setAttribute('cx', x.toFixed(1)); c.setAttribute('cy', y.toFixed(1)); });
         q('[data-pl="v"]').textContent = v.toLocaleString(); },
       onSet: setRpm });
-    q('[data-pl="pre"]').onclick = e => { const b = e.target.closest('[data-rpm]'); if (b) { vib(); setRpm(+b.dataset.rpm); } };
+    q('[data-pl="pre"]').onclick = e => { const b = /** @type {Element} */ (e.target).closest('[data-rpm]'); if (b) { vib(); setRpm(+b.dataset.rpm); } };
     const body = box();
-    body.querySelector('[data-tab]')?.parentElement.addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) { st.tab = b.dataset.tab; draw(); } });
-    body.querySelector('[data-ap]')?.parentElement.addEventListener('click', e => { const b = e.target.closest('[data-ap]'); if (!b) return; const m = b.dataset.ap, cur = d.autopilot?.mode ?? d.settings?.autopilot;
+    body.querySelector('[data-tab]')?.parentElement.addEventListener('click', e => { const b = /** @type {Element} */ (e.target).closest('[data-tab]'); if (b) { st.tab = b.dataset.tab; draw(); } });
+    body.querySelector('[data-ap]')?.parentElement.addEventListener('click', e => { const b = /** @type {Element} */ (e.target).closest('[data-ap]'); if (!b) return; const m = b.dataset.ap, cur = d.autopilot?.mode ?? d.settings?.autopilot;
       st.stage = m === cur ? null : { ap: m, label: autopilotStage('', m), run: async () => {
         if (m === 'auto' && !confirm('Auto mode writes tomorrow’s schedule to ScreenLogic every evening without asking. Spa, heater, lights and freeze protection are never touched. Turn it on?')) return false;
         if (m === 'off' && !confirm('Turn Pool Autopilot off?\n\nSolstice stops planning and writing the pump schedule. The controller keeps running what it has now.')) return false;
@@ -159,17 +160,17 @@ function mountPool(S, { inSheet = false, root = null }) {
     // toggles: tap stages the run (or off); a 500 ms hold opens the time well
     let press = null;
     body.querySelectorAll('.c-tgls').forEach(g => {
-      g.onpointerdown = e => { const b = e.target.closest('[data-cid]'); if (!b) return; press = setTimeout(() => { press = 'long'; vib(); st.long = +b.dataset.cid; st.minutes = st.heat = st.setF = null; stageLong(d); st.rpm = null; draw(); }, 500); };
+      g.onpointerdown = e => { const b = /** @type {Element} */ (e.target).closest('[data-cid]'); if (!b) return; press = setTimeout(() => { press = 'long'; vib(); st.long = +b.dataset.cid; st.minutes = st.heat = st.setF = null; stageLong(d); st.rpm = null; draw(); }, 500); };
       g.onpointerup = g.onpointerleave = g.onpointercancel = () => { if (press && press !== 'long') clearTimeout(press); };
-      g.onclick = e => { const b = e.target.closest('[data-cid]'); if (!b) return; if (press === 'long') { press = null; return; }
+      g.onclick = e => { const b = /** @type {Element} */ (e.target).closest('[data-cid]'); if (!b) return; if (press === 'long') { press = null; return; }
         const c = d.snapshot.circuits.find(x => x.id === +b.dataset.cid); if (!c) return;
         st.long = null; st.rpm = null; st.stage = st.stage?.id === c.id ? null : { id: c.id, ...circuitStage(c.name, c.id, c.on, d.runFor?.[c.id] ?? 60) }; draw(); };
     });
     const lw = q('[data-pl="long"]');
     if (lw) lw.onclick = e => {
-      const m = e.target.closest('[data-min]'); if (m) { st.minutes = +m.dataset.min; stageLong(d); return draw(); }
-      if (e.target.closest('[data-pl="heat"]')) { const body0 = d.snapshot.bodies?.[1]; st.heat = !(st.heat ?? body0?.heatMode === 3); stageLong(d); return draw(); }
-      const h = e.target.closest('[data-heat]'); if (h) { const body0 = d.snapshot.bodies?.[1]; st.setF = Math.max(80, Math.min(104, (st.setF ?? Math.min(104, Math.max(80, body0?.setPoint || 100))) + +h.dataset.heat)); stageLong(d); return draw(); }
+      const m = /** @type {Element} */ (e.target).closest('[data-min]'); if (m) { st.minutes = +m.dataset.min; stageLong(d); return draw(); }
+      if (/** @type {Element} */ (e.target).closest('[data-pl="heat"]')) { const body0 = d.snapshot.bodies?.[1]; st.heat = !(st.heat ?? body0?.heatMode === 3); stageLong(d); return draw(); }
+      const h = /** @type {Element} */ (e.target).closest('[data-heat]'); if (h) { const body0 = d.snapshot.bodies?.[1]; st.setF = Math.max(80, Math.min(104, (st.setF ?? Math.min(104, Math.max(80, body0?.setPoint || 100))) + +h.dataset.heat)); stageLong(d); return draw(); }
     };
     const ht = q('[data-pl="heat"]'); if (ht) ht.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ht.click(); } };
     // named actions in the mode line
@@ -273,14 +274,14 @@ function mountAc(S, { inSheet = false, root = null }) {
         onSet: setF });
       el.querySelectorAll('[data-step]').forEach(b => b.onclick = () => { vib(); setF(snapDeg(x.val + +b.dataset.step, x.lo, x.hi)); });
     }
-    body.querySelector('[data-mode]')?.parentElement.addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (!b) return;
+    body.querySelector('[data-mode]')?.parentElement.addEventListener('click', e => { const b = /** @type {Element} */ (e.target).closest('[data-mode]'); if (!b) return;
       st.change = b.dataset.mode === x.nest ? null : { kind: 'mode', mode: b.dataset.mode }; st.ap = null; draw(); });
     body.querySelectorAll('[data-sw]').forEach(el => { el.onclick = () => { st.ap = null;
       if (el.dataset.sw === 'eco') st.change = st.change?.kind === 'eco' ? null : { kind: 'eco', on: !t.eco };
       else st.change = st.change?.kind === 'fan' ? null : { kind: 'fan', seconds: t.fanTimer ? 0 : 3600 };
       draw(); };
       el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); } }; });
-    body.querySelector('[data-ap]')?.parentElement.addEventListener('click', e => { const b = e.target.closest('[data-ap]'); if (!b) return;
+    body.querySelector('[data-ap]')?.parentElement.addEventListener('click', e => { const b = /** @type {Element} */ (e.target).closest('[data-ap]'); if (!b) return;
       st.ap = b.dataset.ap === d.settings.autopilot ? null : b.dataset.ap; st.change = null; draw(); });
     body.querySelectorAll('[data-nudge]').forEach(b => b.onclick = () => openNudge(S, +b.dataset.nudge));   // the existing nudge sheet, which calls /ac/nudge
     q('[data-go2="comf"]').onclick = () => openComfort(S);
@@ -346,7 +347,7 @@ export function openPwSheet(S) {
   const wire = staged => {
     const body = $('sheetBody');
     body.querySelectorAll('[data-rule]').forEach(w => w.onclick = async e => {
-      const id = w.dataset.rule, b = e.target.closest('button'); if (!b) return;
+      const id = w.dataset.rule, b = /** @type {Element} */ (e.target).closest('button'); if (!b) return;
       if (b.dataset.m) { if (b.getAttribute('aria-disabled') === 'true') return alert('Auto needs Tesla’s energy commands permission (energy_cmds). Re-connect Tesla first.');
         st.modes = { [id]: b.dataset.m }; return draw(); }
       const [k, rid] = (b.dataset.b ?? '').split(':');

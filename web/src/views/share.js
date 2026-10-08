@@ -34,6 +34,7 @@ export function initShare(state, h) {
 
 /* ======================= the role on the page ======================= */
 /** Guest (a share link), the owner previewing as one, or the owner. Owner-only UI hides through CSS on the root attributes. */
+/** @param {{ guest: boolean, preview?: boolean, ownerName?: string, expiresAt?: number | null }} o */
 export function applyRole({ guest, preview = false, ownerName, expiresAt = null }) {
   const root = document.documentElement;
   S.guest = !!guest; S.asGuest = !!(guest && preview); S.shareExpiresAt = expiresAt;
@@ -106,10 +107,10 @@ export async function openShareSheet(created = null) {
     $('lnkQr').onclick = () => { const box = $('lnkQrBox'); box.hidden = !box.hidden; $('lnkQr').setAttribute('aria-expanded', String(!box.hidden)); };
     pri.onclick = closeSheet;
   } else {
-    $('expSeg').onclick = e => { const b = e.target.closest('button'); if (!b) return; expiresIn = b.dataset.e; segSet($('expSeg').firstElementChild, expiresIn, 'data-e'); };
+    $('expSeg').onclick = e => { const b = /** @type {Element} */ (e.target).closest('button'); if (!b) return; expiresIn = b.dataset.e; segSet($('expSeg').firstElementChild, expiresIn, 'data-e'); };
     const say = t => { $('shareErr').textContent = t; $('shareErr').hidden = !t; };
     pri.onclick = async () => {
-      const label = $('shareLabel').value.trim();
+      const label = /** @type {HTMLInputElement} */ ($('shareLabel')).value.trim();
       if (!label) { say('Give the link a label, so you know whose it is.'); $('shareLabel').focus(); return; }
       pri.textContent = 'Creating…';
       const c = await api.createShare(label, expiresIn).catch(e => { say(e.message); pri.textContent = 'Create link'; return null; });
@@ -141,7 +142,7 @@ function openNameSheet() {
     ${field('Name', `<input class="c-input" id="nameIn" maxlength="40" autocomplete="off" value="${esc(S.ownerName)}">`)}
     ${sheetFoot('', 'Save')}`);
   body().querySelector('[data-f="pri"]').onclick = async () => {
-    const v = $('nameIn').value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 40) || 'The owner';
+    const v = /** @type {HTMLInputElement} */ ($('nameIn')).value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 40) || 'The owner';
     await api.saveSettings({ ownerName: v }).then(() => { S.ownerName = v; $('nameVal').textContent = v; closeSheet(); toast('✓', 'rgba(255,255,255,.12)', 'Saved', `Guests see “${v}”`); },
       e => toast('!', 'rgba(255,90,78,.25)', 'Couldn’t save', e.message));
   };
@@ -272,10 +273,10 @@ export function showGate(kind, { reason = 'revoked', error = '', welcomeKey = nu
     try { await api.owner(key); location.reload(); }
     catch (e) { busyBtn(form, false); say(e.status === 429 ? 'Too many tries. Wait a minute and try again.' : e.status === 503 ? 'The owner key isn’t set up on the server yet.' : 'That key didn’t work.'); }
   };
-  $('gateOwner').onsubmit = e => { e.preventDefault(); say(''); unlock($('gateKey').value.trim(), e.target); };
+  $('gateOwner').onsubmit = e => { e.preventDefault(); say(''); unlock(/** @type {HTMLInputElement} */ ($('gateKey')).value.trim(), e.target); };
   $('gateLink').onsubmit = async e => {
     e.preventDefault(); say('');
-    const p = parseLink($('gateLinkIn').value);
+    const p = parseLink(/** @type {HTMLInputElement} */ ($('gateLinkIn')).value);
     if (!p) return say('That doesn’t look like a Solstice link. Paste the whole link.');
     if (p.owner) return unlock(p.owner, e.target);
     busyBtn(e.target, true);

@@ -10,7 +10,8 @@ import { gate, presenceHidden, setPreview, PREVIEW_COOKIE } from './access.js';
 import { createShare, listShares, revokeShare, revokeAllShares, redeemShare, pruneShares, guestMaxAge, EXPIRY, DEFAULT_EXPIRY, LABEL_MAX, GUEST_COOKIE } from './share.js';
 import { authorizeUrl, exchangeCode, OtherSiteError } from './tesla/auth.js';
 import { teslaFor, localDay, addDays } from './tesla/client.js';
-import { refreshLive, refreshSiteInfo, syncSite } from './sync.js';
+import { refreshLive, refreshSiteInfo, syncSite, storedDays } from './sync.js';
+import { recordsFor, refreshRecords } from './records.js';
 import { deepTick, deepStatus, deepDue, notePass, DEEP_STOP_MS } from './deepBackfill.js';
 import { listBills, parsePecPdf, saveBill, type Bill } from './bills.js';
 import { reconcile } from './reconcile.js';
@@ -22,7 +23,7 @@ import { powerModel, measuredPoints } from './appliances/pool.js';
 import { poolDetail, applyPlan, restorePrevious, poolCommand, PoolUnavailable, goalPatchError, scheduleError, saveSchedule, rebaseline, POOL_DEFAULTS, activeClearUp, startClearUp, extendClearUp, endClearUp, finishClearUpIfDue, clearUpError, CLEARUP_DAYS_MAX } from './appliances/pool.js';
 import { readPool, configured as poolConfigured } from './appliances/screenlogic.js';
 import { learnAcKw, acKwFor } from './appliances/ac.js';
-import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, patchedAc, suggestionPatch, dismissSuggestion, recordNest, observeHold } from './appliances/ac.js';
+import { acDetail, acSummary, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, patchedAc, suggestionPatch, dismissSuggestion, recordNest, observeHold } from './appliances/ac.js';
 import { oidcError, eventOf, seenEvent, applyTraits, isSettingEvent, eventTime } from './appliances/nestEvents.js';
 import { applianceDay } from './appliances/day.js';
 import { cronTick } from './appliances/sampling.js';
@@ -248,6 +249,10 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
   // the sync and learning core are done: mark it now, so a slow tail (alerts, trip report, prune) cut off at 60 s can't fire the
   // 5-minute watchdog (below), which alerts when this is more than 26 h old (code review C-06)
   await kv.set(SYNC_DONE_KEY, Date.now());
+  // records.ts (Batch 7): History › Records' days through yesterday into kv, so GET /api/records reads kv and today only. Skipped
+  // past 45 s (the first /api/records read then aggregates instead), so the watch steps below keep their time
+  for (const s of sites) out[`records:${s.id}`] = Date.now() - t0 < RECORDS_BY_MS ? await L.step('records', () => refreshRecords(s.id).then(r => ({ through: r.through })))
+    .catch(e => ({ error: e.message })) : (L.mark('records', 'skipped'), { skipped: 'out of time; the first read aggregates' });
   // watch.ts: bill due and the other nightly alert checks; a step with under 5 s left before the deadline is skipped and said so
   for (const s of sites) out[`watch:${s.id}`] = await nightlyWatch(s.id, Date.now(), { deadline: t0 + 55_000, onStep: (n, ms, r) => L.mark(`watch.${n}`, markOf(r, ms)) });
   // raw per-panel readings older than 90 days go, after the learning layer has written the day's per-panel figures (pvs.ts)
@@ -345,10 +350,11 @@ app.get('/api/now', wrap(async (req, res) => {
 app.post('/api/sync', wrap(async (req, res) => res.json(await syncSite(site(req), 8_000))));
 
 app.get('/api/status', wrap(async (req, res) => {
-  const id = site(req), d = await one<{ n: number }>(`SELECT COUNT(DISTINCT day)::int n FROM energy WHERE site_id = $1`, [id]);
+  // daysDone: the distinct days of energy history, from the synced-day marks (sync.ts storedDays; Batch 7: no full energy scan)
+  const id = site(req), daysDone = await storedDays(id);
   // deep: the back-fill to the install date (deepBackfill.ts, I-16); owner only: the guest view's allow-list (redact.ts) leaves it out
   res.json({ connected: true, siteId: id, lastLive: await kv.get(`${id}:lastLive`) ?? null, lastHistory: await kv.get(`${id}:lastHistory`) ?? null,
-    backfill: { daysDone: d?.n ?? 0, deep: await deepStatus(id) } });
+    backfill: { daysDone, deep: await deepStatus(id) } });
 }));
 
 app.get('/api/day', wrap(async (req, res) => {
@@ -432,17 +438,8 @@ app.get('/api/overnight', wrap(async (req, res) => {
   res.json(await overnightSplit(site(req), from));   // breakdown.ts (mockup z): the 1–5 AM average with always-on, AC and pump
 }));
 
-app.get('/api/records', wrap(async (req, res) => {
-  const id = site(req);
-  const day = (order: string, col: string) => one(`SELECT day date, ROUND((SUM(${col}) / 1000.0)::numeric, 1)::float8 kwh FROM energy WHERE site_id = $1 GROUP BY day ORDER BY kwh ${order} LIMIT 1`, [id]);
-  const [best, big, low, totals, full, soeDays, longest, outages] = await Promise.all([day('DESC', 'solar_wh'), day('DESC', 'home_wh'), day('ASC', 'import_wh'),
-    one(`SELECT MIN(day) since, ${kwhCols} FROM energy WHERE site_id = $1`, [id]),
-    one<{ n: number }>(`SELECT COUNT(*)::int n FROM (SELECT day FROM soe WHERE site_id = $1 GROUP BY day HAVING MAX(soe) >= 99) x`, [id]),
-    one<{ n: number }>(`SELECT COUNT(DISTINCT day)::int n FROM soe WHERE site_id = $1`, [id]),
-    one('SELECT ts, duration_s FROM backup_events WHERE site_id = $1 ORDER BY duration_s DESC LIMIT 1', [id]),
-    one<{ n: number }>('SELECT COUNT(*)::int n FROM backup_events WHERE site_id = $1', [id])]);
-  res.json({ bestSolarDay: best, biggestUsageDay: big, lowestImportDay: low, totals, batteryFullDays: { days: full?.n ?? 0, of: soeDays?.n ?? 0 }, longestOutage: longest ?? null, outages: outages?.n ?? 0 });
-}));
+/** History › Records (records.ts, Batch 7): the days through yesterday from the nightly's kv aggregate, today's added live. */
+app.get('/api/records', wrap(async (req, res) => res.json(await recordsFor(site(req)))));
 
 app.get('/api/outages', wrap(async (req, res) => res.json(await q('SELECT ts, duration_s FROM backup_events WHERE site_id = $1 ORDER BY epoch DESC', [site(req)]))));
 /** Outage readiness (Insights → Home): backup hours, the load ladder, the island simulation, 12 months of outages, storm state. Read-only. */
@@ -547,7 +544,9 @@ const rateFor = async (id: string) => (await currentTariff(id))?.importRateAllIn
 app.get('/api/appliances', wrap(async (req, res) => {
   const id = site(req), settings = presenceHidden(req, await settingsFor(req)), rate = await rateFor(id);
   const list = await Promise.all(appliances.filter(a => a.available()).map(a => a.summary(id, settings, rate).catch(e => ({ id: a.id, name: a.name, status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message }))));
-  if (nestConfigured()) list.push(await acDetail(id, settings, rate, await acSlope(id), { readOnly: !!req.guestView }).then(d => ({ id: 'ac', name: 'AC', status: d.linked ? 'linked' as const : 'estimated' as const, watts: d.state?.hvac === 'COOLING' ? Math.round(d.learned.acKw * 1000) : 0, kwhPerDay: d.todayKwh, savesPerMonth: null })).catch(e => ({ id: 'ac', name: 'AC', status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message })));
+  // Batch 7: both rows come from the stored snapshots (pool:last, nest:last) and the stored models, never a device read or the full
+  // card (the Pool and AC routes, polled alongside, do those); same figures and shape as before
+  if (nestConfigured()) list.push(await acSummary(id, await acSlope(id)).catch(e => ({ id: 'ac', name: 'AC', status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message })));
   res.json([...list, ...comingSoon()]);
 }));
 // ?fresh=1 forces a device read: the owner's only. S-07: a guest's read never reaches the controller (the stored snapshot, however
@@ -784,7 +783,7 @@ departure.check = async id => {
 departure.estimate = async (id, leaveAt, backAt) => {
   const s = await ownerSettings(), learned = await learnAcKw(id), pool = await poolDetail(id, s, await rateFor(id)).catch(() => null);
   const days = await kv.get<{ days: any[] }>('pool:forecast'), day = days?.days?.find(d => d.date === localDay(new Date(Math.max(leaveAt, Date.now()) + 864e5))) ?? days?.days?.at(-1);
-  const trip = pool && day ? tripPlanDay({ day, heatDays: 0, waterTemp: pool.live?.waterTemp ?? pool.plan.waterTemp, settings: pool.settings, W: powerModel(await measuredPoints(id)), rate: null, names: new Map() }) : null;
+  const trip = pool && day ? tripPlanDay({ day, heatDays: 0, waterTemp: pool.live?.waterTemp ?? pool.plan.waterTemp, settings: pool.settings, W: powerModel(pool.model.measured), rate: null, names: new Map() }) : null;   // the card's own curve points (one query fewer)
   return estimateTrip(id, { leaveAt, backAt, acKw: acKwFor(learned.coolKw, await acSlope(id)), poolNormalKwhDay: pool?.plan?.kwhPerDay ?? null, poolTripKwhDay: trip?.plan.kwhPerDay ?? null });
 };
 // the AC's part: remember the setpoints the trip starts from, then the first trip step at once; at the end, heat put back and the plan resumes
@@ -823,6 +822,8 @@ nightlySteps.loads = loadsNightly;   // loads.ts (I-22): yesterday's bursts and 
 /* Watchdog: Vercel never retries a cron, so a nightly run that died (timeout, deploy, outage) would be silent. The 5-minute tick
  * pushes one alert a day while the last finished nightly run is more than 26 hours old. */
 const SYNC_DONE_KEY = 'cron:sync:done';
+/** The nightly's records step (records.ts) starts only within this long of the run's start. */
+const RECORDS_BY_MS = 45_000;
 // B2-11 (cronLedger.ts): the crons watch each other: a quiet 5-minute tick, a missed pool plan, a nightly over 50 s; the nightly
 // re-checks the 5-minute tick (if every tick has stopped, only it can tell)
 fiveMinuteSteps.crons = (id, now) => cronWatch(id, now);

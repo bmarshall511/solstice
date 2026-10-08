@@ -7,7 +7,7 @@
 // AC can't be told apart. burstsOf (3 kW, 15 min) is the older rule, kept for its tests only.
 import { tripDays } from './vacation/trip.js';
 import { q, kv } from './db.js';
-import { localDay, addDays } from './tesla/client.js';
+import { localDay, addDays, localAt } from './tesla/client.js';
 import { daySpans } from './flows.js';
 import { poolKwhBetween, pumpRunning } from './appliances/pool.js';
 import { acKwhBetween, learnAcKw, acKwFor, acKwConf } from './appliances/ac.js';
@@ -15,6 +15,13 @@ import { notify } from './notify.js';
 import { loadInputs, burstsFrom, labelsOf, loadClusters, matchLabel, PART_KWH, type LoadBurst } from './loads.js';
 
 export const BURST_OVER_KW = 3, BURST_MIN_BUCKETS = 3, BASE_QUANTILE = .1, NEST_COVERAGE = .8;   // 3 kW over the base for 15 min; the quietest tenth
+/** Five-minute buckets in a night's 01:00–05:00 window: 48, but 36 on the spring-forward day (02:00 never happens) and 60 on the
+ *  fall-back day (01:00 happens twice). */
+export const nightBuckets = (day: string) => Math.round((localAt(day, 5) - localAt(day, 1)) / 300_000);
+/** A night counts with 40 of its 48 buckets; the 3-hour spring-forward night needs the same share of its 36 (30). Never more than 40. */
+export const nightMin = (day: string, of48 = 40) => Math.min(of48, Math.floor(nightBuckets(day) * of48 / 48));
+/** Minutes of the night window Nest must cover to split it: 80% of the 4 hours, or of the 3-hour spring-forward night. */
+const nestNeedMin = (day: string) => NEST_COVERAGE * Math.min(48, nightBuckets(day)) * 5;
 export type Range = 'today' | 'week' | 'month';
 export type Burst = { start: number; minutes: number; kw: number; kwh: number };
 /** One part of "Where your energy goes": ac, alwaysOn, load:<labelId> (I-22), big, pool, other, each with its own extra fields. */
@@ -84,7 +91,8 @@ const clearUpOf = (siteId: string) => kv.get<{ startedAt: number; until: number 
  * home.alwaysOn model (learn/nightly.ts) and the outage ladder (outage.ts):
  *   a night's always-on = the quietest tenth (p10) of its 01:00–05:00 five-minute home buckets with the AC (Nest cooling or heating)
  *   and the pool pump (pumpRunning readings, and the whole of a Clear-up) masked out, each reading held up to 20 minutes; with fewer
- *   than 12 unmasked buckets, the AC-masked p10 less the pump's running draw that night. A night needs 40 of its 48 buckets.
+ *   than 12 unmasked buckets, the AC-masked p10 less the pump's running draw that night. A night needs 40 of its 48 buckets
+ *   (nightMin: 30 of 36 on the spring-forward night).
  *   Over several nights it is their median, trip nights left out (`kw`; `tripKw` is the trip nights' own, for an empty house).
  * `split`: Nest covered 80% of the night, so the AC was masked; earlier nights have the pump masked only.
  * Three queries (energy, Nest, pool readings, in parallel), plus the trip days and the Clear-up when the caller doesn't pass them.
@@ -105,8 +113,8 @@ export async function alwaysOnKw(siteId: string, days: number, o: { now?: number
   for (const r of rows) { const b = { epoch: Number(r.epoch), day: r.day, hour: r.hour, kw: Number(r.wh) * 12 / 1000 }; const a = byDay.get(r.day); if (a) a.push(b); else byDay.set(r.day, [b]); }
   const nights: Array<{ day: string; kw: number; split: boolean; trip: boolean }> = [];
   for (const [day, bs] of [...byDay].sort(([a], [b]) => a.localeCompare(b))) {
-    if (bs.length < 40) continue;
-    const split = (covered.get(day) ?? 0) >= NEST_COVERAGE * 240, kw = nightBase(bs, split ? acOn : () => false, pumpOn, pumpKw.get(day) ?? 0);
+    if (bs.length < nightMin(day)) continue;
+    const split = (covered.get(day) ?? 0) >= nestNeedMin(day), kw = nightBase(bs, split ? acOn : () => false, pumpOn, pumpKw.get(day) ?? 0);
     if (kw != null) nights.push({ day, kw: Math.round(kw * 1000) / 1000, split, trip: trips.has(day) });
   }
   const med = (v: number[]) => { if (!v.length) return null; const x = [...v].sort((a, b) => a - b), m = Math.floor(x.length / 2); return Math.round((x.length % 2 ? x[m] : (x[m - 1] + x[m]) / 2) * 1000) / 1000; };
@@ -195,7 +203,7 @@ export async function overnightSplit(siteId: string, from: string) {
   for (const r of rows) { const b = { epoch: Number(r.epoch), day: r.day, hour: r.hour, kw: Number(r.wh) * 12 / 1000 }; const a = byDay.get(r.day); if (a) a.push(b); else byDay.set(r.day, [b]); }
   const r3 = (v: number) => Math.round(v * 1000) / 1000;
   return [...byDay.entries()].map(([date, bs]) => {
-    const kw = bs.reduce((a, b) => a + b.kw, 0) / bs.length, split = (covered.get(date) ?? 0) >= NEST_COVERAGE * 240;
+    const kw = bs.reduce((a, b) => a + b.kw, 0) / bs.length, split = (covered.get(date) ?? 0) >= nestNeedMin(date);
     if (!split) { const raw = nightBase(bs, () => false, pumpOn, pumpKw.get(date) ?? 0); return { date, kw: r3(kw), base: raw == null ? null : r3(Math.min(kw, raw)), ac: null, pump: null, split }; }
     // AC from the meter: on buckets the Nest marks as running, the draw above the night's quiet level (at most the learned draw). Nest is
     // sampled every 15 min at night, so a sample-time share x the draw overstates short cycles.
@@ -207,11 +215,12 @@ export async function overnightSplit(siteId: string, from: string) {
 }
 
 /* ---------- the always-on base by month and by night (the trend and the push) ---------- */
-const NIGHTS_SQL = `SELECT day, (PERCENTILE_CONT(${BASE_QUANTILE}) WITHIN GROUP (ORDER BY home_wh) * 12 / 1000.0)::float8 kw
-  FROM energy WHERE site_id = $1 AND day >= $2 AND hour BETWEEN 1 AND 4 AND home_wh IS NOT NULL GROUP BY day HAVING COUNT(*) >= 40 ORDER BY day`;
+const NIGHTS_SQL = `SELECT day, (PERCENTILE_CONT(${BASE_QUANTILE}) WITHIN GROUP (ORDER BY home_wh) * 12 / 1000.0)::float8 kw, COUNT(*)::int n
+  FROM energy WHERE site_id = $1 AND day >= $2 AND hour BETWEEN 1 AND 4 AND home_wh IS NOT NULL GROUP BY day HAVING COUNT(*) >= 30 ORDER BY day`;
 /** The quietest tenth of each night's 01:00–05:00 buckets since `since`, for the 13-month trend only (no AC or pump mask: Nest and pool
  *  history are shorter than 13 months); every current figure uses alwaysOnKw. */
-export const nightBases = (siteId: string, since: string) => q<{ day: string; kw: number }>(NIGHTS_SQL, [siteId, since]);
+export const nightBases = async (siteId: string, since: string) =>
+  (await q<{ day: string; kw: number; n: number }>(NIGHTS_SQL, [siteId, since])).filter(r => r.n >= nightMin(r.day)).map(({ day, kw }) => ({ day, kw }));
 /** Thirteen months of the base: the median night of each month. Cached a day in kv. */
 export async function alwaysOnTrend(siteId: string, now = Date.now()) {
   const key = `${siteId}:breakdown:trend:v2`, hit = await kv.get<{ day: string; months: Array<{ month: string; kw: number }> }>(key), today = localDay(new Date(now));

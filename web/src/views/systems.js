@@ -15,10 +15,10 @@ const same = (id, html) => { const el = $(id); if (el && el.dataset.k !== html) 
 /** Show one segment's page: the pill slides, the row takes the system's accent, the pages swap. Returns the segment shown. */
 export function showSeg(seg) {
   const id = SEG_IDS.includes(seg) ? seg : 'home', row = $('sysSeg'), def = SEGS.find(s => s.id === id);
-  row.style.setProperty('--i', segIndex(id));
+  row.style.setProperty('--i', String(segIndex(id)));
   SEGS.forEach(s => row.classList.toggle(s.acc, s.id === id));
   row.querySelectorAll('[data-seg]').forEach(b => { const on = b.dataset.seg === id; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; });
-  document.querySelectorAll('.sys-page').forEach(p => { const on = p.id === `sp-${id}`; p.hidden = !on; p.classList.toggle('on', on); });
+  document.querySelectorAll('.sys-page').forEach((/** @type {HTMLElement} */ p) => { const on = p.id === `sp-${id}`; p.hidden = !on; p.classList.toggle('on', on); });
   row.querySelector('.on')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   return def.id;
 }

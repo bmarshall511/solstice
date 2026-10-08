@@ -1,13 +1,23 @@
 // Solstice test harness (docs/audit-designs/tests.md). `web/vite.config.js` stays the build config.
 // Every project loads tests/setup.ts: it refuses any database other than in-memory PGlite, strips device and Tesla
 // credentials from the environment and blocks every network call except the in-process Express app.
-import { defineConfig } from 'vitest/config';
+import { coverageConfigDefaults, defineConfig } from 'vitest/config';
 
 const DB = 'pglite:memory://';
 const serverEnv = { TZ: 'UTC', DATABASE_URL: DB }; // UTC is what the Vercel function runs with
 
 export default defineConfig({
   test: {
+    // `npm run test:coverage` only (Batch 7): v8 coverage of the app source into the git-ignored coverage/ folder.
+    // No thresholds yet, so coverage never fails CI.
+    coverage: {
+      provider: 'v8',
+      include: ['server/src/**', 'web/src/**'],
+      exclude: [...coverageConfigDefaults.exclude, 'tests/**', 'mockups/**', 'scripts/**', '**/*.css'],   // the defaults drop .d.ts files
+      reporter: ['text-summary', 'html'],
+      reportsDirectory: 'coverage',
+      reportOnFailure: true,   // a flaky test still leaves a report
+    },
     projects: [
       // several server files (auth, bills-privacy, sync-window, share, redaction) start PGlite and the app in beforeAll; run
       // in parallel that can take longer than the 10 s default, so they get the db project's budget

@@ -43,9 +43,10 @@ export function banner({ cls, ic = '', ring = null, title, line = '', bar = null
   return `<div class="c-ban ${cls}">${lead}<b>${title}</b>${line ? `<p>${line}</p>` : '<p></p>'}${bar != null ? `<div class="c-bar"><i style="width:${Math.round(bar)}%"></i></div>` : ''}${btns.length ? `<div class="c-btns">${btns.slice(0, 2).map(([l, k, pri], i) => `<button class="c-btn ${pri ?? i === 0 ? 'pri' : 'line'}" data-b="${esc(k)}">${l}</button>`).join('')}</div>` : ''}</div>`;
 }
 /** Enter or Space on a role=button element clicks it (rows, disclosure headers, date cards). */
+/** @param {Document | HTMLElement} [root] */
 export function keyActivate(root = document) {
-  root.addEventListener('keydown', e => {
-    const t = e.target; if ((e.key !== 'Enter' && e.key !== ' ') || !t.matches?.('[role=button]:not(button)')) return;
+  root.addEventListener('keydown', (/** @type {KeyboardEvent} */ e) => {
+    const t = /** @type {HTMLElement} */ (e.target); if ((e.key !== 'Enter' && e.key !== ' ') || !t.matches?.('[role=button]:not(button)')) return;
     e.preventDefault(); t.click();
   });
 }
@@ -73,12 +74,12 @@ export function segSet(el, v, attr = 'data-v') {
  */
 export function wireDisclosures(root) {
   root.addEventListener('click', e => {
-    const h = e.target.closest('.c-disc-h');
-    if (h && !e.target.closest('button,a,input')) { const card = h.closest('.c-disc'); if (!card || card.hasAttribute('data-own')) return;
+    const h = /** @type {Element} */ (e.target).closest('.c-disc-h');
+    if (h && !/** @type {Element} */ (e.target).closest('button,a,input')) { const card = h.closest('.c-disc'); if (!card || card.hasAttribute('data-own')) return;
       const open = !card.classList.contains('expanded'); card.classList.toggle('expanded', open); h.setAttribute('aria-expanded', String(open));
-      const body = card.querySelector(':scope > .c-disc-body'); if (body) body.hidden = !open; card.dispatchEvent(new CustomEvent('disc', { detail: open })); return; }
-    const r = e.target.closest('.c-rows > [data-row]');
-    if (r && !e.target.closest('button:not([data-row]),a,input')) { const inner = r.nextElementSibling; if (!inner?.classList.contains('c-inner')) return;
-      const open = !r.classList.contains('c-open'); r.classList.toggle('c-open', open); inner.classList.toggle('c-open', open); inner.hidden = !open; r.setAttribute('aria-expanded', String(open)); }
+      const body = card.querySelector(':scope > .c-disc-body'); if (body) /** @type {HTMLElement} */ (body).hidden = !open; card.dispatchEvent(new CustomEvent('disc', { detail: open })); return; }
+    const r = /** @type {Element} */ (e.target).closest('.c-rows > [data-row]');
+    if (r && !/** @type {Element} */ (e.target).closest('button:not([data-row]),a,input')) { const inner = r.nextElementSibling; if (!inner?.classList.contains('c-inner')) return;
+      const open = !r.classList.contains('c-open'); r.classList.toggle('c-open', open); inner.classList.toggle('c-open', open); /** @type {HTMLElement} */ (inner).hidden = !open; r.setAttribute('aria-expanded', String(open)); }
   });
 }

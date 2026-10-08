@@ -129,7 +129,8 @@ export async function nwsAlerts(): Promise<NwsAlert[]> {
   const j = await fetch(`https://api.weather.gov/alerts/active?point=${loc.lat},${loc.lon}`, { headers: { 'User-Agent': 'Solstice (personal energy monitor)', Accept: 'application/geo+json' }, signal: AbortSignal.timeout(4000) })
     .then(r => r.ok ? r.json() : null).catch(() => null) as { features?: Array<{ properties: Record<string, any> }> } | null;
   if (!j) return hit?.alerts ?? [];
-  const alerts = (j.features ?? []).map(f => ({ event: String(f.properties.event ?? 'Alert'), headline: f.properties.headline ?? null, severity: f.properties.severity ?? null, ends: f.properties.ends ?? f.properties.expires ?? null }));
+  // a feature without properties is one "Alert", never a TypeError that drops every other alert
+  const alerts = (j.features ?? []).map(f => f?.properties ?? {}).map(p => ({ event: String(p.event ?? 'Alert'), headline: p.headline ?? null, severity: p.severity ?? null, ends: p.ends ?? p.expires ?? null }));
   await kv.set('nws', { at: Date.now(), alerts });
   return alerts;
 }

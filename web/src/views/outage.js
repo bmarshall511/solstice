@@ -129,7 +129,7 @@ export function mountOutageCard(S, parent) {
     } else if (A.type === 'hold') { setHud(...summary()); if (p >= 1) go({ type: 'back', dur: 700, from: C.cur.soc }); }
     else if (A.type === 'back') { sample(0); C.cur.soc = lerp(A.from, C.data.soc / 100, ease(p)); setHud(...summary()); if (p >= 1) go(null); }
   }
-  $q('[data-seg]').onclick = e => { const b = e.target.closest('button'); if (!b || !C.data) return;
+  $q('[data-seg]').onclick = e => { const b = /** @type {Element} */ (e.target).closest('button'); if (!b || !C.data) return;
     segSet($q('[data-seg]'), b.dataset.s, 'data-s'); C.scen = b.dataset.s; run(); rows(); stopPreview();
     go({ type: 'drain', dur: 2000, kEnd: C.sim.emptyH ?? C.kNight }); };
   $q('[data-preview]').onclick = e => { if (!C.data) return; C.previewOutage = !C.previewOutage; e.currentTarget.classList.toggle('soft', C.previewOutage); e.currentTarget.textContent = C.previewOutage ? 'Stop' : 'Play the next 48 hours';

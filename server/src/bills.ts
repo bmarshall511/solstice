@@ -1,4 +1,3 @@
-import { pdfToLayoutText } from './pdf.js';
 import { q } from './db.js';
 
 export type Charge = { label: string; kwh: number | null; rate: number | null; amount: number };
@@ -77,6 +76,8 @@ export function parsePecText(text: string): Bill {
 
 /** Read a PEC bill PDF with pure JS (works on Vercel; no poppler needed). */
 export async function parsePecPdf(pdf: Uint8Array): Promise<Bill> {
+  // pdf.js (and its worker) load here, on the first bill parsed, not on every cold start of the API function (Batch 7)
+  const { pdfToLayoutText } = await import('./pdf.js');
   let text: string;
   try { text = await pdfToLayoutText(pdf); }
   catch { throw new Error("That file doesn't look like a PDF. Download the bill as a PDF from SmartHub or myPEC.com."); }

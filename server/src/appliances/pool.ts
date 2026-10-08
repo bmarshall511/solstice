@@ -10,7 +10,6 @@ import { GuardRefusal, type PoolGuardContext, type PoolOwnerCommand } from './gu
 import { usd } from '../tariff.js';
 import { confidenceFor } from '../learn/confidence.js';
 import { filterForecast } from './poolFilter.js';
-import { PRESENCE_FIXED } from './presence.js';
 
 export type PoolSettings = { gallons: number; spaGallons: number; designGpm: number; filterRpm: number; boostRpm: number; poolCircuit: number; boostCircuit: number; featureCircuits: number[]; autopilot: Mode; uv: boolean;
   heaterBtu: number; propaneUsdPerGal: number; loads: Record<string, number>; turnoverGoal: number; skimHours: number; skimAt: number | null };
@@ -512,12 +511,28 @@ export async function restorePrevious(siteId: string, snap: PoolSnapshot) {
   await kv.set(`${siteId}:pool:last`, null as any);
 }
 
+/**
+ * The appliance list's pool row (GET /api/appliances), from what is stored: the last controller snapshot (kv pool:last), the power
+ * curve and the 14-day solar profile. Batch 7: it used to run the whole Pool card (poolDetail, about 22 queries and a ScreenLogic read
+ * when the snapshot was over a minute old) for these four figures; the Pool card's own route still reads the controller. The figures
+ * are poolDetail's: the current schedule's kWh a day and cost, and the planner's plan at the same water temperature and sun.
+ * Never contacts the controller, for the owner or a guest (S-07).
+ */
+export async function poolSummary(siteId: string, settingsAll: Record<string, any>, rate: number | null): Promise<ApplianceSummary> {
+  const settings: PoolSettings = { ...DEFAULTS, ...(settingsAll.pool ?? {}) };
+  const snap = await kv.get<PoolSnapshot>(`${siteId}:pool:last`) ?? null;
+  const W = powerModel(await measuredPoints(siteId)), solarKw = await solarProfile(siteId), month = Number(localDay().slice(5, 7)) - 1;
+  const names = new Map((snap?.circuits ?? []).map(c => [c.id, c.name]));
+  const { speeds, schedules } = pumpSchedules(snap);
+  const prof = hourlyRpm(schedules, speeds), kwh = dayKwh(prof, W) + (settings.uv ? hoursOn(prof) * UV_W / 1000 : 0);
+  const plan = planFor({ waterTemp: snap?.bodies[0]?.temp ?? WATER_BY_MONTH[month], solarKw, settings, W, rate, month, names });
+  const costNow = usd(kwh * 30.4, rate);
+  return { id: 'pool', name: 'Pool pump', status: configured() && !!snap ? 'linked' : 'estimated', watts: snap?.pump ? snap.pump.watts ?? null : null, kwhPerDay: Math.round(kwh * 10) / 10,
+    savesPerMonth: costNow != null && plan.costPerMonth != null ? Math.max(0, costNow - plan.costPerMonth) : null };
+}
+
 export const poolAppliance: Appliance = {
   id: 'pool', name: 'Pool pump', source: 'Pentair ScreenLogic',
   available: () => configured(),
-  summary: async (siteId, settings, rate): Promise<ApplianceSummary> => {
-    // a guest's list (app.ts passes presenceHidden settings, which carry PRESENCE_FIXED for a guest view) never reads the controller
-    const d = await poolDetail(siteId, settings, rate, { readOnly: !!settings[PRESENCE_FIXED as any] });
-    return { id: 'pool', name: 'Pool pump', status: d.linked ? 'linked' : 'estimated', watts: d.live?.watts ?? null, kwhPerDay: d.current.kwhPerDay, savesPerMonth: d.current.costPerMonth != null && d.plan.costPerMonth != null ? Math.max(0, d.current.costPerMonth - d.plan.costPerMonth) : null };
-  },
+  summary: poolSummary,
 };

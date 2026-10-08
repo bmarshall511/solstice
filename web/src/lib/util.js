@@ -14,6 +14,7 @@ const localParts = (d = new Date()) => Object.fromEntries(new Intl.DateTimeForma
 export const localDate = (d = new Date()) => { const p = localParts(d); return `${p.year}-${p.month}-${p.day}`; };
 export const localHour = (d = new Date()) => { const p = localParts(d); return +p.hour + +p.minute / 60; };
 export const addDays = (day, n) => new Date(Date.parse(day + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+/** @param {string} day  @param {Intl.DateTimeFormatOptions} [opts] */
 export const niceDate = (day, opts = { month: 'short', day: 'numeric' }) => new Date(day + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', ...opts });
 
 /* The site's location is not in the code (the repo and this bundle are public). The server reads SITE_LAT, SITE_LON and SITE_ZIP
@@ -32,7 +33,7 @@ export const siteLocation = () => site;
 export function sunAt(date, loc = site) {
   if (!loc) return { el: 45, az: 180 };
   const LAT = loc.lat, LON = loc.lon;
-  const start = new Date(Date.UTC(date.getUTCFullYear(), 0, 0)), doy = Math.floor((date - start) / 864e5);
+  const start = new Date(Date.UTC(date.getUTCFullYear(), 0, 0)), doy = Math.floor((+date - +start) / 864e5);
   const hr = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600, g = 2 * Math.PI / 365 * (doy - 1 + (hr - 12) / 24);
   const eqt = 229.18 * (.000075 + .001868 * Math.cos(g) - .032077 * Math.sin(g) - .014615 * Math.cos(2 * g) - .040849 * Math.sin(2 * g));
   const dec = .006918 - .399912 * Math.cos(g) + .070257 * Math.sin(g) - .006758 * Math.cos(2 * g) + .000907 * Math.sin(2 * g) - .002697 * Math.cos(3 * g) + .00148 * Math.sin(3 * g);
@@ -41,9 +42,10 @@ export function sunAt(date, loc = site) {
   return { el, az: (Math.atan2(Math.sin(ha), Math.cos(ha) * Math.sin(lat) - Math.tan(dec) * Math.cos(lat)) / RAD + 540) % 360 };
 }
 
+let toastTimer;
 export function toast(icon, bg, title, sub) {
   $('toastI').textContent = icon; $('toastI').style.background = bg; $('toastT').textContent = title; $('toastS').textContent = sub;
-  $('toast').classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => $('toast').classList.remove('show'), 4500);
+  $('toast').classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('show'), 4500);
 }
 
 /* tiny SVG helpers */

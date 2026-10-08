@@ -25,7 +25,7 @@ function makeBars(data) {
 }
 const lab = (scene, t, p, c = '') => { const e = document.createElement('div'); e.className = 'lax ' + c; e.textContent = t; const o = new CSS2DObject(e); o.position.copy(p); scene.add(o); return o; };
 const dayLabel = (scene, data, di) => lab(scene, niceDate(data.dates[di]), new THREE.Vector3(12.4 * SX + 1.2, 0, (di - data.dates.length / 2 + .5) * SZ), data.ratios[di] != null && data.ratios[di] < .9 ? 'w' : '');
-const hourLabels = (scene, D) => [['6a', 6], ['12p', 12], ['6p', 18]].forEach(([t, h]) => lab(scene, t, new THREE.Vector3((h - 11.5) * SX, 0, D / 2 * SZ + 1.4)));
+const hourLabels = (scene, D) => /** @type {[string, number][]} */ ([['6a', 6], ['12p', 12], ['6p', 18]]).forEach(([t, h]) => lab(scene, t, new THREE.Vector3((h - 11.5) * SX, 0, D / 2 * SZ + 1.4)));
 function lights(scene) {
   scene.add(new THREE.HemisphereLight(0x9fc0ff, 0x0b0d12, .7)); const k = new THREE.DirectionalLight(0xffffff, 1.2); k.position.set(10, 30, 20); scene.add(k);
   const gh = new THREE.GridHelper(40, 40, 0x2a2f3a, 0x1a1e26); gh.material.transparent = true; gh.material.opacity = .5; scene.add(gh);

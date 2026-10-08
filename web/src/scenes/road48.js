@@ -210,7 +210,7 @@ export function createRoad48(el, tip, { model, calm = () => false }) {
   /* ---------- drive: horizontal drag slides along x (damped); vertical drag is left to the page (touch-action: pan-y) ---------- */
   let st = null; const down = new Set();
   el.addEventListener('pointerdown', e => {
-    if (e.button || e.target.closest('.xbtn')) return;
+    if (e.button || /** @type {Element} */ (e.target).closest('.xbtn')) return;
     if (e.isPrimary) down.clear();   // a new first touch: any pointer still listed lost its pointerup
     down.add(e.pointerId);
     st = down.size > 1 ? null : { x: e.clientX, y: e.clientY, d: dT, id: e.pointerId, intent: null };   // a second finger never drives
