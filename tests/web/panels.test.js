@@ -1,7 +1,7 @@
 // web/src/lib/panels.js (approved mockup u-panels): the one diverging scale the Live roof and the Panel health grid share, and the
 // mapping between "Row r · c" and the scene's panel order.
 import { describe, it, expect } from 'vitest';
-import { tint, kIndex, posOf, tileStyle, deficit } from '../../web/src/lib/panels.js';
+import { tint, kIndex, posOf, tileStyle, deficit, relaySilent } from '../../web/src/lib/panels.js';
 
 describe('tint: no tint within ±5%, blue to full at −15%, gold to full at +10%', () => {
   it('the neutral band', () => {
@@ -35,5 +35,20 @@ describe('positions', () => {
     expect(deficit(91)).toBe('−9%');
     expect(deficit(62.4)).toBe('−38%');
     expect(deficit(104)).toBe('+4%');
+  });
+});
+
+describe('relaySilent: the silent-relay line (S-12)', () => {
+  const clock = ms => new Date(ms).toISOString().slice(11, 16);
+  it('the owner: when it was last heard, the minutes and why', () => {
+    expect(relaySilent({ silent: true, lastPoll: '2026-10-08T19:35:00.000Z', heardAt: '2026-10-08T20:13:00.000Z', silentMin: 40, note: 'The PVS restarted' }, clock))
+      .toEqual({ head: 'Relay last heard 20:13', min: 40, note: 'The PVS restarted' });
+    expect(relaySilent({ silent: true, lastPoll: '2026-10-08T19:35:00.000Z', ageS: 2400 }, clock))
+      .toEqual({ head: 'Relay last heard 19:35', min: 40, note: 'The Mac running the PVS relay may be asleep or off the network' });
+  });
+  it('a guest gets only { silent }: a plain line, never "undefined", "NaN" or "Invalid Date"', () => {
+    const r = relaySilent({ silent: true }, clock);
+    expect(r).toEqual({ head: 'Per-panel readings paused', min: null, note: null });
+    expect(JSON.stringify(r)).not.toMatch(/undefined|NaN|Invalid/);
   });
 });

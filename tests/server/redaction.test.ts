@@ -3,6 +3,7 @@
 //   RED-1..4   the view helpers on their own (no database)
 //   RED-5      every guest-readable route, against a deliberately leaky seed: the owner's response shows the private values
 //              (so the check can see them), the guest's shows none of the deny-list
+//   RED-5d     the panel relay: only `silent` (S-12)
 //   RED-6      history is hourly for guests: no five-minute bucket reaches them, and no energy is lost in the sum
 //   RED-7..8   the bill skeleton; the AC card with no occupancy (presence forced home at the source, fresh reads ignored)
 //   RED-9..10  every write route answers 401 to a guest and changes nothing; every read without a view answers 401 to a
@@ -280,6 +281,21 @@ describe('every guest-readable route', () => {
     expect(leaks(out)).toEqual([]);
     expect(out).toEqual([{ id: 'pool', name: 'Pool pump', status: 'linked', watts: 900, kwhPerDay: 7.2, savesPerMonth: null },
       { id: 'ac', name: 'AC', status: 'estimated', watts: null, kwhPerDay: null, savesPerMonth: null, error: 'unavailable' }]);
+  });
+});
+
+describe('the panel relay for guests (S-12)', () => {
+  it('RED-5d /api/pvs/panels: a guest learns only that the relay is silent, not when it was heard, for how long, or why', () => {
+    const v = redact.GUEST_GET.get('/api/pvs/panels')!;
+    const relay = { lastPoll: '2026-10-08T19:35:00.000Z', ageS: 2400, silent: true, daylight: true, silentMin: 40, heardAt: '2026-10-08T20:13:00.000Z',
+      cause: 'pvs', note: 'The relay is running, but the PVS answers without any inverters since it restarted at 11:13 AM',
+      pvs: { status: 'no-inverters', http: 400, uptimeS: 14400, error: 'PVS answered HTTP 400 at 192.0.2.45' } };
+    const out = v({ date: '2026-10-08', today: true, relay, reporting: 0 }) as any;
+    expect(out.relay).toEqual({ silent: true });
+    expect(v({ date: '2026-10-08', relay: { ...relay, silent: false, cause: null, note: null } }) as any).toMatchObject({ relay: { silent: false } });
+    const text = JSON.stringify(out);
+    for (const s of ['2026-10-08T19:35', '2026-10-08T20:13', '2400', 'Mac', 'PVS', 'restarted', '192.0.2.45', 'cause', 'note', 'silentMin', 'daylight'])
+      expect(text, s).not.toContain(s);
   });
 });
 
