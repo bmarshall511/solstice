@@ -30,3 +30,14 @@ export function tileStyle(ratio) {
 }
 /** "−9%" / "+4%" against the median panel. */
 export const deficit = pct => { const d = Math.round(100 - pct); return d >= 0 ? `−${d}%` : `+${-d}%`; };
+
+/**
+ * The silent-relay line's head and text (Panel health). The owner gets when the relay was last heard, for how long and why; a guest's
+ * relay is only `{ silent }` (server/src/redact.ts, S-12), so the line says just that, with no time, minutes or cause to show as
+ * "undefined" or NaN. `clock` formats epoch ms. Text is unescaped: the caller escapes `note`.
+ */
+export function relaySilent(relay, clock) {
+  const heard = relay?.heardAt ?? relay?.lastPoll, min = relay?.silentMin ?? (Number.isFinite(relay?.ageS) ? Math.round(relay.ageS / 60) : null);
+  if (!heard || !Number.isFinite(Date.parse(heard))) return { head: 'Per-panel readings paused', min: null, note: null };
+  return { head: `Relay last heard ${clock(Date.parse(heard))}`, min, note: relay.note ?? 'The Mac running the PVS relay may be asleep or off the network' };
+}

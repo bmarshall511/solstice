@@ -43,7 +43,9 @@ export async function refreshLive(siteId: string, maxAgeMs = config.liveMaxAgeMs
   const last = await one<{ ts: string }>('SELECT ts FROM readings WHERE site_id = $1 ORDER BY ts DESC LIMIT 1', [siteId]);
   if (last && Date.now() - Number(last.ts) < maxAgeMs) return false;
   if (o.single && !(await kv.claim(`${siteId}:live:claim`, maxAgeMs))) return false;
-  const s = await teslaFor((await siteAccount(siteId)).tesla_account_id).liveStatus(siteId);
+  // a failed Fleet call (an HTTP error, a 2xx without a body) is kept for Data health like the empty payload below, then rethrown
+  const s = await teslaFor((await siteAccount(siteId)).tesla_account_id).liveStatus(siteId)
+    .catch(async (e: Error) => { await kv.set(`${siteId}:error:live`, { at: Date.now(), message: e.message }).catch(() => {}); throw e; });
   const ts = Date.parse(s.timestamp) || Date.now(), nums = [s.solar_power, s.battery_power, s.grid_power, s.load_power, s.percentage_charged];
   // a payload with no grid status and none of the power/charge fields (seen 2026-10-07 08:25) read as "grid down at 0%": not stored, kept for Data health
   if (!s.grid_status && nums.every(v => typeof v !== 'number')) { await kv.set(`${siteId}:error:live`, { at: Date.now(), message: LIVE_EMPTY }); throw new Error(LIVE_EMPTY); }

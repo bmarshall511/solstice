@@ -262,8 +262,7 @@ describe('PNL-2 GET /api/pvs/panels', () => {
         pvs: { status: 'no-inverters', http: 400, uptimeS: 14400, error: 'PVS answered HTTP 400 at 192.0.2.45' } });
       const { GUEST_GET } = await import('../../server/src/redact.js');
       const guest = GUEST_GET.get('/api/pvs/panels')!(JSON.parse(JSON.stringify(b))) as any;
-      expect(guest.relay).toEqual({ lastPoll: b.relay.lastPoll, ageS: 2400, silent: true, daylight: b.relay.daylight, silentMin: 40,
-        heardAt: b.relay.heardAt, cause: 'pvs', note: b.relay.note });   // no relay.pvs
+      expect(guest.relay).toEqual({ silent: true });   // S-12: no relay.pvs, and no when or why either
       expect(JSON.stringify(guest)).not.toContain('192.0.2.45');
       // the relay runs and the PVS answers, but with an old measurement
       await db.kv.set('pvs:heartbeat', { at, pvs: 'ok', http: 200, error: null, uptimeS: null });

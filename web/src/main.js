@@ -26,7 +26,7 @@ import { initLearn } from './views/learn.js';
 import { createDayRing } from './scenes/dayring.js';
 import { explainOnTap } from './lib/frost.js';
 import { fillGuestBill } from './views/guest.js';
-import { initShare, applyRole, refreshSharing, showGate, markWelcome, pendingWelcome, ensurePreviewChrome } from './views/share.js';
+import { initShare, applyRole, refreshSharing, showGate, DEAD_LINK, markWelcome, pendingWelcome, ensurePreviewChrome } from './views/share.js';
 import { loadDigest } from './views/digest.js';
 import { loadChanged } from './views/changed.js';
 import { mountPowerwallRules, loadPowerwallRules, drawPowerwallRules } from './views/powerwall.js';
@@ -386,7 +386,7 @@ function showAuth(mode, opts = {}) {
    private" card (paste a share link, or "I'm the owner" and the key); a link that was turned off or has expired gets its own
    card (views/share.js showGate, mockup q-share frame 6). */
 let started = false, multi = false, unlocking = !!(ownerLink || guestLink), rechecking = false;
-const lockOut = (reason, error = '') => (reason === 'revoked' || reason === 'expired' ? showGate('off', { reason }) : showGate('private', { error }));
+const lockOut = (reason, error = '') => (DEAD_LINK.has(reason) ? showGate('off', { reason }) : showGate('private', { error }));
 // Any 401 locks the app in single-owner mode (while a link is being redeemed, boot() decides). A guest's 401 is either an
 // owner-only route (nothing to do) or a link that was just revoked or expired: /api/auth/me says which. The owner previewing
 // as a guest gets the same 401s for owner-only reads, and stays. MULTI_USER: as before.

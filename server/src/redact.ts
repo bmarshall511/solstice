@@ -189,7 +189,9 @@ const panelPos = { id: true, name: true } as const;
 const PANELS_VIEW: Rule = {
   date: true, today: true, timeZone: true, at: true, bucketMinutes: true, times: true,
   layout: { learned: true, mapped: true, expected: true, unmapped: true },
-  relay: { lastPoll: true, ageS: true, silent: true, daylight: true, silentMin: true, heardAt: true, cause: true, note: true },   // not relay.pvs (the raw error)
+  // S-12: only whether the relay is silent. When it was last heard, how long and why (cause, note: "the Mac … may be asleep or off the
+  // network", the PVS restart time) say when the owner's Mac and network are up, which a guest has no use for; never relay.pvs
+  relay: { silent: true },
   since: true, days: true, sunDown: true, reporting: true,
   now: { medianKw: true, medianKwDc: true, medianConvPct: true, arrayKw: true, weakest: { ...panelPos, pct: true } },
   totals: { kwh: true, medianKwh: true, spread: { loPct: true, hiPct: true }, hottest: { ...panelPos, tempC: true } },
