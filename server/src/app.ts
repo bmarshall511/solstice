@@ -11,6 +11,7 @@ import { createShare, listShares, revokeShare, revokeAllShares, redeemShare, pru
 import { authorizeUrl, exchangeCode, OtherSiteError } from './tesla/auth.js';
 import { teslaFor, localDay, addDays } from './tesla/client.js';
 import { refreshLive, refreshSiteInfo, syncSite, storedDays } from './sync.js';
+import { recordsFor, refreshRecords } from './records.js';
 import { deepTick, deepStatus, deepDue, notePass, DEEP_STOP_MS } from './deepBackfill.js';
 import { listBills, parsePecPdf, saveBill, type Bill } from './bills.js';
 import { reconcile } from './reconcile.js';
@@ -248,6 +249,10 @@ app.get('/api/cron/sync', wrap(async (req, res) => {
   // the sync and learning core are done: mark it now, so a slow tail (alerts, trip report, prune) cut off at 60 s can't fire the
   // 5-minute watchdog (below), which alerts when this is more than 26 h old (code review C-06)
   await kv.set(SYNC_DONE_KEY, Date.now());
+  // records.ts (Batch 7): History › Records' days through yesterday into kv, so GET /api/records reads kv and today only. Skipped
+  // past 45 s (the first /api/records read then aggregates instead), so the watch steps below keep their time
+  for (const s of sites) out[`records:${s.id}`] = Date.now() - t0 < RECORDS_BY_MS ? await L.step('records', () => refreshRecords(s.id).then(r => ({ through: r.through })))
+    .catch(e => ({ error: e.message })) : (L.mark('records', 'skipped'), { skipped: 'out of time; the first read aggregates' });
   // watch.ts: bill due and the other nightly alert checks; a step with under 5 s left before the deadline is skipped and said so
   for (const s of sites) out[`watch:${s.id}`] = await nightlyWatch(s.id, Date.now(), { deadline: t0 + 55_000, onStep: (n, ms, r) => L.mark(`watch.${n}`, markOf(r, ms)) });
   // raw per-panel readings older than 90 days go, after the learning layer has written the day's per-panel figures (pvs.ts)
@@ -433,17 +438,8 @@ app.get('/api/overnight', wrap(async (req, res) => {
   res.json(await overnightSplit(site(req), from));   // breakdown.ts (mockup z): the 1–5 AM average with always-on, AC and pump
 }));
 
-app.get('/api/records', wrap(async (req, res) => {
-  const id = site(req);
-  const day = (order: string, col: string) => one(`SELECT day date, ROUND((SUM(${col}) / 1000.0)::numeric, 1)::float8 kwh FROM energy WHERE site_id = $1 GROUP BY day ORDER BY kwh ${order} LIMIT 1`, [id]);
-  const [best, big, low, totals, full, soeDays, longest, outages] = await Promise.all([day('DESC', 'solar_wh'), day('DESC', 'home_wh'), day('ASC', 'import_wh'),
-    one(`SELECT MIN(day) since, ${kwhCols} FROM energy WHERE site_id = $1`, [id]),
-    one<{ n: number }>(`SELECT COUNT(*)::int n FROM (SELECT day FROM soe WHERE site_id = $1 GROUP BY day HAVING MAX(soe) >= 99) x`, [id]),
-    one<{ n: number }>(`SELECT COUNT(DISTINCT day)::int n FROM soe WHERE site_id = $1`, [id]),
-    one('SELECT ts, duration_s FROM backup_events WHERE site_id = $1 ORDER BY duration_s DESC LIMIT 1', [id]),
-    one<{ n: number }>('SELECT COUNT(*)::int n FROM backup_events WHERE site_id = $1', [id])]);
-  res.json({ bestSolarDay: best, biggestUsageDay: big, lowestImportDay: low, totals, batteryFullDays: { days: full?.n ?? 0, of: soeDays?.n ?? 0 }, longestOutage: longest ?? null, outages: outages?.n ?? 0 });
-}));
+/** History › Records (records.ts, Batch 7): the days through yesterday from the nightly's kv aggregate, today's added live. */
+app.get('/api/records', wrap(async (req, res) => res.json(await recordsFor(site(req)))));
 
 app.get('/api/outages', wrap(async (req, res) => res.json(await q('SELECT ts, duration_s FROM backup_events WHERE site_id = $1 ORDER BY epoch DESC', [site(req)]))));
 /** Outage readiness (Insights → Home): backup hours, the load ladder, the island simulation, 12 months of outages, storm state. Read-only. */
@@ -824,6 +820,8 @@ nightlySteps.loads = loadsNightly;   // loads.ts (I-22): yesterday's bursts and 
 /* Watchdog: Vercel never retries a cron, so a nightly run that died (timeout, deploy, outage) would be silent. The 5-minute tick
  * pushes one alert a day while the last finished nightly run is more than 26 hours old. */
 const SYNC_DONE_KEY = 'cron:sync:done';
+/** The nightly's records step (records.ts) starts only within this long of the run's start. */
+const RECORDS_BY_MS = 45_000;
 // B2-11 (cronLedger.ts): the crons watch each other: a quiet 5-minute tick, a missed pool plan, a nightly over 50 s; the nightly
 // re-checks the 5-minute tick (if every tick has stopped, only it can tell)
 fiveMinuteSteps.crons = (id, now) => cronWatch(id, now);
