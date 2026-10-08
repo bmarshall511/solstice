@@ -8,6 +8,16 @@ const serverEnv = { TZ: 'UTC', DATABASE_URL: DB }; // UTC is what the Vercel fun
 
 export default defineConfig({
   test: {
+    // `npm run test:coverage` only (Batch 7): v8 coverage of the app source into the git-ignored coverage/ folder.
+    // No thresholds yet, so coverage never fails CI.
+    coverage: {
+      provider: 'v8',
+      include: ['server/src/**', 'web/src/**'],
+      exclude: ['tests/**', 'mockups/**', 'scripts/**', '**/*.css'],
+      reporter: ['text-summary', 'html'],
+      reportsDirectory: 'coverage',
+      reportOnFailure: true,   // a flaky test still leaves a report
+    },
     projects: [
       // several server files (auth, bills-privacy, sync-window, share, redaction) start PGlite and the app in beforeAll; run
       // in parallel that can take longer than the 10 s default, so they get the db project's budget

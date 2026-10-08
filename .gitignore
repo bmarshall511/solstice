@@ -14,6 +14,7 @@ node_modules/
 # personal data (bills, readings, tokens) — local only
 data/
 web/dist/
+coverage/
 .vercel
 !web/public/.well-known/appspecific/com.tesla.3p.public-key.pem
 
