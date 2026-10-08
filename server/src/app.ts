@@ -23,7 +23,7 @@ import { powerModel, measuredPoints } from './appliances/pool.js';
 import { poolDetail, applyPlan, restorePrevious, poolCommand, PoolUnavailable, goalPatchError, scheduleError, saveSchedule, rebaseline, POOL_DEFAULTS, activeClearUp, startClearUp, extendClearUp, endClearUp, finishClearUpIfDue, clearUpError, CLEARUP_DAYS_MAX } from './appliances/pool.js';
 import { readPool, configured as poolConfigured } from './appliances/screenlogic.js';
 import { learnAcKw, acKwFor } from './appliances/ac.js';
-import { acDetail, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, patchedAc, suggestionPatch, dismissSuggestion, recordNest, observeHold } from './appliances/ac.js';
+import { acDetail, acSummary, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, patchedAc, suggestionPatch, dismissSuggestion, recordNest, observeHold } from './appliances/ac.js';
 import { oidcError, eventOf, seenEvent, applyTraits, isSettingEvent, eventTime } from './appliances/nestEvents.js';
 import { applianceDay } from './appliances/day.js';
 import { cronTick } from './appliances/sampling.js';
@@ -544,7 +544,9 @@ const rateFor = async (id: string) => (await currentTariff(id))?.importRateAllIn
 app.get('/api/appliances', wrap(async (req, res) => {
   const id = site(req), settings = presenceHidden(req, await settingsFor(req)), rate = await rateFor(id);
   const list = await Promise.all(appliances.filter(a => a.available()).map(a => a.summary(id, settings, rate).catch(e => ({ id: a.id, name: a.name, status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message }))));
-  if (nestConfigured()) list.push(await acDetail(id, settings, rate, await acSlope(id), { readOnly: !!req.guestView }).then(d => ({ id: 'ac', name: 'AC', status: d.linked ? 'linked' as const : 'estimated' as const, watts: d.state?.hvac === 'COOLING' ? Math.round(d.learned.acKw * 1000) : 0, kwhPerDay: d.todayKwh, savesPerMonth: null })).catch(e => ({ id: 'ac', name: 'AC', status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message })));
+  // Batch 7: both rows come from the stored snapshots (pool:last, nest:last) and the stored models, never a device read or the full
+  // card (the Pool and AC routes, polled alongside, do those); same figures and shape as before
+  if (nestConfigured()) list.push(await acSummary(id, await acSlope(id)).catch(e => ({ id: 'ac', name: 'AC', status: 'estimated' as const, watts: null, kwhPerDay: null, savesPerMonth: null, error: e.message })));
   res.json([...list, ...comingSoon()]);
 }));
 // ?fresh=1 forces a device read: the owner's only. S-07: a guest's read never reaches the controller (the stored snapshot, however

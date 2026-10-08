@@ -444,6 +444,19 @@ export async function acDetail(siteId: string, settingsAll: Record<string, any>,
 }
 
 /**
+ * The appliance list's AC row (GET /api/appliances), from what is stored: the last Nest state (kv nest:last), the learned kW (kv,
+ * an hour) and today's runtime from the stored readings. Batch 7: it used to run the whole AC card (acDetail, about 25 queries, the
+ * forecast, the plan and an SDM read when nest:last was over a minute old) for these figures; the AC card's own route still does.
+ * Never contacts Nest and starts, ends or logs nothing, for the owner or a guest (S-07, S-10).
+ */
+export async function acSummary(siteId: string, slope: number) {
+  const linked = nestConfigured() && await nestLinked(), st = await kv.get<NestState>('nest:last') ?? null;
+  const learned = await learnAcKw(siteId), rt = await runtimeToday(siteId), acKw = acKwFor(learned.coolKw, slope);
+  return { id: 'ac', name: 'AC', status: linked ? 'linked' as const : 'estimated' as const, watts: st?.hvac === 'COOLING' ? Math.round(acKw * 1000) : 0,
+    kwhPerDay: Math.round(rt.minutes / 60 * acKw * 10) / 10, savesPerMonth: null };
+}
+
+/**
  * Called every 5 minutes by the cron: sample Nest, and if today's plan is approved (or Autopilot is Auto), apply the step due now.
  * Every write goes through the safety guard (guards.ts): Autopilot Off writes nothing, 65–85 °F, at most 2 °F per write, one write
  * per 30 minutes. Refused and stepped writes are recorded in the AC log.
