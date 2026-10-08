@@ -48,7 +48,7 @@ describe('Vacation pill', () => {
 
 describe('Banner slot', () => {
   it('shows one banner, by priority', () => {
-    expect(BANNER_ORDER).toEqual(['outage', 'vacation', 'hold', 'pool', 'powerwall', 'bill', 'digest']);
+    expect(BANNER_ORDER).toEqual(['outage', 'vacation', 'hold', 'pool', 'powerwall', 'bill', 'digest', 'changed']);   // I-18: the morning line is the lowest
     expect(pickBanner([{ kind: 'digest' }, { kind: 'bill' }, null, { kind: 'hold' }])).toEqual({ kind: 'hold' });
     expect(pickBanner([{ kind: 'digest' }, { kind: 'outage' }, { kind: 'vacation' }])).toEqual({ kind: 'outage' });
     expect(pickBanner([{ kind: 'powerwall' }, { kind: 'pool' }])).toEqual({ kind: 'pool' });

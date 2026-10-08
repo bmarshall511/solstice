@@ -4,7 +4,7 @@
 import { $, niceDate, toast } from '../lib/util.js';
 import { api } from '../lib/api.js';
 import { esc } from '../lib/conf.js';
-import { weekLabel, prevWeekDate, leadHtml, gridCells, gridHtml, autopilotLines, rulesMode, anomalyHtml, badgesHtml, kwh0 } from '../lib/digest.js';
+import { weekLabel, prevWeekDate, leadHtml, gridCells, gridHtml, autopilotLines, rulesMode, anomalyHtml, badgesHtml, kwh0, changedLeadHtml } from '../lib/digest.js';
 import { detectPush, subscribePush, deviceName } from '../lib/push.js';
 
 let cur = null, prev = null, showing = 'cur', alertId = null;
@@ -23,10 +23,11 @@ export async function dismissDigest(S) { const id = alertId; cur = prev = null; 
 export function openDigest(S) { if (!cur) return; showing = 'cur'; draw(S); $('phone').classList.add('open'); }
 function draw(S) {
   const box = $('sheetBody'), d = showing === 'cur' ? cur : prev; if (!box || !d) return;
-  const vs = showing === 'cur' ? 'last wk' : `wk ${+String(d.week).split('-W')[1] - 1}`, anom = anomalyHtml(d);
+  const vs = showing === 'cur' ? 'last wk' : `wk ${+String(d.week).split('-W')[1] - 1}`, anom = anomalyHtml(d), chg = changedLeadHtml(d);   // I-18: the digest leads with what changed
   box.innerHTML = `<div class="shead"><h4>Your week</h4><button class="x" id="dgShut" aria-label="Close">✕</button></div><div class="dg sheetdg" id="digest">
       <div class="h"><span class="badge g">new</span><button class="link" id="dgX" style="margin:0;padding:6px 12px">Dismiss until next Monday</button></div>
       <div class="wk">${weekLabel(d)}</div>
+      ${chg ? `<p class="lead">${chg}</p>` : ''}
       <p class="lead">${leadHtml(d)}</p>
       <div class="share"><i style="width:${d.totals?.sunsharePct ?? 0}%"></i></div>
       <div class="sharel"><span>sunshine (solar + Powerwall)</span><span>PEC</span></div>
