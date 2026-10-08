@@ -12,6 +12,7 @@ import { localDay, addDays, localMidnight } from './tesla/client.js';
 import { confidenceMap, type Tier } from './learn/confidence.js';
 import { MODEL_IDS, type ModelId } from './learn/models.js';
 import { notify } from './notify.js';
+import { changedFor, type Changed } from './learn/changed.js';
 
 /* ---------- ISO weeks (Monday first; the week belongs to the year of its Thursday) ---------- */
 const dayMs = 864e5;
@@ -50,6 +51,8 @@ export type Digest = {
   confidence: Record<ModelId, Tier>;
   /** Mockup ak: trips that touched the week ("Away Thu–Sun · 71 kWh"); kWh once the trip's report is built. */
   trips?: Array<{ from: number; to: number | null; usedKwh: number | null }>;
+  /** I-18 (mockup am frame 2): the week's use split against the week before; the digest's lead line is built from it. */
+  changed?: Changed | null;
 };
 
 const r1 = (v: number) => Math.round(v * 10) / 10;
@@ -101,6 +104,7 @@ export async function buildDigest(siteId: string, monday: string, now = Date.now
       items: open.slice(0, 8).map(a => ({ kind: a.kind, title: String(a.detail?.title ?? a.kind), severity: a.severity, day: a.day })) },
     confidence,
     trips: (await tripsBetween(siteId, from, to)).map(t => ({ from: t.startedAt!, to: t.endedAt, usedKwh: (t.data.report as { usedKwh?: number } | undefined)?.usedKwh ?? null })),
+    changed: await changedFor(siteId, 'week', from, { now }).catch(e => { console.warn(`[digest] what changed: ${(e as Error).message}`); return null; }),
   };
 }
 

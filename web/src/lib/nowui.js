@@ -55,7 +55,7 @@ export const dateShort = ms => new Date(ms).toLocaleDateString('en-US', { timeZo
 
 /* ======================= Banner slot (frame 16) ======================= */
 /** One banner at a time, the first of these that has something to say. */
-export const BANNER_ORDER = ['outage', 'vacation', 'hold', 'pool', 'powerwall', 'bill', 'digest'];
+export const BANNER_ORDER = ['outage', 'vacation', 'hold', 'pool', 'powerwall', 'bill', 'digest', 'changed'];   // changed: I-18's morning line (mockup am)
 /** The banner to show from the candidates ({kind, …}; null/undefined entries are skipped), or null. */
 export function pickBanner(cands) {
   const by = new Map((cands ?? []).filter(Boolean).map(c => [c.kind, c]));

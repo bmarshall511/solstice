@@ -28,6 +28,7 @@ import { explainOnTap } from './lib/frost.js';
 import { fillGuestBill } from './views/guest.js';
 import { initShare, applyRole, refreshSharing, showGate, markWelcome, pendingWelcome, ensurePreviewChrome } from './views/share.js';
 import { loadDigest } from './views/digest.js';
+import { loadChanged } from './views/changed.js';
 import { mountPowerwallRules, loadPowerwallRules, drawPowerwallRules } from './views/powerwall.js';
 import { initVacation } from './views/vacation.js';
 
@@ -470,7 +471,7 @@ async function boot() {
   every(15 * 60_000, loadWeather);
   every(5 * 60_000, loadExternal);
   every(60_000, () => isOn('v-now') ? loadApplDay() : Promise.resolve());   // the Now twin's day (self-limited to every 5 min)
-  if (!S.guest) { every(5 * 60_000, () => loadDigest(S)); every(5 * 60_000, () => loadPowerwallRules(S)); }   // t-enhancements (owner-only routes)
+  if (!S.guest) { every(5 * 60_000, () => loadDigest(S)); every(5 * 60_000, () => loadPowerwallRules(S)); every(5 * 60_000, () => loadChanged(S)); }   // t-enhancements, I-18 (owner-only routes)
   if (!S.guest && !S.asGuest) initVacation(S, every);   // mockup ak: the Vacation chip, banner, sheet and report (owner-only routes)
   if (!S.guest && !S.asGuest) rebindPush();   // S-04: ties this device's push subscription to its owner session
   // a tapped push opens /?go=<view>[&p=<segment>] (web/public/sw.js); the old v-ins / v-roof links land on their Systems segment

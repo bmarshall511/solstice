@@ -1,7 +1,8 @@
 // The learning layer's nightly job (docs/audit-designs/learning-layer.md §8), run by the nightly sync cron right after the sync:
 //   load     a fixed set of range queries (energy by day and hour, battery %, Nest by hour, pool readings, predictions, kv state)
 //   ac       measured savings from control vs pre-cool days; this morning's trim from the last three pre-cool days of 21
-//   metrics  each day's measured values, and yesterday's predictions scored against them → daily_metrics (one upsert)
+//   metrics  each day's measured values, and yesterday's predictions scored against them → daily_metrics (one upsert); I-18 adds
+//            pool.kwh, ac.kwh, ac.heat_min and wx.low_f, the inputs of "What changed" (learn/changed.ts)
 //   scores   rolling 7/30/365-day MAE, MAPE and bias per model → model_scores (one upsert for every model)
 //   pump     the clean-filter baseline per RPM (after the last "I cleaned the filter", else the first 60 days)
 //   rules    the anomaly rules → open, update and resolve rows in `anomalies`
@@ -11,8 +12,9 @@
 import { capacityOf, modelKwh } from '../capacity.js';
 import { kv, hourWh } from '../db.js';
 import { localDay, addDays, localMidnight, localAt, rfc3339 } from '../tesla/client.js';
-import { learnAcKw } from '../appliances/ac.js';
-import { meanByQuarter, scheduledQuarters } from '../appliances/pool.js';
+import { learnAcKw, acKwFor } from '../appliances/ac.js';
+import { meanByQuarter, scheduledQuarters, poolKwhBetween } from '../appliances/pool.js';
+import { daySpans } from '../flows.js';
 import { listBills } from '../bills.js';
 import { MODELS, MODEL_IDS, mean, median, round, versionOf, type ModelDef, type ModelId } from './models.js';
 import { lq, learnStats, logPrediction, type Prediction } from './store.js';
@@ -39,7 +41,7 @@ export type LearnRun = { at: number; ms: number; queries: number; scored: string
 type PumpBase = { cleanedOn: string | null; from: string | null; to: string | null; baseline: Record<string, { watts: number; n: number }> };
 type AcStep = { measured: ReturnType<typeof measuredSavings>; record: LearnAc };
 type PredRow = { model: ModelId; target_day: string; target_hour: number; horizon: number; predicted: number; made_at: number; inputs: Record<string, any> };
-type Hour = { coolMin: number; coolF: number | null; indoorF: number | null; n: number };
+type Hour = { coolMin: number; heatMin: number; covMin: number; coolF: number | null; indoorF: number | null; n: number };
 /** A pair to score: predicted vs measured, plus the forecast's horizon band for the 48-hour models. */
 export type Pair = { predicted: number; actual: number; band?: string };
 export type BandScore = { abs: number; err: number; ape: number | null; den: number; n: number };
@@ -133,7 +135,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
   /* ---------- load ---------- */
   const keys = { ac: learnAcKey(siteId), last: `${siteId}:learn:last`, log: `${siteId}:learn:log`, pump: `${siteId}:learn:pump`, pvsLayout: LAYOUT_KEY,
     youRuns: `${siteId}:pool:youRuns`, outsideRuns: `${siteId}:pool:outsideRuns`, clearup: `${siteId}:pool:clearup`,   // the last three: mockup ah's pool scoring
-    versions: versionsKey(siteId), home: homeSlopesKey(siteId) };
+    versions: versionsKey(siteId), home: homeSlopesKey(siteId), slope: `${siteId}:ac:slope`, settings: 'settings:owner' };   // the last two: I-18's ac.kwh and pool.kwh
   const d = await step('load', async () => {
     // one round trip each, sent together (Neon's HTTP driver runs them in parallel; PGlite queues them)
     const [kvRows, energyDaily, energyHourly, soeHourly, nestHourly, pool, extraRows, preds] = await Promise.all([
@@ -150,8 +152,9 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
         `SELECT day, hour::int, COUNT(*)::int n, ((ARRAY_AGG(soe ORDER BY epoch DESC))[1])::float8 last, MAX(epoch)::float8 at FROM soe WHERE site_id = $1 AND day >= $2 GROUP BY day, hour`,
         [siteId, addDays(today, -9)]),
       // Nest by local hour: cooling minutes (each reading holds until the next, at most 20 minutes), mean setpoint and indoor temperature
-      lq<{ day: string; hour: number; cool_min: number; cool_f: number | null; indoor_f: number | null; n: number }>(
+      lq<{ day: string; hour: number; cool_min: number; heat_min: number; cov_min: number; cool_f: number | null; indoor_f: number | null; n: number }>(
         `SELECT day, hour::int, COALESCE(SUM(LEAST(dt, 1200000)) FILTER (WHERE hvac = 'COOLING'), 0)::float8 / 60000 cool_min,
+           COALESCE(SUM(LEAST(dt, 1200000)) FILTER (WHERE hvac = 'HEATING'), 0)::float8 / 60000 heat_min, COALESCE(SUM(LEAST(dt, 1200000)), 0)::float8 / 60000 cov_min,
            AVG(cool_f)::float8 cool_f, AVG(indoor_f)::float8 indoor_f, COUNT(*)::int n
          FROM (SELECT day, hour, hvac, cool_f, indoor_f, COALESCE(LEAD(ts) OVER (ORDER BY ts) - ts, 0) dt FROM nest_readings WHERE site_id = $1 AND day >= $2) x
          GROUP BY day, hour`, [siteId, from]),
@@ -163,7 +166,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     ]);
     const kvs = Object.fromEntries(kvRows.map(r => [r.key, r.value]));
     const nest = new Map<string, Record<number, Hour>>();
-    for (const r of nestHourly) (nest.get(r.day) ?? nest.set(r.day, {}).get(r.day)!)[r.hour] = { coolMin: r.cool_min, coolF: r.cool_f, indoorF: r.indoor_f, n: r.n };
+    for (const r of nestHourly) (nest.get(r.day) ?? nest.set(r.day, {}).get(r.day)!)[r.hour] = { coolMin: r.cool_min, heatMin: r.heat_min, covMin: r.cov_min, coolF: r.cool_f, indoorF: r.indoor_f, n: r.n };
     learnStats.queries++; // learnAcKw: one kv read (it recomputes at most hourly)
     const coolKw = (await learnAcKw(siteId)).coolKw;
     learnStats.queries++; // mockup ak: the trip days (4 h or more away), kept out of every at-home model below; a year of them for the home model (B2-8)
@@ -180,9 +183,10 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
   const kw = d.coolKw ?? (Number.isFinite(acKwFallback) ? acKwFallback : 3.4);
 
   /* ---------- home: the year fit of the home model (B2-8) ---------- */
+  let hilo: Record<string, Temp> = {};   // I-18: the same highs and lows give the metrics step its wx.low_f
   const homeSlopes = await step('home', async (): Promise<HomeSlopes | null> => {
     // highs and lows: the archive (one pull a day, kv wx:hilo) over the forecast payload's past days, which fill the archive's last few
-    const temps: Record<string, Temp> = { ...tempsOf(d.wx), ...await wxHiLo(now) };
+    const temps: Record<string, Temp> = hilo = { ...tempsOf(d.wx), ...await wxHiLo(now) };
     const rows = await lq<{ day: string; kwh: number; buckets: number; extra: boolean }>(
       `SELECT e.day, (SUM(e.home_wh) / 1000.0)::float8 kwh, COUNT(*)::int buckets,
          EXISTS (SELECT 1 FROM daily_metrics m WHERE m.site_id = $1 AND m.day = e.day AND m.metric = 'pool.extra') extra
@@ -247,9 +251,16 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
       const g = gtiByDay(d.wx);
       d.wx.daily.time.forEach((day, i) => { if (!past(day)) return; put(day, 'wx.gti', g[day]); put(day, 'wx.rain_mm', d.wx!.daily.precipitation_sum[i] ?? 0); put(day, 'wx.high_f', d.wx!.daily.temperature_2m_max[i]); });
     }
+    // I-18: each day's high (when the forecast payload no longer has it) and low, from the archive the home step read (kv wx:hilo)
+    for (const [day, t] of Object.entries(hilo)) if (past(day)) { if (!metricRows.has(`${day}|wx.high_f`)) put(day, 'wx.high_f', t.high); put(day, 'wx.low_f', t.low); }
+    // I-18: the AC's cooling kWh = cooling minutes × the learned cooling draw (acKwFor, as the breakdown and History use), only on days
+    // Nest covered for 80% or more (never the heat model's degree estimate); heating minutes apart, for a heating draw once one is learned
+    const acKw = acKwFor(d.coolKw, Number((d.kvs[keys.slope] as { slope?: number } | undefined)?.slope ?? 2.5));
     for (const [day, hours] of d.nest) if (past(day)) {
       const hs = Object.entries(hours).map(([h, x]) => ({ h: +h, ...x })), sp = hs.map(x => x.coolF).filter((v): v is number => v != null), daySp = sp.length ? mean(sp) : null;
       put(day, 'nest.n', hs.reduce((a, x) => a + x.n, 0)); put(day, 'ac.runtime_min', hs.reduce((a, x) => a + x.coolMin, 0)); put(day, 'ac.cool_f', daySp);
+      put(day, 'ac.heat_min', hs.reduce((a, x) => a + x.heatMin, 0));
+      if (hs.reduce((a, x) => a + x.covMin, 0) >= .8 * expectedBuckets(day) * 5) put(day, 'ac.kwh', round(hs.reduce((a, x) => a + x.coolMin, 0) / 60 * acKw, 3));
       const night = hs.filter(x => x.h >= 1 && x.h <= 4);
       if (night.length) put(day, 'ac.overnight_min', night.reduce((a, x) => a + x.coolMin, 0));
       const dh = Array.from({ length: 24 }, (_, h) => { const t = temps.get(`${day}|${h}`); return t == null ? null : Math.max(0, t - (hours[h]?.coolF ?? daySp ?? 76)); });
@@ -263,6 +274,11 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     const layout = d.kvs[keys.pvsLayout] as Layout | undefined;
     if (layout) { learnStats.queries++; for (const [day, metric, v] of await panelMetrics(addDays(today, -21), today, layout)) if (past(day)) put(day, metric, v); }
     const poolDays = new Map<string, typeof d.pool>(); for (const r of d.pool) (poolDays.get(r.day) ?? poolDays.set(r.day, []).get(r.day)!).push(r);
+    // I-18: each whole day's pool kWh as the History card counts it (poolKwhBetween: readings where read, the schedule × curve between)
+    learnStats.queries += 4;   // the snapshot, the applied plan, the power curve, the readings
+    const poolDay = (await poolKwhBetween(siteId, daySpans(addDays(today, -14), yesterday, now), (d.kvs[keys.settings] ?? {}) as Record<string, any>)
+      .catch(e => { errors.push(`metrics: pool.kwh: ${(e as Error).message}`); return { perDay: {} as Record<string, number> }; })).perDay;
+    for (const [day, v] of Object.entries(poolDay)) if (past(day)) put(day, 'pool.kwh', v);
     for (const [day, rows] of poolDays) if (past(day)) {
       put(day, 'pool.n', rows.length);
       const byRpm = new Map<number, number[]>();

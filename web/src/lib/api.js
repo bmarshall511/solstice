@@ -24,6 +24,7 @@ export const api = {
   now: () => get('now'),
   day: date => get(`day?date=${date}`),
   flows: (range, date) => get(`flows?range=${range}&date=${date}`),
+  changed: (scope, date) => get(`changed?scope=${scope}${date ? `&date=${date}` : ''}`),   // I-18 What changed (mockup am)
   daily: days => get(`daily?days=${days}`),
   monthly: months => get(`monthly?months=${months}`),
   profile: days => get(`profile?days=${days}`),

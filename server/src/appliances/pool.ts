@@ -227,7 +227,7 @@ export async function poolKwhBetween(siteId: string, spans: DaySpan[], settingsA
   for (const r of rows) { const a = byDay.get(r.day); if (a) a.push(r); else byDay.set(r.day, [r]); }
   // A day's own readings say which schedule ran that day (reads happen only in scheduled quarter-hours plus 02:05 and 05:05), so the
   // schedule stored now (which may be a temporary all-day one) only fills today's last half hour and ranges with no readings at all.
-  let wh = 0, readMs = 0, unreadMs = 0; const dayWh: number[] = [];
+  let wh = 0, readMs = 0, unreadMs = 0; const dayWh: number[] = [], perDay: Record<string, number> = {};
   spans.forEach((s, k) => {
     const rd = byDay.get(s.day) ?? [];
     if (!rd.length && rows.length) { unreadMs += s.elapsedMs; return; }   // filled below from the days that have readings
@@ -235,14 +235,16 @@ export async function poolKwhBetween(siteId: string, spans: DaySpan[], settingsA
     const runs = slices.slice(0, s.quarters).filter((r, i) => (measured[i] ?? r) > 0).length;
     let d = quarterWh(prof, W, measured).slice(0, s.quarters).reduce((a, v) => a + v, 0) + (settings.uv ? runs * UV_W / 4 : 0);
     for (let i = 1; i < rd.length; i++) d += (rd[i - 1].circuits ?? []).reduce((a, c) => a + (settings.loads[String(c)] ?? 0), 0) * Math.min(CIRCUIT_HOLD_MS, Number(rd[i].ts) - Number(rd[i - 1].ts)) / 3600_000;
-    wh += d; if (rd.length) { readMs += s.elapsedMs; dayWh.push(d); }
+    wh += d; if (rd.length) { readMs += s.elapsedMs; dayWh.push(d); if (s.quarters >= 96) perDay[s.day] = Math.round(d / 10) / 100; }
   });
   if (unreadMs && readMs) wh += dayWh.reduce((a, v) => a + v, 0) / readMs * unreadMs;   // days without a single read: the read days' average rate
   const coverage = readMs + unreadMs ? readMs / (readMs + unreadMs) : 0;
   const main = schedules.map(s => ({ rpm: speeds.get(s.circuitId) ?? 0, min: (s.stop - s.start + 1440) % 1440 || 1440 })).sort((a, b) => b.min - a.min)[0];
   return { kwh: Math.round(wh / 10) / 100, source: !schedules.length && !rows.length ? 'none' as const : coverage >= .8 ? 'readings' as const : 'schedule' as const,
     coverage: Math.round(coverage * 100) / 100, rpm: main?.rpm ?? null, watts: main ? Math.round(W(main.rpm)) : null,
-    kwhPerDay: schedules.length ? Math.round((dayKwh(prof, W) + (settings.uv ? hoursOn(prof) * UV_W / 1000 : 0)) * 10) / 10 : null };
+    kwhPerDay: schedules.length ? Math.round((dayKwh(prof, W) + (settings.uv ? hoursOn(prof) * UV_W / 1000 : 0)) * 10) / 10 : null,
+    // I-18: each whole day that had readings, on its own (kWh); days without a read are not in it (the nightly's pool.kwh)
+    perDay };
 }
 
 /* ---------- the appliance ---------- */

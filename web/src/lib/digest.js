@@ -80,3 +80,17 @@ export function badgesHtml(d, models) {
     return text == null ? '' : `<span class="conf" data-t="${TIERS[tier]}">${esc(`${label} ${text}`)}</span>`;
   }).join('');
 }
+
+/**
+ * I-18 (mockup am frame 2): the digest's lead line from the week's split against the week before (Digest.changed), in whole kWh:
+ * "<b>+38 kWh used vs last week:</b> weather +22 <est>, AC +9, pool +4, always-on +2, unexplained +1." The rounding goes into the last
+ * part (unexplained, or "everything else"), so the parts still add up. Parts that round to 0 are left out. Null without a split.
+ */
+const CHANGED_NAME = { weather: 'weather', ac: 'AC', pool: 'pool', alwaysOn: 'always-on', trip: 'trip', unexplained: 'unexplained', other: 'everything else' };
+export function changedLeadHtml(d) {
+  const H = d?.changed?.home; if (!H?.parts?.length) return null;
+  const total = Math.round(H.delta), rest = H.parts.at(-1), head = H.parts.slice(0, -1).map(p => ({ ...p, n: Math.round(p.kwh) }));
+  const all = [...head, { ...rest, n: total - head.reduce((a, p) => a + p.n, 0) }].filter(p => p.n !== 0);
+  const tag = p => p.id === 'weather' && p.conf ? ` <span class="c-badge" data-t="e">${p.conf === 'learning' ? 'learning' : 'est'}</span>` : '';
+  return `<b>${delta0(total)} kWh used vs last week${all.length ? ':' : '.'}</b>${all.length ? ` ${all.map(p => `${CHANGED_NAME[p.id] ?? esc(p.id)} ${delta0(p.n)}${tag(p)}`).join(', ')}.` : ''}`;
+}

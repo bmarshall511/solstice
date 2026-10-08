@@ -1502,6 +1502,22 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 .c-part>span{display:flex;align-items:center;gap:6px;min-width:0;white-space:nowrap}
 .c-part>b{font:500 12.5px var(--c-mono);white-space:nowrap}
 .c-part>b em{font-style:normal;color:var(--mute);margin-left:6px}
+/* the change waterfall (approved mockup am, I-18 What changed): one row per part, bars right for more and left for less from a
+   centre line, the total row last; the parts add up to the total */
+.c-wf{display:grid;gap:2px;margin-top:12px}
+.c-wf-r{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) 52px;align-items:center;gap:10px;min-height:36px;border-top:1px solid var(--c-line)}
+.c-wf-r:first-child{border-top:0}
+.c-wf-l{font-size:13px;color:var(--text);display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.c-wf-l .c-badge{margin:0}
+.c-wf-t{position:relative;height:10px}
+.c-wf-t::before{content:"";position:absolute;left:50%;top:-6px;bottom:-6px;width:1px;background:var(--c-line)}
+.c-wf-t i{position:absolute;top:0;height:10px;border-radius:5px;background:var(--acc);opacity:.85}
+.c-wf-t i.pos{left:50%} .c-wf-t i.neg{right:50%}
+.c-wf-r b{font:500 13px var(--c-mono);text-align:right;white-space:nowrap}
+.c-wf-r b.pos{color:var(--text)} .c-wf-r b.neg{color:var(--batt)}
+.c-wf-tot{border-top:1px solid color-mix(in srgb,var(--text) 22%,transparent)}
+.c-wf-tot .c-wf-l,.c-wf-tot b{font-weight:600}
+.c-wf-tot b{color:var(--text)}
 .c-cells{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;margin-top:12px}
 .c-cells i{aspect-ratio:1/1.6;border-radius:4px;background:color-mix(in srgb,var(--solar) var(--p),var(--bg))}
 .c-heat{display:grid;gap:2px;margin-top:12px;border-radius:10px;overflow:hidden}
