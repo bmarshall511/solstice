@@ -60,9 +60,10 @@ export async function ercotNow(now = Date.now()): Promise<ErcotData> {
   const cached = await kv.get<{ at: number; data: ErcotData }>('ercot');
   if (cached && now - cached.at < 5 * 60_000) return cached.data;
   const [prc, sd] = await Promise.all(['daily-prc', 'supply-demand'].map(n => fetch(`https://www.ercot.com/api/1/services/read/dashboards/${n}.json`, { signal: AbortSignal.timeout(8_000) }).then(r => { if (!r.ok) throw new Error(`ERCOT ${n}: HTTP ${r.status}`); return r.json(); }))) as [any, any];
-  const latest = (sd.data as any[]).filter(x => x.demand > 0).at(-1);
+  // no supply-demand rows leave demand unknown; the grid condition (the alert's input) still comes through
+  const latest = (Array.isArray(sd?.data) ? sd.data as any[] : []).filter(x => x?.demand > 0).at(-1);
   const data = { condition: prc.current_condition?.state ?? null, title: prc.current_condition?.title ?? null, note: prc.current_condition?.condition_note ?? null,
-    eea: prc.current_condition?.eea_level ?? 0, demandMw: latest?.demand ?? null, capacityMw: latest?.capacity ?? null, at: sd.lastUpdated };
+    eea: prc.current_condition?.eea_level ?? 0, demandMw: latest?.demand ?? null, capacityMw: latest?.capacity ?? null, at: sd?.lastUpdated ?? null };
   await kv.set('ercot', { at: now, data });
   return data;
 }
