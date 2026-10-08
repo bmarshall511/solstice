@@ -382,7 +382,8 @@ describe('everything else is refused to guests', () => {
 
   it('RED-10 every GET without a guest view answers 401 to a guest and to the owner previewing, before its handler runs', async () => {
     const reads = routes().filter(([m, p]) => m === 'GET' && !OPEN.has(`${m} ${p}`) && !redact.GUEST_GET.has(p.toLowerCase()));
-    // owner-only reads, pinned: a new GET must be added here on purpose (and has no guest view). /api/alerts and /api/push/key: notify.ts;
+    // owner-only reads, pinned: a new GET must be added here on purpose (and has no guest view). The source of truth for "every route is
+    // refused" is the runtime walker, tests/server/route-walker.test.ts (sub-routers included); this list stays as its cross-check (WALK-6). /api/alerts and /api/push/key: notify.ts;
     // /api/digest: digest.ts; /api/presence: appliances/presence.ts; /api/powerwall/rules and /api/tesla/scopes: powerwall.ts; /api/capacity: capacity.ts; /api/pool/water: appliances/poolTests.ts; /api/vacation: vacation/index.ts; /api/loads: loads.ts (I-22)
     // /api/appliances/ac/strip: stripwatch.ts (mockup am: the Strip heat card is the owner's; the AC guest view gains no strip field)
     expect(reads.map(([, p]) => p).sort()).toEqual(['/api/alerts', '/api/appliances/ac/strip', '/api/appliances/day', '/api/auth/devices', '/api/bills', '/api/breakdown', '/api/capacity', '/api/digest', '/api/export.csv', '/api/flows', '/api/loads', '/api/outage',
