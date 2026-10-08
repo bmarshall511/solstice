@@ -387,8 +387,10 @@ app.get('/api/daily', wrap(async (req, res) => {
 }));
 
 app.get('/api/monthly', wrap(async (req, res) => {
-  const months = Math.min(60, Number(req.query.months ?? 13));
-  res.json((await q(`SELECT substr(day, 1, 7) AS month, COUNT(DISTINCT day)::int days, ${kwhCols} FROM energy WHERE site_id = $1 GROUP BY month ORDER BY month DESC LIMIT $2`, [site(req), months])).reverse());
+  const months = Math.min(60, Math.max(1, Math.floor(Number(req.query.months ?? 13)) || 13));
+  // bounded to the first day of the oldest month asked for (I-16: with history back to the install date, an unbounded GROUP BY read every row)
+  const t = localDay(), back = +t.slice(0, 4) * 12 + +t.slice(5, 7) - 1 - (months - 1), since = `${Math.floor(back / 12)}-${String(back % 12 + 1).padStart(2, '0')}-01`;
+  res.json((await q(`SELECT substr(day, 1, 7) AS month, COUNT(DISTINCT day)::int days, ${kwhCols} FROM energy WHERE site_id = $1 AND day >= $3 GROUP BY month ORDER BY month DESC LIMIT $2`, [site(req), months, since])).reverse());
 }));
 
 /** `days` as a whole number from 1 to `max`; anything unusable is `dflt` (S-07: a guest's ?days=100000 can't make a 270-year scan). */
@@ -879,8 +881,12 @@ app.get('/auth/google/callback', wrap(async (req, res) => {
 app.get('/api/export.csv', wrap(async (req, res) => {
   res.set({ 'Content-Type': 'text/csv', 'Content-Disposition': `attachment; filename="solstice-${localDay()}.csv"` });
   res.write('timestamp,solar_wh,home_wh,import_wh,export_wh,battery_charge_wh,battery_discharge_wh\n');
-  const rows = await q('SELECT ts, solar_wh, home_wh, import_wh, export_wh, charge_wh, discharge_wh FROM energy WHERE site_id = $1 ORDER BY epoch', [site(req)]);
-  for (const r of rows) res.write(`${r.ts},${r.solar_wh},${r.home_wh},${r.import_wh},${r.export_wh},${r.charge_wh},${r.discharge_wh}\n`);
+  // every row, as before, but read 90 days at a time (I-16: the whole history is ~650k rows, too many to hold in one result)
+  const id = site(req), first = (await one<{ d: string | null }>('SELECT MIN(day) d FROM energy WHERE site_id = $1', [id]))?.d, today = localDay();
+  for (let from = first; from && from <= today; from = addDays(from, 90)) {
+    const rows = await q('SELECT ts, solar_wh, home_wh, import_wh, export_wh, charge_wh, discharge_wh FROM energy WHERE site_id = $1 AND day >= $2 AND day < $3 ORDER BY epoch', [id, from, addDays(from, 90)]);
+    for (const r of rows) res.write(`${r.ts},${r.solar_wh},${r.home_wh},${r.import_wh},${r.export_wh},${r.charge_wh},${r.discharge_wh}\n`);
+  }
   res.end();
 }));
 

@@ -257,3 +257,22 @@ describe('learning layer routes (owner-only)', () => {
     await q(`DELETE FROM daily_metrics WHERE site_id = 's' AND (metric LIKE 'score:fc48.home:%@h25-48' OR metric = 'score:fc48.home:v')`);
   });
 });
+
+describe('I-16: history back to the install date', () => {
+  it('/api/monthly reads only the months asked for; the CSV still has every row, in order; /api/status carries deep', async () => {
+    const { localDay, addDays } = await import('../../server/src/tesla/client.js');
+    const old = addDays(localDay(), -3 * 365), oldTs = `${old}T12:00:00-05:00`, now = localDay(), nowTs = `${now}T00:05:00-05:00`;
+    await saveEnergyRows('s', [{ ts: oldTs, epoch: Date.parse(oldTs), day: old, hour: 12, solar: 1, home: 1, imp: 0, exp: 0, chg: 0, dis: 0 },
+      { ts: nowTs, epoch: Date.parse(nowTs), day: now, hour: 0, solar: 2, home: 2, imp: 0, exp: 0, chg: 0, dis: 0 }]);
+    const months = (await (await get('/api/monthly?months=13')).json()).map((r: { month: string }) => r.month);
+    expect(months).toContain(now.slice(0, 7));
+    expect(months).not.toContain(old.slice(0, 7));   // older than the 13 months asked for
+    expect(months.every((m: string) => m >= addDays(now, -400).slice(0, 7))).toBe(true);
+    const csv = (await (await get('/api/export.csv')).text()).trim().split('\n').slice(1).map(l => l.split(',')[0]);
+    expect(csv[0]).toBe(oldTs);                        // 90-day pages, oldest first
+    expect(csv).toContain(nowTs);
+    expect([...csv].sort((a, b) => Date.parse(a) - Date.parse(b))).toEqual(csv);
+    expect((await (await get('/api/status')).json()).backfill).toMatchObject({ daysDone: expect.any(Number), deep: null });   // no install date known
+    await q(`DELETE FROM energy WHERE site_id = 's' AND ts = ANY($1::text[])`, [[oldTs, nowTs]]);
+  });
+});
