@@ -27,7 +27,7 @@ import { evaluateRules, INFLATED_WH, type MetricsByDay, type OpenAnomaly, type V
 import { wxGti, gtiByDay, tempsOf, type Wx } from './wx.js';
 import { panelMetrics, LAYOUT_KEY, type Layout } from '../panels.js';
 import { tripDays } from '../vacation/trip.js';
-import { alwaysOnKw } from '../breakdown.js';
+import { alwaysOnKw, nightMin } from '../breakdown.js';
 import { stripNightly } from '../stripwatch.js';
 
 /** The metrics an empty house would teach the at-home rules wrong (mockup ak): left out of the rules and the always-on prediction on trip days. */
@@ -237,7 +237,7 @@ export async function runLearn(siteId: string, o: { now?: number; deadline?: num
     for (const r of d.energyDaily) if (past(r.day)) {
       put(r.day, 'solar.kwh', r.solar); put(r.day, 'home.kwh', r.home); put(r.day, 'import.kwh', r.imp); put(r.day, 'export.kwh', r.exp); put(r.day, 'energy.buckets', r.buckets);
       put(r.day, 'energy.inflated', r.inflated);   // B2-12 (b): solar buckets over the inverter limit
-      if (r.overnight_n >= 46) put(r.day, 'home.overnight_kw', r.overnight_kw);
+      if (r.overnight_n >= nightMin(r.day, 46)) put(r.day, 'home.overnight_kw', r.overnight_kw);   // 46 of 48 buckets; 34 of the spring-forward night's 36
     }
     const soeN = new Map<string, number>(); for (const r of d.soeHourly) soeN.set(r.day, (soeN.get(r.day) ?? 0) + r.n);
     for (const [day, n] of soeN) if (past(day)) put(day, 'soe.n', n);
