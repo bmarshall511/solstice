@@ -12,7 +12,7 @@ import type { AddressInfo } from 'node:net';
 import { mountedRoutes, concrete } from '../helpers/routes.js';   // before the app is imported
 import { app } from '../../server/src/app.js';
 import { q, kv, migrate } from '../../server/src/db.js';
-import { saveEnergyRows, saveSoe } from '../../server/src/sync.js';
+import { saveEnergyRows, saveSoe, markSynced } from '../../server/src/sync.js';
 import { localDay, addDays, localMidnight, rfc3339 } from '../../server/src/tesla/client.js';
 import { saveBill, parsePecText } from '../../server/src/bills.js';
 import * as screenlogic from '../../server/src/appliances/screenlogic.js';
@@ -65,6 +65,7 @@ beforeAll(async () => {
   await q(`INSERT INTO sites (id, user_id, tesla_account_id, name, info) VALUES ('s', NULL, 1, 'Test Site', $1)`, [JSON.stringify(siteInfo('2026-01-15'))]);
   await q(`INSERT INTO readings (site_id, ts, solar_w, battery_w, grid_w, load_w, soc, grid_status, island_status, storm_mode_active) VALUES ('s', $1, 3000, -1000, 0, 2000, 64, 'Active', 'on_grid', false)`, [Date.now()]);
   for (let i = 3; i >= 0; i--) await seedDay(addDays(today, -i));
+  for (let i = 3; i >= 1; i--) await markSynced('s', addDays(today, -i));   // as the sync does for every finished day (today stays unmarked)
   await q(`INSERT INTO backup_events (site_id, ts, epoch, duration_s) VALUES ('s', '2026-05-01T14:37:00-05:00', $1, 1800)`, [Date.parse('2026-05-01T14:37:00-05:00')]);
   await saveBill('s', parsePecText(PEC_BILL));
   await q(`INSERT INTO events (site_id, type, day, note) VALUES ('s', 'cleaned', $1, NULL)`, [addDays(today, -2)]);
