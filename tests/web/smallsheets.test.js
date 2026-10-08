@@ -103,6 +103,14 @@ describe('the older small sheets are component sheets (44 px controls, the write
     expect(spa).toContain('id="pcHdn"');
     expect(spa).toMatch(/class="c-btn del" data-f="sec"/);
   });
+  it('Clear-up: For as a segment, the speed stepper, the day as a key/value card; Start Clear-up is the footer\'s one write', () => {
+    const html = appl.clearUpHtml({ days: 2, rpm: 2000 });
+    const { tags, segButtons } = checkSheet(html, { pri: 'Start Clear-up' });
+    expect(segButtons).toHaveLength(3);
+    expect(tags.filter(t => t.includes('c-step'))).toHaveLength(2);
+    expect(html).toContain('<div class="c-kv" id="pcNums"');
+    expect(html).not.toMatch(/pc-runs|pc-rpm|pc-nums|id="pcGo"|class="primary"/);
+  });
   it('a bill: its lines as a key/value card; Remove this bill is the footer’s one write', () => {
     const r = { billDate: '2026-09-12', period: { from: '2026-08-10', to: '2026-09-09', days: 31 }, pec: { deliveredKwh: 900, receivedKwh: 300 },
       tesla: { importKwh: 905.2, exportKwh: 298.7 }, charges: [{ label: 'Energy', kwh: 900, rate: '0.07', amount: 10 }], total: 20 };

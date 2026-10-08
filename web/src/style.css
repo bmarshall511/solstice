@@ -924,14 +924,6 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 .pc.on small{color:#9fd6ff}
 .pc.send{border-color:rgba(255,193,94,.45)}.pc.send small{color:var(--solar)}
 
-.pc-lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);font-weight:600;margin-top:16px}
-.pc-runs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
-.pc-runs.five{grid-template-columns:repeat(5,1fr)}
-.pc-runs button{all:unset;cursor:pointer;text-align:center;padding:11px 0;border-radius:13px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b);font:500 13px "JetBrains Mono",ui-monospace,monospace}
-.pc-runs button.on{border-color:rgba(78,240,166,.5);background:rgba(78,240,166,.1)}
-.pc-rpm{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
-.pc-rpm .bt{font-size:13.5px;font-weight:600;min-width:0}.pc-rpm .bt small{display:block;font-size:11px;color:var(--mute);font-weight:400}
-#pcGo{width:100%;box-sizing:border-box;margin-top:14px;background:var(--batt);color:#04140c}
 /* frames 3–4: the Boost button and sheet, spa heat */
 
 
@@ -944,9 +936,6 @@ html:is([data-gate=private],[data-gate=off]) :is(#screen,.tabbar,.c-tabbar,.side
 
 
 
-.pc-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}
-.pc-nums div{padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--glass-b)}
-.pc-nums b{display:block;font:500 15px "JetBrains Mono",ui-monospace,monospace}.pc-nums span{font-size:11px;color:var(--dim)}
 /* mockup ac (option B): the Off / Suggest / Auto switch on both Autopilot cards, a full-width row under the title */
 
 
