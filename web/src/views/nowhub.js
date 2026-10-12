@@ -58,7 +58,7 @@ function candidates(S) {
   const v = S.vac, t = v?.trip;
   if (t) {
     const ac = S.ac?.vacation, st = S.ac?.state, ask = (S.vacAlerts ?? []).find(a => a.data?.ask === 'wall' && !a.readAt);
-    if (v.phase === 'planned') out.push({ kind: 'vacation', cls: 'teal', ic: 'plane', title: 'Vacation planned', line: `${esc(dateLabel(t.leaveAt))} ${esc(clock(t.leaveAt))} → ${t.backAt ? `${esc(dateLabel(t.backAt))} ${esc(clock(t.backAt))}` : 'open'}`,
+    if (v.phase === 'planned') out.push({ kind: 'vacation-planned', cls: 'teal', ic: 'plane', title: 'Vacation planned', line: `${esc(dateLabel(t.leaveAt))} ${esc(clock(t.leaveAt))} → ${t.backAt ? `${esc(dateLabel(t.backAt))} ${esc(clock(t.backAt))}` : 'open'}`,
       btns: [['Departure check', 'vac-check'], ['Edit', 'vac-edit']] });
     else if (v.phase === 'late') out.push({ kind: 'vacation', cls: 'teal', ic: 'plane', title: 'Not back yet?', line: `Was due ${esc(shortClock(t.backAt))} · holding the trip setting again`, btns: [['I’m home', 'vac-home'], ['Running late', 'vac-edit']] });
     else if (ac?.welcome || v.phase === 'due') {
