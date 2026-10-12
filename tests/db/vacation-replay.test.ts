@@ -101,6 +101,15 @@ describe('the revert on return', () => {
     expect(await guestsPaused(now + 25 * 3600e3)).toBe(false);
     expect(await kv.get('s:vacation:snooze')).toBeUndefined();
   });
+  it('VR-5 S-11: guest links pause when a trip is planned (not at its leave time), and a cancelled one frees them at once', async () => {
+    await q('DELETE FROM trips');
+    const now = Date.now();
+    expect(await guestsPaused(now)).toBe(false);
+    await createTrip(S, { leaveAt: now + 5 * 864e5, backAt: now + 8 * 864e5, detected: false }, now);   // planned for next week
+    expect(await guestsPaused(now)).toBe(true);                                       // already paused: the departure leaves no trace
+    await q(`UPDATE trips SET state = 'cancelled'`);
+    expect(await guestsPaused(now)).toBe(false);
+  });
 });
 
 describe('the house model', () => {
