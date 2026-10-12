@@ -3,9 +3,10 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import { kv, migrate } from '../../server/src/db.js';
 import { autopilot } from '../../server/src/appliances/autopilot.js';
-import { startClearUp, extendClearUp, endClearUp, finishClearUpIfDue, activeClearUp, clearUpError, poolRunAfter, powerModel, POOL_DEFAULTS, scheduleError, saveSchedule, rebaseline, applyPlan, writingKey } from '../../server/src/appliances/pool.js';
+import { startClearUp, extendClearUp, endClearUp, finishClearUpIfDue, activeClearUp, clearUpError, poolRunAfter, powerModel, POOL_DEFAULTS, scheduleError, saveSchedule, rebaseline, applyPlan, writingKey, poolDetail } from '../../server/src/appliances/pool.js';
 import { readPool, writePoolPlan } from '../../server/src/appliances/screenlogic.js';
 import { forecastDays } from '../fixtures/forecast.js';
+import { deadlineWithin, CRON_BUDGET_MS, MIN_WRITE_MS, READ_DEADLINE_MS, WRITE_DEADLINE_MS, WRITE_RESERVE_MS } from '../../server/src/appliances/budget.js';
 import { poolSnapshot, CIRCUITS } from '../fixtures/screenlogic.js';
 import { localDay } from '../../server/src/tesla/client.js';
 
@@ -144,5 +145,50 @@ describe('an unfinished Solstice write (audit 10b, C-02/C-03)', () => {
     await kv.set('uw3:pool:applied', { at: 0, plan: { schedules: [{ circuitId: 6, start: 420, stop: 1140, rpm: 1750 }] }, removed: [], added: [] });
     const a = await run('uw3');
     expect(a.mode).toBe('suggest');
+  });
+});
+
+// The evening cron's budget (2026-10-11: a 20 s read plus a 40 s write ran past Vercel's 60 s and the run was cut off with no log)
+//   PB-1 deadlineWithin caps a session at its own limit and at the budget's end
+//   PB-2 with a budget, the read leaves the write its reserve and the write ends by the budget
+//   PB-3 with too little time left, no write starts (no intent recorded), and Auto says so in the log and the run reports the error
+//   PB-4 the budget, the read and the write all fit inside Vercel's 60 s
+describe('the evening pool cron budget', () => {
+  it('PB-1 deadlineWithin', () => {
+    expect(deadlineWithin(40_000)).toBe(40_000);                          // no budget: the session's own limit
+    expect(deadlineWithin(40_000, 1_030_000, 1_000_000)).toBe(30_000);    // the budget ends first
+    expect(deadlineWithin(20_000, 1_030_000, 1_000_000)).toBe(20_000);    // the limit comes first
+    expect(deadlineWithin(40_000, 990_000, 1_000_000)).toBe(0);           // already past: never negative
+  });
+  it('PB-2 the read leaves the write its reserve; the write ends by the budget', async () => {
+    vi.mocked(readPool).mockClear();
+    const by = Date.now() + CRON_BUDGET_MS;
+    await poolDetail('pb2', { pool: { autopilot: 'off' } }, null, { fresh: true, by });
+    expect(vi.mocked(readPool).mock.calls[0][1]).toBe(Math.min(READ_DEADLINE_MS, CRON_BUDGET_MS - WRITE_RESERVE_MS));
+    const plan = (await autopilot('pb2', { settings: POOL_DEFAULTS, mode: 'auto', W: powerModel([]), rate: null, names: NAMES, snap: null, waterTemp: 80, currentHours: 9, act: false })).tomorrow.plan;
+    await applyPlan('pb2', plan, poolSnapshot(Date.now()), POOL_DEFAULTS, Date.now() + 32_000);
+    expect(vi.mocked(writePoolPlan).mock.calls[0][2]).toBe(32_000);
+    vi.mocked(writePoolPlan).mockClear(); vi.mocked(readPool).mockClear();
+    await poolDetail('pb2', { pool: { autopilot: 'off' } }, null, { fresh: true });             // the app's own reads keep the full 20 s
+    expect(vi.mocked(readPool).mock.calls[0]).toEqual([]);
+  });
+  it('PB-3 too little time: no write starts, and Auto logs it and reports the error', async () => {
+    const plan = (await autopilot('pb3', { settings: POOL_DEFAULTS, mode: 'auto', W: powerModel([]), rate: null, names: NAMES, snap: null, waterTemp: 80, currentHours: 9, act: false })).tomorrow.plan;
+    await expect(applyPlan('pb3', plan, poolSnapshot(Date.now()), POOL_DEFAULTS, Date.now() + MIN_WRITE_MS - 1)).rejects.toThrow('too slowly');
+    expect(writePoolPlan).not.toHaveBeenCalled();
+    expect(await kv.get(writingKey('pb3'))).toBeFalsy();                                          // nothing half-done to redo
+    await kv.set('settings:owner', { pool: { autopilot: 'auto' } });
+    await expect(autopilot('pb3', { settings: { ...POOL_DEFAULTS, autopilot: 'auto' }, mode: 'auto', W: powerModel([]), rate: null, names: NAMES, snap: poolSnapshot(Date.now()), waterTemp: 80, currentHours: 9, act: true, by: Date.now() + 5_000 }))
+      .rejects.toThrow('too slowly');
+    expect(writePoolPlan).not.toHaveBeenCalled();
+    expect((await kv.get<any[]>('pb3:pool:autolog'))![0]).toMatchObject({ delta: 'retry', text: expect.stringContaining("Tomorrow's plan didn't reach the controller") });
+    const d = await poolDetail('pb3', { pool: { autopilot: 'auto' } }, null, { fresh: true, act: true, by: Date.now() + 5_000 });
+    expect(d.autopilot).toMatchObject({ error: expect.stringContaining('too slowly') });          // the cron ledger marks the step as an error
+  });
+  it('PB-4 everything fits inside Vercel\'s 60 s', () => {
+    expect(CRON_BUDGET_MS).toBeLessThanOrEqual(52_000);
+    expect(CRON_BUDGET_MS - WRITE_RESERVE_MS).toBeGreaterThanOrEqual(READ_DEADLINE_MS);           // a full read still fits
+    expect(WRITE_RESERVE_MS).toBeGreaterThanOrEqual(MIN_WRITE_MS);
+    expect(WRITE_DEADLINE_MS).toBeLessThanOrEqual(CRON_BUDGET_MS);
   });
 });

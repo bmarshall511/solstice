@@ -22,6 +22,7 @@ import { appliances, comingSoon } from './appliances/index.js';
 import { powerModel, measuredPoints } from './appliances/pool.js';
 import { poolDetail, applyPlan, restorePrevious, poolCommand, PoolUnavailable, goalPatchError, scheduleError, saveSchedule, rebaseline, POOL_DEFAULTS, activeClearUp, startClearUp, extendClearUp, endClearUp, finishClearUpIfDue, clearUpError, CLEARUP_DAYS_MAX } from './appliances/pool.js';
 import { readPool, configured as poolConfigured } from './appliances/screenlogic.js';
+import { CRON_BUDGET_MS } from './appliances/budget.js';
 import { learnAcKw, acKwFor } from './appliances/ac.js';
 import { acDetail, acSummary, acTick, startHold, resumeHold, holdToMorning, AC_DEFAULTS, acPatchError, patchedAc, suggestionPatch, dismissSuggestion, recordNest, observeHold } from './appliances/ac.js';
 import { oidcError, eventOf, seenEvent, applyTraits, isSettingEvent, eventTime } from './appliances/nestEvents.js';
@@ -646,8 +647,9 @@ app.post('/api/appliances/pool/autopilot', express.json(), wrap(async (req, res)
 app.get('/api/cron/pool', wrap(async (req, res) => {
   if (!cronOk(req)) return res.status(401).json({ error: 'unauthorized' });
   const sites = await q<{ id: string }>('SELECT id FROM sites WHERE tesla_account_id IS NOT NULL'), out: Record<string, unknown> = {}, L = ledger('pool');   // B2-11: kv cron:pool:last
+  const by = Date.now() + CRON_BUDGET_MS;   // the controller read and write end inside Vercel's 60 s (the 2026-10-11 run was cut off)
   for (const s of sites) { const settings = await kv.get<Record<string, any>>('settings:owner') ?? {}; await L.step('clearUp', async () => finishClearUpIfDue(s.id, settings, await rateFor(s.id))).catch(e => console.error('[solstice] clear-up end failed', e.message));
-    out[s.id] = await L.step('plan', async () => poolDetail(s.id, settings, await rateFor(s.id), { fresh: true, act: true }).then(d => d.autopilot)).catch(e => ({ error: e.message })); }
+    out[s.id] = await L.step('plan', async () => poolDetail(s.id, settings, await rateFor(s.id), { fresh: true, act: true, by }).then(d => d.autopilot)).catch(e => ({ error: e.message })); }
   await L.finish();
   res.json(out);
 }));

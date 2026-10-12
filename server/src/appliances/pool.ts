@@ -2,6 +2,7 @@
 import { q, kv, hourWh } from '../db.js';
 import { patchSettings } from '../settings.js';
 import { readPool, writePoolPlan, writeOwnerPool, configured, type PoolSnapshot } from './screenlogic.js';
+import { deadlineWithin, READ_DEADLINE_MS, WRITE_DEADLINE_MS, WRITE_RESERVE_MS, MIN_WRITE_MS } from './budget.js';
 import { noteYouRun, endYouRun, poolChanges } from './poolLearn.js';
 import { localDay, addDays, rfc3339 } from '../tesla/client.js';
 import type { Appliance, ApplianceSummary } from './index.js';
@@ -255,12 +256,13 @@ export const POOL_READ_MS = 60_000;
  * requests open one ScreenLogic connection and the rest serve the stored snapshot. `readOnly` (a guest, or the owner previewing as
  * one; S-07) never contacts the controller.
  */
-export async function poolDetail(siteId: string, settingsAll: Record<string, any>, rate: number | null, opts: { fresh?: boolean; act?: boolean; readOnly?: boolean } = {}) {
+export async function poolDetail(siteId: string, settingsAll: Record<string, any>, rate: number | null, opts: { fresh?: boolean; act?: boolean; readOnly?: boolean; by?: number } = {}) {
   const settings: PoolSettings = { ...DEFAULTS, ...(settingsAll.pool ?? {}) };
   let snap = await kv.get<PoolSnapshot>(`${siteId}:pool:last`) ?? null, error: string | null = null;
   const due = !opts.readOnly && configured() && (opts.fresh || !snap || Date.now() - snap.at > POOL_READ_MS);
   if (due && (opts.fresh || await kv.claim(`${siteId}:pool:readClaim`, POOL_READ_MS))) {
-    try { snap = await readPool(); await recordReading(siteId, snap); } catch (e: any) { error = e.message; }
+    // `by` (the evening cron's budget): the read ends early enough to leave the write its share
+    try { snap = await (opts.by == null ? readPool() : readPool(undefined, deadlineWithin(READ_DEADLINE_MS, opts.by - WRITE_RESERVE_MS))); await recordReading(siteId, snap); } catch (e: any) { error = e.message; }
   }
   const points = await measuredPoints(siteId);   // once per poolDetail: the power model and the card's measured points
   const W = powerModel(points), solarKw = await solarProfile(siteId), month = Number(localDay().slice(5, 7)) - 1; // Chicago month, not the host's
@@ -289,7 +291,7 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   const todayKwh = (pumpWh.reduce((a, v) => a + v, 0) + (settings.uv ? runs.filter(Boolean).length * UV_W / 4 : 0)) / 1000 + extraKwh - readUvKwh;
   const home = await q<{ kwh: number }>(`SELECT (SUM(home_wh) / 1000.0)::float8 kwh FROM energy WHERE site_id = $1 AND day = $2`, [siteId, localDay()]);
   const applied = await kv.get<any>(`${siteId}:pool:applied`) ?? null;
-  const auto = await autopilot(siteId, { settings, mode: settings.autopilot, W, rate, names, snap, waterTemp, currentHours: hoursOn(prof), act: !!opts.act }).catch(e => ({ error: e.message as string }));
+  const auto = await autopilot(siteId, { settings, mode: settings.autopilot, W, rate, names, snap, waterTemp, currentHours: hoursOn(prof), act: !!opts.act, by: opts.by }).catch(e => ({ error: e.message as string }));
   const pending = await kv.get<any>(`${siteId}:pool:pending`) ?? null;
   // a spa session: heat from the spa's current temperature to its set point with the propane heater, pump at spa speed, blower on
   const spaTemp = snap?.bodies?.[1]?.temp ?? null, spaSet = snap?.bodies?.[1]?.setPoint ?? null, rise = spaTemp != null && spaSet != null ? Math.max(0, spaSet - spaTemp) : null;
@@ -479,21 +481,24 @@ export async function poolCommand(siteId: string, cmd: PoolOwnerCommand, run?: P
   return snap;
 }
 /** writePoolPlan, with a guard refusal recorded in the pool activity log before it is rethrown. */
-async function guardedWrite(siteId: string, what: string, opts: Parameters<typeof writePoolPlan>[0]) {
-  try { return await writePoolPlan(opts); }
+async function guardedWrite(siteId: string, what: string, opts: Parameters<typeof writePoolPlan>[0], deadlineMs = WRITE_DEADLINE_MS) {
+  try { return await (deadlineMs === WRITE_DEADLINE_MS ? writePoolPlan(opts) : writePoolPlan(opts, undefined, deadlineMs)); }
   catch (e) { if (e instanceof GuardRefusal) await logPool(siteId, `Refused ${what}: ${e.reason}`, 'refused'); throw e; }
 }
 
 /** A Solstice write that did not finish (kv `pool:writing`): set before the controller is touched, cleared when the write succeeded. */
 export const writingKey = (siteId: string) => `${siteId}:pool:writing`;
 export type PoolWriting = { at: number; what: string; schedules: Array<{ circuitId: number; start: number; stop: number; rpm: number }> };
-export async function applyPlan(siteId: string, plan: Plan, snap: PoolSnapshot, settings: PoolSettings) {
+/** `by` (epoch ms, the evening cron's budget): the write's session ends by then, and with under MIN_WRITE_MS left it isn't started. */
+export async function applyPlan(siteId: string, plan: Plan, snap: PoolSnapshot, settings: PoolSettings, by?: number) {
   if (!snap.pump) throw new Error('No pump found on the controller');
+  const deadlineMs = deadlineWithin(WRITE_DEADLINE_MS, by);
+  if (deadlineMs < MIN_WRITE_MS) throw new Error('the controller answered too slowly to start a write in time');
   const w = planWrite(plan, snap, settings), replace = w.replaceCircuits;
   // the intent first: a write cut off part-way (a timeout, Vercel's limit) leaves old and new programs on the controller, which the
   // evening run must read as its own unfinished work and write again, never as an edit made outside Solstice (audit 10b, C-03)
   await kv.set(writingKey(siteId), { at: Date.now(), what: 'plan', schedules: plan.schedules.map(s => ({ circuitId: s.circuitId, start: s.start, stop: s.stop, rpm: s.rpm })) } satisfies PoolWriting);
-  const r = await guardedWrite(siteId, 'a pool schedule write', w);
+  const r = await guardedWrite(siteId, 'a pool schedule write', w, deadlineMs);
   const record = { at: Date.now(), plan: { start: plan.start, stop: plan.stop, boostAt: plan.boostAt, rpm: plan.rpm, boostHours: plan.boostHours, schedules: plan.schedules }, removed: r.removed, added: r.added,
     previousSpeeds: snap.pump.circuits.filter(c => replace.includes(c.circuitId)) };
   await kv.set(`${siteId}:pool:applied`, record);

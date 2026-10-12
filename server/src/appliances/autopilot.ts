@@ -93,7 +93,7 @@ export type AutopilotState = { mode: Mode; nextRunAt: string; signals: Signals; 
   week: Array<{ date: string; hours: number; boost: number; sunKwhM2: number; rainPct: number; high: number; trip?: boolean; ifHome?: { hours: number; boost: number } }>;
   pending: boolean; log: Array<{ at: number; day: string; text: string; delta?: string }>; filterHours: number; filterCleanedOn: string | null };
 
-export async function autopilot(siteId: string, o: { settings: PoolSettings; mode: Mode; W: (r: number) => number; rate: number | null; names: Map<number, string>; snap: PoolSnapshot | null; waterTemp: number; currentHours: number; act: boolean }): Promise<AutopilotState> {
+export async function autopilot(siteId: string, o: { settings: PoolSettings; mode: Mode; W: (r: number) => number; rate: number | null; names: Map<number, string>; snap: PoolSnapshot | null; waterTemp: number; currentHours: number; act: boolean; by?: number }): Promise<AutopilotState> {
   const days = await forecast(), today = localDay(), ti = days.findIndex(d => d.date === today);
   const use = await useDays(siteId), pollen = pollenFor(Number(today.slice(5, 7)) - 1); // Chicago month, not the host's
   const heatDaysAt = (i: number) => { let n = 0; for (let k = i; k >= 0 && days[k].high >= 95; k--) n++; return n; };
@@ -145,7 +145,11 @@ export async function autopilot(siteId: string, o: { settings: PoolSettings; mod
       // the safety guard checks the exact write first (managed pump circuits only, never freeze/spa/lights/heater, RPM in range)
       const write = mode === 'auto' && o.snap.pump ? planWrite(tomorrow.plan, o.snap, o.settings) : null, g = write ? guardPoolWrite(write, write.guard) : null;
       if (g && !g.ok) log.unshift({ at: Date.now(), day: today, text: `Refused tomorrow's plan: ${g.reason}`, delta: 'refused' });
-      else if (mode === 'auto') { await applyPlan(siteId, tomorrow.plan, o.snap, o.settings); log.unshift({ at: Date.now(), day: today, text: `Tomorrow: ${tomorrow.plan.hours} h at ${tomorrow.plan.rpm.toLocaleString()} RPM${tomorrow.plan.boostHours ? ` + ${tomorrow.plan.boostHours} h skim` : ''}, ${tomorrow.plan.turnovers}× turnover. ${tomorrow.why.join('; ') || 'season plan'}`, delta: `${tomorrow.plan.kwhPerDay} kWh` }); }
+      else if (mode === 'auto') {
+        // a write that fails or doesn't fit the cron's budget is said in the log; the 8:45 PM retry run (vercel.json) or tomorrow's writes it
+        try { await applyPlan(siteId, tomorrow.plan, o.snap, o.settings, o.by); }
+        catch (e: any) { log.unshift({ at: Date.now(), day: today, text: `Tomorrow's plan didn't reach the controller (${e?.message ?? e}); the next pool run tries again`, delta: 'retry' }); await kv.set(`${siteId}:pool:autolog`, log.slice(0, 30)); throw e; }
+        log.unshift({ at: Date.now(), day: today, text: `Tomorrow: ${tomorrow.plan.hours} h at ${tomorrow.plan.rpm.toLocaleString()} RPM${tomorrow.plan.boostHours ? ` + ${tomorrow.plan.boostHours} h skim` : ''}, ${tomorrow.plan.turnovers}× turnover. ${tomorrow.why.join('; ') || 'season plan'}`, delta: `${tomorrow.plan.kwhPerDay} kWh` }); }
       else { pending = true; await kv.set(`${siteId}:pool:pending`, { date: tomorrow.date, plan: tomorrow.plan, why: tomorrow.why }); log.unshift({ at: Date.now(), day: today, text: `Suggested for tomorrow: ${tomorrow.plan.hours} h${tomorrow.plan.boostHours ? ' + boost' : ''}. ${tomorrow.why.join('; ') || 'season plan'}`, delta: 'waiting for you' }); }
       await kv.set(`${siteId}:pool:autolog`, log.slice(0, 30));
     }
