@@ -48,11 +48,15 @@ describe('Vacation pill', () => {
 
 describe('Banner slot', () => {
   it('shows one banner, by priority', () => {
-    expect(BANNER_ORDER).toEqual(['outage', 'vacation', 'hold', 'pool', 'powerwall', 'bill', 'digest', 'changed']);   // I-18: the morning line is the lowest
+    expect(BANNER_ORDER).toEqual(['outage', 'vacation', 'hold', 'vacation-planned', 'pool', 'powerwall', 'bill', 'digest', 'changed']);   // I-18: the morning line is the lowest
     expect(pickBanner([{ kind: 'digest' }, { kind: 'bill' }, null, { kind: 'hold' }])).toEqual({ kind: 'hold' });
     expect(pickBanner([{ kind: 'digest' }, { kind: 'outage' }, { kind: 'vacation' }])).toEqual({ kind: 'outage' });
     expect(pickBanner([{ kind: 'powerwall' }, { kind: 'pool' }])).toEqual({ kind: 'pool' });
     expect(pickBanner([])).toBeNull();
+    // owner 2026-10-12: an AC hold outranks a planned trip, not a running one
+    expect(pickBanner([{ kind: 'vacation-planned' }, { kind: 'hold' }])).toEqual({ kind: 'hold' });
+    expect(pickBanner([{ kind: 'vacation' }, { kind: 'hold' }])).toEqual({ kind: 'vacation' });
+    expect(pickBanner([{ kind: 'vacation-planned' }, { kind: 'pool' }])).toEqual({ kind: 'vacation-planned' });
   });
   it('a hold’s ring', () => {
     expect(holdProgress({ at: NOW - 58 * 60_000, until: NOW + 42 * 60_000 }, NOW)).toEqual({ pct: 58, until: NOW + 42 * 60_000 });
