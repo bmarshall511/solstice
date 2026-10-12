@@ -16,8 +16,8 @@ const RM = matchMedia('(prefers-reduced-motion: reduce)');
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), lerp = (a, b, k) => a + (b - a) * k, ease = p => p < .5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
 /** 9.674 → "9 h 40 m"; a day or more rounds to hours; under an hour is minutes only. */
 const fmtHM = h => { if (h == null || !isFinite(h)) return '—'; let H = Math.floor(h), M = Math.round((h - H) * 60); if (M === 60) { H++; M = 0; } return h >= 24 ? `${Math.round(h)} h` : !H ? `${M} m` : M ? `${H} h ${M} m` : `${H} h`; };
-const RUNGS = { on: ['rgba(242,244,248,.75)', (r) => `${r.kw.toFixed(1)} kW`], pool: ['var(--home)', r => `+${r.addKw.toFixed(2)} → ${r.kw.toFixed(2)} kW`],
-  ac: ['#ff9e66', (r, d) => `+${r.addKw.toFixed(1)} kW (${d.loads.acKw.toFixed(1)} × ${Math.round(d.loads.acDuty * 100)}% duty)`], else: ['#8d93a8', r => `+${r.addKw.toFixed(2)} → ${r.kw.toFixed(1)} kW`] };
+const RUNGS = { on: ['var(--text-75)', (r) => `${r.kw.toFixed(1)} kW`], pool: ['var(--home)', r => `+${r.addKw.toFixed(2)} → ${r.kw.toFixed(2)} kW`],
+  ac: ['var(--ac)', (r, d) => `+${r.addKw.toFixed(1)} kW (${d.loads.acKw.toFixed(1)} × ${Math.round(d.loads.acDuty * 100)}% duty)`], else: ['var(--rest)', r => `+${r.addKw.toFixed(2)} → ${r.kw.toFixed(1)} kW`] };
 
 // Systems › Powerwall (approved mockup al frame 11): a disclosure tagged "simulation". Collapsed: the hours the Powerwalls would last
 // with the sun ahead, at the current draw, and what tomorrow's sun adds; opened: the scene, the scenarios, the ladder and the history.
@@ -75,7 +75,7 @@ export function mountOutageCard(S, parent) {
   function rows() {
     const d = C.data, m = C.sim, sc = d.scenarios[C.scen], st = d.storm, sw = st.stormWatch;
     const chip = (alert, c, text) => `<span class="chipx${alert ? ' alert' : ''}"><i style="--c:${c}"></i>${text}</span>`;
-    const e = st.ercot, grey = 'rgba(242,244,248,.38)';
+    const e = st.ercot, grey = 'var(--text-38)';
     $q('[data-chips]').innerHTML = chip(sw.active, sw.active ? 'var(--out)' : sw.enabled ? 'var(--batt)' : grey, `Storm Watch · ${sw.active ? 'active' : sw.enabled ? 'on' : sw.enabled === false ? 'off' : '—'}`) +
       (st.nws.length ? chip(true, 'var(--out)', `NWS · ${esc(st.nws[0].event)}`) : chip(false, 'var(--batt)', 'NWS · no alerts')) +
       (!e ? chip(false, grey, 'ERCOT · —') : e.eea > 0 ? chip(true, 'var(--out)', `ERCOT · EEA ${esc(e.eea)}`) : chip(false, /normal/i.test(e.condition ?? '') ? 'var(--batt)' : 'var(--warn)', `ERCOT · ${esc(String(e.condition ?? '—').toLowerCase())}`)) +
@@ -108,10 +108,10 @@ export function mountOutageCard(S, parent) {
     $q('[data-last]').innerHTML = !o.last ? 'No outages on record.'
       : `Last outage: <b style="color:var(--text)">${when(o.last.ts)} · ${dur(o.last.duration_s)}</b> · ${o.count12 ? `${o.count12} in 12 months${o.longest12 ? ` · longest ${dur(o.longest12.duration_s)}` : ''}` : 'none in 12 months'}`;
     const months = Array.from({ length: 12 }, (_, i) => addDays(yearAgo, i * 30.4).slice(0, 7));
-    let s = '<line x1="6" x2="304" y1="28" y2="28" stroke="rgba(255,255,255,.1)"/>';
+    let s = '<line x1="6" x2="304" y1="28" y2="28" style="stroke:var(--hair)"/>';
     months.forEach((m, i) => s += svgText(6 + i * 24.8 + 12, 58, new Date(m + '-15T12:00:00Z').toLocaleDateString('en-US', { month: 'narrow', timeZone: 'UTC' }), { anchor: 'middle' }));
     o.list.forEach(e => { const f = (Date.parse(e.ts) - Date.parse(yearAgo)) / (365 * 864e5), r = 3 + Math.sqrt(e.duration_s / 3600) * 5;
-      s += `<circle cx="${(6 + clamp(f, 0, 1) * 298).toFixed(1)}" cy="28" r="${r.toFixed(1)}" fill="#ff5a4e" fill-opacity=".3" stroke="#ff5a4e"><title>${esc(e.ts.slice(0, 16).replace('T', ' '))} · ${dur(e.duration_s)}</title></circle>`; });
+      s += `<circle cx="${(6 + clamp(f, 0, 1) * 298).toFixed(1)}" cy="28" r="${r.toFixed(1)}" fill-opacity=".3" style="fill:var(--out);stroke:var(--out)"><title>${esc(e.ts.slice(0, 16).replace('T', ' '))} · ${dur(e.duration_s)}</title></circle>`; });
     $q('[data-strip]').innerHTML = s;
   }
 

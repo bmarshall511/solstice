@@ -63,7 +63,7 @@ export async function answerAsk(S, ans, alertId) {
 }
 
 /* ======================= the report (frame 6) ======================= */
-const PART = { ac: ['AC', '#ff9e66'], pool: ['Pool', 'var(--home)'], alwaysOn: ['Always-on', 'var(--batt)'], waterHeater: ['Water heater', '#c4a2ff'], else: ['Everything else', 'rgba(242,244,248,.5)'] };
+const PART = { ac: ['AC', 'var(--ac)'], pool: ['Pool', 'var(--home)'], alwaysOn: ['Always-on', 'var(--batt)'], waterHeater: ['Water heater', '#c4a2ff'], else: ['Everything else', 'rgba(242,244,248,.5)'] };
 function lengthLabel(ms) { const h = Math.round(ms / 3600_000), d = Math.floor(h / 24); return d ? `${d} day${d === 1 ? '' : 's'}${h % 24 ? ` ${h % 24} h` : ''}` : `${h} h`; }
 export function reportHtml(trip, closable) {
   const r = trip.report, max = Math.max(1, ...r.parts.map(p => Math.max(p.used, p.empty)));

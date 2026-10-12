@@ -4,6 +4,13 @@
   --solar:#ffc15e; --batt:#4ef0a6; --home:#6cc4ff; --grid:#c4a2ff; --warn:#ff7a66; --out:#ff5a4e;
   --r-lg:26px; --r-md:20px; --ease:cubic-bezier(.2,.8,.2,1);
   --vac:#7fe0c8;   /* mockup ak: Vacation mode */
+  --hair:rgba(255,255,255,.1);   /* hairline rules in SVG strips (the outage 12-month strip) */
+  /* mockup ag: the Comfort sheet's "hot, sunny day" band (views/ac.js): night, day, pre-cool, drift after pre-cool */
+  --day-night:#b8a6ff; --day-day:#ffd27a; --day-precool:#7cc4ff; --day-drift:#ffb08a;
+  /* --text at a fixed alpha, written as rgba() so they render exactly as the literals they replace (a color-mix() with transparent
+     lands up to 1/255 off in Chrome's GPU raster): the panel health bar of a panel within ±5% of the median, the outage ladder's
+     "on" rung, the outage card's idle status chip */
+  --text-45:rgba(242,244,248,.45); --text-75:rgba(242,244,248,.75); --text-38:rgba(242,244,248,.38);
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;background:var(--bg);overscroll-behavior:none;color:var(--text);font-family:Manrope,system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}

@@ -5,7 +5,7 @@
 // tapped, and then exactly the right route gets exactly the right body. All routes are mocked (tests/web/dom/routes.js); nothing
 // real is written anywhere. Each sheet also passes the form checks (no undefined/NaN/null text, 44 px controls, tokens only).
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
-import { bootApp, $, click, flush, until, sheetEl, sheetOpen, footBtn, byText, badText, smallTargets, hardColours, sheetWrites, KNOWN_COLOURS, LEGACY_SMALL, NOW } from './harness.js';
+import { bootApp, $, click, flush, until, sheetEl, sheetOpen, footBtn, byText, badText, smallTargets, hardColours, sheetWrites, LEGACY_SMALL, NOW } from './harness.js';
 import { ownerRoutes, external } from './routes.js';
 import { vacationCheckLeftOn } from './fixtures-appl.js';
 
@@ -223,7 +223,7 @@ describe('AC sheet (frame 6)', () => {
     const plus = sheetEl().querySelector('.c-step[aria-label*="arm"], .c-step:last-of-type');
     click(plus);
     noWrites(n);
-    form('Comfort sheet', { except: KNOWN_COLOURS });
+    form('Comfort sheet');   // the hot-day band's colours are the --day-* tokens
     click(pri()); await flush();
     const w = sheetWrites(f, n);
     expect(w).toHaveLength(1);

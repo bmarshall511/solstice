@@ -230,7 +230,7 @@ function hotDay(v, P) {
   }
   return out;
 }
-const DAYC = { n: '#b8a6ff', d: '#ffd27a', p: '#7cc4ff', c: '#ffb08a' };
+const DAYC = { n: 'var(--day-night)', d: 'var(--day-day)', p: 'var(--day-precool)', c: 'var(--day-drift)' };   // style.css tokens
 /* the Comfort sheet. Saving writes only Solstice's settings; the plan uses them from its next step. */
 /** The Comfort sheet in the component system (mockup al, component 11): stepper rows in a card, the night hours as two buttons,
  *  pre-cool and drift as small sliding segments, Save in the pinned footer. `v` is the staged settings. */

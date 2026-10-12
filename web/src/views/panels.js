@@ -233,7 +233,7 @@ function drawHealth() {
     rows += '</div>';
   }
   const loRow = (x, i) => { const p = byId(x.id), r = x.pct / 100, red = p?.flagged, t = tint(r);
-    return `<div class="lo${i ? '' : ' first'}"><span class="nm">${esc(x.name)}</span><span class="bar"><i style="width:${Math.min(100, r / 1.1 * 100)}%;background:${red ? 'var(--out)' : t?.side ? rgba(t.rgb, 1) : 'rgba(242,244,248,.45)'}"></i><s style="left:${100 / 1.1}%"></s></span>
+    return `<div class="lo${i ? '' : ' first'}"><span class="nm">${esc(x.name)}</span><span class="bar"><i style="width:${Math.min(100, r / 1.1 * 100)}%;background:${red ? 'var(--out)' : t?.side ? rgba(t.rgb, 1) : 'var(--text-45)'}"></i><s style="left:${100 / 1.1}%"></s></span>
       <span class="kw">${f(x.kwh, 2)} kWh</span><span class="df${red ? ' r' : ''}">${deficit(x.pct)}</span></div>`; };
   const flagHtml = a => { const p = byId(a.id), al = D.alerts?.[a.kind];
     const conv = p?.kw != null && p?.kwDc > .01 ? Math.round(p.kw / p.kwDc * 100) : null;
