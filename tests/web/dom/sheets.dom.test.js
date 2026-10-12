@@ -12,8 +12,8 @@ import { vacationCheckLeftOn } from './fixtures-appl.js';
 vi.mock('three', async importOriginal => ({ ...(await importOriginal()), WebGLRenderer: (await import('./fakegl.js')).FakeRenderer }));
 vi.mock('../../../web/src/views/nowhub.js', async importOriginal => { const m = await importOriginal(); return { ...m, initNowTop: S => { globalThis.__S = S; return m.initNowTop(S); } }; });
 
-let S, f, check = null;
-beforeAll(async () => { ({ S, f } = await bootApp(ownerRoutes({ 'vacation/check': () => check ?? ownerRoutes()['vacation/check'] }), external())); });
+let S, f, check = null, gate = null;   // gate: the next departure check answers only when the test releases it
+beforeAll(async () => { ({ S, f } = await bootApp(ownerRoutes({ 'vacation/check': () => { if (gate) { const g = gate; gate = null; return g; } return check ?? ownerRoutes()['vacation/check']; } }), external())); });
 // let the sheet-open focus timer (main.js, 50 ms) fire before happy-dom is torn down, or it throws "document is not defined" after the run
 afterAll(async () => { await new Promise(r => setTimeout(r, 150)); vi.useRealTimers(); });
 beforeEach(() => { confirm.mockClear(); confirm.mockImplementation(() => true); alert.mockClear(); });
@@ -273,8 +273,8 @@ describe('Powerwalls sheet (frame 7)', () => {
 });
 
 describe('Away & Vacation sheet (frame 8)', () => {
-  // each opening waits for its departure check and its estimate: an earlier sheet's 250 ms estimate timer redraws whatever Away sheet is
-  // open with its own state (views/vacation.js showing()), so a reopen inside that window would be driven by the old one
+  // each opening waits for its departure check and its estimate (a late answer from an earlier opening no longer redraws a reopened
+  // sheet: the per-open token in views/vacation.js, tested below)
   const openAway = async (ready = () => sheetEl().querySelector('#vaCheck')?.textContent.includes('Thermostat linked')) => {
     close(); await new Promise(r => setTimeout(r, 300)); open('away');
     await until(() => ready() && !sheetEl().querySelector('#vaSum')?.hidden, 10_000, 'the departure check and the estimate'); };
@@ -328,5 +328,14 @@ describe('Away & Vacation sheet (frame 8)', () => {
     click(sheetEl().querySelector('[data-off="3"]')); await flush();
     expect(sheetWrites(f, n)).toEqual([expect.objectContaining({ path: 'appliances/pool/command', body: { kind: 'circuit', id: 3, on: false } })]);
     check = null;
+  });
+  it('a reopened sheet is never redrawn by the one it replaced (a per-open token in views/vacation.js)', async () => {
+    let release; gate = new Promise(r => { release = r; });
+    close(); await new Promise(r => setTimeout(r, 300)); open('away');   // this opening's departure check hangs
+    close(); open('away');                                               // reopened at once; its own check answers normally
+    await until(() => sheetEl().querySelector('#vaCheck')?.textContent.includes('Thermostat linked') && !sheetEl().querySelector('#vaSum')?.hidden, 10_000, 'the second opening');
+    release(vacationCheckLeftOn(NOW)); await new Promise(r => setTimeout(r, 300)); await flush();   // the first opening's check and estimate land now
+    expect(sheetEl().querySelector('[data-off="3"]')).toBeNull();        // the old opening's Pool Light row never appears
+    expect(sheetEl().querySelector('#vaCheck').textContent).toContain('Thermostat linked');
   });
 });
