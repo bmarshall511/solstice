@@ -1,6 +1,7 @@
 // Pentair ScreenLogic (EasyTouch/IntelliTouch) over Pentair's remote dispatcher, using node-screenlogic.
 // Serverless-friendly: every call opens a connection, does its work and closes. Credentials come from the environment only.
 import { RemoteLogin, UnitConnection } from 'node-screenlogic';
+import { READ_DEADLINE_MS, WRITE_DEADLINE_MS } from './budget.js';
 import { guardPoolWrite, guardOwnerPool, GuardRefusal, HEAT_CMD_UNCHANGED, HEAT_MODE_HEATER, HEAT_MODE_OFF, type PoolGuardContext, type PoolOwnerCommand } from './guards.js';
 
 export type PoolSchedule = { id: number; circuitId: number; start: number; stop: number; dayMask: number; flags: number; heatCmd: number; heatSetPoint: number };
@@ -19,9 +20,7 @@ export type PoolSnapshot = {
 export const configured = () => !!(process.env.SCREENLOGIC_SYSTEM && process.env.SCREENLOGIC_PASSWORD);
 const hhmm = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(2, 4));
 
-/** The whole session (dispatcher, unit, `fn`) must finish within this: a read 20 s, a write 40 s (code review C-01). */
-export const READ_DEADLINE_MS = 20_000;
-export const WRITE_DEADLINE_MS = 40_000;
+export { READ_DEADLINE_MS, WRITE_DEADLINE_MS } from './budget.js';
 /** The node-screenlogic classes withUnit opens (tests pass fakes). */
 export type ScreenLogicLib = { RemoteLogin: new (name: string) => RemoteLogin; UnitConnection: new () => UnitConnection };
 
@@ -103,7 +102,7 @@ export type ScheduleWrite = { circuitId: number; start: number; stop: number; da
  * GuardRefusal and nothing is written. `run` opens the ScreenLogic session (tests pass a fake).
  */
 export async function writePoolPlan(opts: { pumpId: number; speeds: Array<{ circuitId: number; rpm: number }>; replaceCircuits: number[]; schedules: ScheduleWrite[]; guard: PoolGuardContext },
-  run: typeof withUnit = withUnit) {
+  run: typeof withUnit = withUnit, deadlineMs = WRITE_DEADLINE_MS) {
   // flags 0, heat command "don't change", set point 70: a schedule never touches the heater
   const rows = opts.schedules.map(s => ({ circuitId: s.circuitId, start: s.start, stop: s.stop, dayMask: s.dayMask ?? 127, flags: 0, heatCmd: HEAT_CMD_UNCHANGED, heatSetPoint: 70 }));
   const g = guardPoolWrite({ speeds: opts.speeds, replaceCircuits: opts.replaceCircuits, schedules: rows }, opts.guard);
@@ -132,7 +131,7 @@ export async function writePoolPlan(opts: { pumpId: number; speeds: Array<{ circ
     }
     for (const e of removed) if (!added.includes(e.scheduleId)) await c.schedule.deleteScheduleEventByIdAsync(e.scheduleId);
     return { removed: removed.map(e => ({ id: e.scheduleId, circuitId: e.circuitId, start: hhmm(e.startTime), stop: hhmm(e.stopTime), dayMask: e.dayMask })), added };
-  }, WRITE_DEADLINE_MS);
+  }, deadlineMs);
 }
 
 /** A command that may outlive its ack (Pentair's dispatcher is slow): a timeout is not a failure, the read-back decides. */

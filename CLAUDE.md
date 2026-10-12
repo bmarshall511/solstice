@@ -28,7 +28,7 @@ Solstice is the owner's personal Tesla Powerwall + solar + pool + AC monitor. On
 - `.vercelignore` at the repo root is an **allow-list** (`/*` then `!/api`, `!/server`, `!/web`, etc.), not a denylist — it's what actually controls what `vercel deploy` uploads, in place of `.gitignore`. When a new top-level directory becomes part of the build (installCommand, buildCommand, or something `api/index.ts` imports), add a `!/<dir>` line for it there or it silently stops being deployed.
 - Integration env vars on Vercel are "sensitive": `vercel env pull` returns placeholders.
 - The deep history backfill (`server/src/deepBackfill.ts`, I-16) rides `/api/cron/nest` from 01:30 to 06:00 Chicago, ≤ 3 days a tick, until history reaches the install date; `syncSite` keeps its 400-day window. Records (`server/src/records.ts`) are cached nightly in kv.
-- Crons in `vercel.json`: `/api/cron/sync` nightly, `/api/cron/pool` 01:15 UTC (8:15 PM Central), `/api/cron/nest` every 5 minutes. They require `Authorization: Bearer $CRON_SECRET`.
+- Crons in `vercel.json`: `/api/cron/sync` nightly, `/api/cron/pool` 01:15 UTC (8:15 PM Central) with a retry run at 01:45 UTC (`?retry=1`; it writes only if the first didn't, and both stay inside a 50 s budget so a slow controller is logged instead of cut off by Vercel's 60 s), `/api/cron/nest` every 5 minutes. They require `Authorization: Bearer $CRON_SECRET`.
 
 ## Gotchas (learned the hard way)
 
