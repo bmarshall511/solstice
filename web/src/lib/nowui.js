@@ -54,8 +54,9 @@ export function vacationPill({ trip = null, phase = null, presence = null, now =
 export const dateShort = ms => new Date(ms).toLocaleDateString('en-US', { timeZone: 'America/Chicago', weekday: 'short', month: 'short', day: 'numeric' }).replace(',', '');
 
 /* ======================= Banner slot (frame 16) ======================= */
-/** One banner at a time, the first of these that has something to say. */
-export const BANNER_ORDER = ['outage', 'vacation', 'hold', 'pool', 'powerwall', 'bill', 'digest', 'changed'];   // changed: I-18's morning line (mockup am)
+/** One banner at a time, the first of these that has something to say. An AC hold outranks a trip that is only planned (it changes the
+ *  house now; owner, 2026-10-12), never one that is running; the planned trip stays on the Vacation chip and returns when the hold ends. */
+export const BANNER_ORDER = ['outage', 'vacation', 'hold', 'vacation-planned', 'pool', 'powerwall', 'bill', 'digest', 'changed'];   // changed: I-18's morning line (mockup am)
 /** The banner to show from the candidates ({kind, …}; null/undefined entries are skipped), or null. */
 export function pickBanner(cands) {
   const by = new Map((cands ?? []).filter(Boolean).map(c => [c.kind, c]));
