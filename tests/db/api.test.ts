@@ -259,7 +259,7 @@ describe('learning layer routes (owner-only)', () => {
 });
 
 describe('I-16: history back to the install date', () => {
-  it('/api/monthly reads only the months asked for; the CSV still has every row, in order; /api/status carries deep', async () => {
+  it('/api/monthly reads only the months asked for; the CSV still has every row, in order; /api/status carries deep and the database size', async () => {
     const { localDay, addDays } = await import('../../server/src/tesla/client.js');
     const old = addDays(localDay(), -3 * 365), oldTs = `${old}T12:00:00-05:00`, now = localDay(), nowTs = `${now}T00:05:00-05:00`;
     await saveEnergyRows('s', [{ ts: oldTs, epoch: Date.parse(oldTs), day: old, hour: 12, solar: 1, home: 1, imp: 0, exp: 0, chg: 0, dis: 0 },
@@ -273,6 +273,7 @@ describe('I-16: history back to the install date', () => {
     expect(csv).toContain(nowTs);
     expect([...csv].sort((a, b) => Date.parse(a) - Date.parse(b))).toEqual(csv);
     expect((await (await get('/api/status')).json()).backfill).toMatchObject({ daysDone: expect.any(Number), deep: null });   // no install date known
+    expect((await (await get('/api/status')).json()).db.bytes).toBeGreaterThan(1e6);   // the database's size, for the plan's limit (owner only)
     await q(`DELETE FROM energy WHERE site_id = 's' AND ts = ANY($1::text[])`, [[oldTs, nowTs]]);
   });
 });
