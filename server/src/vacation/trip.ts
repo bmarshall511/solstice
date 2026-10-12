@@ -176,10 +176,12 @@ export async function tripTick(siteId: string, now = Date.now()): Promise<{ trip
   return { trip: t };
 }
 
-/** Guest links rest while a trip is under way (a planned one whose leave time has come counts) and for 24 h after it ends (owner, Q14). */
+/** Guest links rest from the moment a trip is planned (not its leave time, so a link going quiet never marks the departure; owner,
+ *  S-11, 2026-10-12), while it is under way, and for a fixed 24 h after it ends (owner, Q14). No random jitter. A cancelled trip
+ *  frees them at once. */
 export const GUEST_RESUME_MS = 864e5;
 export async function guestsPaused(now = Date.now()) {
-  return !!(await one(`SELECT 1 FROM trips WHERE (state IN ('planned', 'active') AND leave_at <= $1) OR (state = 'ended' AND ended_at > $2) LIMIT 1`, [now, now - GUEST_RESUME_MS]));
+  return !!(await one(`SELECT 1 FROM trips WHERE state IN ('planned', 'active') OR (state = 'ended' AND ended_at > $1) LIMIT 1`, [now - GUEST_RESUME_MS]));
 }
 /** Whether this site has a trip under way now (one query). */
 export const tripAway = async (siteId: string, now = Date.now()) => isAway(await liveTrip(siteId), now);
