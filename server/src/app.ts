@@ -356,7 +356,9 @@ app.get('/api/status', wrap(async (req, res) => {
   const id = site(req), daysDone = await storedDays(id);
   // deep: the back-fill to the install date (deepBackfill.ts, I-16); owner only: the guest view's allow-list (redact.ts) leaves it out
   res.json({ connected: true, siteId: id, lastLive: await kv.get(`${id}:lastLive`) ?? null, lastHistory: await kv.get(`${id}:lastHistory`) ?? null,
-    backfill: { daysDone, deep: await deepStatus(id) } });
+    backfill: { daysDone, deep: await deepStatus(id) },
+    // db: the database's size, so the plan's limit (Neon Free, 0.5 GB) can be watched with a GET; owner only (redact.ts leaves it out)
+    db: { bytes: Number((await one<{ b: string }>('SELECT pg_database_size(current_database()) b').catch(() => null))?.b ?? NaN) || null } });
 }));
 
 app.get('/api/day', wrap(async (req, res) => {
