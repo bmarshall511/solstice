@@ -106,7 +106,10 @@ function openTrips(S) {
 /* ======================= the Away & Vacation sheet (mockup al frame 8; the trip parts are mockup ak frames 1, 1b and 2) ======================= */
 const CHECK = [['waterHeater', 'Water heater', 'to its vacation setting · about 1.3 kWh a day while you’re away'], ['unplug', 'Unplug what can be', '· the house drops about 0.4 kW by itself when you leave']];
 const MODE_WORD = m => m ? modePill(m) : '';
+/** Which opening of the Away sheet is on screen: a late answer (the departure check, the 250 ms estimate) redraws only its own. */
+let opening = 0;
 export async function openVacation(S, opts = {}) {
+  const mine = ++opening;
   const live = S.vac?.trip ?? null, edit = !!live, now = Date.now(), d = defaultDates(now);
   let leaveAt = live?.leaveAt ?? d.leaveAt, backAt = live ? live.backAt : opts.detected ? null : d.backAt;
   const tick = { ...(live?.data?.checklist ?? {}) }; let macHome = live?.data?.macHome ?? true, est = null, check = null, busy = false;
@@ -222,7 +225,7 @@ export async function openVacation(S, opts = {}) {
   };
   let timer = null;
   const estimate = () => { clearTimeout(timer); timer = setTimeout(async () => { est = await api.vacationEstimate(Math.max(leaveAt, Date.now()), backAt).catch(() => null); if (showing()) draw(); }, 250); };
-  const showing = () => !!$('vaPlan') && $('phone').classList.contains('open');
+  const showing = () => mine === opening && !!$('vaPlan') && $('phone').classList.contains('open');
   draw(); estimate();
   if (!started) { check = await api.vacationCheck().catch(() => null); if (showing()) draw(); }
 }
