@@ -4,7 +4,7 @@
 // in server/src/redact.ts), so the card is owner-only too: hidden by the guest CSS (data-owner) and never asking for the route as a
 // guest, where it used to get a 401 (and an /api/auth/me recheck) every minute. The owner's card loads and fills its summary.
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
-import { stubBrowser, router, flush, runFrames, badText, NOW } from './harness.js';
+import { stubBrowser, router, flush, runFrames, badText, hardColours, NOW } from './harness.js';
 import { coreFixtures } from './fixtures-core.js';
 
 vi.mock('three', async importOriginal => ({ ...(await importOriginal()), WebGLRenderer: (await import('./fakegl.js')).FakeRenderer }));
@@ -40,5 +40,11 @@ describe('Outage readiness card', () => {
     expect(f.calls.slice(n).filter(x => x.path === 'outage').length).toBeGreaterThan(0);
     expect(s.querySelector('[data-sum]').textContent).not.toBe('—');
     expect(badText(s)).toEqual([]);
+    // the ladder's rung colours, the status chips and the 12-month strip are tokens (--text-75, --home, --ac, --rest, --text-38, --hair, --out)
+    for (const q of ['[data-ladder]', '[data-chips]', '[data-strip]']) {
+      expect(s.querySelector(q).querySelector('[style]'), q).not.toBeNull();
+      expect(hardColours(s.querySelector(q)), `${q}: hard-coded colours`).toEqual([]);
+    }
+    expect(s.querySelector('[data-strip] line').getAttribute('style')).toBe('stroke:var(--hair)');
   });
 });

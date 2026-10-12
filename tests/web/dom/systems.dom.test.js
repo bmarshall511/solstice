@@ -19,8 +19,8 @@ const seg = async s => { click($('sysSeg').querySelector(`[data-seg="${s}"]`)); 
 const page = s => $(`sp-${s}`);
 const noWrites = n => expect(sheetWrites(f, n), 'a write before the primary').toEqual([]);
 /** No bad text on the whole page; tokens only in the component markup (`ids`: the Live card, tiles and rows drawn from the component
- *  system). The older cards still carry colours from their approved mockups: the per-panel health bars (views/panels.js) and the
- *  outage ladder's --c (views/outage.js); those are reported, not changed. */
+ *  system). The per-panel ramp (lib/panels.js tint(): tiles and bars more than 5% off the median) is still computed rgba(), since a
+ *  color-mix() of tokens rounds differently; the Panel health bars and the outage ladder are otherwise checked in their own tests. */
 function form(root, label, ids = null) {
   expect(badText(root), `${label}: bad text`).toEqual([]);
   for (const el of ids ? ids.map(i => $(i)) : [root]) expect(hardColours(el), `${label} ${el.id}: hard-coded colours`).toEqual([]);
@@ -121,6 +121,12 @@ describe('Solar and Powerwall', () => {
     expect($('solarTiles').querySelectorAll('.c-tile')).toHaveLength(2);
     expect($('sysSub').textContent).toMatch(/Solar · 30 × 320 W · 9.6 kW DC/);
     form(page('solar'), 'Solar', ['solarSys', 'solarTiles']);
+  });
+  it('Solar: Panel health draws its Lowest three bars from tokens (the flagged panel --out, a panel within ±5% --text-45)', async () => {
+    await until(() => $('phBody').querySelector('.lo .bar i'), 10_000, 'the Panel health bars');
+    const bars = [...$('phBody').querySelectorAll('.lo .bar i')].map(i => i.style.background);
+    expect(bars).toContain('var(--out)'); expect(bars).toContain('var(--text-45)');
+    for (const lo of $('phBody').querySelectorAll('.lo')) expect(hardColours(lo), 'Panel health bars: hard-coded colours').toEqual([]);
   });
   it('Powerwall: hero, unit bars, key values, four tiles, three rule rows', async () => {
     await seg('powerwall');

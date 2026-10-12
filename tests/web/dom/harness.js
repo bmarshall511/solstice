@@ -183,12 +183,6 @@ export function hardColours(root, { except = [] } = {}) {
   return [...root.querySelectorAll('[style]')].filter(el => !except.some(sel => el.matches(sel))).map(el => el.getAttribute('style')).filter(s => COLOUR.test(s.replace(/var\([^)]*\)/g, '')));
 }
 /**
- * Markup that predates the token rule and still hard-codes colours, as approved in its mockup. Listed here so the checks keep
- * catching anything new; each is reported (not changed: a colour change is a visual change and needs the owner's approval).
- *  - the Comfort sheet's "hot, sunny day" band (views/ac.js DAYC, mockup ag): four hex colours, no matching tokens in style.css
- */
-export const KNOWN_COLOURS = ['#cmDay > *'];
-/**
  * The sheets still on the pre-component shell (.shead / .x / .primary): AC "Too warm/Too cold" (openNudge) and "Your changes",
  * Pool "Your changes" and Clear-up, Add a PEC bill, the weekly digest, Water · last 30 days, the trip report. Their close button
  * (.sheet .x) is 32 × 32 px, under the 44 px rule; .ag-opt and .primary get their height from padding (about 46 px) rather than a
