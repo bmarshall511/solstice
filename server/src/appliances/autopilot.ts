@@ -79,7 +79,7 @@ export function planDay(o: { day: Daily; prev?: Daily; heatDays: number; useYest
  * rule's extra hour and skim after heavy rain. Nobody swims and nobody's home, so the use, pollen and hot-water hours don't apply.
  */
 export function tripPlanDay(o: { day: Daily; prev?: Daily; heatDays: number; waterTemp: number; settings: PoolSettings; W: (r: number) => number; rate: number | null; names: Map<number, string> }) {
-  const g = tripGoal(o.waterTemp, o.heatDays), why = [...g.why], settings = { ...o.settings, turnoverGoal: g.goal, skimHours: 0 };
+  const g = tripGoal(o.waterTemp, o.heatDays), why = [...g.why], settings = { ...o.settings, turnoverGoal: g.goal, skimHours: 0, goalMode: 'turnovers' as const };   // a trip keeps its own turnover goal (mockup an)
   const args = { waterTemp: o.waterTemp, solarKw: o.day.hourlySun.map(v => v * 9.45 * .8), settings, W: o.W, rate: o.rate, month: Number(o.day.date.slice(5, 7)) - 1, names: o.names };
   const base = planFor(args), rainy = (o.prev?.rainMm ?? 0) >= 5 || (o.day.rainMm >= 5 && o.day.rainPct >= 60);
   if (!rainy) return { plan: base, why };

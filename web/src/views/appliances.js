@@ -96,7 +96,9 @@ function drawPoolTiles(S, st) {
   $('poolTiles').innerHTML = tileHtml({ id: 'pTileW', acc: 'c-acc-pool', k: 'Pump', v: L?.running ? Math.round(L.watts) : 'off', unit: L?.running ? 'W' : '', chip: L?.running ? { t: 'flat', text: `${L.rpm.toLocaleString()} rpm` } : null, spark: watts })
     + tileHtml({ id: 'pTileE', acc: 'c-acc-pool', k: 'Pool energy today', v: d.todayKwh ?? '—', unit: 'kWh', chip: d.shareOfHomePct != null ? { t: 'flat', text: `${d.shareOfHomePct}% of home` } : null, spark: kw })
     + tileHtml({ id: 'pTileT', acc: 'c-acc-pool', k: 'Water', v: st.poolTemp != null ? `${st.poolTemp}°` : '—', chip: { t: 'flat', text: `spa ${st.spaTemp ?? '—'}° · air ${L?.airTemp ?? '—'}°` } })
-    + tileHtml({ id: 'pTileX', acc: 'c-acc-pool', k: 'Turnover', badge: badge('model'), v: d.current?.turnoverPerDay ?? '—', unit: '×/day', note: d.water ? `goal ${d.water.goal.toFixed(1)}` : '' })
+    // mockup an: pump hours today (measured) beside the turnover figure (modelled); each tile's note follows the goal that is set
+    + (d.water?.pumpHours != null ? tileHtml({ id: 'pTileH', acc: 'c-acc-pool', k: 'Pump hours', badge: badge('measured'), v: hrs(d.water.pumpHours), unit: 'h today', note: d.water.goalMode === 'hours' ? `goal ${d.water.hoursGoal} h` : '' }) : '')
+    + tileHtml({ id: 'pTileX', acc: 'c-acc-pool', k: 'Turnover', badge: badge('model'), v: d.current?.turnoverPerDay ?? '—', unit: '×/day', note: !d.water ? '' : d.water.goalMode === 'hours' ? `from ${d.plan?.hours ?? d.water.hoursGoal} h at ${(d.plan?.rpm ?? d.settings?.filterRpm ?? 0).toLocaleString()} rpm` : `goal ${d.water.goal.toFixed(1)}` })
     + (ss && ss.riseF != null ? `<div class="c-tile c-acc-warn wide"><div class="c-tile-k">Spa session · ${ss.spaTemp}° → ${ss.spaSet}°</div><div class="c-tile-n">${ss.riseF ? `${ss.heatMinutes} min of propane · ${ss.propaneGal} gal ≈ ${S.guest ? veil('$•.••') : money2(ss.propaneUsd)}` : 'already at temperature'} · then ${S.guest ? veil('$•.••/h') : `${money2(ss.electricUsdPerHour)}/h`} pump + blower</div><span class="c-spark"></span></div>` : '');
 }
 /** Every circuit (Systems › Pool › Circuits, and the Pool sheet's row): on or off, its speed and schedule; a row opens its sheet. */
@@ -319,18 +321,26 @@ export function openCircuit(S, id) {
 }
 
 /* ---------- the Pool Autopilot card (mockup al frames 12, 12b; the turnover planner of mockup w frame 5 lives in it) ---------- */
-const goal = { v: null, skim: null, saving: false };   // a staged goal change (Schedule & goal's steppers), sent only by its Save
+const goal = { v: null, skim: null, mode: null, h: null, saving: false };   // a staged goal change (Schedule & goal's segment and steppers), sent only by its Save
+/** 6.5 → "6.5", 10 → "10" (pump hours, mockup an). */
+const hrs = h => String(Math.round(h * 10) / 10);
 function drawPlanner(S) {
   const d = S.pool, w = d.water, P = d.plan, C = d.current, sp = d.settings; if (!w || !P) return;
   drawClearBanner(S);
-  // the goal well: water moved so far today (readings) against the goal, the sentence, today's runs on the strip and their legend
-  const f = Math.min(1, w.movedTurnovers / w.goal);
-  $('plArc').setAttribute('stroke-dasharray', `${(100.5 * f).toFixed(1)} 100.5`);
-  $('plMoved').textContent = w.movedTurnovers.toFixed(1);
+  // the goal well: water moved so far today (readings) against the goal, the sentence, today's runs on the strip and their legend;
+  // mockup an: with a goal in hours, the pump's measured run hours against it, and the turnovers as the model's figure
+  const inH = w.goalMode === 'hours';
   const bid = sp.boostCircuit ?? 8, bUntil = d.until?.[bid], T = d.autopilot?.tomorrow?.plan;
-  $('plTxt').innerHTML = `<b>${w.movedTurnovers.toFixed(1)} of ${w.goal.toFixed(1)} turnovers today</b>${bUntil ? ', including your boost' : ''}. `
-    + (w.projectedTurnovers > w.movedTurnovers + .05 ? `The rest of today’s schedule brings it to ${w.projectedTurnovers.toFixed(1)}.` : 'Nothing more is scheduled today.')
-    + (T ? `<br>${tomorrowLine(S)}` : '');
+  const f = Math.min(1, inH ? w.pumpHours / w.hoursGoal : w.movedTurnovers / w.goal);
+  $('plArc').setAttribute('stroke-dasharray', `${(100.5 * f).toFixed(1)} 100.5`);
+  $('plMoved').textContent = inH ? hrs(w.pumpHours) : w.movedTurnovers.toFixed(1);
+  $('plTxt').innerHTML = inH
+    ? `<b>${hrs(w.pumpHours)} of ${w.hoursGoal} pump hours today</b> ${badge('measured')}<br>`
+      + (w.projectedHours > w.pumpHours + .05 ? `The rest of today’s schedule brings it to ${hrs(w.projectedHours)}. ` : 'Nothing more is scheduled today. ')
+      + `About ${w.movedTurnovers.toFixed(1)} turnovers so far ${badge('model')}` + (T ? `<br>${tomorrowLine(S)}` : '')
+    : `<b>${w.movedTurnovers.toFixed(1)} of ${w.goal.toFixed(1)} turnovers today</b>${bUntil ? ', including your boost' : ''}. `
+      + (w.projectedTurnovers > w.movedTurnovers + .05 ? `The rest of today’s schedule brings it to ${w.projectedTurnovers.toFixed(1)}.` : 'Nothing more is scheduled today.')
+      + (T ? `<br>${tomorrowLine(S)}` : '');
   const nowM = Math.floor(localHour() * 60), blocks = scheduleBlocks(C.schedules, bid);
   if (bUntil) blocks.push({ left: Math.round(nowM / 14.4 * 10) / 10, width: Math.round(Math.min(1440 - nowM, Math.round((bUntil - Date.now()) / 60_000)) / 14.4 * 10) / 10, cls: 'alt' });
   $('plDay').style.setProperty('--now', `${nowPct(localHour())}%`);
@@ -340,26 +350,38 @@ function drawPlanner(S) {
     + (bUntil ? `<span class="c-acc-warn"><i></i>Your boost · until ${clockAt(bUntil)} <b>${(speedsOf(d.snapshot).get(bid) ?? 0).toLocaleString()}</b></span>` : '')
     || '<span>No pump programs on the controller.</span>';
   $('plEdit').onclick = () => openEditor(S);
-  // Schedule & goal: the steppers stage a change; Save sends it (POST …/pool/goal), Cancel puts the saved goal back
-  const g = goal.v ?? w.goal, sk = goal.skim ?? w.skimHours, staged = goal.v != null && (goal.v !== w.goal || goal.skim !== w.skimHours);
-  $('plGoal').textContent = g.toFixed(1); $('plSkim').textContent = `${sk} h`;
-  $('plGoalLine').textContent = `${w.goal.toFixed(1)} turnovers · skim ${w.skimHours} h`;
-  $('ruleGoal').textContent = `goal: ${w.goal} turnover${w.goal === 1 ? '' : 's'}`;   // the Rules chip follows the goal
-  $('plGal').textContent = `goal · ${w.gallons.toLocaleString()} gal · ${g} = about ${(Math.round(w.gallons * g / 1000) * 1000).toLocaleString()} gal`;
-  $('plGoalStage').innerHTML = staged ? `<div class="c-btns c-stagerow"><button class="c-btn line" data-g="cancel">Cancel</button><button class="c-btn pri c-acc-pool" data-g="save">${goal.saving ? 'Saving…' : `Save goal ${g.toFixed(1)} · skim ${sk} h`}</button></div>` : '';
-  const step = (k, dv) => { goal.v ??= w.goal; goal.skim ??= w.skimHours; if (k === 'g') goal.v = Math.max(1, Math.min(4, goal.v + dv)); else goal.skim = Math.max(0, Math.min(3, goal.skim + dv)); drawPlanner(S); };
+  // Schedule & goal: the segment (mockup an: Turnovers | Pump hours) and the steppers stage a change; Save sends it (POST …/pool/goal),
+  // Cancel puts the saved goal back
+  const savedMode = w.goalMode ?? 'turnovers', mode = goal.mode ?? savedMode, hMode = mode === 'hours';
+  const g = goal.v ?? w.goal, gh = goal.h ?? w.hoursGoal, sk = goal.skim ?? w.skimHours;
+  const staged = goal.mode != null && (mode !== savedMode || g !== w.goal || gh !== w.hoursGoal || sk !== w.skimHours);
+  $('plMode').innerHTML = seg([['turnovers', 'Turnovers'], ['hours', 'Pump hours']], mode, { cls: 'wide sm', acc: 'c-acc-pool', attr: 'data-gm', label: 'Goal in' });
+  $('plGoalK').textContent = hMode ? 'Pump hours a day' : 'Turnovers a day';
+  $('plGdn').setAttribute('aria-label', hMode ? 'Fewer hours' : 'Fewer turnovers'); $('plGup').setAttribute('aria-label', hMode ? 'More hours' : 'More turnovers');
+  $('plGoal').textContent = hMode ? `${gh} h` : g.toFixed(1); $('plSkim').textContent = `${sk} h`;
+  $('plGoalLine').textContent = savedMode === 'hours' ? `${w.hoursGoal} h · skim ${w.skimHours} h` : `${w.goal.toFixed(1)} turnovers · skim ${w.skimHours} h`;
+  $('ruleGoal').textContent = savedMode === 'hours' ? `goal: ${w.hoursGoal} h a day` : `goal: ${w.goal} turnover${w.goal === 1 ? '' : 's'}`;   // the Rules chip follows the goal
+  const turnRate = r => d.clearUpRates?.find(x => x.rpm === r)?.turnovers, fr = sp.filterRpm ?? 1500, rf = turnRate(fr), rb = turnRate(sp.boostRpm ?? 2400);
+  const turnsAt = h => rf != null && rb != null ? Math.round(((h - Math.min(sk, h - 1)) * rf + Math.min(sk, h - 1) * rb) / 24 * 10) / 10 : null;
+  $('plGal').textContent = hMode ? `at ${fr.toLocaleString()} rpm${turnsAt(gh) != null ? ` · about ${turnsAt(gh)} turnovers (model)` : ''}`
+    : `goal · ${w.gallons.toLocaleString()} gal · ${g} = about ${(Math.round(w.gallons * g / 1000) * 1000).toLocaleString()} gal`;
+  $('plGoalStage').innerHTML = staged ? `<div class="c-btns c-stagerow"><button class="c-btn line" data-g="cancel">Cancel</button><button class="c-btn pri c-acc-pool" data-g="save">${goal.saving ? 'Saving…' : `Save goal ${hMode ? `${gh} h` : g.toFixed(1)} · skim ${sk} h`}</button></div>` : '';
+  const begin = () => { goal.mode ??= savedMode; goal.v ??= w.goal; goal.h ??= w.hoursGoal; goal.skim ??= w.skimHours; };
+  const step = (k, dv) => { begin(); if (k === 'g') { if (goal.mode === 'hours') goal.h = Math.max(4, Math.min(16, goal.h + dv * 2)); else goal.v = Math.max(1, Math.min(4, goal.v + dv)); } else goal.skim = Math.max(0, Math.min(3, goal.skim + dv)); drawPlanner(S); };
+  $('plMode').onclick = e => { const b = /** @type {HTMLElement} */ (/** @type {Element} */ (e.target).closest('[data-gm]')); if (!b) return; begin(); goal.mode = b.dataset.gm; drawPlanner(S); };
   $('plGdn').onclick = () => step('g', -.5); $('plGup').onclick = () => step('g', .5); $('plSdn').onclick = () => step('s', -1); $('plSup').onclick = () => step('s', 1);
   $('plGoalStage').onclick = async e => { const b = /** @type {Element} */ (e.target).closest('[data-g]'); if (!b || goal.saving) return;
-    if (b.dataset.g === 'cancel') { goal.v = goal.skim = null; return drawPlanner(S); }
+    if (b.dataset.g === 'cancel') { goal.v = goal.skim = goal.mode = goal.h = null; return drawPlanner(S); }
     goal.saving = true; drawPlanner(S);
-    try { S.pool = await api.poolGoal({ turnoverGoal: goal.v, skimHours: goal.skim }); goal.v = goal.skim = null; }
+    try { S.pool = await api.poolGoal(goal.mode === 'hours' ? { goalMode: 'hours', hoursGoal: goal.h, skimHours: goal.skim } : { goalMode: 'turnovers', turnoverGoal: goal.v, skimHours: goal.skim }); goal.v = goal.skim = goal.mode = goal.h = null; }
     catch (err) { $('plNote').textContent = `Couldn’t save the goal: ${err.message}`; }
     goal.saving = false; drawPool(S); S.onPool?.(); };
   // B2-7 (audit L-17): the server's confidence in the plan's kWh a day (learning layer pool.kwhDay)
   const kc = cBadge(d.conf?.kwhPerDay, modelOf(S.models, 'pool.kwhDay'));
   $('plNums').innerHTML = `<div><b>${P.hours} h</b><span>pump a day</span></div><div><b>${P.kwhPerDay}</b><span>kWh a day</span>${kc && `<span style="margin-top:5px">${kc}</span>`}</div><div><b>${S.guest ? veil('$•') : P.costPerMonth == null ? '—' : money(P.costPerMonth)}</b><span>a month</span></div>`;
   drawPoolLearning(S);
-  $('plNote').textContent = `The planner picks hours and speed to reach the goal for the least energy (${P.hours} h at ${P.rpm.toLocaleString()} RPM${P.boostHours ? ` with ${P.boostHours} h at ${sp.boostRpm.toLocaleString()}` : ''}), keeps the skim hour at the sunniest hour, and adds time on hot days (+1 h at 85°) and after rain. Water moved uses the flow model (no flow sensor on this pump), so turnovers are an estimate.`;
+  $('plNote').textContent = savedMode === 'hours' ? `With a goal in hours the planner keeps the hours and your filter speed (${P.hours} h at ${P.rpm.toLocaleString()} RPM${P.boostHours ? ` with ${P.boostHours} h at ${sp.boostRpm.toLocaleString()}` : ''}), keeps the skim hour at the sunniest hour, and adds time on hot days (+1 h at 85°) and after rain. Pump hours are measured; turnovers use the flow model (no flow sensor on this pump).`
+    : `The planner picks hours and speed to reach the goal for the least energy (${P.hours} h at ${P.rpm.toLocaleString()} RPM${P.boostHours ? ` with ${P.boostHours} h at ${sp.boostRpm.toLocaleString()}` : ''}), keeps the skim hour at the sunniest hour, and adds time on hot days (+1 h at 85°) and after rain. Water moved uses the flow model (no flow sensor on this pump), so turnovers are an estimate.`;
 }
 /** "Tomorrow: 12 h at 1,750 rpm + 1 h skim · writes at 8:15 PM" (the collapsed card's line, as the Pool sheet says it). */
 function tomorrowLine(S) {
@@ -374,7 +396,7 @@ function drawAutopilot(S) {
   if (!a || a.error) { $('autoSum').textContent = a?.error ?? 'Autopilot unavailable'; return; }
   const w = d.water, m = apStage.m ?? a.mode;
   $('autoBadge').innerHTML = modePill(MODE_CLS[a.mode] ?? a.mode);
-  $('autoFig').textContent = w ? `${w.movedTurnovers.toFixed(1)} / ${w.goal.toFixed(1)}` : '—';
+  $('autoFig').textContent = !w ? '—' : w.goalMode === 'hours' ? `${hrs(w.pumpHours)} / ${w.hoursGoal} h` : `${w.movedTurnovers.toFixed(1)} / ${w.goal.toFixed(1)}`;
   $('autoSum').textContent = tomorrowLine(S) || 'No plan for tomorrow yet.';
   // the mode, staged: Off · Suggest · Auto, then one row that names the write ("Set Pool Autopilot to Auto") with the old confirms
   $('autoMode').innerHTML = seg([['off', 'Off'], ['suggest', 'Suggest'], ['auto', 'Auto']], m, { acc: 'c-acc-batt', attr: 'data-ap', label: 'Pool Autopilot' })

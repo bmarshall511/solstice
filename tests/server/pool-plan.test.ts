@@ -1,6 +1,6 @@
 // Pool plan (planFor) and the Autopilot day plan (planDay): design §8, cases 6–16.
 import { describe, it, expect, afterEach } from 'vitest';
-import { planFor, goalPlan, powerModel, POOL_DEFAULTS, type PoolSettings } from '../../server/src/appliances/pool.js';
+import { planFor, goalPlan, goalPatchError, powerModel, POOL_DEFAULTS, type PoolSettings } from '../../server/src/appliances/pool.js';
 import { planDay } from '../../server/src/appliances/autopilot.js';
 import { BELL, SOL, BELL_SUN, ZERO24, type Daily } from '../fixtures/forecast.js';
 
@@ -163,5 +163,37 @@ describe('Autopilot planDay', () => {
       process.env.TZ = 'America/Chicago';
       expect(day({ day: { date: '2026-10-01' } }).plan.month).toBe(9);
     });
+  });
+});
+
+// mockup an: a goal in pump hours (measured run time) instead of turnovers (modelled flow)
+//   PH-1 goalPlan keeps the hours at the saved filter speed; the skim fits inside; the 4–16 h bounds hold
+//   PH-2 planFor says why in hours, still under the sun; planDay still adds the weather and use hours on top (capped at 16)
+//   PH-3 the goal patch: goalMode turnovers | hours, 4–16 whole hours
+describe('a goal in pump hours (mockup an)', () => {
+  const H: PoolSettings = { ...S, goalMode: 'hours', hoursGoal: 10 };
+  it('PH-1 the hours at the saved filter speed', () => {
+    expect(goalPlan(H, W0)).toEqual({ rpm: 1500, hours: 10, skim: 1, reached: true });
+    expect(goalPlan({ ...H, filterRpm: 1350 }, W0).rpm).toBe(1350);
+    expect(goalPlan({ ...H, filterRpm: 3000 }, W0).rpm).toBe(2400);                // never outside the planner's filter range
+    expect(goalPlan({ ...H, hoursGoal: 2 }, W0).hours).toBe(4);
+    expect(goalPlan({ ...H, hoursGoal: 20 }, W0).hours).toBe(16);
+    expect(goalPlan({ ...S, goalMode: 'turnovers', hoursGoal: 6 }, W0)).toEqual(goalPlan(S, W0));   // turnovers: the hours goal is ignored
+  });
+  it('PH-2 the plan and planDay', () => {
+    const p = plan(80, BELL, { settings: H });
+    expect([p.hours, p.rpm, p.boostHours]).toEqual([10, 1500, 1]);
+    expect(p.schedules[0].why).toBe('10 h of filtration at 1,500 RPM for your 10 h goal');
+    const day: Daily = { date: '2026-09-15', high: 99, rainMm: 0, rainPct: 0, sunKwhM2: 6, hourlySun: BELL_SUN };
+    const d = planDay({ day, heatDays: 0, useYesterday: true, waterTemp: 86, settings: H, W: W0, rate: RATE, names: new Map(), pollen: 'low' });
+    expect(d.plan.hours).toBe(13);                                                     // 10 + water ≥ 85 + high ≥ 95 + used yesterday
+    expect(planDay({ day, heatDays: 0, useYesterday: true, waterTemp: 86, settings: { ...H, hoursGoal: 15 }, W: W0, rate: RATE, names: new Map(), pollen: 'low' }).plan.hours).toBe(16);
+  });
+  it('PH-3 the goal patch', () => {
+    expect(goalPatchError({ goalMode: 'hours', hoursGoal: 10, skimHours: 1 })).toBeNull();
+    expect(goalPatchError({ goalMode: 'turnovers', turnoverGoal: 2.5 })).toBeNull();
+    expect(goalPatchError({ goalMode: 'flow' })).toMatch(/goalMode/);
+    for (const h of [3, 17, 9.5, '10']) expect(goalPatchError({ hoursGoal: h }), String(h)).toMatch(/4–16/);
+    expect(goalPatchError({})).toMatch(/send/);
   });
 });

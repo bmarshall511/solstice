@@ -86,3 +86,18 @@ describe('Pool Autopilot during a trip', () => {
     expect(leftOn(poolSnapshot(Date.now(), { on: [6] }), POOL_DEFAULTS.loads, W)).toEqual([]);
   });
 });
+
+describe('mockup an: a goal in pump hours and a trip', () => {
+  it('VP-6 a trip keeps its own turnover goal whatever the home goal is counted in', async () => {
+    const today = localDay();
+    await kv.set('pool:forecast', { at: Date.now(), days: [-1, 0, 1, 2, 3, 4].map(k => ({ date: addDays(today, k), high: 84, rainMm: 0, rainPct: 0, sunKwhM2: 5, hourlySun: BELL.map(v => v / 7.56) })) });
+    const settings = { ...POOL_DEFAULTS, autopilot: 'auto' as const, goalMode: 'hours' as const, hoursGoal: 14 };
+    const run = () => autopilot('s', { settings, mode: 'auto', W, rate: null, names: new Map(), snap: null, waterTemp: 78, currentHours: 12, act: false });
+    expect((await run()).tomorrow.plan.hours).toBe(14);                                          // at home: the 14 h goal
+    await createTrip('s', { leaveAt: Date.now(), backAt: localAt(addDays(today, 3), 18), detected: false });
+    const a = await run();
+    expect(a.tomorrow.why).toEqual(['Vacation: 1 turnover a day (water 78°F)']);
+    expect(a.tomorrow.plan.hours).toBeLessThan(14);
+    expect(a.tomorrow.plan.turnovers).toBeGreaterThanOrEqual(1);
+  });
+});

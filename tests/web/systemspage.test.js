@@ -36,7 +36,7 @@ describe('Systems (frames 9–13b)', () => {
   });
   it('a guest gets no control: the panels, mode segments, rules, steppers and the owner-only cards carry data-owner', () => {
     for (const id of ['sysPoolCtl', 'autoMode', 'acTstat', 'acMode', 'sysRules', 'egCard', 'learnCard', 'tripsCard', 'pwCard', 'bcCard', 'spCard', 'flowSum']) expect(tag(html, id), id).toContain('data-owner');
-    expect(page('pool')).toMatch(/<div data-owner>\s*<div class="c-stepper">/);   // the goal steppers and Edit schedule
+    expect(page('pool')).toMatch(/<div data-owner>\s*<div id="plMode"><\/div>\s*<div class="c-stepper">/);   // the goal segment (mockup an), the steppers and Edit schedule
     expect(tag(html, 'nightCard')).toContain('data-guest');   // a guest keeps the overnight baseline as a card
   });
   it('"About panel-level data" is gone; the roof stays house, panels, Powerwalls', () => {
