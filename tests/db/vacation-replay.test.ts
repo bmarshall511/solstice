@@ -83,6 +83,12 @@ describe('a real trip, replayed', () => {
     const r = buildReport({ from: T0, to: END, energy: [], nest: [], pool: [], acKw: 2.6, uv: false, temps: {}, model: report.model, poolNormalKwhDay: 4, homeFit: { a: 45, b: 1.5 }, highs: { [DAY0]: 90, [addDays(DAY0, 1)]: 92, [addDays(DAY0, 2)]: 88 }, homeBaseKw: .86, trip: { backAt: END, data: {} }, alerts: 2 });
     expect(r.homeKwh).toBe(3 * 45 + 1.5 * (20 + 22 + 18));
     expect(r.alerts).toBe(2);
+    // 10/13: each line names its day, a repeat on the same day is listed once, and the quiet-house figure is rounded to 0.01 kW
+    const log = [0, 1, 2, 2].map(d => ({ at: T0 + d * 864e5 + 3600e3, text: 'The pump ran outside the plan at 10:05 AM (a pool service, or the panel)', delta: 'pool' }));
+    const r2 = buildReport({ from: T0, to: END, energy: [], nest: [], pool: [], acKw: 2.6, uv: false, temps: {}, model: report.model, poolNormalKwhDay: 4, homeFit: null, highs: {}, homeBaseKw: .86, trip: { backAt: END, data: { log } }, alerts: 0 });
+    const wd = (t: number) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', weekday: 'short' }).format(new Date(t));
+    expect(r2.did).toEqual([0, 1, 2].map(d => `${wd(log[d].at)}: The pump ran outside the plan at 10:05 AM (a pool service, or the panel)`));
+    for (const line of r2.next) expect(line, line).not.toMatch(/\d\.\d{3,}/);   // no float tails like 0.28800000000000003
   });
 });
 
