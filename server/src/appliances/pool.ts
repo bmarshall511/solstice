@@ -13,14 +13,18 @@ import { confidenceFor } from '../learn/confidence.js';
 import { filterForecast } from './poolFilter.js';
 
 export type PoolSettings = { gallons: number; spaGallons: number; designGpm: number; filterRpm: number; boostRpm: number; poolCircuit: number; boostCircuit: number; featureCircuits: number[]; autopilot: Mode; uv: boolean;
-  heaterBtu: number; propaneUsdPerGal: number; loads: Record<string, number>; turnoverGoal: number; skimHours: number; skimAt: number | null };
+  heaterBtu: number; propaneUsdPerGal: number; loads: Record<string, number>; turnoverGoal: number; skimHours: number; skimAt: number | null;
+  /** mockup an: the goal counted in turnovers (modelled flow, the default) or in pump hours a day (measured run time) */
+  goalMode?: 'turnovers' | 'hours'; hoursGoal?: number };
 // From the construction plan: 14,995 gal pool, ~1,000 gal spa, designed for 120 GPM; Ultra UV sanitizer; 400k BTU propane heater;
 // other circuits' draws (W): 1.5 HP blower, 500 W pool light, 100 W spa light, ~60 W UV lamp while the pump runs.
 const DEFAULTS: PoolSettings = { gallons: 14995, spaGallons: 1000, designGpm: 120, filterRpm: 1500, boostRpm: 2400, poolCircuit: 6, boostCircuit: 8, featureCircuits: [5], autopilot: 'suggest', uv: true,
   heaterBtu: 400_000, propaneUsdPerGal: 3.0, loads: { '2': 1100, '3': 500, '4': 100 },
-  turnoverGoal: 3, skimHours: 1, skimAt: null };   // skimAt: the skim hour you chose (mockup ae); null = the sunniest hour of the run   // mockup w frame 5: the owner's goal (about 3 turnovers a day, Option A of the October audit) and a daily skim hour
+  turnoverGoal: 3, skimHours: 1, skimAt: null, goalMode: 'turnovers', hoursGoal: 10 };   // skimAt: the skim hour you chose (mockup ae); null = the sunniest hour of the run   // mockup w frame 5: the owner's goal (about 3 turnovers a day, Option A of the October audit) and a daily skim hour
 /** The planner's search space: whole pump hours up to PUMP_HOURS_MAX a day at a filter speed in 50 RPM steps between these. */
 export const FILTER_RPM_MIN = 1200, FILTER_RPM_MAX = 2400, PUMP_HOURS_MAX = 12, PUMP_HOURS_MIN = 4;
+/** mockup an: a goal in pump hours is 4–16 whole hours a day (the rules' 4–16 h/day). */
+export const HOURS_GOAL_MIN = 4, HOURS_GOAL_MAX = 16;
 export { DEFAULTS as POOL_DEFAULTS };
 const UV_W = 60;
 // Typical pool-water temperature by month for central Texas (°F): used only for the season table; the live plan uses the real reading.
@@ -101,6 +105,9 @@ export type Plan = ReturnType<typeof planFor>;
  */
 export function goalPlan(s: PoolSettings, W: (r: number) => number) {
   const skim = Math.max(0, Math.min(3, s.skimHours ?? 1)), need = s.gallons * (s.turnoverGoal ?? 3);
+  // mockup an: a goal in pump hours keeps those hours at the saved filter speed (no flow model involved)
+  if (s.goalMode === 'hours') return { rpm: Math.max(FILTER_RPM_MIN, Math.min(FILTER_RPM_MAX, s.filterRpm ?? 1500)),
+    hours: Math.max(skim + 1, Math.min(HOURS_GOAL_MAX, Math.max(HOURS_GOAL_MIN, Math.round(s.hoursGoal ?? 10)))), skim, reached: true };
   const moved = (h: number, r: number) => ((h - skim) * gpmAt(r, s.designGpm) + skim * gpmAt(s.boostRpm, s.designGpm)) * 60;
   let best: { rpm: number; hours: number; kwh: number } | null = null;
   for (let r = FILTER_RPM_MIN; r <= FILTER_RPM_MAX; r += 50) for (let h = Math.max(PUMP_HOURS_MIN, skim + 1); h <= PUMP_HOURS_MAX; h++) {
@@ -124,7 +131,7 @@ export function planFor(o: { waterTemp: number; solarKw: number[]; settings: Poo
   const sunniest = () => o.solarKw.slice(start, stop).reduce((bi, v, i, arr) => v > arr[bi] ? i : bi, 0) + start;
   const boostAt = boostH ? Math.max(start, Math.min(stop - boostH, s.skimAt ?? sunniest())) : null;
   const schedules: Array<Sched & { rpm: number; name: string; why: string }> = [
-    { circuitId: s.poolCircuit, start: start * 60, stop: stop % 24 * 60, rpm, name: o.names.get(s.poolCircuit) ?? 'Pool', why: `${hours} h of filtration at ${rpm.toLocaleString()} RPM toward ${s.turnoverGoal ?? 3} turnovers of ${s.gallons.toLocaleString()} gal a day` }];
+    { circuitId: s.poolCircuit, start: start * 60, stop: stop % 24 * 60, rpm, name: o.names.get(s.poolCircuit) ?? 'Pool', why: `${hours} h of filtration at ${rpm.toLocaleString()} RPM ${s.goalMode === 'hours' ? `for your ${s.hoursGoal ?? 10} h goal` : `toward ${s.turnoverGoal ?? 3} turnovers of ${s.gallons.toLocaleString()} gal a day`}` }];
   if (boostAt != null) schedules.push({ circuitId: s.boostCircuit, start: boostAt * 60, stop: (boostAt + boostH) % 24 * 60, rpm: s.boostRpm, name: o.names.get(s.boostCircuit) ?? 'High Speed', why: `${boostH === 1 ? 'a one-hour' : `a ${boostH}-hour`} skim at ${s.boostRpm.toLocaleString()} RPM at the sunniest hour, for surface debris and mixing` });
   const speeds = new Map(schedules.map(x => [x.circuitId, x.rpm]));
   const prof = hourlyRpm(schedules, speeds), kwh = dayKwh(prof, W) + (s.uv ? hoursOn(prof) * UV_W / 1000 : 0);
@@ -304,8 +311,11 @@ export async function poolDetail(siteId: string, settingsAll: Record<string, any
   const readRpm = rpmRows.length ? filledQuarters(meanByQuarter(rpmRows.map(r => ({ ts: Number(r.ts), watts: r.running ? Number(r.rpm) : 0 }))), nowQ, true) : Array(96).fill(null);
   const qRpm = prof.flatMap(h => h.slices), gal = (r: number) => gpmAt(r, settings.designGpm) * 15;
   const movedGal = qRpm.slice(0, nowQ).reduce((a, r, i) => a + gal(readRpm[i] ?? r), 0), restGal = qRpm.slice(nowQ).reduce((a, r) => a + gal(r), 0);
+  // mockup an: pump hours today, measured from the readings (a quarter-hour read as running counts), and with the rest of today's schedule
+  const ranQ = readRpm.slice(0, nowQ).filter(r => (r ?? 0) > 0).length, restQ = qRpm.slice(nowQ).filter(r => r > 0).length;
   const water = { goal: settings.turnoverGoal, skimHours: settings.skimHours, movedTurnovers: Math.round(movedGal / settings.gallons * 100) / 100,
-    projectedTurnovers: Math.round((movedGal + restGal) / settings.gallons * 100) / 100, gallons: settings.gallons };
+    projectedTurnovers: Math.round((movedGal + restGal) / settings.gallons * 100) / 100, gallons: settings.gallons,
+    goalMode: settings.goalMode === 'hours' ? 'hours' as const : 'turnovers' as const, hoursGoal: settings.hoursGoal ?? 10, pumpHours: ranQ / 4, projectedHours: (ranQ + restQ) / 4 };
   const untilAll = await kv.get<Record<string, number>>(`${siteId}:pool:until`) ?? {}, nowMs = Date.now();
   const until = Object.fromEntries(Object.entries(untilAll).filter(([id, t]) => t > nowMs && snap?.circuits.find(c => c.id === Number(id))?.on));   // only runs still going
   const cu = await activeClearUp(siteId), clearUp = cu ? { ...cu, day: Math.min(cu.days, Math.floor((Date.now() - cu.startedAt) / 864e5) + 1) } : null;
@@ -443,12 +453,15 @@ export async function saveSchedule(siteId: string, b: { schedules: EditRun[]; sp
   return schedules;
 }
 
-/** Why a turnover goal patch (frame 5's steppers) is unusable, or null: 1–4 turnovers a day in half steps, 0–3 whole skim hours. */
+/** Why a goal patch (frame 5's steppers; mockup an's segment) is unusable, or null: 1–4 turnovers a day in half steps, 0–3 whole skim
+ *  hours, goalMode turnovers | hours, 4–16 whole pump hours a day. */
 export function goalPatchError(b: any): string | null {
-  if (!b || typeof b !== 'object') return 'send turnoverGoal and/or skimHours';
+  if (!b || typeof b !== 'object') return 'send turnoverGoal, skimHours, goalMode and/or hoursGoal';
   if ('turnoverGoal' in b && !(typeof b.turnoverGoal === 'number' && b.turnoverGoal >= 1 && b.turnoverGoal <= 4 && Number.isInteger(b.turnoverGoal * 2))) return 'turnovers a day are 1–4, in half steps';
   if ('skimHours' in b && !(Number.isInteger(b.skimHours) && b.skimHours >= 0 && b.skimHours <= 3)) return 'the skim is 0–3 hours';
-  if (!('turnoverGoal' in b) && !('skimHours' in b)) return 'send turnoverGoal and/or skimHours';
+  if ('goalMode' in b && b.goalMode !== 'turnovers' && b.goalMode !== 'hours') return 'goalMode is turnovers or hours';
+  if ('hoursGoal' in b && !(Number.isInteger(b.hoursGoal) && b.hoursGoal >= HOURS_GOAL_MIN && b.hoursGoal <= HOURS_GOAL_MAX)) return `pump hours a day are ${HOURS_GOAL_MIN}–${HOURS_GOAL_MAX}, whole hours`;
+  if (!['turnoverGoal', 'skimHours', 'goalMode', 'hoursGoal'].some(k => k in b)) return 'send turnoverGoal, skimHours, goalMode and/or hoursGoal';
   return null;
 }
 /** A pool command that cannot reach the controller at all (no ScreenLogic credentials on this server): 503, not a hang. */

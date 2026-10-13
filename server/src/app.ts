@@ -628,7 +628,7 @@ app.post('/api/appliances/pool/clearup', express.json({ limit: '1kb' }), wrap(as
 /** Frame 5's goal: turnovers a day and the daily skim hours. Saved with the owner's pool settings; the next plan uses them. */
 app.post('/api/appliances/pool/goal', express.json({ limit: '1kb' }), wrap(async (req, res) => {
   const bad = goalPatchError(req.body); if (bad) return res.status(400).json({ error: bad });
-  const patch = Object.fromEntries(['turnoverGoal', 'skimHours'].filter(k => k in req.body).map(k => [k, req.body[k]]));
+  const patch = Object.fromEntries(['turnoverGoal', 'skimHours', 'goalMode', 'hoursGoal'].filter(k => k in req.body).map(k => [k, req.body[k]]));
   const cur = (await settingsFor(req)).pool ?? {};
   if (req.user) await q('UPDATE users SET settings = settings || $2::jsonb WHERE id = $1', [req.user.id, JSON.stringify({ pool: { ...cur, ...patch } })]);
   else await patchSettings(['pool'], patch, { merge: true, by: 'you' });   // B2-10: only the goal's keys

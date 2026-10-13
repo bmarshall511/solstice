@@ -89,7 +89,8 @@ function poolPayload(now, o = {}) {
   const clearUp = clear ? { ...clear, day: Math.min(clear.days, Math.floor((now - clear.startedAt) / D) + 1) } : null;
   return {
     id: 'pool',
-    water: { goal: 3, skimHours: 1, movedTurnovers: r2(moved / g), projectedTurnovers: r2((moved + rest) / g), gallons: g },
+    water: { goal: 3, skimHours: 1, movedTurnovers: r2(moved / g), projectedTurnovers: r2((moved + rest) / g), gallons: g,
+      goalMode: 'turnovers', hoursGoal: 10, pumpHours: slices.slice(0, q).filter(r => r > 0).length / 4, projectedHours: slices.filter(r => r > 0).length / 4 },
     clearUp,
     clearUpRates: Array.from({ length: 31 }, (_, i) => 1500 + i * 50).map(r => ({ rpm: r, kwhPerDay: Math.round((W(r) * 24 + 60 * 24) / 100) / 10, turnovers: Math.round(GPM(r) * 1440 / g * 10) / 10 })),
     changes: { recent: [{ at: now - D - 2 * H, kind: 'boost', minutes: 60 }], patterns: { skim: { hour: 12, days: 1, need: 4 }, goal: { days: 0, need: 4, extraMin: 0 } }, suggestions: [] },

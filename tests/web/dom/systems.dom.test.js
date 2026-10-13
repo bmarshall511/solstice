@@ -152,6 +152,40 @@ describe('Solar and Powerwall', () => {
   });
 });
 
+describe('Pool Autopilot: a goal in pump hours (mockup an)', () => {
+  it('the Pump hours tile (measured) sits beside Turnover (model)', async () => {
+    await seg('pool');
+    const tile = $('pTileH');
+    expect(tile.querySelector('.c-tile-k').textContent).toMatch(/^Pump hours/);
+    expect(tile.querySelector('.c-badge').textContent).toBe('measured');
+    expect(tile.nextElementSibling.id).toBe('pTileX');
+    expect($('pTileX').querySelector('.c-tile-n').textContent).toBe('goal 3.0');            // the turnover goal, as before, while it is set
+  });
+  it('the segment and steppers only stage; Save goal posts {goalMode: hours, hoursGoal, skimHours}', async () => {
+    await seg('pool');
+    expect($('plMode').querySelector('[data-gm="turnovers"]').classList.contains('on')).toBe(true);
+    expect($('plGoalK').textContent).toBe('Turnovers a day');
+    const n = f.calls.length;
+    click($('plMode').querySelector('[data-gm="hours"]'));
+    expect($('plGoalK').textContent).toBe('Pump hours a day');
+    expect($('plGoal').textContent).toBe('10 h');
+    expect($('plGal').textContent).toMatch(/^at 1,500 rpm · about [\d.]+ turnovers \(model\)$/);
+    click($('plGup')); click($('plGup'));
+    expect($('plGoal').textContent).toBe('12 h');
+    expect($('plGoalStage').querySelector('[data-g="save"]').textContent).toBe('Save goal 12 h · skim 1 h');
+    noWrites(n);
+    click($('plGoalStage').querySelector('[data-g="save"]')); await flush();
+    expect(sheetWrites(f, n)).toEqual([expect.objectContaining({ method: 'POST', path: 'appliances/pool/goal', body: { goalMode: 'hours', hoursGoal: 12, skimHours: 1 } })]);
+  });
+  it('Cancel puts the saved goal back', async () => {
+    await seg('pool');
+    click($('plMode').querySelector('[data-gm="hours"]'));
+    click($('plGoalStage').querySelector('[data-g="cancel"]'));
+    expect($('plGoalK').textContent).toBe('Turnovers a day');
+    expect($('plGoalStage').innerHTML).toBe('');
+  });
+});
+
 describe('Pool and AC in place', () => {
   it('Pool: the Live card, then the equipment panel in place; a preset gets its own Cancel / write row', async () => {
     await seg('pool');

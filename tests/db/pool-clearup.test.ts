@@ -1,7 +1,7 @@
 // Clear-up (mockup w frame 6) on PGlite with ScreenLogic replaced by recorders: the all-day program through the guarded write, the end
 // at the evening pool run, Autopilot holding off while it runs (whatever the mode), Add a day, and End now handing back to the planner.
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
-import { kv, migrate } from '../../server/src/db.js';
+import { q, kv, migrate } from '../../server/src/db.js';
 import { autopilot } from '../../server/src/appliances/autopilot.js';
 import { startClearUp, extendClearUp, endClearUp, finishClearUpIfDue, activeClearUp, clearUpError, poolRunAfter, powerModel, POOL_DEFAULTS, scheduleError, saveSchedule, rebaseline, applyPlan, writingKey, poolDetail } from '../../server/src/appliances/pool.js';
 import { readPool, writePoolPlan } from '../../server/src/appliances/screenlogic.js';
@@ -190,5 +190,16 @@ describe('the evening pool cron budget', () => {
     expect(CRON_BUDGET_MS - WRITE_RESERVE_MS).toBeGreaterThanOrEqual(READ_DEADLINE_MS);           // a full read still fits
     expect(WRITE_RESERVE_MS).toBeGreaterThanOrEqual(MIN_WRITE_MS);
     expect(WRITE_DEADLINE_MS).toBeLessThanOrEqual(CRON_BUDGET_MS);
+  });
+});
+
+describe('mockup an: pump hours today, measured', () => {
+  it('PH-4 water.pumpHours counts the quarter-hours the readings show the pump running; the goal mode and hours ride along', async () => {
+    const d0 = localDay(), t7 = MON_9AM - 2 * 3600e3;   // 07:00 CDT
+    for (let i = 0; i < 7; i++) await q(`INSERT INTO pool_readings (site_id, ts, day, hour, running, watts, rpm) VALUES ('ph', $1, $2, $3, true, 150, 1500)`, [t7 + i * 15 * 60_000, d0, 7 + Math.floor(i / 4)]);
+    const d = await poolDetail('ph', { pool: { autopilot: 'off', goalMode: 'hours', hoursGoal: 9 } }, null, {});
+    expect(d.water).toMatchObject({ pumpHours: 1.75, goalMode: 'hours', hoursGoal: 9 });   // 07:00–08:45, seven quarter-hours read running
+    expect(d.water.projectedHours).toBeGreaterThanOrEqual(d.water.pumpHours);
+    expect((await poolDetail('ph2', {}, null, {})).water).toMatchObject({ pumpHours: 0, goalMode: 'turnovers', hoursGoal: 10 });
   });
 });
