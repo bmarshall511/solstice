@@ -88,7 +88,7 @@ describe('a real trip, replayed', () => {
     const r2 = buildReport({ from: T0, to: END, energy: [], nest: [], pool: [], acKw: 2.6, uv: false, temps: {}, model: report.model, poolNormalKwhDay: 4, homeFit: null, highs: {}, homeBaseKw: .86, trip: { backAt: END, data: { log } }, alerts: 0 });
     const wd = (t: number) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', weekday: 'short' }).format(new Date(t));
     expect(r2.did).toEqual([0, 1, 2].map(d => `${wd(log[d].at)}: The pump ran outside the plan at 10:05 AM (a pool service, or the panel)`));
-    for (const line of r2.next) expect(line, line).not.toMatch(/\d\.\d{3,}/);   // no float tails like 0.28800000000000003
+    for (const line of r2.next) expect(line, line).not.toMatch(/\d\.\d{3,}/);   // no float tails (a long run of decimals)
   });
 });
 
