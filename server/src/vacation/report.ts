@@ -110,10 +110,15 @@ export function buildReport(o: ReportInput): Report {
     home = r1(home);
   }
   const ac0 = o.trip.data.ac as { welcome?: { startAt: number; reachedAt?: number; target: number } } | undefined, did: string[] = [], next: string[] = [];
-  for (const l of (o.trip.data.log ?? []) as Array<{ text: string; delta?: string }>) if (['ac', 'pool', 'trip', 'watch'].includes(l.delta ?? '') && !/^Vacation mode started|^Trip planned/.test(l.text)) did.push(l.text);
+  // each line names its day on a trip longer than a day (the same event on three mornings read as one line said three times, 10/13)
+  const multi = localDay(new Date(o.from)) !== localDay(new Date(o.to - 1)), wd = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', weekday: 'short' });
+  for (const l of (o.trip.data.log ?? []) as Array<{ at?: number; text: string; delta?: string }>) if (['ac', 'pool', 'trip', 'watch'].includes(l.delta ?? '') && !/^Vacation mode started|^Trip planned/.test(l.text)) {
+    const line = multi && l.at != null ? `${wd.format(new Date(l.at))}: ${l.text}` : l.text;
+    if (!did.includes(line)) did.push(line);
+  }
   const w = ac0?.welcome;
   if (w?.reachedAt && o.trip.backAt) { const early = (o.trip.backAt - w.reachedAt) / 3600_000; if (early >= 1) next.push(`The house was ready ${r1(early)} h early, so cooling will start later on a day like that`); else if (early < 0) next.push(`The house reached ${w.target}° ${Math.round(-early * 60)} min after you were due, so cooling will start earlier next time`); }
-  if (o.homeBaseKw != null && o.homeBaseKw - base >= .1) next.push(`While you were away the house drew ${r1(base * 100) / 100} kW at its quietest, ${Math.round((o.homeBaseKw - base) * 100) / 100} kW less than when you're home`);
+  if (o.homeBaseKw != null && o.homeBaseKw - base >= .1) next.push(`While you were away the house drew ${Math.round(base * 100) / 100} kW at its quietest, ${Math.round((o.homeBaseKw - base) * 100) / 100} kW less than when you're home`);
   next.push('Log a pool test so the next trip’s pool plan can learn from it');
   return { v: 1, from: o.from, to: o.to, days: r1(days), usedKwh: r1(used), emptyKwh: r1(empty), homeKwh: home, savedKwh: r1(empty - used), ecoCoolF: eco, parts,
     awayBaseKw: Math.round(base * 100) / 100, homeBaseKw: o.homeBaseKw != null ? Math.round(o.homeBaseKw * 100) / 100 : null, did: did.slice(-12), alerts: o.alerts, next,
