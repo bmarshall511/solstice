@@ -1,6 +1,6 @@
 # Plan: move the database from Neon Free to Supabase Free
 
-Status: **approved by the owner on 2026-11-24.** Step 1 is merged (PR #74). Step 2 is done except the CA certificate (below). Step 3 waits for Neon's reset on Dec 1.
+Status: **approved by the owner on 2026-11-24.** Steps 1 and 2 are done. Step 3 waits for Neon's reset on Dec 1.
 
 ## Why
 
@@ -38,7 +38,7 @@ The size limit is the risk. Past 500 MB, Supabase puts the database into read-on
 
 Done on 2026-11-24: the resource is `solstice-supa` (Supabase Free Plan, `us-east-1`), connected to production and preview with the prefix `SUPA`. The prefix keeps Neon's `DATABASE_URL` and `POSTGRES_URL` in charge until the move. The variables are `SUPA_POSTGRES_URL` (transaction pooler, port 6543) and `SUPA_POSTGRES_URL_NON_POOLING` (port 5432), plus Supabase API keys the app does not use. Neon's `DATABASE_URL` is a sensitive variable, so `vercel env pull` leaves it empty: copy the source URL for step 3 from the Neon console.
 
-Still open: Supabase signs its certificates with its own root CA, so a verified connection fails with `SELF_SIGNED_CERT_IN_CHAIN`. Set `DATABASE_CA` on Vercel to Supabase's root certificate (`prod-ca-2021.crt`, from the project's database settings). Never turn certificate checks off.
+TLS: Supabase signs its certificates with its own root CA ("Supabase Root 2021 CA", valid to April 2031, SHA-256 fingerprint `AD:62:1A:B5:…:D4:B5`). `DATABASE_CA` holds that root on Vercel (production and preview, secret), downloaded from the project's database settings on 2026-11-24. `pgConfig` trusts it besides the system roots (PR #76), so Neon's public certificate still verifies until the move. Verified connections to both Supabase ports succeeded; never turn certificate checks off.
 
 ### 3. Move the data (Dec 1, after Neon resets)
 
