@@ -1,6 +1,6 @@
 # Plan: move the database from Neon Free to Supabase Free
 
-Status: **approved by the owner on 2026-11-24.** Step 1 is built (branch `feat/db-supabase-ready`). Step 2 waits for the owner's yes to add Supabase. Step 3 waits for Neon's reset on Dec 1.
+Status: **approved by the owner on 2026-11-24.** Step 1 is merged (PR #74). Step 2 is done except the CA certificate (below). Step 3 waits for Neon's reset on Dec 1.
 
 ## Why
 
@@ -36,6 +36,10 @@ The size limit is the risk. Past 500 MB, Supabase puts the database into read-on
 - Add Supabase through the Vercel Marketplace on its free plan, in the same region as the functions (US East).
 - Connect it to the `solstice-energy` project. Vercel then sets the connection variables as sensitive env vars.
 
+Done on 2026-11-24: the resource is `solstice-supa` (Supabase Free Plan, `us-east-1`), connected to production and preview with the prefix `SUPA`. The prefix keeps Neon's `DATABASE_URL` and `POSTGRES_URL` in charge until the move. The variables are `SUPA_POSTGRES_URL` (transaction pooler, port 6543) and `SUPA_POSTGRES_URL_NON_POOLING` (port 5432), plus Supabase API keys the app does not use. Neon's `DATABASE_URL` is a sensitive variable, so `vercel env pull` leaves it empty: copy the source URL for step 3 from the Neon console.
+
+Still open: Supabase signs its certificates with its own root CA, so a verified connection fails with `SELF_SIGNED_CERT_IN_CHAIN`. Set `DATABASE_CA` on Vercel to Supabase's root certificate (`prod-ca-2021.crt`, from the project's database settings). Never turn certificate checks off.
+
 ### 3. Move the data (Dec 1, after Neon resets)
 
 The Tesla refresh token is single-use, so only one database may own it at any moment. This order keeps one owner:
@@ -43,7 +47,7 @@ The Tesla refresh token is single-use, so only one database may own it at any mo
 1. Set `DB_MAINTENANCE=1` on Vercel and redeploy. The crons stop.
 2. Measure the size of every Neon table with `scripts/copy-db.ts --sizes`. **Stop here** if the total is above 400 MB, or if growth would pass 500 MB within two years. In that case I come back with the other free option: keep Neon and batch the writes so it can sleep.
 3. Copy every table from Neon to Supabase with `scripts/copy-db.ts`. It copies in batches, parents before children, then compares row counts table by table. Step 2 above uses its `--sizes` mode. A local test copied synthetic data between two Postgres servers with identical values, jsonb arrays and sequences included.
-4. Point `DATABASE_URL` at Supabase and redeploy.
+4. Point `DATABASE_URL` at the value of `SUPA_POSTGRES_URL` and redeploy. For the copy, use `TARGET_URL` = `SUPA_POSTGRES_URL_NON_POOLING` and `TARGET_CA` = the root certificate.
 5. Check the live app as owner and as guest at 393 px. Check that the Tesla, Nest and PVS data refresh.
 6. Unset `DB_MAINTENANCE` and redeploy. Watch the first Nest cron, the 8:15 PM pool cron and the nightly sync.
 
