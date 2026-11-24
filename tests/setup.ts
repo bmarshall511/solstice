@@ -11,8 +11,8 @@
 import { vi, beforeAll, afterEach } from 'vitest';
 
 const SAFE_DB = /^pglite:(memory:\/\/)?$/;
-const STRIP_PREFIX = /^(TESLA_|SCREENLOGIC_|NEST_|GOOGLE_|POSTGRES_|PG|NEON_|VERCEL_|OWNER_)/;
-const STRIP_KEYS = ['CRON_SECRET', 'SETUP_TOKEN', 'SESSION_SECRET', 'DATABASE_URL_UNPOOLED', 'MULTI_USER', 'ALLOW_SIGNUPS', 'SITE_LAT', 'SITE_LON'];
+const STRIP_PREFIX = /^(TESLA_|SCREENLOGIC_|NEST_|GOOGLE_|POSTGRES_|PG|NEON_|SUPABASE_|VERCEL_|OWNER_)/;
+const STRIP_KEYS = ['CRON_SECRET', 'SETUP_TOKEN', 'SESSION_SECRET', 'DATABASE_URL_UNPOOLED', 'DATABASE_CA', 'MULTI_USER', 'ALLOW_SIGNUPS', 'SITE_LAT', 'SITE_LON'];
 /** A throwaway owner key for tests only (auth.ts needs at least 32 characters). */
 const TEST_OWNER_KEY = 'test-owner-key-synthetic-throwaway-0000000000';
 
@@ -45,6 +45,7 @@ vi.mock('node-screenlogic', () => {
   class Blocked { constructor() { throw new Error('node-screenlogic is blocked in tests'); } }
   return { RemoteLogin: Blocked, UnitConnection: Blocked, default: { RemoteLogin: Blocked, UnitConnection: Blocked } };
 });
-vi.mock('@neondatabase/serverless', () => ({
-  neon: () => { throw new Error('the Neon driver is blocked in tests'); },
-}));
+vi.mock('pg', () => {
+  class Blocked { constructor() { throw new Error('the pg driver is blocked in tests'); } }
+  return { Pool: Blocked, Client: Blocked, default: { Pool: Blocked, Client: Blocked } };
+});

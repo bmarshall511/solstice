@@ -1,12 +1,33 @@
-// Postgres access. Production: Neon (serverless HTTP driver). Tests/local fallback: PGlite (Postgres in WASM).
-//   DATABASE_URL=postgres://…   → Neon
+// Postgres access through node-postgres (`pg`, pure JavaScript). Production: a hosted Postgres reached through its connection
+// pooler. Tests/local fallback: PGlite (Postgres in WASM).
+//   DATABASE_URL=postgres://…   → pg (Supabase's transaction pooler in production; Neon works the same way)
 //   DATABASE_URL=pglite:<dir>   → PGlite (in-process; e.g. pglite:data/pg)
-import { neon } from '@neondatabase/serverless';
+// `pg` parses values with pg-types 2.2, the same parsers Neon's serverless driver used before 2026-11, so every row keeps its shape:
+// int8 and numeric arrive as strings, timestamptz as a Date, json and jsonb parsed.
+import type { PoolConfig } from 'pg';
 
 export type Row = Record<string, any>;
 type Query = (text: string, params?: unknown[]) => Promise<Row[]>;
 
 let query: Query | null = null;
+
+/**
+ * The pool settings for a postgres:// URL. TLS is set here, not by the URL's `sslmode`, because `pg` reads `sslmode=require` as
+ * "verify the certificate" and libpq does not; the host's own CA (DATABASE_CA, a PEM) is trusted when the host signs with one.
+ * `sslmode=disable` (a local server) turns TLS off. Host-specific query parameters (Supabase's `supa=…`) are dropped.
+ */
+export function pgConfig(url: string, ca = process.env.DATABASE_CA): PoolConfig {
+  const u = new URL(url), mode = u.searchParams.get('sslmode');
+  for (const k of [...u.searchParams.keys()]) if (k !== 'options' && k !== 'application_name') u.searchParams.delete(k);
+  return {
+    connectionString: u.toString(),
+    ssl: mode === 'disable' ? false : { rejectUnauthorized: true, ...(ca ? { ca: ca.replace(/\\n/g, '\n') } : {}) },
+    max: 3,                          // one function instance serves a few requests at once; the pooler multiplexes the rest
+    idleTimeoutMillis: 10_000,       // let a frozen function's sockets go rather than hold pooler slots
+    connectionTimeoutMillis: 10_000,
+    allowExitOnIdle: true,
+  };
+}
 
 async function connect(): Promise<Query> {
   const url = process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
@@ -16,8 +37,10 @@ async function connect(): Promise<Query> {
     const pg = new PGlite(url.slice(7) || undefined);
     return async (text, params) => (await pg.query<Row>(text, params as any[])).rows;
   }
-  const sql = neon(url);
-  return (text, params) => sql.query(text, params as any[]) as Promise<Row[]>;
+  const { default: pg } = await import('pg');
+  const pool = new pg.Pool(pgConfig(url));
+  pool.on('error', e => console.error('[solstice] idle database connection failed:', e.message));   // must not crash the function
+  return async (text, params) => (await pool.query(text, params as any[])).rows;
 }
 
 /**
@@ -27,17 +50,25 @@ async function connect(): Promise<Query> {
  */
 export class DbUnavailableError extends Error {
   constructor(readonly kind: 'quota' | 'unreachable', cause: unknown) {
-    super(kind === 'quota' ? 'Database unavailable: its monthly usage limit is reached.' : 'Database unavailable: it can\u2019t be reached right now.', { cause });
+    super(kind === 'quota' ? 'Database unavailable: it has reached its plan\u2019s limit.' : 'Database unavailable: it can\u2019t be reached right now.', { cause });
     this.name = 'DbUnavailableError';
   }
 }
-const QUOTA = /exceeded the quota|HTTP status 402|compute time quota|data transfer quota/i;
-const UNREACHABLE = /Error connecting to database|fetch failed|ECONNREFUSED|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|Connection terminated|HTTP status 5\d\d/i;
+// A plan limit: Neon's 402 for spent compute or transfer; a host that turns the database read-only when it is over its size
+// (SQLSTATE 25006 read_only_sql_transaction, which this app never asks for itself) or out of disk (53100).
+const QUOTA = /exceeded the quota|HTTP status 402|compute time quota|data transfer quota/i, QUOTA_CODES = /^(25006|53100)$/;
+// Can't reach it: network errors, a pool that timed out connecting, the server refusing or shutting down connections
+// (SQLSTATE class 08, 53300 too_many_connections, 57P01 admin_shutdown, 57P03 cannot_connect_now).
+const UNREACHABLE = /Error connecting to database|fetch failed|Connection terminated|timeout exceeded when trying to connect|HTTP status 5\d\d/i;
+const UNREACHABLE_CODES = /^(08[0-9A-Z]{3}|53300|57P01|57P03|ECONNREFUSED|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN)$/;
 /** Which outage an error from the driver is, or null for an ordinary query error (bad SQL, a constraint), which stays as it is. */
 export function dbOutage(e: unknown): DbUnavailableError['kind'] | null {
-  // Neon's driver keeps the network error in `sourceError`; others use the standard `cause`
-  const text = [e, (e as any)?.cause, (e as any)?.sourceError].map(x => x instanceof Error ? `${x.message} ${(x as any).code ?? ''}` : '').join(' ');
-  return QUOTA.test(text) ? 'quota' : UNREACHABLE.test(text) ? 'unreachable' : null;
+  // the error, its standard `cause`, and `sourceError` (where Neon's old driver kept the network error)
+  const errs = [e, (e as any)?.cause, (e as any)?.sourceError].filter((x): x is Error => x instanceof Error);
+  const text = errs.map(x => x.message).join(' '), codes = errs.map(x => String((x as any).code ?? ''));
+  if (QUOTA.test(text) || codes.some(c => QUOTA_CODES.test(c))) return 'quota';
+  if (UNREACHABLE.test(text) || codes.some(c => UNREACHABLE_CODES.test(c))) return 'unreachable';
+  return null;
 }
 
 export async function q<T extends Row = Row>(text: string, params: unknown[] = []): Promise<T[]> {

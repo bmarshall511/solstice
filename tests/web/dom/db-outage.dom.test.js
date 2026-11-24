@@ -9,7 +9,7 @@ import { bootApp, $, until } from './harness.js';
 vi.mock('three', async importOriginal => ({ ...(await importOriginal()), WebGLRenderer: (await import('./fakegl.js')).FakeRenderer }));
 vi.mock('../../../web/src/views/nowhub.js', async importOriginal => { const m = await importOriginal(); return { ...m, initNowTop: S => { globalThis.__S = S; return m.initNowTop(S); } }; });
 
-const SENTENCE = 'Database unavailable: its monthly usage limit is reached.';
+const SENTENCE = 'Database unavailable: it has reached its plan’s limit.';
 const down = { __status: 503, body: { error: SENTENCE, reason: 'db_quota', id: 'x' } };
 
 beforeAll(async () => {

@@ -65,6 +65,7 @@ import { tripPlanDay } from './appliances/autopilot.js';
 import { confidenceMap } from './learn/confidence.js';
 import { patchSettings, changedKeys, PREV_KEY } from './settings.js';
 import { ledger, cronHealth, cronWatch, markOf } from './cronLedger.js';
+import { dbSizeWatch } from './dbSize.js';
 import { INFLATED_WH } from './learn/rules.js';
 
 export const app = express();
@@ -72,6 +73,11 @@ app.disable('x-powered-by');
 app.set('trust proxy', true);
 // Nothing this app serves may be cached by a browser, proxy or CDN, or reused for a request with other cookies (owner, guest).
 app.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); res.vary('Cookie'); next(); });
+// The database move (docs/plan-db-supabase.md): while DB_MAINTENANCE=1 nothing touches the database, so no cron runs and nothing
+// writes to a device from a half-copied database. Every request answers 503; Pub/Sub, the PVS relay and the crons try again later.
+app.use((_req, res, next) => process.env.DB_MAINTENANCE === '1'
+  ? res.status(503).set('Retry-After', '600').json({ error: 'Database maintenance: Solstice is moving its data and will be back shortly.', reason: 'db_maintenance' })
+  : next());
 app.use(async (_req, _res, next) => { try { await migrate(); next(); } catch (e) { next(e); } });
 
 /* The gate (access.ts): the owner cookie opens every /api and /auth route, reads included; a guest share-link cookie opens
@@ -823,6 +829,7 @@ fiveMinuteSteps.spare = spareWatch;   // mockup ad: the pool speeds up on real s
 nightlySteps.soiling = soilingNightly;
 nightlySteps.poolTest = poolTestReminder;   // poolTests.ts (mockup aj): one "time to test" push per test, 4 days warm / 7 cool   // soiling.ts (mockup ai): the weather for the Cleaning check card, and one push per dusty spell
 nightlySteps.alwaysOn = alwaysOnWatch;   // breakdown.ts: one push when the always-on base stays up three nights
+nightlySteps.dbSize = (id, now) => dbSizeWatch(id, now);   // dbSize.ts: one push a week once the database passes 80% of its plan's size limit
 nightlySteps.loads = loadsNightly;   // loads.ts (I-22): yesterday's bursts and the back-fill, then a recluster; stops 8 s before the deadline
 /* Watchdog: Vercel never retries a cron, so a nightly run that died (timeout, deploy, outage) would be silent. The 5-minute tick
  * pushes one alert a day while the last finished nightly run is more than 26 hours old. */
