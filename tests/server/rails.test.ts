@@ -1,7 +1,7 @@
 // Proves the safety rails in tests/setup.ts and tests/server/pure-mocks.ts are in force (rule 4 as code).
 import { describe, it, expect } from 'vitest';
 import { RemoteLogin, UnitConnection } from 'node-screenlogic';
-import { neon } from '@neondatabase/serverless';
+import pg from 'pg';
 import { q, kv } from '../../server/src/db.js';
 import { configured, writePoolPlan } from '../../server/src/appliances/screenlogic.js';
 import { nestConfigured, setCool } from '../../server/src/appliances/nest.js';
@@ -10,8 +10,8 @@ describe('safety rails', () => {
   it('the only database is in-memory PGlite', () => {
     expect(process.env.DATABASE_URL).toBe('pglite:memory://');
   });
-  it('no device, Tesla, Google, Neon or cron credentials are in the environment', () => {
-    const leaked = Object.keys(process.env).filter(k => /^(TESLA_|SCREENLOGIC_|NEST_|GOOGLE_|POSTGRES_|NEON_)/.test(k)
+  it('no device, Tesla, Google, database host or cron credentials are in the environment', () => {
+    const leaked = Object.keys(process.env).filter(k => /^(TESLA_|SCREENLOGIC_|NEST_|GOOGLE_|POSTGRES_|NEON_|SUPABASE_|DATABASE_CA)/.test(k)
       || ['CRON_SECRET', 'SETUP_TOKEN', 'SESSION_SECRET', 'MULTI_USER'].includes(k));
     expect(leaked).toEqual([]);
   });
@@ -28,7 +28,7 @@ describe('safety rails', () => {
   it('node-screenlogic and the Neon driver cannot be constructed', () => {
     expect(() => new RemoteLogin('any')).toThrow('node-screenlogic is blocked in tests');
     expect(() => new UnitConnection()).toThrow('node-screenlogic is blocked in tests');
-    expect(() => neon('postgres://example.invalid/db')).toThrow('the Neon driver is blocked in tests');
+    expect(() => new pg.Pool({ connectionString: 'postgres://example.invalid/db' })).toThrow('the pg driver is blocked in tests');
   });
   it('pure tests cannot touch the database', () => {
     expect(() => q('SELECT 1')).toThrow('db in pure test (q)');

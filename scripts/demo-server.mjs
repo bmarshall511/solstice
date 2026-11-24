@@ -25,7 +25,7 @@ const args = process.argv.slice(2);
 /* ---------- 1. the environment: synthetic, test-only values; nothing real ---------- */
 /** TEST-ONLY, SYNTHETIC: opens this local demo server and nothing else. Never a real key. */
 export const DEMO_OWNER_KEY = 'demo-owner-key-synthetic-local-only-000000000000';
-const STRIP = /^(TESLA_|SCREENLOGIC_|NEST_|GOOGLE_|POSTGRES_|PG|NEON_|VERCEL_|OWNER_|SITE_|SOLAR_|PVS_|VAPID_|PUSH_|DATABASE_)/;
+const STRIP = /^(TESLA_|SCREENLOGIC_|NEST_|GOOGLE_|POSTGRES_|PG|NEON_|SUPABASE_|VERCEL_|OWNER_|SITE_|SOLAR_|PVS_|VAPID_|PUSH_|DATABASE_)/;
 for (const k of Object.keys(process.env)) if (STRIP.test(k) || ['CRON_SECRET', 'SESSION_SECRET', 'SETUP_TOKEN', 'MULTI_USER', 'ALLOW_SIGNUPS'].includes(k)) delete process.env[k];
 const dbDir = mkdtempSync(join(tmpdir(), 'solstice-demo-'));
 Object.assign(process.env, {
@@ -46,11 +46,11 @@ const cleanup = () => { try { rmSync(dbDir, { recursive: true, force: true }); }
 process.on('exit', cleanup);
 for (const s of ['SIGINT', 'SIGTERM']) process.on(s, () => process.exit(0));
 
-/* ---------- 2. module stubs: the pool controller library and the Neon driver can never load ---------- */
+/* ---------- 2. module stubs: the pool controller library and the database driver can never load ---------- */
 const hooks = `
 const STUB = {
   'node-screenlogic': 'const no = () => { throw new Error("node-screenlogic is blocked in the offline demo"); }; export class RemoteLogin { constructor() { no(); } } export class UnitConnection { constructor() { no(); } } export default { RemoteLogin, UnitConnection };',
-  '@neondatabase/serverless': 'export const neon = () => { throw new Error("the Neon driver is blocked in the offline demo"); }; export default { neon };',
+  'pg': 'class Blocked { constructor() { throw new Error("the pg driver is blocked in the offline demo"); } } export const Pool = Blocked, Client = Blocked; export default { Pool: Blocked, Client: Blocked };',
 };
 export async function resolve(spec, ctx, next) {
   if (Object.hasOwn(STUB, spec)) return { url: 'data:text/javascript,' + encodeURIComponent(STUB[spec]), shortCircuit: true };
