@@ -1,7 +1,7 @@
 // The Solstice HTTP API. Runs as a single Vercel function in production (api/index.ts) and via server/src/index.ts locally.
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { createHash } from 'node:crypto';
-import { q, one, kv, migrate, hourWh } from './db.js';
+import { q, one, kv, migrate, hourWh, DbUnavailableError } from './db.js';
 import { config } from './config.js';
 import { hashPassword, verifyPassword, startSession, endSession, currentUser, requireUser, requireSite, tooManyAttempts, recordAttempt, signState, verifyState, multiUser,
   ownerKey, checkOwnerKey, startOwnerSession, endOwnerSession, endOtherOwnerSessions, endOwnerSessionById, listOwnerSessions, ownerAttemptLimited, guestAttempts, clientIp,
@@ -917,5 +917,7 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
   const id = Math.random().toString(36).slice(2, 10);
   console.error(`[solstice] error ${id} ${req.method} ${req.path}:`, err);
   if (res.headersSent) return res.end();
+  // the same plain sentence for owner, guest and anonymous alike: it names the outage and nothing about the site
+  if (err instanceof DbUnavailableError) return res.status(503).set('Retry-After', err.kind === 'quota' ? '3600' : '60').json({ error: err.message, reason: `db_${err.kind}`, id });
   res.status(500).json(req.role === 'owner' ? { error: err.message, id } : { error: 'internal error', id });
 });

@@ -6,7 +6,8 @@ async function call(path, opts) {
   const r = await fetch(`/api/${path}`, { credentials: 'same-origin', cache: 'no-store', ...opts });
   if (r.status === 401) { onUnauthorized(); throw new Error('Sign in required'); }
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error ?? `${path}: HTTP ${r.status}`);
+  // `status` marks an answer from the server, so a caller can tell it from a network failure (which rejects with a TypeError)
+  if (!r.ok) throw Object.assign(new Error(j.error ?? `${path}: HTTP ${r.status}`), { status: r.status, reason: j.reason ?? null });
   return j;
 }
 const get = path => call(path);
