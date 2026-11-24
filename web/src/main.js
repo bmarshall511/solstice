@@ -438,7 +438,8 @@ async function boot() {
     guestLinkError = err;
   }
   let me;
-  try { me = await api.me(); } catch { $('authErr').textContent = 'Can’t reach the Solstice server.'; return showAuth('login'); }
+  // the server's own sentence when it answered (a database outage names itself), else the network is down; showAuth writes it
+  try { me = await api.me(); } catch (err) { return showAuth('login', { error: err?.status ? err.message : 'Can’t reach the Solstice server.' }); }
   multi = me.mode !== 'single';
   if (me.mode === 'single') {           // no accounts: the owner cookie opens straight to the connected site
     document.querySelectorAll('.acct').forEach((/** @type {HTMLElement} */ el) => el.hidden = true);

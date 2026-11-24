@@ -20,9 +20,34 @@ async function connect(): Promise<Query> {
   return (text, params) => sql.query(text, params as any[]) as Promise<Row[]>;
 }
 
+/**
+ * The database itself is out of service: the host suspended it for a plan limit (Neon answers HTTP 402 "exceeded the quota" once
+ * the month's compute hours are spent), or it can't be reached. Every route then fails the same way, so app.ts answers 503 with
+ * a plain sentence instead of "internal error" (2026-11-24: the app sat behind "internal error" for five days of a spent quota).
+ */
+export class DbUnavailableError extends Error {
+  constructor(readonly kind: 'quota' | 'unreachable', cause: unknown) {
+    super(kind === 'quota' ? 'Database unavailable: its monthly usage limit is reached.' : 'Database unavailable: it can\u2019t be reached right now.', { cause });
+    this.name = 'DbUnavailableError';
+  }
+}
+const QUOTA = /exceeded the quota|HTTP status 402|compute time quota|data transfer quota/i;
+const UNREACHABLE = /Error connecting to database|fetch failed|ECONNREFUSED|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|Connection terminated|HTTP status 5\d\d/i;
+/** Which outage an error from the driver is, or null for an ordinary query error (bad SQL, a constraint), which stays as it is. */
+export function dbOutage(e: unknown): DbUnavailableError['kind'] | null {
+  // Neon's driver keeps the network error in `sourceError`; others use the standard `cause`
+  const text = [e, (e as any)?.cause, (e as any)?.sourceError].map(x => x instanceof Error ? `${x.message} ${(x as any).code ?? ''}` : '').join(' ');
+  return QUOTA.test(text) ? 'quota' : UNREACHABLE.test(text) ? 'unreachable' : null;
+}
+
 export async function q<T extends Row = Row>(text: string, params: unknown[] = []): Promise<T[]> {
-  query ??= await connect();
-  return (await query(text, params)) as T[];
+  try {
+    query ??= await connect();
+    return (await query(text, params)) as T[];
+  } catch (e) {
+    const kind = dbOutage(e);
+    throw kind ? new DbUnavailableError(kind, e) : e;
+  }
 }
 /**
  * One local hour's Wh of a 5-minute energy column for a GROUP BY day, hour: the sum, scaled back to one hour when the hour holds more
