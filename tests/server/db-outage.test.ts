@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { rootCertificates } from 'node:tls';
 
 const outage = vi.hoisted(() => ({ kind: null as null | 'quota' | 'unreachable' }));
 vi.mock(import('../../server/src/db.js'), async importOriginal => {
@@ -54,9 +55,13 @@ describe('pgConfig', () => {
     expect(c.connectionString).toBe('postgres://user:pw@aws-0-us-east-1.pooler.supabase.com:6543/postgres');
     expect(c.ssl).toEqual({ rejectUnauthorized: true });
   });
-  it('trusts the host’s CA when one is given, with escaped newlines restored', () => {
-    expect(pgConfig(URL_, '-----BEGIN CERTIFICATE-----\\nabc\\n-----END CERTIFICATE-----').ssl)
-      .toEqual({ rejectUnauthorized: true, ca: '-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----' });
+  it('trusts the host’s CA besides the system roots, with escaped newlines restored', () => {
+    const ssl = pgConfig(URL_, '-----BEGIN CERTIFICATE-----\\nabc\\n-----END CERTIFICATE-----').ssl as { rejectUnauthorized: boolean; ca: string[] };
+    expect(ssl.rejectUnauthorized).toBe(true);
+    expect(ssl.ca.at(-1)).toBe('-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----');
+    // Node's `ca` replaces the default store, so the system roots must be in the list too (Neon's public certificate)
+    expect(ssl.ca.slice(0, -1)).toEqual([...rootCertificates]);
+    expect(ssl.ca.length).toBeGreaterThan(100);
   });
   it('turns TLS off only for sslmode=disable', () => {
     expect(pgConfig('postgres://u:p@localhost:5432/db?sslmode=disable', undefined).ssl).toBe(false);
