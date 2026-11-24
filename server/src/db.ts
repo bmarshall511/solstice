@@ -4,6 +4,7 @@
 //   DATABASE_URL=pglite:<dir>   → PGlite (in-process; e.g. pglite:data/pg)
 // `pg` parses values with pg-types 2.2, the same parsers Neon's serverless driver used before 2026-11, so every row keeps its shape:
 // int8 and numeric arrive as strings, timestamptz as a Date, json and jsonb parsed.
+import { rootCertificates } from 'node:tls';
 import type { PoolConfig } from 'pg';
 
 export type Row = Record<string, any>;
@@ -13,7 +14,9 @@ let query: Query | null = null;
 
 /**
  * The pool settings for a postgres:// URL. TLS is set here, not by the URL's `sslmode`, because `pg` reads `sslmode=require` as
- * "verify the certificate" and libpq does not; the host's own CA (DATABASE_CA, a PEM) is trusted when the host signs with one.
+ * "verify the certificate" and libpq does not. A host that signs with its own CA (Supabase: DATABASE_CA, its root PEM) is
+ * trusted *besides* the system roots, never instead of them: Node's `ca` replaces the default store, which would break a host
+ * with a public certificate (Neon) the moment DATABASE_CA is set.
  * `sslmode=disable` (a local server) turns TLS off. Host-specific query parameters (Supabase's `supa=…`) are dropped.
  */
 export function pgConfig(url: string, ca = process.env.DATABASE_CA): PoolConfig {
@@ -21,7 +24,7 @@ export function pgConfig(url: string, ca = process.env.DATABASE_CA): PoolConfig 
   for (const k of [...u.searchParams.keys()]) if (k !== 'options' && k !== 'application_name') u.searchParams.delete(k);
   return {
     connectionString: u.toString(),
-    ssl: mode === 'disable' ? false : { rejectUnauthorized: true, ...(ca ? { ca: ca.replace(/\\n/g, '\n') } : {}) },
+    ssl: mode === 'disable' ? false : { rejectUnauthorized: true, ...(ca ? { ca: [...rootCertificates, ca.replace(/\\n/g, '\n')] } : {}) },
     max: 3,                          // one function instance serves a few requests at once; the pooler multiplexes the rest
     idleTimeoutMillis: 10_000,       // let a frozen function's sockets go rather than hold pooler slots
     connectionTimeoutMillis: 10_000,
